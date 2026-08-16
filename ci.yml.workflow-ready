@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [arena/01a00cd1-windels-panel, main]
+    branches: [main, 'arena/**']
   pull_request:
 jobs:
   php:
@@ -28,7 +28,54 @@ jobs:
           coverage: none
       - run: composer install --no-interaction --prefer-dist
       - run: vendor/bin/phpunit --testdox
+
+      - name: Schema dump is in sync with migrations
+        run: php tools/export_schema.php --check
+
+      - name: Lint schema (parser + house rules)
+        run: |
+          pip install --quiet sqlglot
+          python3 tools/validate_schema.py
+
+      - name: Migrate + seed against MySQL
+        env:
+          APP_ENV: testing
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_NAME: windels_panel_test
+          DB_USER: windels
+          DB_PASSWORD: windels_secret
+          DEMO_PASSWORD: CiTest!Password1
+        run: |
+          php index.php migrate
+          php index.php migrate status
+          php index.php seed core
+          php index.php seed demo
+          php index.php seed core   # idempotency: re-running must be a no-op
+          php index.php seed demo
+
+      - name: Demo seed must refuse to run in production
+        env:
+          APP_ENV: production
+          DB_HOST: 127.0.0.1
+          DB_NAME: windels_panel_test
+          DB_USER: windels
+          DB_PASSWORD: windels_secret
+        run: |
+          if php index.php seed demo; then
+            echo "demo seed ran under APP_ENV=production" && exit 1
+          fi
+          echo "correctly refused"
       - name: Verify no license artifacts
         run: |
           ! grep -R "PURCHASE_CODE\|LICENSE_SERVER\|Envato" application/ --include="*.php" || (echo "License artifact found" && exit 1)
           ! grep -R "CURLOPT_SSL_VERIFYPEER.*false" application/ --include="*.php" -i || (echo "Insecure TLS found" && exit 1)
+          # match real table/column definitions, not the comments documenting their absence
+          ! grep -RniE "(CREATE TABLE[^(]*|^\\s*)(license_keys?|purchase_codes?|domain_locks?)\\s+(VARCHAR|CHAR|TEXT|INT|BIGINT|\\()" docs/database.sql || (echo "License artifact in schema" && exit 1)
+
+      - name: Ledger integrity — no direct balance mutation outside LedgerService
+        run: |
+          if grep -RnE "update\('wallets'" application/ --include="*.php" | grep -v "libraries/LedgerService.php" | grep -v "seeds/"; then
+            echo "wallets table mutated outside LedgerService" && exit 1
+          fi
+          echo "ok"
