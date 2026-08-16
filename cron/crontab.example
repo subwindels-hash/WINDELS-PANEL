@@ -1,0 +1,11 @@
+# WINDELS PANEL — Cron (CLI only, no web URLs). Install: crontab cron/crontab.example
+# Requires: php-cli, .env with DB/Redis, CodeIgniter index.php cron controller
+
+* * * * * cd /var/www/html && php index.php cron dripfeed >> storage/logs/cron.log 2>&1
+*/2 * * * * cd /var/www/html && php index.php cron order_status >> storage/logs/cron.log 2>&1
+*/5 * * * * cd /var/www/html && php index.php cron provider_health >> storage/logs/cron.log 2>&1
+*/5 * * * * cd /var/www/html && php index.php cron refill_status >> storage/logs/cron.log 2>&1
+*/5 * * * * cd /var/www/html && php index.php cron payment_reconciliation >> storage/logs/cron.log 2>&1
+*/5 * * * * cd /var/www/html && php index.php cron email_queue >> storage/logs/cron.log 2>&1
+0 * * * * cd /var/www/html && php index.php cron analytics >> storage/logs/cron.log 2>&1
+*/60 * * * * cd /var/www/html && php index.php cron provider_sync >> storage/logs/cron.log 2>&1

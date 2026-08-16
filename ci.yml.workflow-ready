@@ -1,0 +1,34 @@
+name: CI
+on:
+  push:
+    branches: [arena/01a00cd1-windels-panel, main]
+  pull_request:
+jobs:
+  php:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: windels_panel_test
+          MYSQL_USER: windels
+          MYSQL_PASSWORD: windels_secret
+        ports: ["3306:3306"]
+        options: --health-cmd="mysqladmin ping -h localhost -u windels -pwindels_secret" --health-interval=10s --health-retries=10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: pdo_mysql, mysqli, curl, mbstring, zip, bcmath, redis, gd, intl
+          coverage: none
+      - run: composer install --no-interaction --prefer-dist
+      - run: vendor/bin/phpunit --testdox
+      - name: Verify no license artifacts
+        run: |
+          ! grep -R "PURCHASE_CODE\|LICENSE_SERVER\|Envato" application/ --include="*.php" || (echo "License artifact found" && exit 1)
+          ! grep -R "CURLOPT_SSL_VERIFYPEER.*false" application/ --include="*.php" -i || (echo "Insecure TLS found" && exit 1)

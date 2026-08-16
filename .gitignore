@@ -1,0 +1,8 @@
+.env
+/vendor/
+/system/
+/application/cache/*
+/storage/logs/*
+/storage/cache/*
+/node_modules/
+/assets/css/tailwind.css
