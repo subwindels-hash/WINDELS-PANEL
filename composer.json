@@ -1,6 +1,6 @@
 {
   "name": "windels/panel",
-  "description": "WINDELS PANEL — Enterprise SMM Reseller Platform (CodeIgniter 3.x + MySQL/MariaDB)",
+  "description": "WINDELS PANEL \u2014 Enterprise SMM Reseller Platform (CodeIgniter 3.x + MySQL/MariaDB)",
   "type": "project",
   "require": {
     "php": ">=7.4",
@@ -23,11 +23,20 @@
     },
     "files": [
       "application/helpers/windels_helper.php"
+    ],
+    "classmap": [
+      "application/libraries/Seeder.php"
     ]
   },
   "scripts": {
     "test": "phpunit",
-    "migrate": "php index.php migrate"
+    "test:offline": "php tools/phpunit_lite.php",
+    "migrate": "php index.php migrate",
+    "migrate:fresh": "php index.php migrate fresh",
+    "seed": "php index.php seed core",
+    "seed:demo": "php index.php seed demo",
+    "schema:export": "php tools/export_schema.php",
+    "schema:check": "php tools/export_schema.php --check"
   },
   "config": {
     "optimize-autoloader": true,

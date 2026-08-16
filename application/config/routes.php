@@ -102,3 +102,11 @@ $route['webhook/(:any)'] = 'webhooks/index/$1';
 
 // Installer (no license step per §81)
 $route['install'] = 'install/index';
+
+/*
+ * CLI-only controllers — deliberately NOT routed on the web (§66):
+ *   php index.php migrate [latest|version <n>|fresh|status]
+ *   php index.php seed    [core|demo|all|list]
+ *   php index.php cron    <job>
+ * They extend Cron_Controller, which hard-fails any non-CLI request.
+ */
