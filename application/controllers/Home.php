@@ -30,7 +30,14 @@ class Home extends Public_Controller {
     }
     public function pricing(){ $this->load->view('layouts/public', array('content_view'=>'public/pricing','data'=>array('title'=>'Pricing'))); }
     public function about(){ $this->load->view('layouts/public', array('content_view'=>'public/about','data'=>array('title'=>'About'))); }
-    public function faq(){ $this->load->view('layouts/public', array('content_view'=>'public/faq','data'=>array('title'=>'FAQ'))); }
+    public function faq(){
+        $this->load->model('Faq_model');
+        $this->load->view('layouts/public', array('content_view'=>'public/faq','data'=>array(
+            'title'=>'FAQ',
+            'faqs'=>$this->Faq_model->active(),
+            'categories'=>$this->Faq_model->categories(),
+        )));
+    }
     public function blog(){ $this->load->view('layouts/public', array('content_view'=>'public/blog_list','data'=>array('title'=>'Blog'))); }
     public function blog_detail($slug){ $this->load->view('layouts/public', array('content_view'=>'public/blog_detail','data'=>array('title'=>$slug))); }
     public function contact(){ $this->load->view('layouts/public', array('content_view'=>'public/contact','data'=>array('title'=>'Contact'))); }

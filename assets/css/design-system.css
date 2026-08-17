@@ -190,3 +190,11 @@ button { font-family:inherit; cursor:pointer; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration:.001ms!important; transition-duration:.001ms!important; scroll-behavior:auto!important; }
 }
+
+/* Announcements */
+.ws-announce{background:#0f172a;color:#fff}
+.ws-announce-item{padding:.55rem 1rem;text-align:center;font-size:.875rem}
+.ws-sev-warning{background:#b45309}
+.ws-sev-critical{background:#b91c1c}
+.ws-sev-success{background:#15803d}
+.ws-sev-info{background:#0f172a}
