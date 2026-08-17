@@ -74,7 +74,7 @@
     "status": "PROCESSING",
     "quantity": 1000,
     "charge": "1.20000000",
-    "currency": "USD"
+    "currency": "NGN"
   },
   "requestId": "..."
 }</code></pre>

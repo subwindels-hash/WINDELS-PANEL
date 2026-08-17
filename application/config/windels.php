@@ -15,7 +15,7 @@ $config['windels'] = array(
     'support_email' => getenv('MAIL_FROM_ADDRESS') ?: 'support@windels.local',
     'active_homepage' => 'AURORA', // AURORA | NEXUS | PULSE — overridden by settings table
     'homepages' => array('AURORA', 'NEXUS', 'PULSE'),
-    'base_currency' => 'USD',
+    'base_currency' => 'NGN',
     'maintenance' => FALSE,
 );
 

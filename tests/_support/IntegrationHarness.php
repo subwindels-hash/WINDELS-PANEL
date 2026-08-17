@@ -162,14 +162,14 @@ class IntegrationHarness
             $this->db->insert('roles', array('name' => $role, 'created_at' => $now));
         }
         $this->db->insert('currencies', array(
-            'code' => 'USD', 'name' => 'US Dollar', 'symbol' => '$',
+            'code' => 'NGN', 'name' => 'Nigerian Naira', 'symbol' => '₦',
             'exchange_rate' => '1.00000000', 'is_base' => 1, 'is_active' => 1,
             'updated_at' => $now,
         ));
         $this->db->insert('providers', array(
             'public_id' => 'PROV0000000000000000000001', 'name' => 'Acme SMM',
             'api_url' => 'https://api.acme.test/v2', 'api_key_encrypted' => 'enc:test',
-            'api_type' => 'STANDARD_SMM', 'status' => 'ACTIVE', 'currency' => 'USD',
+            'api_type' => 'STANDARD_SMM', 'status' => 'ACTIVE', 'currency' => 'NGN',
             'created_at' => $now, 'updated_at' => $now,
         ));
         $this->db->insert('service_categories', array(
@@ -204,7 +204,7 @@ class IntegrationHarness
         $this->db->insert('providers', array(
             'public_id' => 'PROV0000000000000000000002', 'name' => 'Acme VTU',
             'api_url' => 'https://api.vtu.test', 'api_key_encrypted' => 'enc:test',
-            'api_type' => 'MOCK', 'status' => 'ACTIVE', 'currency' => 'USD',
+            'api_type' => 'MOCK', 'status' => 'ACTIVE', 'currency' => 'NGN',
             'created_at' => $now, 'updated_at' => $now,
         ));
         $provider_id = $this->db->insert_id();
@@ -270,7 +270,7 @@ class IntegrationHarness
         $id = $this->db->insert_id();
         $this->db->insert('wallets', array(
             'public_id' => 'WAL'.str_pad((string)$id, 23, '0', STR_PAD_LEFT),
-            'user_id' => $id, 'balance' => '0.00000000', 'currency' => 'USD',
+            'user_id' => $id, 'balance' => '0.00000000', 'currency' => 'NGN',
             'created_at' => $now, 'updated_at' => $now,
         ));
         return $this->db->where('id', $id)->get('users')->row();

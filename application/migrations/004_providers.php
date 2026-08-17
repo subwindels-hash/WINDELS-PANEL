@@ -21,7 +21,7 @@ class Migration_Providers extends CI_Migration {
               api_key_encrypted VARCHAR(512) NOT NULL COMMENT 'encrypted at rest, never logged',
               api_type VARCHAR(32) NOT NULL DEFAULT 'STANDARD_SMM',
               status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
-              currency CHAR(3) NOT NULL DEFAULT 'USD',
+              currency CHAR(3) NOT NULL DEFAULT 'NGN',
               balance DECIMAL(20,8) NULL COMMENT 'last known provider balance',
               timeout_ms INT NOT NULL DEFAULT 15000,
               retry_policy JSON NULL COMMENT '{maxRetries, backoffMs[]}',

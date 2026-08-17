@@ -115,13 +115,16 @@ class Core_seeder extends Seeder {
     }
 
     private function seed_currencies() {
+        // Rates are "units of this currency per ₦1". NGN is the base, so it is
+        // pinned at exactly 1 and every other rate is the reciprocal of its
+        // naira price (₦1550 to the dollar => 0.00064516 USD per naira).
         $currencies = array(
-            array('USD','$','US Dollar',2,'1.00000000',1),
-            array('EUR','€','Euro',2,'0.92000000',0),
-            array('GBP','£','British Pound',2,'0.79000000',0),
-            array('NGN','₦','Nigerian Naira',2,'1550.00000000',0),
-            array('INR','₹','Indian Rupee',2,'83.00000000',0),
-            array('BRL','R$','Brazilian Real',2,'5.40000000',0),
+            array('NGN','₦','Nigerian Naira',2,'1.00000000',1),
+            array('USD','$','US Dollar',2,'0.00064516',0),
+            array('EUR','€','Euro',2,'0.00059355',0),
+            array('GBP','£','British Pound',2,'0.00050968',0),
+            array('INR','₹','Indian Rupee',2,'0.05354839',0),
+            array('BRL','R$','Brazilian Real',2,'0.00348387',0),
         );
         foreach ($currencies as $c) {
             $this->upsert('currencies', array('code'=>$c[0]), array(
@@ -210,11 +213,11 @@ class Core_seeder extends Seeder {
             array('brand_favicon_url',NULL,'branding',1),
             array('default_theme','system','branding',1),
             // currency
-            array('base_currency','USD','currency',1),
+            array('base_currency','NGN','currency',1),
             array('currency_display','symbol','currency',1),
             // orders
-            array('min_deposit','5.00000000','payments',1),
-            array('max_deposit','10000.00000000','payments',1),
+            array('min_deposit','500.00000000','payments',1),
+            array('max_deposit','5000000.00000000','payments',1),
             array('order_auto_submit',TRUE,'orders',0),
             array('partial_refund_enabled',TRUE,'orders',0),
             // security
@@ -226,7 +229,7 @@ class Core_seeder extends Seeder {
             array('referral_commission_percent','5.0000','affiliate',1),
             array('referral_commission_scope','LIFETIME','affiliate',1),
             array('referral_hold_hours',24,'affiliate',0),
-            array('referral_min_payout','0.01000000','affiliate',0),
+            array('referral_min_payout','100.00000000','affiliate',0),
         );
     }
 
@@ -278,9 +281,9 @@ class Core_seeder extends Seeder {
                 'type'       => $m[2],
                 'is_active'  => $m[3],
                 'sorting'    => $m[4],
-                'min_amount' => '5.00000000',
-                'max_amount' => '10000.00000000',
-                'currencies' => json_encode(array('USD')),
+                'min_amount' => '500.00000000',
+                'max_amount' => '5000000.00000000',
+                'currencies' => json_encode(array('NGN')),
             ));
         }
     }

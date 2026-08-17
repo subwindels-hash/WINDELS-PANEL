@@ -5,7 +5,7 @@ $t = $totals;
   <div class="card">
     <div class="card-meta">Wallet balance</div>
     <div class="mt-1 text-3xl font-bold tracking-tight" style="font-family:var(--font-display)">
-      <?=windels_money($wallet->balance ?? '0', $wallet->currency ?? 'USD')?>
+      <?=windels_money($wallet->balance ?? '0', $wallet->currency ?? windels_base_currency())?>
     </div>
     <div class="row mt-3">
       <a href="<?=site_url('dashboard/add-funds')?>" class="btn btn-primary btn-sm">Add funds</a>

@@ -87,7 +87,12 @@ class SeedTest extends TestCase
         $this->assertArrayHasKey('active_homepage', $settings);
         $this->assertSame('AURORA', $settings['active_homepage'][1], 'default homepage is AURORA');
         $this->assertArrayHasKey('base_currency', $settings);
-        $this->assertSame('USD', $settings['base_currency'][1]);
+        $this->assertSame('NGN', $settings['base_currency'][1]);
+
+        // Deposit bounds must be denominated in the base currency. The old
+        // 5 / 10000 pair was dollars; leaving it would cap deposits at ₦10k.
+        $this->assertSame('500.00000000', $settings['min_deposit'][1]);
+        $this->assertSame('5000000.00000000', $settings['max_deposit'][1]);
         $this->assertArrayHasKey('maintenance_mode', $settings);
         $this->assertFalse($settings['maintenance_mode'][1]);
 

@@ -8,9 +8,35 @@ if (!function_exists('windels_public_id')) {
         return bin2hex(random_bytes(13));
     }
 }
+if (!function_exists('windels_base_currency')) {
+    /**
+     * The panel's base currency code.
+     *
+     * Every wallet, order and service transaction is denominated in this.
+     * Reads application/config/windels.php so a deployment can redenominate in
+     * one place; falls back to NGN when the config is unavailable (CLI helpers,
+     * early bootstrap) rather than guessing a foreign currency.
+     */
+    function windels_base_currency(){
+        static $code = NULL;
+        if ($code !== NULL) return $code;
+        $code = 'NGN';
+        if (function_exists('get_instance')) {
+            $ci = @get_instance();
+            if ($ci && isset($ci->config)) {
+                $cfg = $ci->config->item('windels');
+                if (is_array($cfg) && !empty($cfg['base_currency'])) {
+                    $code = strtoupper($cfg['base_currency']);
+                }
+            }
+        }
+        return $code;
+    }
+}
 if (!function_exists('windels_money')) {
-    function windels_money($amount, $currency='USD'){
-        $sym = array('USD'=>'$','EUR'=>'€','GBP'=>'£','NGN'=>'₦')[strtoupper($currency)] ?? $currency.' ';
+    function windels_money($amount, $currency=NULL){
+        if ($currency === NULL) $currency = windels_base_currency();
+        $sym = array('NGN'=>'₦','USD'=>'$','EUR'=>'€','GBP'=>'£','INR'=>'₹','BRL'=>'R$')[strtoupper($currency)] ?? $currency.' ';
         return $sym . number_format((float)$amount, 2, '.', ',');
     }
 }

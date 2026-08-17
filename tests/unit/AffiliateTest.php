@@ -200,7 +200,7 @@ class AffiliateTest extends TestCase
         $ci = $this->fresh();
         $ci->referral = (object)array('id'=>31,'referrer_id'=>1,'referred_id'=>2,'referral_account_id'=>21);
         $svc = new AffiliateService();
-        $commission = (object)array('id'=>77,'referral_id'=>31,'order_id'=>9,'amount'=>'1.00000000','currency'=>'USD','status'=>'PENDING');
+        $commission = (object)array('id'=>77,'referral_id'=>31,'order_id'=>9,'amount'=>'1.00000000','currency'=>'NGN','status'=>'PENDING');
         $ci->commissions[77] = $commission;
 
         $before = $ci->wallet->balance;
@@ -219,7 +219,7 @@ class AffiliateTest extends TestCase
     {
         $ci = $this->fresh();
         $svc = new AffiliateService();
-        $paid = (object)array('id'=>78,'referral_id'=>31,'amount'=>'1.00000000','currency'=>'USD','status'=>'PAID');
+        $paid = (object)array('id'=>78,'referral_id'=>31,'amount'=>'1.00000000','currency'=>'NGN','status'=>'PAID');
         $res = $svc->pay($paid);
         $this->assertFalse($res['ok']);
         $this->assertSame('NOT_PENDING', $res['code']);
@@ -232,7 +232,7 @@ class AffiliateTest extends TestCase
         $ci->referral = (object)array('id'=>31,'referrer_id'=>1,'referred_id'=>2,'referral_account_id'=>21);
         $ci->claim_fails = true;    // another worker won the compare-and-set
         $svc = new AffiliateService();
-        $commission = (object)array('id'=>79,'referral_id'=>31,'order_id'=>9,'amount'=>'2.00000000','currency'=>'USD','status'=>'PENDING');
+        $commission = (object)array('id'=>79,'referral_id'=>31,'order_id'=>9,'amount'=>'2.00000000','currency'=>'NGN','status'=>'PENDING');
         $ci->commissions[79] = $commission;
 
         $res = $svc->pay($commission);
@@ -245,7 +245,7 @@ class AffiliateTest extends TestCase
         $ci = $this->fresh();
         $ci->referral = (object)array('id'=>31,'referrer_id'=>1,'referred_id'=>2,'referral_account_id'=>21);
         $svc = new AffiliateService();
-        $commission = (object)array('id'=>80,'referral_id'=>31,'order_id'=>9,'amount'=>'3.00000000','currency'=>'USD','status'=>'PENDING');
+        $commission = (object)array('id'=>80,'referral_id'=>31,'order_id'=>9,'amount'=>'3.00000000','currency'=>'NGN','status'=>'PENDING');
         $ci->commissions[80] = $commission;
 
         $svc->pay($commission);
@@ -264,8 +264,8 @@ class AffiliateTest extends TestCase
         $ci->referral = (object)array('id'=>31,'referrer_id'=>1,'referred_id'=>2,'referral_account_id'=>21);
         $ci->settings['referral_min_payout'] = '0.50000000';
         $ci->payable = array(
-            (object)array('id'=>90,'referral_id'=>31,'order_id'=>9,'amount'=>'1.00000000','currency'=>'USD','status'=>'PENDING','referrer_id'=>1),
-            (object)array('id'=>91,'referral_id'=>31,'order_id'=>10,'amount'=>'0.10000000','currency'=>'USD','status'=>'PENDING','referrer_id'=>1),
+            (object)array('id'=>90,'referral_id'=>31,'order_id'=>9,'amount'=>'1.00000000','currency'=>'NGN','status'=>'PENDING','referrer_id'=>1),
+            (object)array('id'=>91,'referral_id'=>31,'order_id'=>10,'amount'=>'0.10000000','currency'=>'NGN','status'=>'PENDING','referrer_id'=>1),
         );
         $svc = new AffiliateService();
         $res = $svc->pay_due();
@@ -281,7 +281,7 @@ class AffiliateTest extends TestCase
     {
         $ci = $this->fresh();
         $ci->referral = (object)array('id'=>31,'referrer_id'=>1,'referred_id'=>2,'referral_account_id'=>21);
-        $ci->commissions[77] = (object)array('id'=>77,'referral_id'=>31,'order_id'=>9,'amount'=>'1.00000000','currency'=>'USD','status'=>'PENDING');
+        $ci->commissions[77] = (object)array('id'=>77,'referral_id'=>31,'order_id'=>9,'amount'=>'1.00000000','currency'=>'NGN','status'=>'PENDING');
         $ci->commission_for_order = $ci->commissions[77];
         $svc = new AffiliateService();
 
@@ -479,8 +479,8 @@ class AffFakeCI {
         $this->referrer = (object)array('id'=>1,'status'=>'ACTIVE','referral_code'=>'REF12345');
         $this->referred = (object)array('id'=>2,'status'=>'ACTIVE','referral_code'=>'REF67890');
         $this->order    = (object)array('id'=>9,'public_id'=>'ORD1','user_id'=>2,'status'=>'COMPLETED',
-                                        'charge'=>'20.00000000','refunded_amount'=>'0.00000000','currency'=>'USD');
-        $this->wallet   = (object)array('id'=>11,'user_id'=>1,'balance'=>'50.00000000','currency'=>'USD');
+                                        'charge'=>'20.00000000','refunded_amount'=>'0.00000000','currency'=>'NGN');
+        $this->wallet   = (object)array('id'=>11,'user_id'=>1,'balance'=>'50.00000000','currency'=>'NGN');
         $this->db   = new AffFakeDb($this);
         $this->load = new AffFakeLoader($this);
 

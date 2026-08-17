@@ -71,7 +71,7 @@ $user_rate = $user_rate ?? null;
   <aside class="space-y-6">
     <div class="card">
       <h3 class="card-title">Wallet</h3>
-      <div class="text-3xl font-bold" style="font-family:var(--font-display)"><?=windels_money($wallet->balance ?? '0', $wallet->currency ?? 'USD')?></div>
+      <div class="text-3xl font-bold" style="font-family:var(--font-display)"><?=windels_money($wallet->balance ?? '0', $wallet->currency ?? windels_base_currency())?></div>
       <?php if (bccomp($wallet->balance ?? '0', '0', 8) <= 0): ?>
         <div class="alert alert-warning mt-3 mb-0">Your wallet is empty. Add funds before placing an order.</div>
       <?php endif; ?>
@@ -112,6 +112,9 @@ $user_rate = $user_rate ?? null;
       submit=document.getElementById('ws-submit');
 
   // Service metadata is embedded on the option; live lookup is purely client-side.
+  // Currency symbol from the server so live totals match server-rendered prices.
+  var sym=<?=json_encode(trim(str_replace(array('0','.',','), '', windels_money(0))))?>;
+  function fmt(v){return sym+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
   function recalc(){
     var opt=sel.options[sel.selectedIndex], rate=0, min=1, max=0, step=1;
     if (opt && opt.value) {
@@ -127,7 +130,7 @@ $user_rate = $user_rate ?? null;
     }
     var q=Math.max(min, parseInt(qty.value||'0',10)||0);
     var v=(rate/1000)*q;
-    total.textContent='$'+v.toFixed(2);
+    total.textContent=fmt(v);
     submit.disabled = !opt.value || q<=0;
   }
   sel.addEventListener('change', recalc);

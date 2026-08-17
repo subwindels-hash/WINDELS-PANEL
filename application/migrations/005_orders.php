@@ -28,7 +28,7 @@ class Migration_Orders extends CI_Migration {
               charge DECIMAL(20,8) NOT NULL COMMENT 'what the customer paid',
               rate_at_order DECIMAL(20,8) NOT NULL COMMENT 'resolved price per 1000 at order time',
               provider_charge DECIMAL(20,8) NULL COMMENT 'frozen provider cost at order time (§56)',
-              currency CHAR(3) NOT NULL DEFAULT 'USD',
+              currency CHAR(3) NOT NULL DEFAULT 'NGN',
               fields JSON NULL COMMENT 'dynamic per service_type',
               remains INT NULL COMMENT 'for PARTIAL',
               start_count INT NULL,

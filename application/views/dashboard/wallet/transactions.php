@@ -3,7 +3,7 @@
   <div class="lg:col-span-1">
     <div class="card">
       <div class="card-meta">Current balance</div>
-      <div class="mt-1 text-3xl font-bold" style="font-family:var(--font-display)"><?=windels_money($wallet->balance ?? '0', $wallet->currency ?? 'USD')?></div>
+      <div class="mt-1 text-3xl font-bold" style="font-family:var(--font-display)"><?=windels_money($wallet->balance ?? '0', $wallet->currency ?? windels_base_currency())?></div>
       <a class="btn btn-primary btn-block btn-sm mt-3" href="<?=site_url('dashboard/add-funds')?>">Add funds</a>
     </div>
   </div>

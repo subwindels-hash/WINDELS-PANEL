@@ -193,7 +193,7 @@ class Api_v1 extends MY_Controller {
         $wallet = $this->db->where('user_id', $this->user->id)->get('wallets')->row();
         $this->ok(array(
             'balance'  => $wallet ? (string)$wallet->balance : '0.00000000',
-            'currency' => $wallet ? $wallet->currency : 'USD',
+            'currency' => $wallet ? $wallet->currency : windels_base_currency(),
         ));
     }
 
@@ -213,7 +213,7 @@ class Api_v1 extends MY_Controller {
             'earned'    => (string)$stats['earned'],
             'pending'   => (string)$stats['pending'],
             'paid'      => (string)$stats['paid'],
-            'currency'  => 'USD',
+            'currency'  => windels_base_currency(),
         ));
     }
 

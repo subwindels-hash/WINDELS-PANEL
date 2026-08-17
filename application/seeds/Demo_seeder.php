@@ -44,7 +44,7 @@ class Demo_seeder extends Seeder {
             'api_key_encrypted'     => $enc,
             'api_type'              => 'MOCK',
             'status'                => 'ACTIVE',
-            'currency'              => 'USD',
+            'currency'              => windels_base_currency(),
             'balance'               => '1000.00000000',
             'timeout_ms'            => 15000,
             'retry_policy'          => json_encode(array('maxRetries'=>3,'backoffMs'=>array(500,1500,4000))),
@@ -230,7 +230,7 @@ class Demo_seeder extends Seeder {
             $wallet_id = $this->insert_once('wallets', array('user_id'=>$uid), array(
                 'public_id' => $this->pid(),
                 'balance'   => '0.00000000',
-                'currency'  => 'USD',
+                'currency'  => windels_base_currency(),
             ));
             $target = $balances[$username] ?? '0.00000000';
             if (bccomp($target, '0', 8) <= 0) continue;
@@ -248,7 +248,7 @@ class Demo_seeder extends Seeder {
                 'amount'          => $target,
                 'balance_before'  => '0.00000000',
                 'balance_after'   => $target,
-                'currency'        => 'USD',
+                'currency'        => windels_base_currency(),
                 'reference_type'  => 'Seed',
                 'reference_id'    => 'demo',
                 'note'            => 'Demo opening balance',
@@ -264,7 +264,7 @@ class Demo_seeder extends Seeder {
                     'account'               => $entry[0],
                     'direction'             => $entry[1],
                     'amount'                => $target,
-                    'currency'              => 'USD',
+                    'currency'              => windels_base_currency(),
                     'created_at'            => $this->now(),
                 ));
                 $this->bump('ledger_entries','inserted');
@@ -311,7 +311,7 @@ class Demo_seeder extends Seeder {
                 'charge'              => $charge,
                 'rate_at_order'       => $service->rate,
                 'provider_charge'     => $pcharge,
-                'currency'            => 'USD',
+                'currency'            => windels_base_currency(),
                 'start_count'         => ($status === 'PENDING') ? NULL : 1000 + $i * 37,
                 'remains'             => ($status === 'PARTIAL') ? (int)round($qty * 0.2) : (($status === 'COMPLETED') ? 0 : NULL),
                 'refunded_amount'     => ($status === 'PARTIAL') ? bcmul($charge, '0.2', 8) : '0.00000000',
@@ -371,7 +371,7 @@ class Demo_seeder extends Seeder {
             'order_id'    => $order ? $order->id : NULL,
         ), array(
             'amount'   => $amount,
-            'currency' => 'USD',
+            'currency' => windels_base_currency(),
             'status'   => 'PENDING',
         ));
     }

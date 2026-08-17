@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS wallets (
   public_id CHAR(26) NOT NULL UNIQUE,
   user_id BIGINT UNSIGNED NOT NULL UNIQUE,
   balance DECIMAL(20,8) NOT NULL DEFAULT 0.00000000,
-  currency CHAR(3) NOT NULL DEFAULT 'USD',
+  currency CHAR(3) NOT NULL DEFAULT 'NGN',
   total_deposited DECIMAL(20,8) NOT NULL DEFAULT 0.00000000,
   total_spent DECIMAL(20,8) NOT NULL DEFAULT 0.00000000,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -159,7 +159,7 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
   amount DECIMAL(20,8) NOT NULL,
   balance_before DECIMAL(20,8) NOT NULL,
   balance_after DECIMAL(20,8) NOT NULL,
-  currency CHAR(3) NOT NULL DEFAULT 'USD',
+  currency CHAR(3) NOT NULL DEFAULT 'NGN',
   reference_type VARCHAR(64) NULL COMMENT 'Order|PaymentTransaction|...',
   reference_id VARCHAR(64) NULL,
   note VARCHAR(255) NULL,
@@ -311,7 +311,7 @@ CREATE TABLE IF NOT EXISTS providers (
   api_key_encrypted VARCHAR(512) NOT NULL COMMENT 'encrypted at rest, never logged',
   api_type VARCHAR(32) NOT NULL DEFAULT 'STANDARD_SMM',
   status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
-  currency CHAR(3) NOT NULL DEFAULT 'USD',
+  currency CHAR(3) NOT NULL DEFAULT 'NGN',
   balance DECIMAL(20,8) NULL COMMENT 'last known provider balance',
   timeout_ms INT NOT NULL DEFAULT 15000,
   retry_policy JSON NULL COMMENT '{maxRetries, backoffMs[]}',
@@ -394,7 +394,7 @@ CREATE TABLE IF NOT EXISTS orders (
   charge DECIMAL(20,8) NOT NULL COMMENT 'what the customer paid',
   rate_at_order DECIMAL(20,8) NOT NULL COMMENT 'resolved price per 1000 at order time',
   provider_charge DECIMAL(20,8) NULL COMMENT 'frozen provider cost at order time (§56)',
-  currency CHAR(3) NOT NULL DEFAULT 'USD',
+  currency CHAR(3) NOT NULL DEFAULT 'NGN',
   fields JSON NULL COMMENT 'dynamic per service_type',
   remains INT NULL COMMENT 'for PARTIAL',
   start_count INT NULL,
@@ -519,7 +519,7 @@ CREATE TABLE IF NOT EXISTS dripfeed_orders (
   runs_completed INT NOT NULL DEFAULT 0,
   interval_minutes INT NOT NULL,
   charge DECIMAL(20,8) NOT NULL DEFAULT 0.00000000 COMMENT 'total reserved charge',
-  currency CHAR(3) NOT NULL DEFAULT 'USD',
+  currency CHAR(3) NOT NULL DEFAULT 'NGN',
   fields JSON NULL,
   start_at DATETIME NULL,
   next_run_at DATETIME NULL,
@@ -1021,7 +1021,7 @@ CREATE TABLE IF NOT EXISTS service_transactions (
   status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING|PROCESSING|SUCCESSFUL|FAILED|CANCELLED|REFUNDED',
   amount DECIMAL(20,8) NOT NULL COMMENT 'what the customer paid',
   provider_cost DECIMAL(20,8) NULL COMMENT 'frozen at request time (§15)',
-  currency CHAR(3) NOT NULL DEFAULT 'USD',
+  currency CHAR(3) NOT NULL DEFAULT 'NGN',
   wallet_transaction_id BIGINT UNSIGNED NULL COMMENT 'the debit; NULL until charged',
   refunded_amount DECIMAL(20,8) NOT NULL DEFAULT 0.00000000,
   provider_reference VARCHAR(128) NULL,
@@ -1134,5 +1134,61 @@ CREATE TABLE IF NOT EXISTS vtu_transactions (
   INDEX idx_vtx_recipient (recipient),
   INDEX idx_vtx_type (service_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- migration 011_base_currency_ngn
+-- ---------------------------------------------------------------------
+
+ALTER TABLE wallets MODIFY currency CHAR(3) NOT NULL DEFAULT 'NGN';
+
+ALTER TABLE wallet_transactions MODIFY currency CHAR(3) NOT NULL DEFAULT 'NGN';
+
+ALTER TABLE providers MODIFY currency CHAR(3) NOT NULL DEFAULT 'NGN';
+
+ALTER TABLE orders MODIFY currency CHAR(3) NOT NULL DEFAULT 'NGN';
+
+ALTER TABLE dripfeed_orders MODIFY currency CHAR(3) NOT NULL DEFAULT 'NGN';
+
+ALTER TABLE service_transactions MODIFY currency CHAR(3) NOT NULL DEFAULT 'NGN';
+
+UPDATE wallets SET currency = 'NGN' WHERE currency = 'USD';
+
+UPDATE wallet_transactions SET currency = 'NGN' WHERE currency = 'USD';
+
+UPDATE ledger_entries SET currency = 'NGN' WHERE currency = 'USD';
+
+UPDATE orders SET currency = 'NGN' WHERE currency = 'USD';
+
+UPDATE dripfeed_orders SET currency = 'NGN' WHERE currency = 'USD';
+
+UPDATE payment_transactions SET currency = 'NGN' WHERE currency = 'USD';
+
+UPDATE referral_commissions SET currency = 'NGN' WHERE currency = 'USD';
+
+UPDATE service_transactions SET currency = 'NGN' WHERE currency = 'USD';
+
+UPDATE currencies SET is_base = 0;
+
+UPDATE currencies SET is_base = 1, exchange_rate = '1.00000000', is_active = 1 WHERE code = 'NGN';
+
+UPDATE currencies SET exchange_rate = '0.00064516' WHERE code = 'USD';
+
+UPDATE currencies SET exchange_rate = '0.00059355' WHERE code = 'EUR';
+
+UPDATE currencies SET exchange_rate = '0.00050968' WHERE code = 'GBP';
+
+UPDATE currencies SET exchange_rate = '0.05354839' WHERE code = 'INR';
+
+UPDATE currencies SET exchange_rate = '0.00348387' WHERE code = 'BRL';
+
+UPDATE settings SET setting_value = JSON_OBJECT('value', 'NGN') WHERE setting_key = 'base_currency';
+
+UPDATE settings SET setting_value = JSON_OBJECT('value', '500.00000000') WHERE setting_key = 'min_deposit';
+
+UPDATE settings SET setting_value = JSON_OBJECT('value', '5000000.00000000') WHERE setting_key = 'max_deposit';
+
+UPDATE settings SET setting_value = JSON_OBJECT('value', '100.00000000') WHERE setting_key = 'referral_min_payout';
+
+UPDATE payment_methods SET min_amount = '500.00000000', max_amount = '5000000.00000000', currencies = JSON_ARRAY('NGN');
 
 SET FOREIGN_KEY_CHECKS = 1;

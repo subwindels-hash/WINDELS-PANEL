@@ -126,15 +126,18 @@ migrations (unsafe — they have run in real deployments).
 from 001, matching `migration_version`", keeping the ordering guarantee that
 gives the test its value.
 
-### 6.2 Base currency is USD; the spec shows ₦
+### 6.2 Base currency is USD; the spec shows ₦ — **RESOLVED (session 22)**
 
-`config/windels.php` sets `base_currency = 'USD'` and both money tables default
+`config/windels.php` set `base_currency = 'USD'` and both money tables defaulted
 `currency CHAR(3) NOT NULL DEFAULT 'USD'`. §16 shows balances as `₦XX,XXX.XX`,
 and VTU/NIN/BVN/exam-PIN services are Nigeria-specific.
 
-A `currencies` table already exists (PK `code`, `exchange_rate`), so multi-currency
-is supported — but the **default** is wrong for the target market. Changing it
-affects existing rows and every seeded price.
+**Resolved:** the panel is now denominated in Naira. See
+`docs/session-22-currency.md`. Migration `011_base_currency_ngn` moves the column
+defaults and relabels existing rows; `currencies` is rebased so NGN sits at 1.0;
+`windels_base_currency()` is now the single source of truth and the ~20 hardcoded
+`'USD'` fallbacks scattered through libraries, controllers, models and views were
+replaced with calls to it.
 
 ### 6.3 Session numbering has diverged
 

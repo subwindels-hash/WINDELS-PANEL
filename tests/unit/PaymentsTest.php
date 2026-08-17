@@ -79,7 +79,7 @@ class PaymentsTest extends TestCase
     {
         $ci = $this->fresh();
         $svc = new PaymentService();
-        $res = $svc->deposit($ci->user, array('payment_method'=>'manual','amount'=>100,'currency'=>'USD'));
+        $res = $svc->deposit($ci->user, array('payment_method'=>'manual','amount'=>100,'currency'=>'NGN'));
         $this->assertTrue($res['ok'], $res['error'] ?? '');
         $tx = $res['transaction'];
         $this->assertSame('PENDING', $tx->status);
@@ -209,8 +209,8 @@ class PayFakeCI {
             'min_amount'=>'5.00000000','max_amount'=>'5000.00000000',
             'fee_percent'=>'2.5','fee_fixed'=>'0.30','bonus_percent'=>'0','instructions'=>'Bank details here.',
         );
-        $this->wallet = (object)array('id'=>11,'balance'=>'100.00000000','currency'=>'USD');
-        $this->tx = (object)array('id'=>42,'public_id'=>'PAY1','status'=>'PENDING','amount'=>'100','credited_amount'=>'97.2','fee'=>'2.8','bonus'=>'0','user_id'=>7,'idempotency_key'=>null,'currency'=>'USD');
+        $this->wallet = (object)array('id'=>11,'balance'=>'100.00000000','currency'=>'NGN');
+        $this->tx = (object)array('id'=>42,'public_id'=>'PAY1','status'=>'PENDING','amount'=>'100','credited_amount'=>'97.2','fee'=>'2.8','bonus'=>'0','user_id'=>7,'idempotency_key'=>null,'currency'=>'NGN');
         $this->db = new PayFakeDb($this);
         $this->input = new PayFakeInput();
         $this->auth = new PayFakeAuth($this);

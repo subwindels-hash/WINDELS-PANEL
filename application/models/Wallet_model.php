@@ -10,7 +10,7 @@ class Wallet_model extends MY_Model {
         if ($row) return $row;
         $this->db->insert($this->table, array(
             'public_id'=>$this->new_public_id(), 'user_id'=>$user_id,
-            'balance'=>'0.00000000', 'currency'=>'USD',
+            'balance'=>'0.00000000', 'currency'=>windels_base_currency(),
             'created_at'=>$this->now_utc(), 'updated_at'=>$this->now_utc(),
         ));
         return $this->find_by_id($this->db->insert_id());

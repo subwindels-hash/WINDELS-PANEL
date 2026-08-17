@@ -122,7 +122,20 @@ class SeedRunTest extends TestCase
         $base = 0;
         foreach ($this->rows('currencies') as $c) { $base += (int)$c['is_base']; }
         $this->assertSame(1, $base, 'exactly one base currency');
-        $this->assertNotNull($this->firstWhere('currencies', 'code', 'USD'));
+
+        // The panel is denominated in naira, so NGN must be the base and must
+        // sit at exactly 1.0 — every other rate is quoted against it.
+        $ngn = $this->firstWhere('currencies', 'code', 'NGN');
+        $this->assertNotNull($ngn, 'NGN is seeded');
+        $this->assertSame(1, (int)$ngn['is_base'], 'NGN is the base currency');
+        $this->assertSame(0, bccomp($ngn['exchange_rate'], '1', 8), 'base rate is exactly 1');
+
+        // Foreign currencies stay available for display, but none may claim
+        // to be base and none may carry a stale USD-era rate of 1.0.
+        $usd = $this->firstWhere('currencies', 'code', 'USD');
+        $this->assertNotNull($usd, 'USD is still offered as a display currency');
+        $this->assertSame(0, (int)$usd['is_base'], 'USD is no longer the base');
+        $this->assertSame(-1, bccomp($usd['exchange_rate'], '1', 8), 'USD is worth many naira, so its rate is well under 1');
     }
 
     public function testAllPaymentGatewaysExceptManualStartDisabled()

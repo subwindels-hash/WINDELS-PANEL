@@ -131,7 +131,7 @@ class TransactionEngine {
             'amount'          => $amount,
             'provider_cost'   => isset($spec['provider_cost']) && $spec['provider_cost'] !== null
                                     ? $this->money($spec['provider_cost']) : null,
-            'currency'        => isset($wallet->currency) ? $wallet->currency : 'USD',
+            'currency'        => isset($wallet->currency) ? $wallet->currency : windels_base_currency(),
             'idempotency_key' => $idem,
             'source'          => isset($spec['source']) ? $spec['source'] : 'WEB',
             'metadata'        => isset($spec['metadata']) ? json_encode($spec['metadata']) : null,

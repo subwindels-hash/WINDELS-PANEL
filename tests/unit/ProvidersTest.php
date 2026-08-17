@@ -275,7 +275,7 @@ class ProvidersFakeDb {
         if ($t==='providers') return (object)array(
             'id'=>1,'public_id'=>'01PROVIDER','name'=>'Acme','api_url'=>'https://x',
             'api_key_encrypted'=>'enc','api_type'=>'STANDARD_SMM','status'=>'ACTIVE',
-            'currency'=>'USD','balance'=>null,'timeout_ms'=>15000,'sync_interval_minutes'=>60,
+            'currency'=>'NGN','balance'=>null,'timeout_ms'=>15000,'sync_interval_minutes'=>60,
             'rate_multiplier'=>'1.00000000','markup'=>'0.00000000',
         );
         return null;

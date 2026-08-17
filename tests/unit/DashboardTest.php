@@ -183,7 +183,7 @@ class DashboardFakeCI {
     public $wallet;
     public function __construct() {
         $GLOBALS['__fake_ci'] = $this;
-        $this->wallet = (object)array('id'=>11,'user_id'=>7,'balance'=>'42.00000000','currency'=>'USD');
+        $this->wallet = (object)array('id'=>11,'user_id'=>7,'balance'=>'42.00000000','currency'=>'NGN');
         $this->load = new DashboardFakeLoader($this);
         $this->db   = new DashboardFakeDb();
     }
@@ -256,12 +256,12 @@ class DashboardFakeDb {
         }
         if ($t==='wallets') {
             return new DashboardFakeResult(array(
-                (object)array('id'=>7,'balance'=>'42.00000000','currency'=>'USD'),
+                (object)array('id'=>7,'balance'=>'42.00000000','currency'=>'NGN'),
             ));
         }
         if ($t==='wallet_transactions') return new DashboardFakeResult(array(
-            (object)array('public_id'=>'wt1','direction'=>'CREDIT','amount'=>'100.00000000','currency'=>'USD','type'=>'DEPOSIT','created_at'=>date('Y-m-d H:i:s')),
-            (object)array('public_id'=>'wt2','direction'=>'DEBIT','amount'=>'1.20000000','currency'=>'USD','type'=>'ORDER_CHARGE','created_at'=>date('Y-m-d H:i:s')),
+            (object)array('public_id'=>'wt1','direction'=>'CREDIT','amount'=>'100.00000000','currency'=>'NGN','type'=>'DEPOSIT','created_at'=>date('Y-m-d H:i:s')),
+            (object)array('public_id'=>'wt2','direction'=>'DEBIT','amount'=>'1.20000000','currency'=>'NGN','type'=>'ORDER_CHARGE','created_at'=>date('Y-m-d H:i:s')),
         ));
         if ($t==='notifications') return new DashboardFakeResult(array(
             (object)array('public_id'=>'n1','title'=>'Order complete','body'=>'done','channel'=>'IN_APP','is_read'=>0,'created_at'=>date('Y-m-d H:i:s')),
@@ -275,8 +275,8 @@ class DashboardFakeDb {
                 ));
             }
             return new DashboardFakeResult(array(
-                (object)array('public_id'=>'o1','service_id'=>1,'service_name'=>'IG Followers','quantity'=>100,'charge'=>'1.20000000','currency'=>'USD','status'=>'COMPLETED','created_at'=>date('Y-m-d H:i:s')),
-                (object)array('public_id'=>'o2','service_id'=>2,'service_name'=>'TT Likes','quantity'=>50,'charge'=>'12.00000000','currency'=>'USD','status'=>'IN_PROGRESS','created_at'=>date('Y-m-d H:i:s')),
+                (object)array('public_id'=>'o1','service_id'=>1,'service_name'=>'IG Followers','quantity'=>100,'charge'=>'1.20000000','currency'=>'NGN','status'=>'COMPLETED','created_at'=>date('Y-m-d H:i:s')),
+                (object)array('public_id'=>'o2','service_id'=>2,'service_name'=>'TT Likes','quantity'=>50,'charge'=>'12.00000000','currency'=>'NGN','status'=>'IN_PROGRESS','created_at'=>date('Y-m-d H:i:s')),
             ));
         }
         return new DashboardFakeResult(array());

@@ -418,7 +418,7 @@ class AdminFakeCI {
 
         $this->staff    = (object)array('id'=>2,'username'=>'agent','role'=>'STAFF','status'=>'ACTIVE');
         $this->customer = (object)array('id'=>7,'username'=>'buyer','role'=>'CUSTOMER','status'=>'ACTIVE');
-        $this->wallet   = (object)array('id'=>11,'user_id'=>7,'balance'=>'100.00000000','currency'=>'USD');
+        $this->wallet   = (object)array('id'=>11,'user_id'=>7,'balance'=>'100.00000000','currency'=>'NGN');
         $this->service  = (object)array('id'=>3,'public_id'=>'SVC1','cancel_supported'=>1,'refill_supported'=>1);
 
         $charge = '12.00000000';
@@ -426,7 +426,7 @@ class AdminFakeCI {
             'id'=>21,'public_id'=>'ORD1','user_id'=>7,'service_id'=>3,'provider_id'=>null,
             'provider_order_id'=>null,'status'=>'PROCESSING','quantity'=>1000,'charge'=>$charge,
             'rate_at_order'=>'12.00000000','refunded_amount'=>'0.00000000','remains'=>null,
-            'currency'=>'USD','link'=>'https://x.com/a','source'=>'WEB',
+            'currency'=>'NGN','link'=>'https://x.com/a','source'=>'WEB',
         );
         // The "stored" row the service reads back after each write.
         $this->order_row = (object)array_merge((array)$this->order, array());
@@ -436,7 +436,7 @@ class AdminFakeCI {
             'bonus_percent'=>'0','instructions'=>'Bank details');
         $this->tx = (object)array('id'=>42,'public_id'=>'PAY1','user_id'=>7,'status'=>'PENDING',
             'amount'=>'50.00000000','credited_amount'=>'50.00000000','fee'=>'0','bonus'=>'0',
-            'currency'=>'USD','idempotency_key'=>'payment:deposit:seed','provider_tx_id'=>null,
+            'currency'=>'NGN','idempotency_key'=>'payment:deposit:seed','provider_tx_id'=>null,
             'wallet_transaction_id'=>null);
 
         $this->ticket = (object)array('id'=>31,'public_id'=>'TCK1','user_id'=>7,'subject'=>'Help',

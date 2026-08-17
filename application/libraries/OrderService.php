@@ -385,7 +385,7 @@ class OrderService {
             'charge'            => $ctx['charge'],
             'rate_at_order'     => $ctx['rate'],
             'provider_charge'   => $ctx['provider_charge'],
-            'currency'          => 'USD',
+            'currency'          => windels_base_currency(),
             'fields'            => !empty($ctx['input']['fields']) ? json_encode($ctx['input']['fields']) : null,
             'source'            => $ctx['input']['source'] ?? 'WEB',
             'note'              => $ctx['input']['note'] ?? null,

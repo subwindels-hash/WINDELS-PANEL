@@ -40,6 +40,11 @@ class Wallet extends Auth_Controller {
         $wallet = $this->Wallet_model->for_user($this->current_user->id);
         $methods = $this->db->where('is_active',1)->order_by('sorting','ASC')->get('payment_methods')->result();
 
+        // Deposit bounds come from settings, not the view. They were hardcoded
+        // as 5/10000 in the template, which silently contradicted the settings
+        // table and made no sense at all once the base currency became naira.
+        $this->load->model('Setting_model');
+
         $this->load->view('layouts/app', array(
             'title' => 'Add Funds',
             'nav_active' => 'dashboard/add-funds',
@@ -49,6 +54,9 @@ class Wallet extends Auth_Controller {
             'permissions' => $this->auth->permissions(),
             'wallet' => $wallet,
             'methods' => $methods,
+            'min_deposit' => $this->Setting_model->get('min_deposit', '500.00000000'),
+            'max_deposit' => $this->Setting_model->get('max_deposit', '5000000.00000000'),
+            'base_currency' => windels_base_currency(),
         ));
     }
 
@@ -64,7 +72,7 @@ class Wallet extends Auth_Controller {
         $res = $this->paymentservice->deposit($this->current_user, array(
             'payment_method' => $this->input->post('payment_method', true),
             'amount' => $this->input->post('amount'),
-            'currency' => 'USD',
+            'currency' => windels_base_currency(),
         ));
         if (empty($res['ok'])) {
             $this->session->set_flashdata('error', $res['error'] ?? 'Could not initiate payment');
