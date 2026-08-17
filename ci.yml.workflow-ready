@@ -79,3 +79,19 @@ jobs:
             echo "wallets table mutated outside LedgerService" && exit 1
           fi
           echo "ok"
+
+      - name: Auth integrity — hashed passwords, no enumeration, real RBAC
+        run: |
+          # Passwords must be hashed through AuthService::hash_password / password_hash.
+          if grep -RnE "insert\('users'|->insert\(.*users" application/ --include="*.php" | grep -v "seeds/" | grep -v "migrations/"; then
+            echo "direct user insert outside seeder" && exit 1
+          fi
+          # Anti-enumeration: unknown-account logins must run password_verify against a dummy hash.
+          grep -q "DUMMY_BCRYPT" application/libraries/AuthService.php
+          # MFA secrets must be encrypted at rest.
+          grep -q "encryptionservice->encrypt" application/libraries/AuthService.php
+          # The Session 03 RBAC stub must not regress.
+          if grep -Rn "TODO Session 03" application/core/ --include="*.php"; then
+            echo "Session 03 RBAC stub still present" && exit 1
+          fi
+          echo "ok"

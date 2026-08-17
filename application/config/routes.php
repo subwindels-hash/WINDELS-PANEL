@@ -32,8 +32,11 @@ $route['register'] = 'auth/register';
 $route['logout'] = 'auth/logout';
 $route['forgot-password'] = 'auth/forgot_password';
 $route['reset-password/(:any)'] = 'auth/reset_password/$1';
+$route['verify-email/resend'] = 'auth/verify_email_resend';
 $route['verify-email/(:any)'] = 'auth/verify_email/$1';
 $route['verify-email'] = 'auth/verify_email';
+$route['auth/mfa/verify'] = 'auth/mfa_verify';
+$route['auth/mfa/setup'] = 'auth/mfa_setup';
 
 // Dashboard (customer)
 $route['dashboard'] = 'dashboard/dashboard/index';
