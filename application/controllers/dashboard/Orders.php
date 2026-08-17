@@ -13,8 +13,8 @@ class Orders extends Auth_Controller {
 
     public function __construct() {
         parent::__construct();
-        $this->load->model(array('Order_model', 'Service_model', 'Order_status_history_model'));
-        $this->load->library(array('DashboardStats', 'OrderService', 'PricingService', 'form_validation'));
+        $this->load->model(array('Order_model', 'Service_model', 'Order_status_history_model', 'Refill_model'));
+        $this->load->library(array('DashboardStats', 'OrderService', 'PricingService', 'RefillService', 'form_validation'));
     }
 
     public function index() {
@@ -138,6 +138,18 @@ class Orders extends Auth_Controller {
 
     /** Placeholder; mass-order form ships in Session 10. */
     public function mass_order() { redirect('dashboard/new-order'); }
+
+    /** POST /dashboard/orders/:public_id/refill */
+    public function refill($public_id) {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $res = $this->refillservice->request($public_id, $this->current_user);
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error'] ?? 'Could not request refill');
+        } else {
+            $this->session->set_flashdata('success', 'Refill requested.');
+        }
+        redirect('dashboard/orders/'.$public_id);
+    }
 
     /* -------------------------------------------------------------- */
 

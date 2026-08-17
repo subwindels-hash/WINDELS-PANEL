@@ -72,9 +72,14 @@
         <?php elseif ($cancelable): ?>
           <button class="btn btn-secondary btn-block" disabled>Cancellation not supported</button>
         <?php endif; ?>
-        <?php if (!empty($service) && (int)$service->refill_supported === 1): ?>
-          <button class="btn btn-secondary btn-block" disabled>Request refill</button>
-          <p class="hint">Refills ship in Session 10 (Advanced Orders).</p>
+        <?php if (!empty($service) && (int)$service->refill_supported === 1 && in_array($order->status, array('COMPLETED','PARTIAL'), true)): ?>
+          <form method="post" action="<?=site_url('dashboard/orders/'.$order->public_id.'/refill')?>"
+                onsubmit="return confirm('Request a refill for this order?')">
+            <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
+            <button class="btn btn-secondary btn-block" type="submit">Request refill</button>
+          </form>
+        <?php elseif (!empty($service) && (int)$service->refill_supported === 1): ?>
+          <button class="btn btn-secondary btn-block" disabled>Refill available on completion</button>
         <?php endif; ?>
         <a class="btn btn-ghost btn-block" href="<?=site_url('dashboard/orders')?>">← Back to orders</a>
       </div>
