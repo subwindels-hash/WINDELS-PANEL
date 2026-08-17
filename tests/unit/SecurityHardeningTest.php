@@ -209,8 +209,11 @@ class SecurityHardeningTest extends TestCase
 
         $config = file_get_contents(self::$root.'/application/config/windels.php');
         $this->assertStringContainsString('http_allow_private_hosts', $config);
-        $this->assertStringContainsString("getenv('HTTP_ALLOW_PRIVATE_HOSTS')", $config,
+        // Read from the environment (via env_bool, which treats the string
+        // "false" as false — a plain (bool) cast does not), never hardcoded on.
+        $this->assertStringContainsString("env_bool('HTTP_ALLOW_PRIVATE_HOSTS')", $config,
             'the override must be opt-in via env, not hardcoded on');
+        $this->assertStringNotContainsString("=> true", $config);
     }
 
     public function testRedirectsCannotEscapeToOtherProtocols()

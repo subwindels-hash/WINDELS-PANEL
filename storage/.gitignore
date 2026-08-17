@@ -1,0 +1,6 @@
+# Runtime directories must exist in a fresh clone (CI3 silently drops logs if
+# storage/logs is missing), but their contents are never source.
+*
+!.gitignore
+!logs/
+!cache/

@@ -61,7 +61,7 @@ class MailService {
             'created_at'   => gmdate('Y-m-d H:i:s'),
         ));
 
-        if ($ok && getenv('MAIL_LOG')) {
+        if ($ok && env_bool('MAIL_LOG')) {
             log_message('info', "mail queued to {$to} <{$subject}>\n".strip_tags($body_html));
         }
         return $ok;
@@ -84,7 +84,7 @@ class MailService {
         }
         $transport = strtolower((string)$this->ci->Setting_model->get('mail_transport', 'log'));
 
-        if ($transport === 'log' || getenv('MAIL_LOG')) {
+        if ($transport === 'log' || env_bool('MAIL_LOG')) {
             log_message('info', sprintf(
                 "mail[log] to=%s subject=%s\n%s",
                 $mail->to_email, $mail->subject, strip_tags((string)$mail->body_html)

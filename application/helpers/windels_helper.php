@@ -44,3 +44,30 @@ if (!function_exists('csp_nonce_attr')) {
     }
 }
 
+if (!function_exists('env_bool')) {
+    /**
+     * Read a boolean from the environment.
+     *
+     * getenv() returns strings, and every non-empty string is truthy in PHP —
+     * so `(bool)getenv('FLAG')` is TRUE for the literal "false", "0" and "off".
+     * .env.example ships `HTTP_ALLOW_PRIVATE_HOSTS=false`, which under the old
+     * cast silently switched SSRF protection off, and `APP_DEBUG=false`, which
+     * turned on debug logging in production. Anything not recognisably true is
+     * false here.
+     */
+    function env_bool($key, $default = false) {
+        $raw = getenv($key);
+        if ($raw === false || $raw === '') return (bool)$default;
+        return in_array(strtolower(trim($raw)), array('1', 'true', 'yes', 'on'), TRUE);
+    }
+}
+
+if (!function_exists('env_str')) {
+    /** Trimmed string from the environment, or $default when unset/blank. */
+    function env_str($key, $default = null) {
+        $raw = getenv($key);
+        if ($raw === false) return $default;
+        $raw = trim($raw);
+        return $raw === '' ? $default : $raw;
+    }
+}
