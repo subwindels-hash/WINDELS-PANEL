@@ -58,6 +58,13 @@ namespace PHPUnit\Framework {
             $e == $a ? self::pass() : self::fail($m ?: 'Failed asserting two values are equal.', 'expected: '.self::export($e)."\n     actual: ".self::export($a));
         }
         public static function assertNotSame($e, $a, $m = '') { $e !== $a ? self::pass() : self::fail($m ?: 'Failed asserting two values are different.'); }
+        public static function assertNotFalse($v, $m = '') { $v !== false ? self::pass() : self::fail($m ?: 'Failed asserting that value is not false.'); }
+        public static function assertNotTrue($v, $m = '') { $v !== true ? self::pass() : self::fail($m ?: 'Failed asserting that value is not true.'); }
+        public static function assertNotEquals($e, $a, $m = '') { $e != $a ? self::pass() : self::fail($m ?: 'Failed asserting two values are not equal.'); }
+        public static function assertIsNumeric($v, $m = '') { is_numeric($v) ? self::pass() : self::fail($m ?: 'Failed asserting that value is numeric.', self::export($v)); }
+        public static function assertIsObject($v, $m = '') { is_object($v) ? self::pass() : self::fail($m ?: 'Failed asserting that value is an object.', self::export($v)); }
+        public static function assertFileDoesNotExist($p, $m = '') { !file_exists($p) ? self::pass() : self::fail($m ?: "Failed asserting that file {$p} does not exist."); }
+        public static function assertStringEndsWith($x, $s, $m = '') { substr((string)$s, -strlen((string)$x)) === (string)$x ? self::pass() : self::fail($m ?: 'Failed asserting that string ends with '.self::export($x).'.'); }
 
         public static function assertCount($n, $x, $m = '')
         {
@@ -137,6 +144,13 @@ namespace {
     $root = dirname(__DIR__);
     $filter = isset($argv[1]) ? $argv[1] : null;
 
+    /** PHPUnit's setUp()/tearDown() are protected; call them the way PHPUnit does. */
+    function invoke_protected($instance, $method) {
+        $ref = new \ReflectionMethod($instance, $method);
+        if (PHP_VERSION_ID < 80100) $ref->setAccessible(true);
+        $ref->invoke($instance);
+    }
+
     $files = glob($root.'/tests/unit/*Test.php');
     sort($files);
 
@@ -170,7 +184,9 @@ namespace {
             if (strpos($method, 'test') !== 0) continue;
             $instance = new $class();
             try {
+                invoke_protected($instance, 'setUp');
                 $instance->$method();
+                invoke_protected($instance, 'tearDown');
                 echo "  ✔ ".$method."\n";
                 $passed++;
             } catch (SkippedTest $e) {

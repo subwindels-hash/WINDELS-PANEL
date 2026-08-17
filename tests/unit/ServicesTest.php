@@ -57,8 +57,10 @@ class ServicesTest extends TestCase
         $this->assertStringContainsString('function remove', $src);
         // Toggle must be POST-only in practice; the controller records a CSRF form.
         $this->assertStringContainsString('service_favorites', $src);
-        // No GET side effects: add/remove do not render forms, they redirect.
-        $this->assertStringNotContainsString('function add(', $src) === false || true;
+        // No GET side effects: add/remove never render a form, they redirect
+        // back to the referring page.
+        $this->assertStringNotContainsString("load->view(", $src);
+        $this->assertStringContainsString('redirect(', $src);
     }
 
     public function testDashboardServicesListsFavorites()

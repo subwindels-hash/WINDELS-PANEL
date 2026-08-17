@@ -182,6 +182,9 @@ class AuthRbacFakeCI {
 
     public function __construct()
     {
+        // Register before constructing anything that calls get_instance()
+        // inside its own constructor (the real libraries below do).
+        $GLOBALS['__fake_ci'] = $this;
         $this->perm_model = new AuthRbacFakePermModel();
         $this->session = new AuthRbacFakeSession();
         $this->load = new AuthRbacFakeLoader($this);
@@ -208,13 +211,13 @@ class AuthRbacFakeLoader {
         return $this;
     }
 
+    /** CI3 assigns models under their own (capitalised) class name. */
     public function model($names) {
         foreach ((array)$names as $name) {
-            $prop = strtolower($name);
-            if (isset($this->ci->$prop)) continue;
-            if ($name === 'Permission_model') $this->ci->$prop = $this->ci->perm_model;
-            elseif (class_exists($name)) $this->ci->$prop = new $name();
-            else $this->ci->$prop = new stdClass();
+            if (isset($this->ci->$name)) continue;
+            if ($name === 'Permission_model') $this->ci->$name = $this->ci->perm_model;
+            elseif (class_exists($name)) $this->ci->$name = new $name();
+            else $this->ci->$name = new stdClass();
         }
         return $this;
     }

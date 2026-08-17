@@ -24,6 +24,8 @@ class FakeDb
     public $raw_updates = array();
 
     private $pending_where = array();
+    private $pending_order = array();
+    private $pending_limit = null;
     private $auto_increment = array();
     private $last_insert_id = 0;
     private $trans_depth = 0;
@@ -103,6 +105,15 @@ class FakeDb
         return $this;
     }
 
+    /**
+     * where_in('col', array(...)) — matched by the sentinel below in matches().
+     */
+    public function where_in($key, array $values)
+    {
+        $this->pending_where[$key] = array('__in' => array_map('strval', $values));
+        return $this;
+    }
+
     public function get($table)
     {
         $this->assertTable($table, 'get');
@@ -112,6 +123,24 @@ class FakeDb
         foreach ($this->rows[$table] as $row) {
             if ($this->matches($row, $where)) $matched[] = (object)$row;
         }
+
+        $order = $this->pending_order; $this->pending_order = array();
+        $limit = $this->pending_limit; $this->pending_limit = null;
+        if ($order) {
+            usort($matched, function($a, $b) use ($order) {
+                foreach ($order as $spec) {
+                    list($col, $dir) = $spec;
+                    $av = isset($a->$col) ? $a->$col : null;
+                    $bv = isset($b->$col) ? $b->$col : null;
+                    $cmp = (is_numeric($av) && is_numeric($bv))
+                        ? ($av <=> $bv) : strcmp((string)$av, (string)$bv);
+                    if ($cmp !== 0) return $dir === 'DESC' ? -$cmp : $cmp;
+                }
+                return 0;
+            });
+        }
+        if ($limit) $matched = array_slice($matched, $limit[1], $limit[0]);
+
         return new FakeDbResult($matched);
     }
 
@@ -177,6 +206,20 @@ class FakeDb
         return true;
     }
 
+    /* ---- ordering / limiting: recorded, then applied in get() ---- */
+
+    public function order_by($key, $dir = 'ASC') {
+        $this->pending_order[] = array((string)$key, strtoupper($dir) === 'DESC' ? 'DESC' : 'ASC');
+        return $this;
+    }
+
+    public function limit($limit, $offset = 0) {
+        $this->pending_limit = array((int)$limit, (int)$offset);
+        return $this;
+    }
+
+    public function select($fields, $escape = null) { return $this; }
+
     public function insert_id() { return $this->last_insert_id; }
 
     public function table_exists($table) { return isset($this->schema[$table]); }
@@ -201,10 +244,24 @@ class FakeDb
         return $w;
     }
 
+    public function count_all_results($table)
+    {
+        $this->assertTable($table, 'count_all_results');
+        $where = $this->takeWhere();
+        $this->pending_order = array(); $this->pending_limit = null;
+        $n = 0;
+        foreach ($this->rows[$table] as $row) if ($this->matches($row, $where)) $n++;
+        return $n;
+    }
+
     private function matches(array $row, array $where)
     {
         foreach ($where as $k => $v) {
             if (!array_key_exists($k, $row)) return false;
+            if (is_array($v) && isset($v['__in'])) {
+                if (!in_array((string)$row[$k], $v['__in'], true)) return false;
+                continue;
+            }
             if ((string)$row[$k] !== (string)$v) return false;
         }
         return true;

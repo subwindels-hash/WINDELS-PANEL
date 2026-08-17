@@ -1,6 +1,11 @@
 <?php
 use PHPUnit\Framework\TestCase;
 
+// Test doubles at the bottom of this file implement ProviderAdapterInterface,
+// which PHP must resolve while compiling the file — before setUpBeforeClass runs.
+if (!defined('BASEPATH')) define('BASEPATH', dirname(__DIR__, 2).'/system/');
+require_once dirname(__DIR__, 2).'/application/libraries/ProviderAdapterInterface.php';
+
 /**
  * Advanced orders tests (Session 10) — refills, drip-feed and subscriptions
  * validation and lifecycle, plus routing/controller/source guarantees.
@@ -18,19 +23,19 @@ class AdvancedOrdersTest extends TestCase
             eval('function get_instance(){ return $GLOBALS["__fake_ci"]; }');
         }
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
-        if (!function_exists('windels_public_id')) require self::$root.'/application/helpers/windels_helper.php';
-        require self::$root.'/application/libraries/OrderStateMachine.php';
-        require self::$root.'/application/libraries/PricingService.php';
-        require self::$root.'/application/libraries/LedgerService.php';
-        require self::$root.'/application/libraries/EncryptionService.php';
-        require self::$root.'/application/libraries/ProviderAdapterInterface.php';
-        require self::$root.'/application/libraries/MockProviderAdapter.php';
-        require self::$root.'/application/libraries/StandardSmmAdapter.php';
-        require self::$root.'/application/libraries/ProviderSyncService.php';
-        require self::$root.'/application/libraries/OrderService.php';
-        require self::$root.'/application/libraries/RefillService.php';
-        require self::$root.'/application/libraries/DripfeedService.php';
-        require self::$root.'/application/libraries/SubscriptionService.php';
+        if (!function_exists('windels_public_id')) require_once self::$root.'/application/helpers/windels_helper.php';
+        require_once self::$root.'/application/libraries/OrderStateMachine.php';
+        require_once self::$root.'/application/libraries/PricingService.php';
+        require_once self::$root.'/application/libraries/LedgerService.php';
+        require_once self::$root.'/application/libraries/EncryptionService.php';
+        require_once self::$root.'/application/libraries/ProviderAdapterInterface.php';
+        require_once self::$root.'/application/libraries/MockProviderAdapter.php';
+        require_once self::$root.'/application/libraries/StandardSmmAdapter.php';
+        require_once self::$root.'/application/libraries/ProviderSyncService.php';
+        require_once self::$root.'/application/libraries/OrderService.php';
+        require_once self::$root.'/application/libraries/RefillService.php';
+        require_once self::$root.'/application/libraries/DripfeedService.php';
+        require_once self::$root.'/application/libraries/SubscriptionService.php';
     }
 
     /* ----------------------------- refill ---------------------------- */
@@ -274,6 +279,9 @@ class AdvFakeCI {
     public $ledger_charges=0, $ledger_refunds=0, $inserts=array();
 
     public function __construct() {
+        // Register before constructing anything that calls get_instance()
+        // inside its own constructor (the real libraries below do).
+        $GLOBALS['__fake_ci'] = $this;
         $this->user = (object)array('id'=>7,'role'=>'CUSTOMER','price_group_id'=>null,'status'=>'ACTIVE');
         $this->service = (object)array(
             'id'=>3,'public_id'=>'01SVC','status'=>'ACTIVE','rate'=>'1.20000000','provider_rate'=>'0.80000000',
@@ -337,6 +345,12 @@ class AdvFakeDb {
     public function count_all_results($t){ return 0; }
     public function insert($t,$d=array()){
         $this->ci->inserts[$t] = ($this->ci->inserts[$t] ?? 0) + 1;
+        if ($t==='wallet_transactions') {
+            // The real LedgerService runs here, so count the money movements
+            // from the rows it writes rather than stubbing the service out.
+            if (($d['direction'] ?? '') === 'DEBIT') $this->ci->ledger_charges++;
+            if (($d['type'] ?? '') === 'REFUND') $this->ci->ledger_refunds++;
+        }
         if ($t==='refills') { $this->ci->refill = (object)array_merge(array('id'=>77),$d); }
         if ($t==='dripfeed_orders') { $this->ci->drip = (object)array_merge((array)$this->ci->drip,$d); }
         if ($t==='subscriptions') { $this->ci->subscription = (object)array_merge((array)$this->ci->subscription,$d); }

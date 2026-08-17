@@ -18,13 +18,13 @@ class PaymentsTest extends TestCase
             eval('function get_instance(){ return $GLOBALS["__fake_ci"]; }');
         }
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
-        if (!function_exists('windels_public_id')) require self::$root.'/application/helpers/windels_helper.php';
-        require self::$root.'/application/libraries/GatewayInterface.php';
-        require self::$root.'/application/libraries/ManualGateway.php';
-        require self::$root.'/application/libraries/PricingService.php';
-        require self::$root.'/application/libraries/LedgerService.php';
-        require self::$root.'/application/libraries/EncryptionService.php';
-        require self::$root.'/application/libraries/PaymentService.php';
+        if (!function_exists('windels_public_id')) require_once self::$root.'/application/helpers/windels_helper.php';
+        require_once self::$root.'/application/libraries/GatewayInterface.php';
+        require_once self::$root.'/application/libraries/ManualGateway.php';
+        require_once self::$root.'/application/libraries/PricingService.php';
+        require_once self::$root.'/application/libraries/LedgerService.php';
+        require_once self::$root.'/application/libraries/EncryptionService.php';
+        require_once self::$root.'/application/libraries/PaymentService.php';
     }
 
     /* ----------------------------- fees ----------------------------- */
@@ -145,9 +145,10 @@ class PaymentsTest extends TestCase
         $ci->webhook_sig = true;
         $svc = new PaymentService();
         $body = json_encode(array('id'=>'evt_1','status'=>'success','reference'=>null));
-        $first = $svc->record_webhook('stripe', $body, array('x-stripe-signature'=>'sig'));
+        $sig  = hash_hmac('sha256', $body, 'test-webhook-secret');
+        $first = $svc->record_webhook('stripe', $body, array('x-stripe-signature'=>$sig));
         $this->assertTrue($first['ok']);
-        $second = $svc->record_webhook('stripe', $body, array('x-stripe-signature'=>'sig'));
+        $second = $svc->record_webhook('stripe', $body, array('x-stripe-signature'=>$sig));
         $this->assertTrue($second['ok']);
         $this->assertTrue(!empty($second['already_seen']));
         $this->assertSame(1, $ci->inserts['payment_webhooks']);
@@ -199,6 +200,9 @@ class PayFakeCI {
     public $user, $method, $wallet, $tx, $db, $load, $input, $auth, $request_id='test';
     public $inserts=array(), $ledger_credits=0, $webhook_sig=null;
     public function __construct() {
+        // Register before constructing anything that calls get_instance()
+        // inside its own constructor (the real libraries below do).
+        $GLOBALS['__fake_ci'] = $this;
         $this->user = (object)array('id'=>7,'role'=>'CUSTOMER','status'=>'ACTIVE');
         $this->method = (object)array(
             'id'=>1,'code'=>'manual','name'=>'Manual','type'=>'MANUAL','is_active'=>1,
@@ -226,10 +230,10 @@ class PayFakeInput { function ip_address(){return '127.0.0.1';} function user_ag
 class PayFakeAuth { private $ci; function __construct($ci){$this->ci=$ci;} function id(){return $this->ci->user->id;} }
 
 class PayFakeDb {
-    private $ci;
+    private $ci; private $wheres=array();
     public function __construct($ci){$this->ci=$ci;}
     public function query($sql,$b=false){ return new PayFakeResult($this->ci->wallet); }
-    public function where($k,$v=null){ return $this; }
+    public function where($k,$v=null){ if(!is_array($k)) $this->wheres[$k]=$v; return $this; }
     public function where_in($k,$v){ return $this; }
     public function order_by($k,$d='ASC'){ return $this; }
     public function limit($l,$o=0){ return $this; }
@@ -246,7 +250,14 @@ class PayFakeDb {
     }
     public function update($t,$d){ return true; }
     public function get($t=null){
-        if ($t==='payment_methods') return new PayFakeResult($this->ci->method);
+        $w = $this->wheres; $this->wheres = array();
+        if ($t==='payment_methods') {
+            // A code that isn't the seeded method must return no row.
+            $code = $w['code'] ?? null;
+            return new PayFakeResult(
+                ($code === null || $code === $this->ci->method->code) ? $this->ci->method : null
+            );
+        }
         if ($t==='wallets') return new PayFakeResult($this->ci->wallet);
         if ($t==='payment_transactions') return new PayFakeResult($this->ci->tx);
         if ($t==='wallet_transactions') return new PayFakeResult((object)array('id'=>99));
@@ -260,7 +271,13 @@ class PayFakeResult {
 }
 class PayFakeTxModel {
     private $ci; private $idem=array(); function __construct($ci){$this->ci=$ci;}
-    function find_by_idempotency_key($k){ return $this->idem[$k] ?? null; }
+    function find_by_idempotency_key($k){
+        // Rows persisted through insert() are keyed here too, which is what
+        // makes a repeated deposit with the same key resolve to a duplicate.
+        if (isset($this->idem[$k])) return $this->idem[$k];
+        $tx = $this->ci->tx;
+        return ($tx && isset($tx->idempotency_key) && $tx->idempotency_key === $k) ? $tx : null;
+    }
     function seed_idem($k,$tx){$this->idem[$k]=$tx;}
     function find_by_id($id){return $this->ci->tx;}
     function find_by_provider_tx($id){return null;}
@@ -282,7 +299,12 @@ class PayFakeEventModel {
     function insert($d){$this->ci->inserts['payment_events']=($this->ci->inserts['payment_events']??0)+1;}
 }
 class PayFakeWalletModel { private $ci; function __construct($ci){$this->ci=$ci;} function for_user($id){return $this->ci->wallet;} }
-class PayFakeSettings { function get($k,$d=null){return $d;} }
+class PayFakeSettings {
+    function get($k,$d=null){
+        if (substr($k, -15) === '.webhook_secret') return 'test-webhook-secret';
+        return $d;
+    }
+}
 class PayFakeLedger {
     private $ci; function __construct($ci){$this->ci=$ci;}
     function credit($wid,$amt,$type,$rt,$rid,$idem,$meta=null){

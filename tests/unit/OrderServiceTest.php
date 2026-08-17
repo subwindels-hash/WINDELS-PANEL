@@ -1,6 +1,11 @@
 <?php
 use PHPUnit\Framework\TestCase;
 
+// Test doubles at the bottom of this file implement ProviderAdapterInterface,
+// which PHP must resolve while compiling the file — before setUpBeforeClass runs.
+if (!defined('BASEPATH')) define('BASEPATH', dirname(__DIR__, 2).'/system/');
+require_once dirname(__DIR__, 2).'/application/libraries/ProviderAdapterInterface.php';
+
 /**
  * Order engine tests (Session 09) — validates the OrderService create flow,
  * state transitions, idempotency, partial refunds and route/controller rules
@@ -233,7 +238,9 @@ class OrderServiceTest extends TestCase
         $this->assertStringContainsString('function create', $src);
         $this->assertStringContainsString('function cancel', $src);
         $this->assertStringContainsString('OrderService', $src);
-        $this->assertSame(2, substr_count($src, "if (\$this->input->method(true) !== 'POST') show_404();"));
+        $this->assertStringContainsString('function refill', $src);
+        // create / cancel / refill are all POST-only.
+        $this->assertSame(3, substr_count($src, "if (\$this->input->method(true) !== 'POST') show_404();"));
     }
 
     public function testNoDirectOrderOrWalletMutationOutsideService()
@@ -278,6 +285,9 @@ class OrderFakeCI {
     public $pricingservice, $ledgerservice, $providersyncservice, $encryptionservice;
 
     public function __construct() {
+        // Register before constructing anything that calls get_instance()
+        // inside its own constructor (the real libraries below do).
+        $GLOBALS['__fake_ci'] = $this;
         $this->user = (object)array('id'=>7,'role'=>'CUSTOMER','price_group_id'=>null,'status'=>'ACTIVE');
         $this->service = (object)array(
             'id'=>3,'public_id'=>'01SVC','name'=>'IG Followers','status'=>'ACTIVE',
@@ -289,7 +299,7 @@ class OrderFakeCI {
         $this->wallet = (object)array('id'=>11,'balance'=>'100.00000000','currency'=>'USD');
         $this->order = (object)array(
             'id'=>99,'public_id'=>'01ORDER99','status'=>'PENDING','charge'=>'1.20000000',
-            'quantity'=>100,'user_id'=>7,'service_id'=>3,'provider_id'=>5,'provider_order_id'=>'mock_1',
+            'quantity'=>100,'user_id'=>7,'service_id'=>3,'provider_id'=>5,'provider_order_id'=>null,
         );
         $this->db = new OrderFakeDb($this);
         $this->input = new OrderFakeInput();
@@ -385,9 +395,16 @@ class OrderFakeResult {
 /* Stubs */
 class OrderStubServiceModel {
     private $ci; function __construct($ci){$this->ci=$ci;}
-    function find_by_public_id($id){return $this->ci->service;}
-    function find_by_id($id){return $this->ci->service;}
-    function find_by_slug($s){return $this->ci->service;}
+    private function match($needle){
+        $s = $this->ci->service;
+        foreach (array($s->id, $s->public_id, $s->slug ?? 'ig-followers') as $known) {
+            if ((string)$known === (string)$needle) return $s;
+        }
+        return null;   // unknown identifiers must miss, as they would in SQL
+    }
+    function find_by_public_id($id){return $this->match($id);}
+    function find_by_id($id){return $this->match($id);}
+    function find_by_slug($s){return $this->match($s);}
     function active(){return array($this->ci->service);}
 }
 class OrderStubOrderModel {
