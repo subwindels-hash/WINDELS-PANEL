@@ -93,6 +93,9 @@ class Auth_Controller extends MY_Controller {
             redirect('login');
         }
         $this->current_user = $this->auth->user();
+        // Expose the unread notification count to every authenticated view so
+        // the shell's bell badge works without each controller passing it.
+        $this->load->vars(array('unread' => $this->auth->unread_count()));
     }
 }
 

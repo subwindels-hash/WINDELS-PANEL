@@ -295,6 +295,22 @@ class AuthService {
         return in_array($user->role, $roles, true);
     }
 
+    /** Unread notification count for the current user (cached per request). */
+    public function unread_count() {
+        static $count = null;
+        if ($count !== null) return $count;
+        $user = $this->user();
+        if (!$user) return $count = 0;
+        try {
+            if (!isset($this->ci->Notification_model)) {
+                $this->ci->load->model('Notification_model');
+            }
+            return $count = (int)$this->ci->Notification_model->count_for_user($user->id, true);
+        } catch (Exception $e) {
+            return $count = 0;
+        }
+    }
+
     /* -------------------------------------------------------------- */
     /* Email verification                                            */
     /* -------------------------------------------------------------- */
