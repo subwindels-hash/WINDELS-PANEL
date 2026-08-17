@@ -3,6 +3,7 @@
 
 * * * * * cd /var/www/html && php index.php cron dripfeed >> storage/logs/cron.log 2>&1
 */2 * * * * cd /var/www/html && php index.php cron order_status >> storage/logs/cron.log 2>&1
+*/2 * * * * cd /var/www/html && php index.php cron vtu_status >> storage/logs/cron.log 2>&1
 */5 * * * * cd /var/www/html && php index.php cron subscriptions >> storage/logs/cron.log 2>&1
 */5 * * * * cd /var/www/html && php index.php cron provider_health >> storage/logs/cron.log 2>&1
 */5 * * * * cd /var/www/html && php index.php cron refill_status >> storage/logs/cron.log 2>&1

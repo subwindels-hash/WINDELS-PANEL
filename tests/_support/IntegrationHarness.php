@@ -190,6 +190,66 @@ class IntegrationHarness
         return $this;
     }
 
+    /**
+     * VTU networks and products, plus a VTU-capable provider.
+     *
+     * Airtime and electricity get one variable-amount row each (price NULL,
+     * bounds + discount); data/cable/exam get fixed-price rows. That mirrors
+     * how VtuService distinguishes them.
+     */
+    public function seed_vtu()
+    {
+        $now = gmdate('Y-m-d H:i:s');
+
+        $this->db->insert('providers', array(
+            'public_id' => 'PROV0000000000000000000002', 'name' => 'Acme VTU',
+            'api_url' => 'https://api.vtu.test', 'api_key_encrypted' => 'enc:test',
+            'api_type' => 'MOCK', 'status' => 'ACTIVE', 'currency' => 'USD',
+            'created_at' => $now, 'updated_at' => $now,
+        ));
+        $provider_id = $this->db->insert_id();
+
+        $networks = array(
+            array('MTN',  'MTN Nigeria',   'AIRTIME'),
+            array('MTND', 'MTN Data',      'DATA'),
+            array('DSTV', 'DSTV',          'CABLE'),
+            array('IKEDC','Ikeja Electric','ELECTRICITY'),
+            array('WAEC', 'WAEC',          'EXAM_PIN'),
+        );
+        $ids = array();
+        foreach ($networks as $i => $n) {
+            $this->db->insert('vtu_networks', array(
+                'public_id' => 'VNET'.str_pad((string)($i + 1), 22, '0', STR_PAD_LEFT),
+                'code' => $n[0], 'name' => $n[1], 'service_type' => $n[2],
+                'is_active' => 1, 'sorting' => $i,
+                'created_at' => $now, 'updated_at' => $now,
+            ));
+            $ids[$n[0]] = $this->db->insert_id();
+        }
+
+        $products = array(
+            // network, type, code, name, price, cost, face, discount, min, max
+            array('MTN',  'AIRTIME',  'MTN-AIRTIME', 'MTN Airtime',      null,  null,  null, '2.0000', '50', '50000'),
+            array('IKEDC','ELECTRICITY','IKEDC-PP',  'Ikeja Prepaid',    null,  null,  null, '1.0000', '500','100000'),
+            array('MTND', 'DATA',     'MTN-1GB',     'MTN 1GB (30 days)','300', '285', '300','0.0000', null, null),
+            array('DSTV', 'CABLE',    'DSTV-COMPACT','DSTV Compact',     '10500','10200','10500','0.0000', null, null),
+            array('WAEC', 'EXAM_PIN', 'WAEC-PIN',    'WAEC Result PIN',  '3500','3400','3500','0.0000', null, null),
+        );
+        foreach ($products as $i => $p) {
+            $this->db->insert('vtu_products', array(
+                'public_id' => 'VPRD'.str_pad((string)($i + 1), 22, '0', STR_PAD_LEFT),
+                'network_id' => $ids[$p[0]], 'provider_id' => $provider_id,
+                'service_type' => $p[1], 'code' => $p[2], 'provider_code' => $p[2],
+                'name' => $p[3], 'price' => $p[4], 'provider_cost' => $p[5],
+                'face_value' => $p[6], 'discount_percent' => $p[7],
+                'min_amount' => $p[8], 'max_amount' => $p[9],
+                'is_active' => 1, 'sorting' => $i,
+                'created_at' => $now, 'updated_at' => $now,
+            ));
+        }
+        return $this;
+    }
+
     /* ----------------------------- factories ---------------------------- */
 
     /** A user with a wallet, created the way the app creates them. */

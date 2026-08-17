@@ -68,10 +68,14 @@ class SchemaTest extends TestCase
 
     /* ------------------------------------------------------------------ */
 
-    public function testNineMigrationsExist()
+    public function testMigrationsAreSequentialAndComplete()
     {
         $files = self::migrationFiles();
-        $this->assertCount(9, $files, 'Checkpoint 01 specifies exactly 9 migrations');
+        // Was pinned at exactly 9 for Checkpoint 01. The rebuild spec adds
+        // service domains that need new tables, and editing already-deployed
+        // migrations is unsafe, so new work lands as 010+. The guarantee worth
+        // keeping is sequential numbering that matches migration_version.
+        $this->assertGreaterThanOrEqual(9, count($files), 'the original 9 migrations must not be removed');
         foreach ($files as $i => $file) {
             $this->assertMatchesRegularExpression('/^\d{3}_/', basename($file));
             $this->assertSame($i + 1, (int)substr(basename($file), 0, 3), 'migrations must be sequential from 001');

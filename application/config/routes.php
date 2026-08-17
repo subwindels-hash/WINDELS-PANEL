@@ -60,6 +60,19 @@ $route['dashboard/subscriptions/create'] = 'dashboard/subscriptions/create';
 $route['dashboard/subscriptions/(:any)/pause'] = 'dashboard/subscriptions/pause/$1';
 $route['dashboard/subscriptions/(:any)/resume'] = 'dashboard/subscriptions/resume/$1';
 $route['dashboard/subscriptions/(:any)/cancel'] = 'dashboard/subscriptions/cancel/$1';
+// VTU (§9). Specific segments must precede the (:any) receipt route, or
+// 'history' would be read as a transaction public_id.
+$route['dashboard/vtu'] = 'dashboard/vtu/index';
+$route['dashboard/vtu/history'] = 'dashboard/vtu/history';
+$route['dashboard/vtu/verify'] = 'dashboard/vtu/verify';
+$route['dashboard/vtu/buy/(:any)'] = 'dashboard/vtu/buy/$1';
+$route['dashboard/vtu/products/(:any)/(:any)'] = 'dashboard/vtu/products/$1/$2';
+$route['dashboard/vtu/receipt/(:any)'] = 'dashboard/vtu/receipt/$1';
+$route['dashboard/vtu/airtime'] = 'dashboard/vtu/airtime';
+$route['dashboard/vtu/data'] = 'dashboard/vtu/data';
+$route['dashboard/vtu/cable'] = 'dashboard/vtu/cable';
+$route['dashboard/vtu/electricity'] = 'dashboard/vtu/electricity';
+$route['dashboard/vtu/education'] = 'dashboard/vtu/education';
 $route['dashboard/services'] = 'dashboard/services/index';
 $route['dashboard/favorites'] = 'dashboard/services/favorites';
 $route['dashboard/favorites/add/(:any)'] = 'dashboard/favorites/add/$1';

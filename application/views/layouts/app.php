@@ -16,6 +16,7 @@ $nav = $is_admin ? array(
     array('dashboard',           'Dashboard',  null, 'dashboard'),
     array('dashboard/new-order', 'New Order',  null, 'zap'),
     array('dashboard/orders',    'My Orders',  null, 'shopping-bag'),
+    array('dashboard/vtu',       'VTU',        null, 'smartphone'),
     array('dashboard/services',  'Services',   null, 'package'),
     array('dashboard/favorites', 'Favorites',  null, 'star'),
     array('dashboard/drip-feed', 'Drip-feed',  null, 'zap'),

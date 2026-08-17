@@ -14,7 +14,7 @@ class Cron extends Cron_Controller {
 
     /** Jobs that can be invoked, in the order `index` lists them. */
     private static $jobs = array(
-        'dripfeed', 'order_status', 'subscriptions', 'provider_health',
+        'dripfeed', 'order_status', 'vtu_status', 'subscriptions', 'provider_health',
         'refill_status', 'payment_reconciliation', 'email_queue',
         'analytics', 'provider_sync', 'affiliate_payouts',
     );
@@ -38,6 +38,13 @@ class Cron extends Cron_Controller {
     public function order_status() {
         $this->execute('order_status', function () {
             return $this->cronworkers->order_status();
+        });
+    }
+
+    /** Settle VTU purchases the provider accepted but has not completed. */
+    public function vtu_status() {
+        $this->execute('vtu_status', function () {
+            return $this->cronworkers->vtu_status();
         });
     }
 

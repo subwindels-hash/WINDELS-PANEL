@@ -54,6 +54,61 @@ class CronWorkers {
         if ($libraries) $this->ci->load->library($libraries);
     }
 
+    /* ======================== VTU settlement ============================= */
+
+    /**
+     * Settle VTU purchases the provider accepted but had not completed.
+     *
+     * Airtime and data usually settle instantly; electricity and cable can sit
+     * in PROCESSING for minutes. Until a purchase reaches a terminal state the
+     * customer has paid and received nothing, so this must run often — and a
+     * provider-side FAILED has to refund, which TransactionEngine handles.
+     */
+    public function vtu_status($limit = 200) {
+        $this->need(
+            array('Service_transaction_model', 'Provider_model'),
+            array('TransactionEngine', 'Provider_manager')
+        );
+
+        $pending = $this->ci->Service_transaction_model->pending_provider_sync('VTU', $limit);
+        if (!$pending) return array('processed'=>0, 'failed'=>0, 'message'=>'no VTU transactions awaiting settlement');
+
+        $processed = 0; $failed = 0; $settled = 0;
+        foreach ($pending as $tx) {
+            $provider = $tx->provider_id ? $this->ci->Provider_model->find_by_id($tx->provider_id) : null;
+            if (!$provider) { $failed++; continue; }
+
+            try {
+                $adapter = $this->ci->provider_manager->adapter($provider, Provider_manager::FAMILY_VTU);
+                $res = $adapter->status($tx->provider_reference);
+            } catch (Exception $e) {
+                log_message('error', 'vtu_status: '.$e->getMessage());
+                $failed++;
+                continue;
+            }
+            $processed++;
+
+            if (empty($res['ok']) || empty($res['status'])) continue;
+            $status = strtoupper($res['status']);
+            if ($status === 'PROCESSING' || $status === $tx->status) continue;
+
+            if (in_array($status, array('SUCCESSFUL', 'FAILED'), true)) {
+                // FAILED refunds automatically inside the engine.
+                $this->ci->transactionengine->transition(
+                    $tx->id, $status, 'PROVIDER',
+                    $status === 'FAILED' ? 'Provider reported failure' : null
+                );
+                $settled++;
+            }
+        }
+
+        return array(
+            'processed' => $processed,
+            'failed'    => $failed,
+            'message'   => $settled.' settled of '.$processed.' checked',
+        );
+    }
+
     /* ===================== order status synchronisation ==================== */
 
     /**

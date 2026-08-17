@@ -21,6 +21,7 @@ class Core_seeder extends Seeder {
         $this->seed_payment_methods();
         $this->seed_email_templates();
         $this->seed_faqs();
+        $this->seed_vtu_catalogue();
         $this->out('core seed complete');
     }
 
@@ -33,6 +34,7 @@ class Core_seeder extends Seeder {
             'services'   => array('services.view','services.manage','categories.manage'),
             'providers'  => array('providers.view','providers.manage','providers.sync'),
             'orders'     => array('orders.view','orders.edit','orders.refund','orders.cancel','orders.refill'),
+            'vtu'        => array('vtu.view','vtu.manage','vtu.refund'),
             'payments'   => array('payments.view','payments.manage','wallets.adjust'),
             'support'    => array('tickets.view','tickets.reply','tickets.manage'),
             'content'    => array('blog.manage','faq.manage','announcements.manage','media.manage'),
@@ -49,6 +51,7 @@ class Core_seeder extends Seeder {
                 'services.view','services.manage','categories.manage',
                 'providers.view','providers.manage','providers.sync',
                 'orders.view','orders.edit','orders.refund','orders.cancel','orders.refill',
+                'vtu.view','vtu.manage','vtu.refund',
                 'payments.view','payments.manage','wallets.adjust',
                 'tickets.view','tickets.reply','tickets.manage',
                 'blog.manage','faq.manage','announcements.manage','media.manage',
@@ -58,6 +61,7 @@ class Core_seeder extends Seeder {
             'STAFF'       => array(
                 'reports.view','users.view','services.view','providers.view',
                 'orders.view','orders.edit','orders.refill',
+                'vtu.view',
                 'payments.view','tickets.view','tickets.reply','affiliates.view',
             ),
             'CUSTOMER'    => array(),
@@ -123,6 +127,71 @@ class Core_seeder extends Seeder {
             $this->upsert('currencies', array('code'=>$c[0]), array(
                 'symbol'=>$c[1], 'name'=>$c[2], 'decimal_precision'=>$c[3],
                 'exchange_rate'=>$c[4], 'is_base'=>$c[5], 'is_active'=>1,
+            ));
+        }
+    }
+
+    /**
+     * VTU networks and products (§9).
+     *
+     * Prices are placeholders an operator overrides from the admin panel; what
+     * matters here is that the shape is right — airtime and electricity are
+     * variable-amount rows (price NULL, bounds + discount), everything else is
+     * fixed price. Seeded idempotently so re-running never duplicates.
+     */
+    public static function vtu_catalogue() {
+        return array(
+            // code, name, service_type, msisdn prefixes
+            array('MTN',    'MTN',              'AIRTIME',     '0803,0806,0810,0813,0814,0816,0903,0906,0913,0916'),
+            array('GLO',    'Glo',              'AIRTIME',     '0805,0807,0811,0815,0705,0905,0915'),
+            array('AIRTEL', 'Airtel',           'AIRTIME',     '0802,0808,0812,0701,0708,0902,0907,0901,0912'),
+            array('9MOBILE','9mobile',          'AIRTIME',     '0809,0817,0818,0908,0909'),
+            array('MTN-DATA',    'MTN Data',    'DATA',        null),
+            array('GLO-DATA',    'Glo Data',    'DATA',        null),
+            array('AIRTEL-DATA', 'Airtel Data', 'DATA',        null),
+            array('9MOBILE-DATA','9mobile Data','DATA',        null),
+            array('DSTV',      'DSTV',              'CABLE',       null),
+            array('GOTV',      'GOtv',              'CABLE',       null),
+            array('STARTIMES', 'StarTimes',         'CABLE',       null),
+            array('IKEDC',     'Ikeja Electric',    'ELECTRICITY', null),
+            array('EKEDC',     'Eko Electric',      'ELECTRICITY', null),
+            array('AEDC',      'Abuja Electric',    'ELECTRICITY', null),
+            array('PHED',      'Port Harcourt Electric', 'ELECTRICITY', null),
+            array('WAEC',      'WAEC',              'EXAM_PIN',    null),
+            array('NECO',      'NECO',              'EXAM_PIN',    null),
+            array('JAMB',      'JAMB',              'EXAM_PIN',    null),
+        );
+    }
+
+    private function seed_vtu_catalogue() {
+        $sort = 0;
+        $ids = array();
+        foreach (self::vtu_catalogue() as $n) {
+            $ids[$n[0]] = $this->upsert('vtu_networks', array('code' => $n[0]), array(
+                'public_id'       => windels_public_id(),
+                'name'            => $n[1],
+                'service_type'    => $n[2],
+                'msisdn_prefixes' => $n[3],
+                'is_active'       => 1,
+                'sorting'         => $sort++,
+            ));
+        }
+
+        // Variable-amount products: one per airtime network and per disco.
+        foreach (self::vtu_catalogue() as $n) {
+            if (!in_array($n[2], array('AIRTIME', 'ELECTRICITY'), TRUE)) continue;
+            $is_airtime = $n[2] === 'AIRTIME';
+            $this->upsert('vtu_products', array(
+                'network_id'   => $ids[$n[0]],
+                'service_type' => $n[2],
+                'code'         => $n[0].'-'.$n[2],
+            ), array(
+                'public_id'        => windels_public_id(),
+                'name'             => $n[1].' '.($is_airtime ? 'Airtime' : 'Units'),
+                'discount_percent' => $is_airtime ? '2.0000' : '1.0000',
+                'min_amount'       => $is_airtime ? '50.00000000' : '500.00000000',
+                'max_amount'       => $is_airtime ? '50000.00000000' : '100000.00000000',
+                'is_active'        => 1,
             ));
         }
     }
