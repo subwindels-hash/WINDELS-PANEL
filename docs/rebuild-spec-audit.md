@@ -165,6 +165,11 @@ shared infrastructure first so the domains do not each invent their own.
 | **F** | Gift cards + marketplace | Inventory and trading semantics |
 | **G** | Unified history (§20), admin sections + analytics (§25/§26) for all new domains | Cross-cutting; cheapest once the domains exist |
 
+Progress: **A** and **B** landed in session 21; **C** is implemented in
+`VtuService` but only exercised against the `MOCK` adapter. The **G** slice for
+VTU — the admin queue, detail, refund and manual re-check — landed in
+[session 23](session-23-admin-vtu.md), which sets the pattern D–F should copy.
+
 Phase A is the one that determines whether this stays coherent. If each domain is
 built without it, the result is six parallel half-copies of the order engine.
 

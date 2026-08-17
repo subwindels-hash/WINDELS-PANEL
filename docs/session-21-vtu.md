@@ -157,3 +157,9 @@ Phases C–G from the audit, unchanged:
 Also deferred: the base currency is still `USD` while the spec shows ₦ — that
 decision is still open, and changing it affects existing rows and every seeded
 price.
+
+> **Update.** The currency question was settled in
+> [session 22](session-22-currency.md): the base is now NGN. The admin VTU
+> screens — the missing surface for the `vtu.*` permissions seeded here — landed
+> in [session 23](session-23-admin-vtu.md), which also covers phase G for the
+> VTU domain.

@@ -57,6 +57,84 @@ class Service_transaction_model extends MY_Model {
         if (!empty($f['reference'])) $this->db->where('provider_reference',$f['reference']);
     }
 
+    /* ------------------------- admin queries ------------------------- */
+
+    /**
+     * The admin service-transaction queue. Deliberately unscoped, so it is
+     * only ever reachable behind a permission check — the same contract as
+     * Order_model::admin_search().
+     *
+     * @param array $filters domain|type|status|user_id|provider_id|source|from|to|search
+     */
+    public function admin_search(array $filters, $limit = 25, $offset = 0){
+        $this->admin_filters($filters);
+        return $this->db
+            ->select('service_transactions.*, users.username, users.email,
+                      providers.name AS provider_name,
+                      vtu_transactions.recipient, vtu_transactions.recipient_name,
+                      vtu_transactions.token, vtu_transactions.units', false)
+            ->join('users', 'users.id = service_transactions.user_id', 'left')
+            ->join('providers', 'providers.id = service_transactions.provider_id', 'left')
+            ->join('vtu_transactions', 'vtu_transactions.service_transaction_id = service_transactions.id', 'left')
+            ->order_by('service_transactions.created_at', 'DESC')
+            ->limit($limit, $offset)
+            ->get()->result();
+    }
+
+    public function admin_count(array $filters){
+        $this->admin_filters($filters);
+        return (int)$this->db->count_all_results();
+    }
+
+    /** Shared WHERE builder so a list and its count can never disagree. */
+    private function admin_filters(array $f){
+        $this->db->from($this->table);
+        if (!empty($f['domain']))      $this->db->where('service_transactions.service_domain', $f['domain']);
+        if (!empty($f['type']))        $this->db->where('service_transactions.service_type', $f['type']);
+        if (!empty($f['status']))      $this->db->where('service_transactions.status', $f['status']);
+        if (!empty($f['user_id']))     $this->db->where('service_transactions.user_id', (int)$f['user_id']);
+        if (!empty($f['provider_id'])) $this->db->where('service_transactions.provider_id', (int)$f['provider_id']);
+        if (!empty($f['source']))      $this->db->where('service_transactions.source', $f['source']);
+        if (!empty($f['from']))        $this->db->where('service_transactions.created_at >=', $f['from']);
+        if (!empty($f['to']))          $this->db->where('service_transactions.created_at <=', $f['to']);
+        if (!empty($f['search'])) {
+            $term = trim((string)$f['search']);
+            $this->db->group_start()
+                ->like('service_transactions.public_id', $term)
+                ->or_like('service_transactions.provider_reference', $term)
+                ->group_end();
+        }
+    }
+
+    /**
+     * Count per status within one domain, for the queue header cards.
+     *
+     * Scoped to a domain because the admin screens are per-domain: a VTU queue
+     * showing SMM counts would be actively misleading.
+     */
+    public function status_counts($domain = null){
+        $this->db->select('status, COUNT(*) AS c', false)->from($this->table);
+        if ($domain) $this->db->where('service_domain', $domain);
+        $rows = $this->db->group_by('status')->get()->result();
+        $out = array();
+        foreach ($rows as $r) $out[$r->status] = (int)$r->c;
+        return $out;
+    }
+
+    /** One transaction joined with the context an admin needs, by public id. */
+    public function admin_find($public_id, $domain = null){
+        $this->db
+            ->select('service_transactions.*, users.username, users.email,
+                      users.public_id AS user_public_id,
+                      providers.name AS provider_name, providers.api_type AS provider_api_type', false)
+            ->from($this->table)
+            ->join('users', 'users.id = service_transactions.user_id', 'left')
+            ->join('providers', 'providers.id = service_transactions.provider_id', 'left')
+            ->where('service_transactions.public_id', $public_id);
+        if ($domain) $this->db->where('service_transactions.service_domain', $domain);
+        return $this->db->get()->row();
+    }
+
     /** Transactions a status worker should re-check. */
     public function pending_provider_sync($domain, $limit = 100){
         return $this->db->where('service_domain',$domain)

@@ -5,6 +5,7 @@ $active   = isset($nav_active) ? $nav_active : trim($this->uri->uri_string(), '/
 $nav = $is_admin ? array(
     array('admin',              'Overview',   'reports.view',    'dashboard'),
     array('admin/orders',       'Orders',     'orders.view',     'shopping-bag'),
+    array('admin/vtu',          'VTU',        'vtu.view',        'smartphone'),
     array('admin/customers',    'Customers',  'users.view',      'users'),
     array('admin/services',     'Services',   'services.manage', 'package'),
     array('admin/providers',    'Providers',  'providers.manage','server'),

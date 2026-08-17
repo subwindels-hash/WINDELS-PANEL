@@ -36,9 +36,14 @@ class FakeDb
 
     private $pending_where = array();
     private $pending_or_where = array();
+    private $pending_like = array();
     private $pending_from = null;
     private $pending_joins = array();
     private $pending_select = array();
+    private $pending_select_all = false;
+    private $pending_aliases = array();
+    private $pending_aggregates = array();
+    private $pending_group = array();
     private $affected = 0;
     private $pending_order = array();
     private $pending_limit = null;
@@ -130,6 +135,36 @@ class FakeDb
     }
 
     /**
+     * like()/or_like() — the substring search the admin queues use.
+     *
+     * The codebase only ever writes them as one OR group between
+     * group_start()/group_end(), so they are modelled as a single group that
+     * is AND-ed with the rest of the predicate. That is exactly the semantics
+     * of `WHERE ... AND (a LIKE x OR b LIKE x)`.
+     */
+    public function like($field, $match = '', $side = 'both', $escape = null)
+    {
+        $this->pending_like[] = array('col' => (string)$field, 'value' => (string)$match, 'side' => $side);
+        return $this;
+    }
+
+    public function or_like($field, $match = '', $side = 'both', $escape = null)
+    {
+        return $this->like($field, $match, $side, $escape);
+    }
+
+    public function group_by($field)
+    {
+        foreach ((array)$field as $one) {
+            foreach (explode(',', (string)$one) as $col) {
+                $col = trim($col);
+                if ($col !== '') $this->pending_group[] = $col;
+            }
+        }
+        return $this;
+    }
+
+    /**
      * where_in('col', array(...)) — matched by the sentinel below in matches().
      */
     public function where_in($key, array $values)
@@ -143,22 +178,30 @@ class FakeDb
         $table = $table ?: $this->pending_from;
         $joins = $this->pending_joins;
         $select = $this->pending_select;
+        $select_all = $this->pending_select_all;
+        $aliases = $this->pending_aliases;
+        $aggregates = $this->pending_aggregates;
+        $group = $this->pending_group;
         $this->pending_from = null; $this->pending_joins = array();
-        $this->pending_select = array();
+        $this->pending_select = array(); $this->pending_aggregates = array();
+        $this->pending_group = array(); $this->pending_select_all = false;
+        $this->pending_aliases = array();
 
         $this->assertTable($table, 'get');
         $where = $this->takeWhere();
         $or    = $this->takeOrWhere();
+        $like  = $this->takeLike();
         $this->queries[] = array('op' => 'select', 'table' => $table, 'where' => $where);
         $matched = array();
         foreach ($this->rows[$table] as $row) {
-            if (!$this->matches($row, $where, $or)) continue;
+            if (!$this->matches($row, $where, $or, $like)) continue;
             // A real SELECT * returns every column, nulls included. Returning
             // only the keys that were inserted would let production code that
             // reads a never-written nullable column pass here and warn in
             // production, so fill the shape out first.
             $full = $this->applyJoins($this->hydrate($table, $row), $joins);
-            if ($select) {
+            $full = $this->applyAliases($full, $aliases);
+            if ($select && !$select_all) {
                 $projected = array();
                 foreach ($select as $column) {
                     if (array_key_exists($column, $full)) $projected[$column] = $full[$column];
@@ -166,6 +209,31 @@ class FakeDb
                 $full = $projected;
             }
             $matched[] = (object)$full;
+        }
+
+        // GROUP BY, with COUNT(*) as the one aggregate this double computes.
+        // Only applied when a grouping was actually requested, so ungrouped
+        // selects keep their previous shape.
+        if ($group) {
+            $buckets = array();
+            foreach ($matched as $rowObj) {
+                $key = array();
+                foreach ($group as $col) {
+                    $bare = strpos($col, '.') !== false ? substr($col, strrpos($col, '.') + 1) : $col;
+                    $key[] = isset($rowObj->$bare) ? (string)$rowObj->$bare : '';
+                }
+                $key = implode("\0", $key);
+                if (!isset($buckets[$key])) { $buckets[$key] = array('row' => $rowObj, 'n' => 0); }
+                $buckets[$key]['n']++;
+            }
+            $matched = array();
+            foreach ($buckets as $bucket) {
+                $out = $bucket['row'];
+                foreach ($aggregates as $alias => $kind) {
+                    if ($kind === 'count') $out->$alias = $bucket['n'];
+                }
+                $matched[] = $out;
+            }
         }
 
         $order = $this->pending_order; $this->pending_order = array();
@@ -274,10 +342,31 @@ class FakeDb
         $list = array();
         foreach (explode(',', (string)$fields) as $field) {
             $field = trim(preg_replace('/\s+/', ' ', $field));
-            if ($field === '' || $field === '*') continue;
-            // Handle "t.col" and "col AS alias".
-            if (preg_match('/\bAS\s+(\S+)$/i', $field, $m)) {
-                $field = $m[1];
+            if ($field === '') continue;
+            // "*" or "orders.*" selects the whole base row; the joined columns
+            // applyJoins() merged in stay visible too, which is what the real
+            // "t.*, other.col AS alias" queries return.
+            if ($field === '*' || preg_match('/^[\w`]+\.\*$/', $field)) {
+                $this->pending_select_all = true;
+                continue;
+            }
+            // COUNT(*) AS alias — the only aggregate this double computes.
+            // Anything richer belongs in a test against a real database.
+            if (preg_match('/^COUNT\(\s*\*?\s*\)\s+AS\s+(\S+)$/i', $field, $m)) {
+                $alias = trim($m[1], '`');
+                $this->pending_aggregates[$alias] = 'count';
+                $list[] = $alias;
+                continue;
+            }
+            // "table.col AS alias" — remember where the alias comes from so
+            // get() can materialise it. A real SELECT returns provider_name;
+            // this double only has providers.name until it is renamed.
+            if (preg_match('/^(\S+)\s+AS\s+(\S+)$/i', $field, $m)) {
+                $source = trim($m[1], '`');
+                $alias  = trim($m[2], '`');
+                $this->pending_aliases[$alias] = $source;
+                $list[] = $alias;
+                continue;
             }
             $parts = explode('.', $field);
             $list[] = trim(end($parts), '`');
@@ -346,6 +435,24 @@ class FakeDb
         return $row;
     }
 
+    /**
+     * Materialise "source AS alias" projections onto the row, so a view that
+     * reads $row->provider_name sees what the real query would return.
+     */
+    private function applyAliases(array $row, array $aliases)
+    {
+        foreach ($aliases as $alias => $source) {
+            if (array_key_exists($source, $row)) {
+                $row[$alias] = $row[$source];
+                continue;
+            }
+            $bare = strpos($source, '.') !== false
+                ? substr($source, strrpos($source, '.') + 1) : $source;
+            $row[$alias] = array_key_exists($bare, $row) ? $row[$bare] : null;
+        }
+        return $row;
+    }
+
     public function affected_rows() { return $this->affected; }
 
     public function insert_batch($table, array $rows)
@@ -382,8 +489,12 @@ class FakeDb
     public function group_end()   { return $this; }
     public function reset_query() {
         $this->pending_where = array(); $this->pending_or_where = array();
+        $this->pending_like = array();
         $this->pending_order = array(); $this->pending_limit = null;
         $this->pending_from = null; $this->pending_joins = array();
+        $this->pending_select = array(); $this->pending_aggregates = array();
+        $this->pending_group = array(); $this->pending_select_all = false;
+        $this->pending_aliases = array();
         return $this;
     }
     public function delete($table)
@@ -441,21 +552,36 @@ class FakeDb
         return $w;
     }
 
+    private function takeLike()
+    {
+        $l = $this->pending_like;
+        $this->pending_like = array();
+        return $l;
+    }
+
     public function count_all_results($table = null)
     {
         $table = $table ?: $this->pending_from;
         $this->pending_from = null; $this->pending_joins = array();
+        $this->pending_select = array(); $this->pending_aggregates = array();
+        $this->pending_group = array(); $this->pending_select_all = false;
+        $this->pending_aliases = array();
         $this->assertTable($table, 'count_all_results');
         $where = $this->takeWhere();
         $this->pending_order = array(); $this->pending_limit = null;
         $or = $this->takeOrWhere();
+        $like = $this->takeLike();
         $n = 0;
-        foreach ($this->rows[$table] as $row) if ($this->matches($row, $where, $or)) $n++;
+        foreach ($this->rows[$table] as $row) if ($this->matches($row, $where, $or, $like)) $n++;
         return $n;
     }
 
-    private function matches(array $row, array $where, array $or_where = array())
+    private function matches(array $row, array $where, array $or_where = array(), array $like = array())
     {
+        // The LIKE group is AND-ed with everything else, matching how the
+        // codebase writes it: ... AND (a LIKE t OR b LIKE t).
+        if ($like && !$this->matchesLike($row, $like)) return false;
+
         foreach ($where as $k => $v) {
             if (!$this->matchesOne($row, $k, $v)) {
                 // An or_where group can still rescue the row.
@@ -472,6 +598,28 @@ class FakeDb
             return false;
         }
         return true;
+    }
+
+    /** True when any column in the LIKE group contains the term. */
+    private function matchesLike(array $row, array $like)
+    {
+        foreach ($like as $spec) {
+            $col = $spec['col'];
+            if (strpos($col, '.') !== false) $col = substr($col, strrpos($col, '.') + 1);
+            if (!array_key_exists($col, $row) || $row[$col] === null) continue;
+
+            $hay = (string)$row[$col];
+            $needle = $spec['value'];
+            if ($needle === '') return true;
+            if ($spec['side'] === 'before') {
+                if (substr($hay, -strlen($needle)) === $needle) return true;
+            } elseif ($spec['side'] === 'after') {
+                if (strncmp($hay, $needle, strlen($needle)) === 0) return true;
+            } elseif (stripos($hay, $needle) !== false) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
