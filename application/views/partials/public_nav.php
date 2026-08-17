@@ -15,6 +15,7 @@ $is_staff = $cu && in_array($cu->role, array('SUPER_ADMIN','ADMIN','STAFF'), tru
     <?php else: ?>
       <a href="<?=site_url('dashboard')?>" class="px-4 py-2 text-sm">Dashboard</a>
     <?php endif; ?>
+    <a href="<?=site_url('dashboard/favorites')?>" class="px-3 py-2 text-sm" title="Favorites" aria-label="Favorites">★</a>
     <a href="<?=site_url('logout')?>" class="px-4 py-2 bg-black text-white rounded-lg text-sm">Log out</a>
   <?php else: ?>
     <a href="<?=site_url('login')?>" class="px-4 py-2 text-sm">Login</a>
