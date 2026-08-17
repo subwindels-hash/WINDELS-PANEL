@@ -54,8 +54,10 @@ $route['dashboard/transactions'] = 'dashboard/wallet/transactions';
 $route['dashboard/tickets'] = 'dashboard/tickets/index';
 $route['dashboard/tickets/(:any)'] = 'dashboard/tickets/detail/$1';
 $route['dashboard/api'] = 'dashboard/account/api_keys';
+$route['dashboard/api/revoke/(:any)'] = 'dashboard/account/revoke_api_key/$1';
 $route['dashboard/referrals'] = 'dashboard/referrals/index';
 $route['dashboard/notifications'] = 'dashboard/notifications/index';
+$route['dashboard/notifications/read'] = 'dashboard/notifications/mark_read';
 $route['dashboard/profile'] = 'dashboard/account/profile';
 $route['dashboard/security'] = 'dashboard/account/security';
 
