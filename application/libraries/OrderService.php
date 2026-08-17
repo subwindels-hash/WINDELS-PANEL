@@ -45,7 +45,26 @@ class OrderService {
      *                                fields?, idempotency_key?, note?
      * @return array{ok:bool,order?:object,error?:string,code?:string}
      */
+    /**
+     * Place an order whose charge was already taken elsewhere.
+     *
+     * Drip-feed and subscription schedules reserve the whole charge up front,
+     * so their child orders must not hit the wallet again. Everything else —
+     * validation, provider submission, history — is the normal path.
+     *
+     * @param array $context source (DRIPFEED|SUBSCRIPTION) plus the parent ids
+     */
+    public function place_prepaid($user, array $input, array $context = array()) {
+        $input['__prepaid'] = true;
+        $input['source'] = $context['source'] ?? 'DRIPFEED';
+        foreach (array('dripfeed_order_id', 'dripfeed_run_number', 'subscription_id') as $k) {
+            if (isset($context[$k])) $input[$k] = $context[$k];
+        }
+        return $this->place($user, $input);
+    }
+
     public function place($user, array $input) {
+        $prepaid = !empty($input['__prepaid']);
         $user = is_object($user) ? $user : $this->resolve_user((int)$user);
         if (!$user) {
             return array('ok' => false, 'error' => 'User not found', 'code' => 'NO_USER');
@@ -95,21 +114,29 @@ class OrderService {
             : null;
 
         // 5. Charge the wallet (idempotent). The ledger is the only writer.
+        // A prepaid child order (drip-feed / subscription run) skips this: its
+        // parent already reserved the full charge.
         $wallet = $this->ci->Wallet_model->for_user($user->id);
         $charge_idem = $idem ?: ('order:charge:'.$user->id.':'.windels_public_id());
-        $charged = $this->ci->ledgerservice->charge(
-            $wallet->id, $charge, 'ORDER', null, $charge_idem
-        );
-        if (empty($charged['ok'])) {
-            $code = ($charged['error'] ?? '') === 'INSUFFICIENT_BALANCE' ? 'INSUFFICIENT_BALANCE' : 'CHARGE_FAILED';
-            return array('ok' => false, 'error' => $charged['error'] ?? 'Could not charge wallet', 'code' => $code);
+        if (!$prepaid) {
+            $charged = $this->ci->ledgerservice->charge(
+                $wallet->id, $charge, 'ORDER', null, $charge_idem
+            );
+            if (empty($charged['ok'])) {
+                $code = ($charged['error'] ?? '') === 'INSUFFICIENT_BALANCE' ? 'INSUFFICIENT_BALANCE' : 'CHARGE_FAILED';
+                return array('ok' => false, 'error' => $charged['error'] ?? 'Could not charge wallet', 'code' => $code);
+            }
         }
 
         // 6. Persist the order + initial history inside a transaction.
         $order = $this->persist_order($user, $service, compact('link','q','rate','charge','provider_charge','idem','input'));
         if (!$order) {
-            // Roll back the wallet charge if we could not create the row.
-            $this->ci->ledgerservice->refund($wallet->id, $charge, 'ORDER', null, 'order:rollback:'.$charge_idem);
+            // Roll back the wallet charge if we could not create the row. A
+            // prepaid order never charged here, so there is nothing to undo —
+            // the parent schedule owns that money.
+            if (!$prepaid) {
+                $this->ci->ledgerservice->refund($wallet->id, $charge, 'ORDER', null, 'order:rollback:'.$charge_idem);
+            }
             return array('ok' => false, 'error' => 'Could not create order', 'code' => 'PERSIST_FAILED');
         }
 
@@ -127,7 +154,9 @@ class OrderService {
         } elseif (empty($submit['ok'])) {
             // Submission failed: mark FAILED and refund the charge immediately.
             $this->transition($order->id, 'PENDING', 'FAILED', 'SYSTEM', $submit['error'] ?? 'Provider submission failed');
-            $this->ci->ledgerservice->refund($wallet->id, $charge, 'ORDER', $order->public_id, 'order:refund:'.$order->public_id);
+            if (!$prepaid) {
+                $this->ci->ledgerservice->refund($wallet->id, $charge, 'ORDER', $order->public_id, 'order:refund:'.$order->public_id);
+            }
             $this->ci->db->where('id', $order->id)->update('orders', array(
                 'note' => $submit['error'] ?? 'Provider submission failed',
             ));
@@ -356,6 +385,11 @@ class OrderService {
             'fields'            => !empty($ctx['input']['fields']) ? json_encode($ctx['input']['fields']) : null,
             'source'            => $ctx['input']['source'] ?? 'WEB',
             'note'              => $ctx['input']['note'] ?? null,
+            // Link a child order back to the schedule that produced it, so a
+            // drip-feed/subscription run is traceable from the order row.
+            'dripfeed_order_id'   => $ctx['input']['dripfeed_order_id'] ?? null,
+            'dripfeed_run_number' => $ctx['input']['dripfeed_run_number'] ?? null,
+            'subscription_id'     => $ctx['input']['subscription_id'] ?? null,
             'idempotency_key'   => $ctx['idem'],
             'created_at'        => gmdate('Y-m-d H:i:s'),
         ));

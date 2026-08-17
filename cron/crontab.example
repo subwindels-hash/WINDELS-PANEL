@@ -3,6 +3,7 @@
 
 * * * * * cd /var/www/html && php index.php cron dripfeed >> storage/logs/cron.log 2>&1
 */2 * * * * cd /var/www/html && php index.php cron order_status >> storage/logs/cron.log 2>&1
+*/5 * * * * cd /var/www/html && php index.php cron subscriptions >> storage/logs/cron.log 2>&1
 */5 * * * * cd /var/www/html && php index.php cron provider_health >> storage/logs/cron.log 2>&1
 */5 * * * * cd /var/www/html && php index.php cron refill_status >> storage/logs/cron.log 2>&1
 */5 * * * * cd /var/www/html && php index.php cron payment_reconciliation >> storage/logs/cron.log 2>&1
@@ -10,3 +11,6 @@
 0 * * * * cd /var/www/html && php index.php cron analytics >> storage/logs/cron.log 2>&1
 */60 * * * * cd /var/www/html && php index.php cron provider_sync >> storage/logs/cron.log 2>&1
 */10 * * * * cd /var/www/html && php index.php cron affiliate_payouts >> storage/logs/cron.log 2>&1
+
+# Each job takes an exclusive lock, so a slow run is skipped rather than
+# overlapping the next tick. Run history: php index.php cron status

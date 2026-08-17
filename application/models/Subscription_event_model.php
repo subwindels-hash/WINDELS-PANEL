@@ -6,6 +6,6 @@ class Subscription_event_model extends MY_Model {
 
     public function for_subscription($subscription_id) {
         return $this->db->where('subscription_id', $subscription_id)
-            ->order_by('created_at', 'DESC')->get()->result();
+            ->order_by('created_at', 'DESC')->get($this->table)->result();
     }
 }

@@ -38,10 +38,14 @@ $config['provider_http'] = array(
     'backoff_ms' => array(500, 1500, 4000),
 );
 
+/* Where cron jobs keep their exclusive lock files (see JobRunner). */
+$config['cron_lock_dir'] = sys_get_temp_dir().'/windels-locks';
+
 /* Cron schedules (for crontab.example + Cron controller) */
 $config['cron'] = array(
     'dripfeed' => '* * * * *',
     'order_status' => '*/2 * * * *',
+    'subscriptions' => '*/5 * * * *',
     'provider_health' => '*/5 * * * *',
     'refill_status' => '*/5 * * * *',
     'payment_reconciliation' => '*/5 * * * *',

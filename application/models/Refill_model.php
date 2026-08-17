@@ -23,7 +23,7 @@ class Refill_model extends MY_Model {
     public function active_for_order($order_id) {
         return $this->db->where('order_id', $order_id)
             ->where_in('status', array('PENDING','PROCESSING','IN_PROGRESS'))
-            ->get()->row();
+            ->get($this->table)->row();
     }
 
     public function find_by_id($id) {
@@ -36,5 +36,18 @@ class Refill_model extends MY_Model {
             ->join('orders', 'orders.id = refills.order_id', 'inner')
             ->where('refills.public_id', $public_id)
             ->where('orders.user_id', $user_id)->get()->row();
+    }
+
+    /** Refills awaiting a provider status poll (cron worker, Session 16). */
+    public function pending_provider_sync($limit = 100){
+        return $this->db
+            ->select('refills.*, orders.provider_id', false)
+            ->from($this->table)
+            ->join('orders', 'orders.id = refills.order_id', 'left')
+            ->where_in('refills.status', array('PENDING','PROCESSING','IN_PROGRESS'))
+            ->where('refills.provider_refill_id IS NOT NULL', null, false)
+            ->order_by('refills.last_checked_at', 'ASC')
+            ->limit($limit)
+            ->get()->result();
     }
 }
