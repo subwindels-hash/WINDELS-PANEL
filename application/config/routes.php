@@ -19,6 +19,7 @@ $route['faq'] = 'home/faq';
 $route['blog'] = 'home/blog';
 $route['blog/(:any)'] = 'home/blog_detail/$1';
 $route['contact'] = 'home/contact';
+$route['design-system'] = 'home/styleguide';
 $route['terms'] = 'home/terms';
 $route['privacy'] = 'home/privacy';
 $route['refund-policy'] = 'home/refund_policy';

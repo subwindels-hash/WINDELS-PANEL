@@ -38,6 +38,21 @@ class Home extends Public_Controller {
     public function privacy(){ $this->load->view('layouts/public', array('content_view'=>'public/privacy','data'=>array('title'=>'Privacy'))); }
     public function refund_policy(){ $this->load->view('layouts/public', array('content_view'=>'public/refund_policy','data'=>array('title'=>'Refund Policy'))); }
     public function acceptable_use(){ $this->load->view('layouts/public', array('content_view'=>'public/acceptable_use','data'=>array('title'=>'Acceptable Use'))); }
+
+    /**
+     * Living design-system guide (Session 04). Public so designers/reviewers can
+     * see the token/component inventory; renders inside the public shell.
+     */
+    public function styleguide(){
+        $this->load->view('layouts/public', array(
+            'content_view' => 'public/styleguide',
+            'data' => array(
+                'title' => 'Design System',
+                'meta_description' => 'WINDELS PANEL design tokens and component inventory.',
+                'active_homepage' => $this->active_homepage(),
+            ),
+        ));
+    }
     public function sitemap(){ $this->output->set_content_type('text/xml')->set_output('<?xml version="1.0"?><urlset></urlset>'); }
     public function robots(){ $this->output->set_content_type('text/plain')->set_output("User-agent: *\nAllow: /\nSitemap: ".base_url('sitemap.xml')); }
 }
