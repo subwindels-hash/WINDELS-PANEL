@@ -155,6 +155,9 @@ class Core_seeder extends Seeder {
             array('api_enabled',TRUE,'security',1),
             // affiliate
             array('referral_commission_percent','5.0000','affiliate',1),
+            array('referral_commission_scope','LIFETIME','affiliate',1),
+            array('referral_hold_hours',24,'affiliate',0),
+            array('referral_min_payout','0.01000000','affiliate',0),
         );
     }
 

@@ -193,6 +193,26 @@ class Api_v1 extends MY_Controller {
         ));
     }
 
+    /* ----------------------------- referrals ----------------------------- */
+
+    /** GET /api/v1/referrals — the key owner's affiliate summary (read-only). */
+    public function referrals() {
+        $this->require_get();
+        $this->load->library('AffiliateService');
+        $stats = $this->affiliateservice->stats($this->user, 0);
+
+        $this->ok(array(
+            'code'      => $stats['code'],
+            'link'      => $stats['link'],
+            'percent'   => (string)$stats['percent'],
+            'referred'  => (int)$stats['referred'],
+            'earned'    => (string)$stats['earned'],
+            'pending'   => (string)$stats['pending'],
+            'paid'      => (string)$stats['paid'],
+            'currency'  => 'USD',
+        ));
+    }
+
     /* ------------------------------- docs -------------------------------- */
 
     /** GET /api/docs — human-readable docs */
@@ -219,6 +239,7 @@ class Api_v1 extends MY_Controller {
                 array('method'=>'POST','path'=>'/api/v1/refills','desc'=>'Request a refill: {orderId}'),
                 array('method'=>'GET','path'=>'/api/v1/refills/:public_id','desc'=>'Refill status'),
                 array('method'=>'POST','path'=>'/api/v1/cancellations','desc'=>'Cancel an order: {orderId}'),
+                array('method'=>'GET','path'=>'/api/v1/referrals','desc'=>'Your referral code, link and commission totals'),
             ),
         ));
     }

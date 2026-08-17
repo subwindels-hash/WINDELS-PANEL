@@ -10,6 +10,7 @@ $nav = $is_admin ? array(
     array('admin/providers',    'Providers',  'providers.manage','server'),
     array('admin/payments',     'Payments',   'payments.view',   'credit-card'),
     array('admin/tickets',      'Tickets',    'tickets.view',    'message-square'),
+    array('admin/affiliates',   'Affiliates', 'affiliates.view', 'gift'),
     array('admin/settings',     'Settings',   'settings.manage', 'settings'),
 ) : array(
     array('dashboard',           'Dashboard',  null, 'dashboard'),

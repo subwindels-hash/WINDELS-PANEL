@@ -160,7 +160,9 @@ class OrderService {
             }
         }
         $this->transition($order->id, $order->status, 'CANCELED', 'CUSTOMER', 'Canceled by customer');
-        return array('ok'=>true, 'order'=>$this->ci->Order_model->find_by_id($order->id));
+        $order = $this->ci->Order_model->find_by_id($order->id);
+        $this->sync_affiliate($order);
+        return array('ok'=>true, 'order'=>$order);
     }
 
     /**
@@ -183,7 +185,9 @@ class OrderService {
         }
         $this->transition($order->id, $order->status, $new_status, $source, $reason);
         if ($data) $this->ci->db->where('id',$order->id)->update('orders',$data);
-        return array('ok'=>true, 'order'=>$this->ci->Order_model->find_by_id($order->id));
+        $order = $this->ci->Order_model->find_by_id($order->id);
+        $this->sync_affiliate($order);
+        return array('ok'=>true, 'order'=>$order);
     }
 
     private function apply_partial($order, $remains, $source, $reason) {
@@ -202,7 +206,33 @@ class OrderService {
                 $this->ci->db->where('id',$order->id)->update('orders', array('refunded_amount'=>$refund));
             }
         }
-        return array('ok'=>true, 'order'=>$this->ci->Order_model->find_by_id($order->id));
+        $order = $this->ci->Order_model->find_by_id($order->id);
+        $this->sync_affiliate($order);
+        return array('ok'=>true, 'order'=>$order);
+    }
+
+    /**
+     * Keep referral commissions in step with the order's final state
+     * (Session 14). Accrues on COMPLETED/PARTIAL, reverses unpaid commissions
+     * when the order ends up canceled/refunded/failed. Never fatal: an
+     * affiliate bookkeeping error must not fail an order status update.
+     */
+    private function sync_affiliate($order) {
+        if (!$order) return;
+        try {
+            $this->ci->load->library('AffiliateService');
+            if (!isset($this->ci->affiliateservice)
+                || !method_exists($this->ci->affiliateservice, 'record_for_order')) {
+                return;
+            }
+            if (in_array($order->status, array('COMPLETED','PARTIAL'), true)) {
+                $this->ci->affiliateservice->record_for_order($order);
+            } elseif (in_array($order->status, array('CANCELED','CANCELLED','REFUNDED','FAILED'), true)) {
+                $this->ci->affiliateservice->reverse_for_order($order);
+            }
+        } catch (Exception $e) {
+            log_message('error', 'affiliate sync failed: '.$e->getMessage());
+        }
     }
 
     /* -------------------------------------------------------------- */
@@ -311,8 +341,17 @@ class OrderService {
         }
     }
 
+    /**
+     * Move an order to a new state: validate the transition, write the order
+     * row and append the history entry — the two must always happen together,
+     * or `orders.status` and `order_status_history` drift apart (§26/29).
+     */
     private function transition($order_id, $from, $to, $source, $reason = null) {
         OrderStateMachine::assert($from, $to);
+        $this->ci->db->where('id', $order_id)->update('orders', array(
+            'status'     => $to,
+            'updated_at' => gmdate('Y-m-d H:i:s'),
+        ));
         $this->ci->Order_status_history_model->record($order_id, $from, $to, $source, $reason);
     }
 

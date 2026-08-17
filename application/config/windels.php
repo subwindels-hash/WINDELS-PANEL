@@ -48,4 +48,5 @@ $config['cron'] = array(
     'email_queue' => '*/5 * * * *',
     'analytics' => '0 * * * *',
     'provider_sync' => '*/60 * * * *',
+    'affiliate_payouts' => '*/10 * * * *',
 );
