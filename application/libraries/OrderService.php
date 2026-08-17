@@ -19,6 +19,9 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  */
 class OrderService {
 
+    /** Terminal states in which the customer must get their charge back. */
+    private static $refunding_states = array('CANCELED', 'CANCELLED', 'REFUNDED', 'FAILED', 'EXPIRED');
+
     const IDEM_SCOPE = 'order:create';
 
     private $ci;
@@ -161,8 +164,10 @@ class OrderService {
         }
         $this->transition($order->id, $order->status, 'CANCELED', 'CUSTOMER', 'Canceled by customer');
         $order = $this->ci->Order_model->find_by_id($order->id);
+        $refunded = $this->refund_charge($order, 'CUSTOMER');
+        $order = $this->ci->Order_model->find_by_id($order->id);
         $this->sync_affiliate($order);
-        return array('ok'=>true, 'order'=>$order);
+        return array('ok'=>true, 'order'=>$order, 'refunded'=>$refunded);
     }
 
     /**
@@ -175,19 +180,69 @@ class OrderService {
         if (!OrderStateMachine::can($order->status, $new_status)) {
             return array('ok'=>false,'error'=>"Illegal transition {$order->status} -> {$new_status}");
         }
+        // A partial delivery is its own path: it records `remains` and refunds
+        // the undelivered share. Callers reach it either by asking for PARTIAL
+        // directly (admin/provider sync) or by reporting COMPLETED with a
+        // non-zero remainder.
+        if (!empty($extra['remains']) && (int)$extra['remains'] > 0
+            && in_array($new_status, array('PARTIAL', 'COMPLETED'), true)) {
+            return $this->apply_partial($order, (int)$extra['remains'], $source, $reason);
+        }
         $data = array();
         if ($new_status === 'COMPLETED') {
             $data['completed_at'] = gmdate('Y-m-d H:i:s');
-            if (!empty($extra['remains']) && (int)$extra['remains'] > 0) {
-                // Caller says PARTIAL; route there instead.
-                return $this->apply_partial($order, (int)$extra['remains'], $source, $reason);
-            }
         }
         $this->transition($order->id, $order->status, $new_status, $source, $reason);
         if ($data) $this->ci->db->where('id',$order->id)->update('orders',$data);
         $order = $this->ci->Order_model->find_by_id($order->id);
+        // Reaching a terminal non-delivery state must return the customer's
+        // money; refund_charge() is idempotent so repeated calls are safe.
+        if (in_array($new_status, self::$refunding_states, true)) {
+            $this->refund_charge($order, $source);
+            $order = $this->ci->Order_model->find_by_id($order->id);
+        }
         $this->sync_affiliate($order);
         return array('ok'=>true, 'order'=>$order);
+    }
+
+    /**
+     * Return whatever of the charge has not already been refunded.
+     *
+     * Idempotent twice over: the amount is computed as charge minus
+     * refunded_amount (so a PARTIAL that already refunded its undelivered share
+     * only gives back the rest), and the ledger movement carries a
+     * deterministic key, so a retry credits nothing a second time.
+     *
+     * @return string the amount refunded ('0.00000000' when there was nothing to give back)
+     */
+    private function refund_charge($order, $source = 'SYSTEM') {
+        if (!$order) return '0.00000000';
+        $already = (string)($order->refunded_amount ?? '0');
+        $outstanding = bcsub((string)$order->charge, $already, 8);
+        if (bccomp($outstanding, '0', 8) <= 0) return '0.00000000';
+
+        $wallet = $this->ci->Wallet_model->for_user($order->user_id);
+        if (!$wallet) {
+            log_message('error', 'refund skipped: no wallet for user '.$order->user_id);
+            return '0.00000000';
+        }
+        $result = $this->ci->ledgerservice->refund(
+            $wallet->id, $outstanding, 'ORDER', $order->public_id,
+            'order:refund:'.$order->public_id
+        );
+        if (empty($result['ok'])) {
+            log_message('error', 'order refund failed for '.$order->public_id.': '.($result['error'] ?? 'unknown'));
+            return '0.00000000';
+        }
+        // A duplicate means an earlier run already credited this order; leave
+        // refunded_amount as it stands rather than double-counting it.
+        if (empty($result['duplicate'])) {
+            $this->ci->db->where('id', $order->id)->update('orders', array(
+                'refunded_amount' => bcadd($already, $outstanding, 8),
+                'updated_at'      => gmdate('Y-m-d H:i:s'),
+            ));
+        }
+        return $outstanding;
     }
 
     private function apply_partial($order, $remains, $source, $reason) {

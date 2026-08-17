@@ -35,4 +35,13 @@ class User_model extends MY_Model {
     public function is_staff($user) {
         return $user && in_array($user->role, array('SUPER_ADMIN','ADMIN','STAFF'), TRUE);
     }
+
+    /** Staff who can be assigned a ticket (admin UI dropdowns). */
+    public function staff_members(){
+        return $this->db->select('id, username, email, role', false)
+            ->where_in('role', array('SUPER_ADMIN','ADMIN','STAFF'))
+            ->where('status', 'ACTIVE')
+            ->order_by('username', 'ASC')
+            ->get($this->table)->result();
+    }
 }
