@@ -610,10 +610,15 @@ class AuthService {
                 $before, $after,
                 $ip ?: $this->ci->input->ip_address(),
                 $user_agent ?: $this->ci->input->user_agent(),
-                property_exists($this->ci, 'request_id') ? $this->ci->request_id : null
+                // request_id is protected on MY_Controller: property_exists()
+                // reports TRUE for it, but reading it from here raises an
+                // Error. Use the public accessor instead.
+                method_exists($this->ci, 'request_id') ? $this->ci->request_id() : null
             );
-        } catch (Exception $e) {
-            // Audit must never break the request; log and continue.
+        } catch (Throwable $e) {
+            // Audit must never break the request; log and continue. Throwable,
+            // not Exception: an Error here would otherwise escape and 500 a
+            // request whose real work (e.g. the login) already succeeded.
             log_message('error', 'audit failed: ' . $e->getMessage());
         }
     }

@@ -66,11 +66,20 @@ class Health extends MY_Controller {
      */
     private function check_schema() {
         try {
-            $table = $this->config->item('migration_table') ?: 'migrations';
+            // migration.php is not part of the auto-loaded config set, so its
+            // keys are absent from the registry until it is explicitly loaded.
+            // Without this the expected version reads NULL and readiness can
+            // never succeed, keeping every healthy deploy out of the pool.
+            $this->config->load('migration', TRUE, TRUE);
+            $cfg = $this->config->item('migration');
+            $cfg = is_array($cfg) ? $cfg : array();
+
+            $table = isset($cfg['migration_table']) ? $cfg['migration_table'] : 'migrations';
             if (!$this->db->table_exists($table)) return 'fail';
             $row = $this->db->get($table)->row();
             $current  = $row ? (int)$row->version : 0;
-            $expected = (int)$this->config->item('migration_version');
+            $expected = isset($cfg['migration_version']) ? (int)$cfg['migration_version'] : 0;
+            if ($expected === 0) return 'fail';
             return $current === $expected ? 'ok' : 'fail';
         } catch (Exception $e) {
             log_message('error', 'health: schema check failed: '.$e->getMessage());

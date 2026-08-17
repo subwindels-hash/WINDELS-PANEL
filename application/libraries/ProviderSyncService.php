@@ -236,11 +236,14 @@ class ProviderSyncService {
         );
         $provider = $this->ci->Provider_model->create($data);
         $this->ci->load->model('Audit_log_model');
-        $this->ci->Audit_log_model->record($this->ci->auth ? $this->ci->auth->id() : null,
+        // request_id is protected on MY_Controller: property_exists() reports
+        // TRUE but reading it from here raises an Error. Use the accessor.
+        $this->ci->Audit_log_model->record(
+            (isset($this->ci->authservice) && $this->ci->authservice) ? $this->ci->authservice->id() : null,
             'provider.create', 'providers', $provider->public_id,
             null, array('name'=>$provider->name,'api_url'=>$provider->api_url),
             $this->ci->input->ip_address(), $this->ci->input->user_agent(),
-            property_exists($this->ci,'request_id') ? $this->ci->request_id : null);
+            method_exists($this->ci, 'request_id') ? $this->ci->request_id() : null);
         return array('ok' => true, 'provider' => $provider);
     }
 

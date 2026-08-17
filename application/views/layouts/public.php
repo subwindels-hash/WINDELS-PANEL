@@ -14,9 +14,16 @@
 <body class="min-h-screen bg-white text-gray-900 antialiased">
 <?php
 // Active, time-bounded announcements (public + all audiences).
+// Inside a view $this is CI_Loader, which has no __get and no $auth, so the
+// controller instance must be fetched explicitly.
 if (!isset($announcements)) {
-    $this->load->model('Announcement_model');
-    $announcements = $this->Announcement_model->visible($this->auth && $this->auth->check() ? ($this->auth->has_role(array('SUPER_ADMIN','ADMIN','STAFF')) ? 'staff' : 'customers') : 'all');
+    $CI =& get_instance();
+    $CI->load->model('Announcement_model');
+    $audience = 'all';
+    if (isset($CI->auth) && $CI->auth->check()) {
+        $audience = $CI->auth->has_role(array('SUPER_ADMIN','ADMIN','STAFF')) ? 'staff' : 'customers';
+    }
+    $announcements = $CI->Announcement_model->visible($audience);
 }
 ?>
 <?php if (!empty($announcements)): ?>

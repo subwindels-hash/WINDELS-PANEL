@@ -12,6 +12,13 @@ class MY_Controller extends CI_Controller {
     protected $request_id;
     protected $auth;
 
+    /**
+     * Correlation id for this request, for logs and the audit trail.
+     * Public accessor because collaborators (AuthService, services) need it
+     * but must not reach into a protected property to get it.
+     */
+    public function request_id() { return $this->request_id; }
+
     /** Per-request CSP nonce; views use csp_nonce() to whitelist inline JS. */
     protected $csp_nonce;
 

@@ -27,7 +27,7 @@ foreach ($faqs as $f) { $by_cat[$f->category ?: 'General'][] = $f; }
 
     <div class="card text-center mt-8">
       <p class="muted">Still have a question?</p>
-      <?php if ($this->auth && $this->auth->check()): ?>
+      <?php if (!empty($current_user)): ?>
         <a class="btn btn-primary mt-2" href="<?=site_url('dashboard/tickets')?>">Open a ticket</a>
       <?php else: ?>
         <a class="btn btn-primary mt-2" href="<?=site_url('login')?>">Log in to contact support</a>
