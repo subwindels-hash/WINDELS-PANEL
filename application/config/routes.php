@@ -42,6 +42,8 @@ $route['auth/mfa/setup'] = 'auth/mfa_setup';
 // Dashboard (customer)
 $route['dashboard'] = 'dashboard/dashboard/index';
 $route['dashboard/orders'] = 'dashboard/orders/index';
+$route['dashboard/orders/create'] = 'dashboard/orders/create';
+$route['dashboard/orders/(:any)/cancel'] = 'dashboard/orders/cancel/$1';
 $route['dashboard/orders/(:any)'] = 'dashboard/orders/detail/$1';
 $route['dashboard/new-order'] = 'dashboard/orders/new_order';
 $route['dashboard/mass-order'] = 'dashboard/orders/mass_order';

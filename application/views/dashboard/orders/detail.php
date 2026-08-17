@@ -59,12 +59,22 @@
     <div class="card">
       <h3 class="card-title">Actions</h3>
       <div class="stack">
-        <?php if ($order->status === 'PENDING' || $order->status === 'PROCESSING' || $order->status === 'IN_PROGRESS'): ?>
-          <button class="btn btn-secondary btn-block" disabled>Request cancellation</button>
-          <p class="hint">Cancellation support arrives with the order engine (Session 09).</p>
+        <?php
+          $cancelable = in_array($order->status, array('PENDING','PROCESSING','IN_PROGRESS'), true);
+          $cancel_supported = !empty($service) && (int)$service->cancel_supported === 1;
+        ?>
+        <?php if ($cancelable && $cancel_supported): ?>
+          <form method="post" action="<?=site_url('dashboard/orders/'.$order->public_id.'/cancel')?>"
+                onsubmit="return confirm('Cancel this order? An in-progress order may still be delivered.')">
+            <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
+            <button class="btn btn-danger btn-block" type="submit">Request cancellation</button>
+          </form>
+        <?php elseif ($cancelable): ?>
+          <button class="btn btn-secondary btn-block" disabled>Cancellation not supported</button>
         <?php endif; ?>
         <?php if (!empty($service) && (int)$service->refill_supported === 1): ?>
           <button class="btn btn-secondary btn-block" disabled>Request refill</button>
+          <p class="hint">Refills ship in Session 10 (Advanced Orders).</p>
         <?php endif; ?>
         <a class="btn btn-ghost btn-block" href="<?=site_url('dashboard/orders')?>">← Back to orders</a>
       </div>
