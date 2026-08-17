@@ -33,6 +33,8 @@ class Provider_service_model extends MY_Model {
     public function upsert_service($provider_id, array $svc){
         $existing = $this->find_provider_service($provider_id, (string)$svc['provider_service_id']);
         $data = array(
+            'provider_id'        => $provider_id,
+            'provider_service_id'=> (string)$svc['provider_service_id'],
             'name'               => $svc['name'],
             'category'           => $svc['category'] ?? null,
             'rate'               => $svc['rate'],
@@ -45,14 +47,18 @@ class Provider_service_model extends MY_Model {
             'raw_payload'        => isset($svc['raw']) ? json_encode($svc['raw']) : null,
             'last_synced_at'     => gmdate('Y-m-d H:i:s'),
         );
-        if ($existing) {
-            unset($data['last_synced_at']);
-            $this->db->where('id', $existing->id)->update($this->table, $data);
-            return 'updated';
-        }
-        $data['provider_id'] = $provider_id;
-        $data['provider_service_id'] = (string)$svc['provider_service_id'];
-        $this->db->insert($this->table, $data);
-        return 'inserted';
+
+        // Single atomic statement against uq_provider_svc (provider_id,
+        // provider_service_id). A read-then-write pair would race two
+        // concurrent syncs of the same provider into a duplicate-key error.
+        $cols = array_keys($data);
+        $sql = 'INSERT INTO '.$this->table.' ('.implode(', ', $cols).') VALUES ('
+             . implode(', ', array_fill(0, count($cols), '?')).') '
+             . 'ON DUPLICATE KEY UPDATE '
+             . implode(', ', array_map(function($c){ return $c.' = VALUES('.$c.')'; },
+                 array_diff($cols, array('provider_id','provider_service_id'))));
+        $this->db->query($sql, array_values($data));
+
+        return $existing ? 'updated' : 'inserted';
     }
 }

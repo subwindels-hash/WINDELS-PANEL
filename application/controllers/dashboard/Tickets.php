@@ -9,7 +9,7 @@ class Tickets extends Auth_Controller {
     public function __construct() {
         parent::__construct();
         $this->load->model(array('Ticket_model','Ticket_message_model','Order_model'));
-        $this->load->library(array('TicketService','form_validation'));
+        $this->load->library(array('TicketService','DashboardStats','form_validation'));
     }
 
     public function index() {
@@ -22,6 +22,7 @@ class Tickets extends Auth_Controller {
         $this->load->view('layouts/app', array(
             'title' => 'Support',
             'nav_active' => 'dashboard/tickets',
+            'unread' => $this->dashboardstats->unread_count($this->current_user->id),
             'content_view' => 'dashboard/tickets/index',
             'current_user' => $this->current_user,
             'permissions' => $this->auth->permissions(),
@@ -52,6 +53,7 @@ class Tickets extends Auth_Controller {
         $this->load->view('layouts/app', array(
             'title' => 'Ticket #'.$public_id,
             'nav_active' => 'dashboard/tickets',
+            'unread' => $this->dashboardstats->unread_count($this->current_user->id),
             'content_view' => 'dashboard/tickets/detail',
             'current_user' => $this->current_user,
             'permissions' => $this->auth->permissions(),

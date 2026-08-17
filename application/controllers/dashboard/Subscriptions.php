@@ -9,7 +9,7 @@ class Subscriptions extends Auth_Controller {
     public function __construct() {
         parent::__construct();
         $this->load->model(array('Subscription_model','Service_model'));
-        $this->load->library(array('SubscriptionService','form_validation'));
+        $this->load->library(array('SubscriptionService','DashboardStats','form_validation'));
     }
 
     public function index() {
@@ -17,6 +17,7 @@ class Subscriptions extends Auth_Controller {
         $this->load->view('layouts/app', array(
             'title' => 'Subscriptions',
             'nav_active' => 'dashboard/subscriptions',
+            'unread' => $this->dashboardstats->unread_count($this->current_user->id),
             'content_view' => 'dashboard/subscriptions/index',
             'current_user' => $this->current_user,
             'permissions' => $this->auth->permissions(),
