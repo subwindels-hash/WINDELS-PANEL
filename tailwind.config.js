@@ -20,6 +20,8 @@ const stateSafelist = [
   'hover:bg-indigo-50', 'hover:text-indigo-700', 'hover:bg-slate-900',
   'focus:border-indigo-500', 'focus:ring-2', 'focus:ring-indigo-100',
   'focus:ring-indigo-500', 'bg-indigo-50', 'text-indigo-700',
+  'bg-rose-50', 'text-rose-700', 'text-amber-600', 'border-rose-100',
+  'border-indigo-500', 'font-medium',
 ];
 
 const windelsTokens = {
