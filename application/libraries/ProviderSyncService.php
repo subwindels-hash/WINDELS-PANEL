@@ -144,20 +144,31 @@ class ProviderSyncService {
      */
     public function normalize_service($row) {
         if (!is_array($row)) return null;
-        $id = $row['service'] ?? $row['service_id'] ?? $row['id'] ?? null;
-        $name = $row['name'] ?? null;
-        $rate = $row['rate'] ?? $row['cost'] ?? null;
+        // Panels differ in both key spelling and casing ('ID', 'Service',
+        // 'minimum'), so match case-insensitively across the known aliases.
+        $lower = array();
+        foreach ($row as $k => $v) $lower[strtolower((string)$k)] = $v;
+        $pick = function(array $keys) use ($lower) {
+            foreach ($keys as $k) {
+                if (isset($lower[$k]) && $lower[$k] !== '') return $lower[$k];
+            }
+            return null;
+        };
+
+        $id   = $pick(array('service', 'service_id', 'serviceid', 'id'));
+        $name = $pick(array('name', 'title', 'service_name'));
+        $rate = $pick(array('rate', 'cost', 'price', 'rate_per_1000'));
         if ($id === null || $name === null || $rate === null) return null;
         if (!is_numeric($rate) || $rate < 0) return null;
 
         return array(
             'provider_service_id' => (string)$id,
             'name'               => mb_substr((string)$name, 0, 255),
-            'category'           => $row['category'] ?? null,
+            'category'           => $pick(array('category', 'category_name')),
             'rate'               => number_format((float)$rate, 8, '.', ''),
-            'min_quantity'       => (int)($row['min'] ?? 1),
-            'max_quantity'       => (int)($row['max'] ?? 0),
-            'service_type'       => $this->map_type($row['type'] ?? 'DEFAULT'),
+            'min_quantity'       => (int)($pick(array('min', 'minimum', 'min_order')) ?? 1),
+            'max_quantity'       => (int)($pick(array('max', 'maximum', 'max_order')) ?? 0),
+            'service_type'       => $this->map_type($pick(array('type', 'service_type')) ?? 'DEFAULT'),
             'cancel'             => $this->flag($row, 'cancel'),
             'refill'             => $this->flag($row, 'refill'),
             'dripfeed'           => $this->flag($row, 'dripfeed'),
@@ -170,6 +181,21 @@ class ProviderSyncService {
         $allowed = array('DEFAULT','CUSTOM_COMMENTS','CUSTOM','PACKAGE','SUBSCRIPTION',
                          'MENTIONS_USER_FOLLOWERS','MENTIONS_HASHTAG','MENTIONS',
                          'COMMENT_LIKES','POLL_VOTES');
+        // Common provider spellings that mean one of the canonical types.
+        $aliases = array(
+            'SUBSCRIPTIONS'          => 'SUBSCRIPTION',
+            'DRIP_FEED'              => 'DEFAULT',
+            'COMMENTS'               => 'CUSTOM_COMMENTS',
+            'CUSTOM_COMMENT'         => 'CUSTOM_COMMENTS',
+            'CUSTOM_COMMENTS_PACKAGE'=> 'CUSTOM_COMMENTS',
+            'MENTIONS_CUSTOM_LIST'   => 'MENTIONS',
+            'MENTIONS_USER_FOLLOWER' => 'MENTIONS_USER_FOLLOWERS',
+            'MENTIONS_HASHTAGS'      => 'MENTIONS_HASHTAG',
+            'POLL_VOTE'              => 'POLL_VOTES',
+            'COMMENT_LIKE'           => 'COMMENT_LIKES',
+            'PACKAGES'               => 'PACKAGE',
+        );
+        if (isset($aliases[$t])) $t = $aliases[$t];
         return in_array($t, $allowed, true) ? $t : 'DEFAULT';
     }
 
@@ -210,11 +236,14 @@ class ProviderSyncService {
         );
         $provider = $this->ci->Provider_model->create($data);
         $this->ci->load->model('Audit_log_model');
-        $this->ci->Audit_log_model->record($this->ci->auth ? $this->ci->auth->id() : null,
+        // request_id is protected on MY_Controller: property_exists() reports
+        // TRUE but reading it from here raises an Error. Use the accessor.
+        $this->ci->Audit_log_model->record(
+            (isset($this->ci->authservice) && $this->ci->authservice) ? $this->ci->authservice->id() : null,
             'provider.create', 'providers', $provider->public_id,
             null, array('name'=>$provider->name,'api_url'=>$provider->api_url),
             $this->ci->input->ip_address(), $this->ci->input->user_agent(),
-            property_exists($this->ci,'request_id') ? $this->ci->request_id : null);
+            method_exists($this->ci, 'request_id') ? $this->ci->request_id() : null);
         return array('ok' => true, 'provider' => $provider);
     }
 

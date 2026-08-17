@@ -218,8 +218,14 @@ class ProvidersFakeCI {
     public $Audit_log_model;
     public $request_id = 'test';
     public function __construct() {
+        // Register before constructing anything that calls get_instance()
+        // inside its own constructor (the real libraries below do).
+        $GLOBALS['__fake_ci'] = $this;
         $this->db = new ProvidersFakeDb();
-        $this->enc = new EncryptionService();
+        // CI3 exposes a loaded library under its lower-cased class name;
+        // ->enc is just a convenience alias for the assertions below.
+        $this->encryptionservice = new EncryptionService();
+        $this->enc = $this->encryptionservice;
         $this->input = new ProvidersFakeInput();
         $this->auth = new ProvidersFakeAuth();
         $this->Provider_model = new ProvidersFakeProviderModel($this);

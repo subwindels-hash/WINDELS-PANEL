@@ -15,8 +15,9 @@ class Home extends Public_Controller {
         $data = array('active_homepage'=>$active, 'title'=>'WINDELS PANEL — SMM Reseller Platform');
         // Single switch — no Node
         $view = 'homepages/'.strtolower($active).'/index';
-        // Fallback if template missing
-        if (!$this->load->views_exist($view)) $view = 'homepages/aurora/index';
+        // Fallback if template missing. CI_Loader has no view-exists helper, so
+        // check the filesystem directly (AURORA is the guaranteed default).
+        if (!is_file(VIEWPATH.$view.'.php')) $view = 'homepages/aurora/index';
         $this->load->view('layouts/public', array('content_view'=>$view,'data'=>$data));
     }
     private function active_homepage(){

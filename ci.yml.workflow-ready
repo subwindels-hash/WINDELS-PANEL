@@ -29,6 +29,21 @@ jobs:
       - run: composer install --no-interaction --prefer-dist
       - run: vendor/bin/phpunit --testdox
 
+      - name: Deployment preflight (production rules)
+        env:
+          CI_ENV: production
+          APP_URL: https://ci.example.com
+        run: |
+          unset ENCRYPTION_KEY
+          # A production preflight with no ENCRYPTION_KEY must fail. If this
+          # step succeeds, the guard that protects provider keys and MFA
+          # secrets has regressed.
+          if php index.php deploy check; then
+            echo "preflight passed without ENCRYPTION_KEY — guard has regressed"
+            exit 1
+          fi
+          echo "preflight correctly rejected an unsafe production config"
+
       - name: Schema dump is in sync with migrations
         run: php tools/export_schema.php --check
 

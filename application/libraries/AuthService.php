@@ -103,9 +103,34 @@ class AuthService {
         }
 
         $user = $this->ci->User_model->find_by_id($user_id);
+
+        // Referral attribution is first-touch and permanent (Session 14). It is
+        // deliberately outside the registration transaction: a failure here must
+        // never cost the customer their account.
+        if ($referred_by && $ref) {
+            $this->attribute_referral($ref, $user);
+        }
+
         $this->audit($user_id, 'auth.register', 'users', $user->public_id,
             null, array('email' => $email), $data['ip'] ?? null);
         return array('ok' => true, 'user' => $user);
+    }
+
+    /** Link a new signup to its referrer via AffiliateService (never fatal). */
+    private function attribute_referral($referrer, $referred) {
+        try {
+            $this->ci->load->library('AffiliateService');
+            if (!isset($this->ci->affiliateservice)
+                || !method_exists($this->ci->affiliateservice, 'attribute')) {
+                return;
+            }
+            $res = $this->ci->affiliateservice->attribute($referrer, $referred);
+            if (empty($res['ok'])) {
+                log_message('info', 'referral not attributed: '.($res['code'] ?? 'UNKNOWN'));
+            }
+        } catch (Exception $e) {
+            log_message('error', 'referral attribution failed: '.$e->getMessage());
+        }
     }
 
     /* -------------------------------------------------------------- */
@@ -168,6 +193,17 @@ class AuthService {
      * @param string $code  6-digit TOTP or a recovery code
      * @return array{ok:bool,error?:string,used_recovery?:bool}
      */
+    /**
+     * Stable identifier for the half-authenticated user awaiting MFA, for
+     * rate-limit bucketing. Returns '' when there is no pending challenge —
+     * the caller then throttles on IP alone.
+     */
+    public function pending_mfa_identifier() {
+        $pending = $this->ci->session->userdata(self::SESSION_MFA_KEY);
+        if (!$pending || !is_array($pending) || empty($pending['user_id'])) return '';
+        return 'user:'.(int)$pending['user_id'];
+    }
+
     public function verify_mfa($code, $ip = null, $user_agent = null) {
         $pending = $this->ci->session->userdata(self::SESSION_MFA_KEY);
         if (!$pending || !is_array($pending) || (int)($pending['expires_at'] ?? 0) < time()) {
@@ -530,12 +566,14 @@ class AuthService {
     /* -------------------------------------------------------------- */
 
     public function hash_password($plain) {
-        // Argon2id when available, else bcrypt (CI3/PHP 8.1 defaults to bcrypt).
-        $algo = defined('PASSWORD_ARGON2ID') ? PASSWORD_ARGON2ID : PASSWORD_BCRYPT;
-        $opts = $algo === PASSWORD_ARGON2ID
-            ? array('memory_cost' => 65536, 'time_cost' => 4, 'threads' => 2)
-            : array('cost' => 12);
-        return password_hash((string)$plain, $algo, $opts);
+        // Argon2id when the build supports it, else bcrypt. The constant is
+        // only dereferenced after defined() confirms it exists — some PHP
+        // builds ship without libargon2.
+        if (defined('PASSWORD_ARGON2ID')) {
+            return password_hash((string)$plain, PASSWORD_ARGON2ID,
+                array('memory_cost' => 65536, 'time_cost' => 4, 'threads' => 2));
+        }
+        return password_hash((string)$plain, PASSWORD_BCRYPT, array('cost' => 12));
     }
 
     private function password_fingerprint($user) {
@@ -572,10 +610,15 @@ class AuthService {
                 $before, $after,
                 $ip ?: $this->ci->input->ip_address(),
                 $user_agent ?: $this->ci->input->user_agent(),
-                property_exists($this->ci, 'request_id') ? $this->ci->request_id : null
+                // request_id is protected on MY_Controller: property_exists()
+                // reports TRUE for it, but reading it from here raises an
+                // Error. Use the public accessor instead.
+                method_exists($this->ci, 'request_id') ? $this->ci->request_id() : null
             );
-        } catch (Exception $e) {
-            // Audit must never break the request; log and continue.
+        } catch (Throwable $e) {
+            // Audit must never break the request; log and continue. Throwable,
+            // not Exception: an Error here would otherwise escape and 500 a
+            // request whose real work (e.g. the login) already succeeded.
             log_message('error', 'audit failed: ' . $e->getMessage());
         }
     }

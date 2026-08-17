@@ -18,8 +18,9 @@ class SubscriptionService {
         $this->ci =& get_instance();
         $this->ci->load->model(array(
             'Service_model', 'Subscription_model', 'Subscription_event_model', 'Blacklist_model',
+            'User_model',
         ));
-        $this->ci->load->library(array('PricingService'));
+        $this->ci->load->library(array('PricingService', 'OrderService'));
     }
 
     public function create($user, array $input) {
@@ -81,6 +82,111 @@ class SubscriptionService {
         if ($this->ci->db->trans_status() === false) return array('ok'=>false,'error'=>'Could not create subscription','code'=>'PERSIST_FAILED');
 
         return array('ok'=>true,'subscription'=>$this->ci->Subscription_model->find_by_id($id));
+    }
+
+    /**
+     * Execute one due subscription run (called by the cron worker).
+     *
+     * Unlike drip-feed, a subscription is **not** prepaid: each run charges the
+     * wallet at execution time, so an insufficient balance pauses the plan
+     * rather than failing it permanently.
+     *
+     * Concurrency: the row is claimed by advancing next_execution_at with a
+     * compare-and-set before any order is placed, so overlapping workers cannot
+     * both run the same cycle. The order also carries a deterministic
+     * idempotency key per (subscription, run number).
+     *
+     * @return array{ok:bool, skipped?:bool, order?:object, error?:string, code?:string}
+     */
+    public function execute_due($sub) {
+        $sub = is_object($sub) ? $sub : $this->ci->Subscription_model->find_by_id((int)$sub);
+        if (!$sub) return array('ok'=>false,'error'=>'Subscription not found','code'=>'NOT_FOUND');
+        if ($sub->status !== 'ACTIVE') return array('ok'=>true,'skipped'=>true,'reason'=>'not active');
+
+        $now = gmdate('Y-m-d H:i:s');
+        if ($sub->next_execution_at !== null && $sub->next_execution_at > $now) {
+            return array('ok'=>true,'skipped'=>true,'reason'=>'not due');
+        }
+        // Expired or out of runs: close it out instead of ordering again.
+        if ($sub->expires_at !== null && $sub->expires_at <= $now) {
+            $this->close($sub, 'EXPIRED', 'Subscription reached its end date');
+            return array('ok'=>true,'skipped'=>true,'reason'=>'expired');
+        }
+        if ($sub->runs !== null && (int)$sub->runs_completed >= (int)$sub->runs) {
+            $this->close($sub, 'COMPLETED', 'All runs completed');
+            return array('ok'=>true,'skipped'=>true,'reason'=>'all runs completed');
+        }
+
+        $interval = (int)(self::INTERVALS[$sub->interval_type] ?? 1440);
+        $next     = gmdate('Y-m-d H:i:s', time() + ($interval * 60));
+
+        // Claim this cycle by moving the clock forward first.
+        $this->ci->db->where('id', $sub->id)
+            ->where('next_execution_at', $sub->next_execution_at)
+            ->update('subscriptions', array('next_execution_at' => $next));
+        if ((int)$this->ci->db->affected_rows() !== 1) {
+            return array('ok'=>true,'skipped'=>true,'reason'=>'claimed by another worker');
+        }
+
+        $run_number = (int)$sub->runs_completed + 1;
+        $user = $this->ci->User_model->find_by_id($sub->user_id);
+        if (!$user) {
+            $this->event($sub->id, 'failed', array('error'=>'user not found'));
+            return array('ok'=>false,'error'=>'User not found','code'=>'NO_USER');
+        }
+
+        $result = $this->ci->orderservice->place($user, array(
+            'service'         => $sub->service_id,
+            'link'            => $sub->target,
+            'quantity'        => (int)$sub->quantity,
+            'source'          => 'SUBSCRIPTION',
+            'subscription_id' => $sub->id,
+            'fields'          => $sub->metadata ? json_decode($sub->metadata, true) : null,
+            'idempotency_key' => 'subscription:'.$sub->public_id.':run:'.$run_number,
+        ));
+
+        if (empty($result['ok'])) {
+            $code = $result['code'] ?? 'RUN_FAILED';
+            // No funds is a recoverable condition: pause so the customer can
+            // top up and resume, rather than burning the remaining runs.
+            if ($code === 'INSUFFICIENT_BALANCE') {
+                $this->ci->db->where('id', $sub->id)->update('subscriptions', array('status'=>'PAUSED'));
+                $this->event($sub->id, 'paused', array('reason'=>'insufficient balance'));
+                return array('ok'=>false,'error'=>'Insufficient balance','code'=>$code,'paused'=>true);
+            }
+            $this->event($sub->id, 'failed', array('error'=>$result['error'] ?? 'order failed'));
+            return array('ok'=>false,'error'=>$result['error'] ?? 'Order failed','code'=>$code);
+        }
+
+        $order     = $result['order'];
+        $completed = $run_number;
+        $finished  = $sub->runs !== null && $completed >= (int)$sub->runs;
+
+        $this->ci->db->where('id', $sub->id)->update('subscriptions', array(
+            'runs_completed'    => $completed,
+            'status'            => $finished ? 'COMPLETED' : 'ACTIVE',
+            'next_execution_at' => $finished ? null : $next,
+            'updated_at'        => gmdate('Y-m-d H:i:s'),
+        ));
+        $this->event($sub->id, 'executed', array('order'=>$order->public_id,'run'=>$completed));
+
+        return array('ok'=>true,'order'=>$order,'run'=>$completed,'finished'=>$finished);
+    }
+
+    private function close($sub, $status, $reason) {
+        $this->ci->db->where('id', $sub->id)->update('subscriptions', array(
+            'status' => $status, 'next_execution_at' => null,
+        ));
+        $this->event($sub->id, strtolower($status), array('reason'=>$reason));
+    }
+
+    private function event($subscription_id, $type, array $payload = array()) {
+        $this->ci->db->insert('subscription_events', array(
+            'subscription_id' => $subscription_id,
+            'type'            => $type,
+            'payload'         => json_encode($payload),
+            'created_at'      => gmdate('Y-m-d H:i:s'),
+        ));
     }
 
     public function pause($public_id, $user) {

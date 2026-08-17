@@ -20,10 +20,10 @@ class AuthRbacTest extends TestCase
         if (!defined('BASEPATH')) define('BASEPATH', self::$root.'/system/');
         // Minimal CI shims so the libraries can be loaded standalone.
         if (!class_exists('CI_Model')) eval('class CI_Model {}');
-        if (!class_exists('User_model')) {
-            eval('class User_model { public function find_by_id($id){ $u = get_instance()->current_user; return ($u && (int)$u->id === (int)$id) ? $u : null; } public function touch_login($id,$ip){} }');
-        }
-        if (!class_exists('Role_model')) eval('class Role_model {}');
+        // These doubles are deliberately NOT named User_model/Role_model:
+        // declaring the production class names globally collided with the real
+        // models IntegrationTest loads in the same process, and whichever test
+        // file ran first won. AuthRbacFakeLoader maps the real names to these.
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         if (!function_exists('windels_public_id')) {
             require_once self::$root.'/application/helpers/windels_helper.php';
@@ -182,6 +182,9 @@ class AuthRbacFakeCI {
 
     public function __construct()
     {
+        // Register before constructing anything that calls get_instance()
+        // inside its own constructor (the real libraries below do).
+        $GLOBALS['__fake_ci'] = $this;
         $this->perm_model = new AuthRbacFakePermModel();
         $this->session = new AuthRbacFakeSession();
         $this->load = new AuthRbacFakeLoader($this);
@@ -189,6 +192,16 @@ class AuthRbacFakeCI {
         $this->db = new AuthRbacFakeDb();
     }
 }
+
+class AuthRbacFakeUserModel {
+    public function find_by_id($id) {
+        $u = get_instance()->current_user;
+        return ($u && (int)$u->id === (int)$id) ? $u : null;
+    }
+    public function touch_login($id, $ip) {}
+}
+
+class AuthRbacFakeRoleModel {}
 
 class AuthRbacFakeLoader {
     private $ci;
@@ -208,13 +221,14 @@ class AuthRbacFakeLoader {
         return $this;
     }
 
+    /** CI3 assigns models under their own (capitalised) class name. */
     public function model($names) {
         foreach ((array)$names as $name) {
-            $prop = strtolower($name);
-            if (isset($this->ci->$prop)) continue;
-            if ($name === 'Permission_model') $this->ci->$prop = $this->ci->perm_model;
-            elseif (class_exists($name)) $this->ci->$prop = new $name();
-            else $this->ci->$prop = new stdClass();
+            if (isset($this->ci->$name)) continue;
+            if ($name === 'Permission_model') $this->ci->$name = $this->ci->perm_model;
+            elseif ($name === 'User_model') $this->ci->$name = new AuthRbacFakeUserModel();
+            elseif ($name === 'Role_model') $this->ci->$name = new AuthRbacFakeRoleModel();
+            else $this->ci->$name = new stdClass();
         }
         return $this;
     }

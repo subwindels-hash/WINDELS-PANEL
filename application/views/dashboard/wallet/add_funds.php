@@ -83,7 +83,7 @@ $min = 5.0; $max = 10000.0;
 .ws-payopt{display:flex;align-items:center;gap:.6rem;cursor:pointer;padding:1rem}
 .ws-payopt input{margin:0}
 </style>
-<script>
+<script <?=csp_nonce_attr()?>>
 (function(){
   var amt=document.getElementById('ws-amount'),dep=document.getElementById('ws-deposit'),nb=document.getElementById('ws-newbal');
   var base=parseFloat(<?=json_encode((float)($wallet->balance ?? 0))?>);

@@ -100,9 +100,18 @@ class Auth extends MY_Controller {
 
     /** MFA second factor form submission (same URL as login via POST). */
     public function mfa_verify() {
+        $ip = $this->input->ip_address();
+        // A TOTP code is only 6 digits. Without a limit the second factor is
+        // brute-forceable in minutes once the password is known.
+        $bucket = RateLimiter::scope('mfa', $this->auth->pending_mfa_identifier());
+        if ($this->ratelimiter->too_many_failures($ip, $bucket, 5, 900)) {
+            $this->session->set_flashdata('error', 'Too many attempts. Try again later.');
+            return redirect('login');
+        }
         $code = $this->input->post('code', true);
-        $result = $this->auth->verify_mfa($code, $this->input->ip_address(), $this->input->user_agent());
+        $result = $this->auth->verify_mfa($code, $ip, $this->input->user_agent());
         if (!$result['ok']) {
+            $this->ratelimiter->record($bucket, $ip, false, 'MFA_FAILED', $this->input->user_agent());
             $this->session->set_flashdata('mfa_required', true);
             $this->session->set_flashdata('error', $this->login_error_message($result['error']));
             return redirect('login');
@@ -169,10 +178,16 @@ class Auth extends MY_Controller {
             $this->session->set_flashdata('error', 'That email address is not permitted.');
             return redirect('register');
         }
-        if ($this->ratelimiter->too_many_failures($ip, $email, 10, 3600)) {
+        // Scoped: passing a bare $email counted unrelated *login* failures for
+        // that address, so a user who mistyped their password could not then
+        // register. Recorded too, otherwise the counter never moved and the
+        // limit did nothing.
+        $reg_bucket = RateLimiter::scope('register', $email);
+        if ($this->ratelimiter->too_many_failures($ip, $reg_bucket, 5, 3600)) {
             $this->session->set_flashdata('error', 'Too many registrations from this network. Try again later.');
             return redirect('register');
         }
+        $this->ratelimiter->record($reg_bucket, $ip, false, 'register_attempt', $this->input->user_agent());
 
         $data = array(
             'username'         => $this->input->post('username', true),
@@ -276,13 +291,17 @@ class Auth extends MY_Controller {
             return $this->render_auth('auth/forgot_password', array('title' => 'Reset your password'));
         }
         $ip = $this->input->ip_address();
-        if ($this->ratelimiter->too_many_failures($ip, 'pwreset', 5, 900)) {
+        // Scoped per account: a bare 'pwreset' identifier would share one
+        // counter across every user, so a handful of requests would disable
+        // password reset site-wide.
+        $bucket = RateLimiter::scope('pwreset', $this->input->post('identifier', true));
+        if ($this->ratelimiter->too_many_failures($ip, $bucket, 5, 900)) {
             $this->session->set_flashdata('error', 'Too many requests. Try again later.');
             return redirect('forgot-password');
         }
-        // Count every reset request (success or not) under the 'pwreset'
-        // pseudo-identifier so the window actually locks after 5 requests.
-        $this->ratelimiter->record('pwreset', $ip, false, 'reset_requested', $this->input->user_agent());
+        // Count every reset request (success or not) so the window actually
+        // locks after 5 requests, not just after 5 failures.
+        $this->ratelimiter->record($bucket, $ip, false, 'reset_requested', $this->input->user_agent());
 
         $result = $this->auth->begin_password_reset($this->input->post('identifier', true), $ip);
         if (!empty($result['token'])) {
@@ -296,7 +315,7 @@ class Auth extends MY_Controller {
             if (getenv('APP_ENV') !== 'production') {
                 $this->session->set_flashdata('dev_link', $url);
             }
-            $this->ratelimiter->record('pwreset', $ip, true, null, $this->input->user_agent());
+            $this->ratelimiter->record($bucket, $ip, true, null, $this->input->user_agent());
         }
         // Always show the same message to prevent user enumeration.
         $this->session->set_flashdata('success',

@@ -16,8 +16,8 @@ class SupportContentTest extends TestCase
         if (!class_exists('CI_Model')) eval('class CI_Model {}');
         if (!function_exists('get_instance')) eval('function get_instance(){ return $GLOBALS["__fake_ci"]; }');
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
-        if (!function_exists('windels_public_id')) require self::$root.'/application/helpers/windels_helper.php';
-        require self::$root.'/application/libraries/TicketService.php';
+        if (!function_exists('windels_public_id')) require_once self::$root.'/application/helpers/windels_helper.php';
+        require_once self::$root.'/application/libraries/TicketService.php';
     }
 
     /* --------------------------- validation -------------------------- */
@@ -179,6 +179,9 @@ class SupportContentTest extends TestCase
 class ScFakeCI {
     public $user, $ticket, $order, $db, $load, $inserts=array();
     public function __construct() {
+        // Register before constructing anything that calls get_instance()
+        // inside its own constructor (the real libraries below do).
+        $GLOBALS['__fake_ci'] = $this;
         $this->user = (object)array('id'=>7,'status'=>'ACTIVE');
         $this->ticket = (object)array('id'=>21,'public_id'=>'TKT1','user_id'=>7,'status'=>'OPEN','closed_at'=>null);
         $this->order = (object)array('id'=>9,'public_id'=>'ORD1','user_id'=>7);
@@ -201,7 +204,7 @@ class ScFakeDb {
     public function insert($t,$d=array()){
         $this->ci->inserts[$t]=($this->ci->inserts[$t]??0)+1;
         if ($t==='tickets') $this->ci->ticket=(object)array_merge((array)$this->ci->ticket,$d);
-        if ($t==='ticket_messages') $this->ci->message=(object)array('id'=>5)+$d;
+        if ($t==='ticket_messages') $this->ci->message=(object)array_merge(array('id'=>5), $d);
         return true;
     }
     public function insert_batch($t,$rows){ return true; }
@@ -216,6 +219,10 @@ class ScFakeResult {
 }
 class ScFakeTicketModel {
     private $ci; function __construct($ci){$this->ci=$ci;}
+    function find_public_for_user($p,$u){
+        return ($p === $this->ci->ticket->public_id && (int)$u === (int)$this->ci->ticket->user_id)
+            ? $this->ci->ticket : null;
+    }
     function create($d){$this->ci->db->insert('tickets',$d);return $this->ci->ticket;}
     function touch($id,$e=array()){foreach($e as $k=>$v)$this->ci->ticket->$k=$v;}
     function close($id){$this->ci->ticket->status='CLOSED';}

@@ -27,6 +27,14 @@ namespace PHPUnit\Framework {
 
         protected function markTestSkipped($m = '') { throw new SkippedTest($m); }
 
+        /** Set by expectException(); the runner enforces it after the test body. */
+        public $__expected_exception = null;
+
+        protected function expectException($class)
+        {
+            $this->__expected_exception = $class;
+        }
+
         private static function pass() { self::$assertions++; }
 
         private static function fail($message, $detail = '')
@@ -58,6 +66,13 @@ namespace PHPUnit\Framework {
             $e == $a ? self::pass() : self::fail($m ?: 'Failed asserting two values are equal.', 'expected: '.self::export($e)."\n     actual: ".self::export($a));
         }
         public static function assertNotSame($e, $a, $m = '') { $e !== $a ? self::pass() : self::fail($m ?: 'Failed asserting two values are different.'); }
+        public static function assertNotFalse($v, $m = '') { $v !== false ? self::pass() : self::fail($m ?: 'Failed asserting that value is not false.'); }
+        public static function assertNotTrue($v, $m = '') { $v !== true ? self::pass() : self::fail($m ?: 'Failed asserting that value is not true.'); }
+        public static function assertNotEquals($e, $a, $m = '') { $e != $a ? self::pass() : self::fail($m ?: 'Failed asserting two values are not equal.'); }
+        public static function assertIsNumeric($v, $m = '') { is_numeric($v) ? self::pass() : self::fail($m ?: 'Failed asserting that value is numeric.', self::export($v)); }
+        public static function assertIsObject($v, $m = '') { is_object($v) ? self::pass() : self::fail($m ?: 'Failed asserting that value is an object.', self::export($v)); }
+        public static function assertFileDoesNotExist($p, $m = '') { !file_exists($p) ? self::pass() : self::fail($m ?: "Failed asserting that file {$p} does not exist."); }
+        public static function assertStringEndsWith($x, $s, $m = '') { substr((string)$s, -strlen((string)$x)) === (string)$x ? self::pass() : self::fail($m ?: 'Failed asserting that string ends with '.self::export($x).'.'); }
 
         public static function assertCount($n, $x, $m = '')
         {
@@ -134,8 +149,18 @@ namespace {
     use PHPUnit\Framework\SkippedTest;
     use PHPUnit\Framework\TestCase;
 
+    // Shared with phpunit.xml so both runners agree on ENVIRONMENT.
+    require_once __DIR__.'/../tests/bootstrap.php';
+
     $root = dirname(__DIR__);
     $filter = isset($argv[1]) ? $argv[1] : null;
+
+    /** PHPUnit's setUp()/tearDown() are protected; call them the way PHPUnit does. */
+    function invoke_protected($instance, $method) {
+        $ref = new \ReflectionMethod($instance, $method);
+        if (PHP_VERSION_ID < 80100) $ref->setAccessible(true);
+        $ref->invoke($instance);
+    }
 
     $files = glob($root.'/tests/unit/*Test.php');
     sort($files);
@@ -170,7 +195,14 @@ namespace {
             if (strpos($method, 'test') !== 0) continue;
             $instance = new $class();
             try {
+                invoke_protected($instance, 'setUp');
                 $instance->$method();
+                // expectException() with nothing thrown is a failure, not a pass.
+                if ($instance->__expected_exception !== null) {
+                    throw new AssertionFailedError(
+                        'Expected exception '.$instance->__expected_exception.' was not thrown');
+                }
+                invoke_protected($instance, 'tearDown');
                 echo "  ✔ ".$method."\n";
                 $passed++;
             } catch (SkippedTest $e) {
@@ -181,6 +213,14 @@ namespace {
                 $failed++;
                 $failures[] = $class.'::'.$method."\n    ".$e->getMessage();
             } catch (\Throwable $e) {
+                $want = $instance->__expected_exception;
+                if ($want !== null && $e instanceof $want) {
+                    TestCase::$assertions++;
+                    invoke_protected($instance, 'tearDown');
+                    echo "  ✔ ".$method."\n";
+                    $passed++;
+                    continue;
+                }
                 echo "  ✘ ".$method." — ".get_class($e).': '.$e->getMessage()."\n";
                 $failed++;
                 $failures[] = $class.'::'.$method.' — '.$e->getMessage();

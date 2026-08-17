@@ -7,6 +7,11 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * Customer replies can never be internal notes; a reply reopens a CLOSED
  * ticket and bumps last_reply_at. Attachments are stored as URLs (file upload
  * handling is a separate, upload-validated step).
+ *
+ * Session 15 adds the staff side: staff_reply() and note() are not scoped to
+ * the requester (they are reachable only behind tickets.reply / tickets.manage)
+ * and may mark a message as an internal note, which the customer view filters
+ * out.
  */
 class TicketService {
 
@@ -14,7 +19,7 @@ class TicketService {
 
     public function __construct() {
         $this->ci =& get_instance();
-        $this->ci->load->model(array('Ticket_model','Ticket_message_model','Order_model'));
+        $this->ci->load->model(array('Ticket_model','Ticket_message_model','Order_model','User_model'));
     }
 
     /**
@@ -76,6 +81,62 @@ class TicketService {
         return array('ok'=>true,'message'=>$msg,'ticket'=>$this->ci->Ticket_model->find_by_id($ticket->id));
     }
 
+    /**
+     * Staff reply to any ticket (not scoped to the requester).
+     *
+     * @param bool $internal true stores an internal note the customer never sees
+     * @return array{ok:bool,message?:object,ticket?:object,error?:string,code?:string}
+     */
+    public function staff_reply($public_id, $staff, $body, $internal = false, array $attachments = array()) {
+        $ticket = $this->ci->Ticket_model->admin_find($public_id);
+        if (!$ticket) return array('ok'=>false,'error'=>'Ticket not found','code'=>'NO_TICKET');
+        $body = trim((string)$body);
+        if ($body === '' || mb_strlen($body) > 20000)
+            return array('ok'=>false,'error'=>'Message is required','code'=>'BAD_MESSAGE');
+
+        $this->ci->db->trans_start();
+        $msg = $this->add_message($ticket->id, $staff->id, $body, 1, $attachments, $internal ? 1 : 0);
+        // An internal note is bookkeeping: it must not flip the ticket into
+        // ANSWERED or the customer would see a status change with no reply.
+        $extra = $internal ? array() : array('status' => 'ANSWERED');
+        $this->ci->Ticket_model->touch($ticket->id, $extra);
+        $this->ci->db->trans_complete();
+
+        if ($this->ci->db->trans_status() === false)
+            return array('ok'=>false,'error'=>'Could not save reply','code'=>'PERSIST_FAILED');
+        return array(
+            'ok'      => true,
+            'message' => $msg,
+            'ticket'  => $this->ci->Ticket_model->find_by_id($ticket->id),
+        );
+    }
+
+    /** Staff-only status change (OPEN|PENDING|ANSWERED|CLOSED). */
+    public function set_status($public_id, $status) {
+        $allowed = array('OPEN','PENDING','ANSWERED','CLOSED');
+        if (!in_array($status, $allowed, true))
+            return array('ok'=>false,'error'=>'Unknown status','code'=>'BAD_STATUS');
+        $ticket = $this->ci->Ticket_model->admin_find($public_id);
+        if (!$ticket) return array('ok'=>false,'error'=>'Ticket not found','code'=>'NO_TICKET');
+
+        $this->ci->Ticket_model->set_status($ticket->id, $status);
+        return array('ok'=>true,'ticket'=>$this->ci->Ticket_model->find_by_id($ticket->id));
+    }
+
+    /** Assign (or unassign, with a null id) a ticket to a staff member. */
+    public function assign($public_id, $staff_id) {
+        $ticket = $this->ci->Ticket_model->admin_find($public_id);
+        if (!$ticket) return array('ok'=>false,'error'=>'Ticket not found','code'=>'NO_TICKET');
+
+        if ($staff_id) {
+            $assignee = $this->ci->User_model->find_by_id((int)$staff_id);
+            if (!$assignee || !$this->ci->User_model->is_staff($assignee))
+                return array('ok'=>false,'error'=>'Assignee must be a staff member','code'=>'BAD_ASSIGNEE');
+        }
+        $this->ci->Ticket_model->assign($ticket->id, $staff_id ? (int)$staff_id : null);
+        return array('ok'=>true,'ticket'=>$this->ci->Ticket_model->find_by_id($ticket->id));
+    }
+
     public function close($public_id, $user) {
         $ticket = $this->ci->Ticket_model->find_public_for_user($public_id, $user->id);
         if (!$ticket) return array('ok'=>false,'error'=>'Ticket not found','code'=>'NO_TICKET');
@@ -83,14 +144,17 @@ class TicketService {
         return array('ok'=>true,'ticket'=>$this->ci->Ticket_model->find_by_id($ticket->id));
     }
 
-    private function add_message($ticket_id, $author_id, $body, $is_staff, $attachments) {
+    private function add_message($ticket_id, $author_id, $body, $is_staff, $attachments, $is_internal_note = 0) {
+        // Only a staff message can ever be an internal note; a customer reply
+        // is forced visible so nothing a customer writes can be hidden.
+        $internal = ($is_staff && $is_internal_note) ? 1 : 0;
         $msg = $this->ci->Ticket_message_model->create(array(
             'public_id'        => windels_public_id(),
             'ticket_id'        => $ticket_id,
             'author_id'        => $author_id,
             'message'          => $body,
             'is_staff'         => $is_staff,
-            'is_internal_note' => 0,
+            'is_internal_note' => $internal,
             'created_at'       => gmdate('Y-m-d H:i:s'),
         ));
         if (!empty($attachments) && is_array($attachments)) {

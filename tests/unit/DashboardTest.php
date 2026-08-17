@@ -79,6 +79,13 @@ class DashboardTest extends TestCase
         // controller must provide them so the sidebar/notification bell work.
         foreach (glob(self::$root.'/application/controllers/dashboard/*.php') as $file) {
             $src = file_get_contents($file);
+            // Controllers that only POST-and-redirect never render the shell,
+            // so they have no view variables to pass.
+            if (strpos($src, "load->view('layouts/app'") === false) {
+                $this->assertStringContainsString('redirect(', $src,
+                    basename($file).' renders no shell, so it must redirect');
+                continue;
+            }
             // The render() helper covers Account; the others pass inline.
             if (strpos(basename($file), 'Account.php') !== false) {
                 $this->assertStringContainsString("'nav_active'", $src);
@@ -173,11 +180,46 @@ class DashboardTest extends TestCase
 class DashboardFakeCI {
     public $load;
     public $db;
-    public function __construct() { $this->load = new DashboardFakeLoader(); $this->db = new DashboardFakeDb(); }
+    public $wallet;
+    public function __construct() {
+        $GLOBALS['__fake_ci'] = $this;
+        $this->wallet = (object)array('id'=>11,'user_id'=>7,'balance'=>'42.00000000','currency'=>'USD');
+        $this->load = new DashboardFakeLoader($this);
+        $this->db   = new DashboardFakeDb();
+    }
 }
+/** Mirrors CI3: loaded models are assigned under their class name. */
 class DashboardFakeLoader {
+    private $ci;
+    public function __construct($ci) { $this->ci = $ci; }
     public function library($n) {}
-    public function model($n) {}
+    public function model($names) {
+        foreach ((array)$names as $name) {
+            if (isset($this->ci->$name)) continue;
+            if ($name === 'Wallet_model')       $this->ci->$name = new DashboardFakeWalletModel($this->ci);
+            elseif ($name === 'Order_model')    $this->ci->$name = new DashboardFakeOrderModel($this->ci);
+            elseif ($name === 'Notification_model') $this->ci->$name = new DashboardFakeNotificationModel($this->ci);
+            else $this->ci->$name = new stdClass();
+        }
+    }
+}
+/* The model doubles read through DashboardFakeDb, exactly as the real ones do,
+   so the fixtures live in one place. */
+class DashboardFakeWalletModel {
+    private $ci; public function __construct($ci) { $this->ci = $ci; }
+    public function for_user($id) { return $this->ci->db->where('user_id', $id)->get('wallets')->row(); }
+}
+class DashboardFakeOrderModel {
+    private $ci; public function __construct($ci) { $this->ci = $ci; }
+    public function for_user($id, $l = 25, $o = 0, $s = null) {
+        return $this->ci->db->where('user_id', $id)->limit($l, $o)->get('orders')->result();
+    }
+}
+class DashboardFakeNotificationModel {
+    private $ci; public function __construct($ci) { $this->ci = $ci; }
+    public function unread_for_user($id, $l = 20) {
+        return $this->ci->db->where('user_id', $id)->limit($l)->get('notifications')->result();
+    }
 }
 class DashboardFakeDb {
     private $selects = array();
@@ -200,8 +242,14 @@ class DashboardFakeDb {
     }
     public function get($t=null){
         $this->last_table = $t;
+        // CI3 resets the builder state after each get(); so must the fake, or
+        // a previous ->from() leaks into the next query.
+        $from = $this->from_table;
+        $this->from_table = null;
+        $selects = $this->selects;
+        $this->selects = array();
         // Deposit-sum join query (from/join form).
-        if ($this->from_table === 'wallet_transactions wt') {
+        if ($from === 'wallet_transactions wt') {
             return new DashboardFakeResult(array(
                 (object)array('total'=>'100.00000000'),
             ));
@@ -220,7 +268,7 @@ class DashboardFakeDb {
         ));
         if ($t==='orders') {
             // If we selected aggregate columns, return the aggregate row.
-            $sel = implode(' ', $this->selects);
+            $sel = implode(' ', $selects);
             if (strpos($sel, 'COUNT(*)') !== false) {
                 return new DashboardFakeResult(array(
                     (object)array('orders'=>3,'completed'=>2,'active'=>1,'pending'=>0,'spent'=>'13.20000000'),

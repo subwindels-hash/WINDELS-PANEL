@@ -61,10 +61,61 @@ class MailService {
             'created_at'   => gmdate('Y-m-d H:i:s'),
         ));
 
-        if ($ok && getenv('MAIL_LOG')) {
+        if ($ok && env_bool('MAIL_LOG')) {
             log_message('info', "mail queued to {$to} <{$subject}>\n".strip_tags($body_html));
         }
         return $ok;
+    }
+
+    /**
+     * Deliver one queued message (called by the email_queue cron worker).
+     *
+     * Transport is chosen from settings: `smtp` uses CI3's email library,
+     * `log` writes the payload to the log (the default in dev, and what the
+     * verify/reset links are read from locally). The queue row itself is
+     * managed by the worker — this method only attempts delivery and reports
+     * the outcome.
+     *
+     * @return array{ok:bool, transport?:string, error?:string}
+     */
+    public function deliver($mail) {
+        if (!$mail || empty($mail->to_email)) {
+            return array('ok'=>false, 'error'=>'missing recipient');
+        }
+        $transport = strtolower((string)$this->ci->Setting_model->get('mail_transport', 'log'));
+
+        if ($transport === 'log' || env_bool('MAIL_LOG')) {
+            log_message('info', sprintf(
+                "mail[log] to=%s subject=%s\n%s",
+                $mail->to_email, $mail->subject, strip_tags((string)$mail->body_html)
+            ));
+            if ($transport === 'log') return array('ok'=>true, 'transport'=>'log');
+        }
+
+        if ($transport !== 'smtp') {
+            return array('ok'=>false, 'error'=>"unknown mail transport '{$transport}'");
+        }
+
+        try {
+            $this->ci->load->library('email');
+            $this->ci->email->clear(true);
+            $this->ci->email->from(
+                $this->ci->Setting_model->get('mail_from_email', 'no-reply@windels.local'),
+                $this->ci->Setting_model->get('mail_from_name', 'WINDELS PANEL')
+            );
+            $this->ci->email->to($mail->to_email);
+            $this->ci->email->subject($mail->subject);
+            $this->ci->email->message($mail->body_html);
+            if (!empty($mail->body_text)) $this->ci->email->set_alt_message($mail->body_text);
+
+            if (!$this->ci->email->send(false)) {
+                // print_debugger() is the only way CI3 surfaces the SMTP error.
+                return array('ok'=>false, 'error'=>strip_tags((string)$this->ci->email->print_debugger(array('headers'))));
+            }
+            return array('ok'=>true, 'transport'=>'smtp');
+        } catch (Exception $e) {
+            return array('ok'=>false, 'error'=>$e->getMessage());
+        }
     }
 
     /* -------------------------------------------------------------- */

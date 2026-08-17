@@ -6,7 +6,7 @@ class Refill_status_history_model extends MY_Model {
 
     public function for_refill($refill_id) {
         return $this->db->where('refill_id', $refill_id)
-            ->order_by('created_at', 'ASC')->get()->result();
+            ->order_by('created_at', 'ASC')->get($this->table)->result();
     }
 
     public function record($refill_id, $previous, $new, $source) {

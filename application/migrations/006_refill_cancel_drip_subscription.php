@@ -83,7 +83,7 @@ class Migration_Refill_cancel_drip_subscription extends CI_Migration {
               created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
               updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
               INDEX idx_df_user_status (user_id, status),
-              INDEX idx_df_next_run (next_run_at, status),
+              INDEX idx_df_next_run (status, next_run_at),
               CONSTRAINT fk_df_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
               CONSTRAINT fk_df_svc FOREIGN KEY (service_id) REFERENCES services(id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
@@ -125,7 +125,7 @@ class Migration_Refill_cancel_drip_subscription extends CI_Migration {
               created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
               updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
               INDEX idx_sub_user_status (user_id, status),
-              INDEX idx_sub_next_exec (next_execution_at, status),
+              INDEX idx_sub_next_exec (status, next_execution_at),
               CONSTRAINT fk_sub_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
               CONSTRAINT fk_sub_svc FOREIGN KEY (service_id) REFERENCES services(id),
               CONSTRAINT fk_sub_provider FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL

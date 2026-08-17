@@ -19,12 +19,19 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  */
 class OrderService {
 
+    /** Terminal states in which the customer must get their charge back. */
+    private static $refunding_states = array('CANCELED', 'CANCELLED', 'REFUNDED', 'FAILED', 'EXPIRED');
+
     const IDEM_SCOPE = 'order:create';
 
     private $ci;
 
     public function __construct() {
         $this->ci =& get_instance();
+        // OrderStateMachine is a static utility, not a CI library, so the
+        // loader will not bring it in — and every transition below calls it.
+        // Without this an order placement fatals on the first status change.
+        require_once __DIR__.'/OrderStateMachine.php';
         $this->ci->load->model(array(
             'Service_model', 'Order_model', 'Order_status_history_model',
             'Provider_model', 'Wallet_model', 'Blacklist_model',
@@ -42,7 +49,26 @@ class OrderService {
      *                                fields?, idempotency_key?, note?
      * @return array{ok:bool,order?:object,error?:string,code?:string}
      */
+    /**
+     * Place an order whose charge was already taken elsewhere.
+     *
+     * Drip-feed and subscription schedules reserve the whole charge up front,
+     * so their child orders must not hit the wallet again. Everything else —
+     * validation, provider submission, history — is the normal path.
+     *
+     * @param array $context source (DRIPFEED|SUBSCRIPTION) plus the parent ids
+     */
+    public function place_prepaid($user, array $input, array $context = array()) {
+        $input['__prepaid'] = true;
+        $input['source'] = $context['source'] ?? 'DRIPFEED';
+        foreach (array('dripfeed_order_id', 'dripfeed_run_number', 'subscription_id') as $k) {
+            if (isset($context[$k])) $input[$k] = $context[$k];
+        }
+        return $this->place($user, $input);
+    }
+
     public function place($user, array $input) {
+        $prepaid = !empty($input['__prepaid']);
         $user = is_object($user) ? $user : $this->resolve_user((int)$user);
         if (!$user) {
             return array('ok' => false, 'error' => 'User not found', 'code' => 'NO_USER');
@@ -92,21 +118,29 @@ class OrderService {
             : null;
 
         // 5. Charge the wallet (idempotent). The ledger is the only writer.
+        // A prepaid child order (drip-feed / subscription run) skips this: its
+        // parent already reserved the full charge.
         $wallet = $this->ci->Wallet_model->for_user($user->id);
         $charge_idem = $idem ?: ('order:charge:'.$user->id.':'.windels_public_id());
-        $charged = $this->ci->ledgerservice->charge(
-            $wallet->id, $charge, 'ORDER', null, $charge_idem
-        );
-        if (empty($charged['ok'])) {
-            $code = ($charged['error'] ?? '') === 'INSUFFICIENT_BALANCE' ? 'INSUFFICIENT_BALANCE' : 'CHARGE_FAILED';
-            return array('ok' => false, 'error' => $charged['error'] ?? 'Could not charge wallet', 'code' => $code);
+        if (!$prepaid) {
+            $charged = $this->ci->ledgerservice->charge(
+                $wallet->id, $charge, 'ORDER', null, $charge_idem
+            );
+            if (empty($charged['ok'])) {
+                $code = ($charged['error'] ?? '') === 'INSUFFICIENT_BALANCE' ? 'INSUFFICIENT_BALANCE' : 'CHARGE_FAILED';
+                return array('ok' => false, 'error' => $charged['error'] ?? 'Could not charge wallet', 'code' => $code);
+            }
         }
 
         // 6. Persist the order + initial history inside a transaction.
         $order = $this->persist_order($user, $service, compact('link','q','rate','charge','provider_charge','idem','input'));
         if (!$order) {
-            // Roll back the wallet charge if we could not create the row.
-            $this->ci->ledgerservice->refund($wallet->id, $charge, 'ORDER', null, 'order:rollback:'.$charge_idem);
+            // Roll back the wallet charge if we could not create the row. A
+            // prepaid order never charged here, so there is nothing to undo —
+            // the parent schedule owns that money.
+            if (!$prepaid) {
+                $this->ci->ledgerservice->refund($wallet->id, $charge, 'ORDER', null, 'order:rollback:'.$charge_idem);
+            }
             return array('ok' => false, 'error' => 'Could not create order', 'code' => 'PERSIST_FAILED');
         }
 
@@ -124,7 +158,9 @@ class OrderService {
         } elseif (empty($submit['ok'])) {
             // Submission failed: mark FAILED and refund the charge immediately.
             $this->transition($order->id, 'PENDING', 'FAILED', 'SYSTEM', $submit['error'] ?? 'Provider submission failed');
-            $this->ci->ledgerservice->refund($wallet->id, $charge, 'ORDER', $order->public_id, 'order:refund:'.$order->public_id);
+            if (!$prepaid) {
+                $this->ci->ledgerservice->refund($wallet->id, $charge, 'ORDER', $order->public_id, 'order:refund:'.$order->public_id);
+            }
             $this->ci->db->where('id', $order->id)->update('orders', array(
                 'note' => $submit['error'] ?? 'Provider submission failed',
             ));
@@ -160,7 +196,11 @@ class OrderService {
             }
         }
         $this->transition($order->id, $order->status, 'CANCELED', 'CUSTOMER', 'Canceled by customer');
-        return array('ok'=>true, 'order'=>$this->ci->Order_model->find_by_id($order->id));
+        $order = $this->ci->Order_model->find_by_id($order->id);
+        $refunded = $this->refund_charge($order, 'CUSTOMER');
+        $order = $this->ci->Order_model->find_by_id($order->id);
+        $this->sync_affiliate($order);
+        return array('ok'=>true, 'order'=>$order, 'refunded'=>$refunded);
     }
 
     /**
@@ -173,17 +213,69 @@ class OrderService {
         if (!OrderStateMachine::can($order->status, $new_status)) {
             return array('ok'=>false,'error'=>"Illegal transition {$order->status} -> {$new_status}");
         }
+        // A partial delivery is its own path: it records `remains` and refunds
+        // the undelivered share. Callers reach it either by asking for PARTIAL
+        // directly (admin/provider sync) or by reporting COMPLETED with a
+        // non-zero remainder.
+        if (!empty($extra['remains']) && (int)$extra['remains'] > 0
+            && in_array($new_status, array('PARTIAL', 'COMPLETED'), true)) {
+            return $this->apply_partial($order, (int)$extra['remains'], $source, $reason);
+        }
         $data = array();
         if ($new_status === 'COMPLETED') {
             $data['completed_at'] = gmdate('Y-m-d H:i:s');
-            if (!empty($extra['remains']) && (int)$extra['remains'] > 0) {
-                // Caller says PARTIAL; route there instead.
-                return $this->apply_partial($order, (int)$extra['remains'], $source, $reason);
-            }
         }
         $this->transition($order->id, $order->status, $new_status, $source, $reason);
         if ($data) $this->ci->db->where('id',$order->id)->update('orders',$data);
-        return array('ok'=>true, 'order'=>$this->ci->Order_model->find_by_id($order->id));
+        $order = $this->ci->Order_model->find_by_id($order->id);
+        // Reaching a terminal non-delivery state must return the customer's
+        // money; refund_charge() is idempotent so repeated calls are safe.
+        if (in_array($new_status, self::$refunding_states, true)) {
+            $this->refund_charge($order, $source);
+            $order = $this->ci->Order_model->find_by_id($order->id);
+        }
+        $this->sync_affiliate($order);
+        return array('ok'=>true, 'order'=>$order);
+    }
+
+    /**
+     * Return whatever of the charge has not already been refunded.
+     *
+     * Idempotent twice over: the amount is computed as charge minus
+     * refunded_amount (so a PARTIAL that already refunded its undelivered share
+     * only gives back the rest), and the ledger movement carries a
+     * deterministic key, so a retry credits nothing a second time.
+     *
+     * @return string the amount refunded ('0.00000000' when there was nothing to give back)
+     */
+    private function refund_charge($order, $source = 'SYSTEM') {
+        if (!$order) return '0.00000000';
+        $already = (string)($order->refunded_amount ?? '0');
+        $outstanding = bcsub((string)$order->charge, $already, 8);
+        if (bccomp($outstanding, '0', 8) <= 0) return '0.00000000';
+
+        $wallet = $this->ci->Wallet_model->for_user($order->user_id);
+        if (!$wallet) {
+            log_message('error', 'refund skipped: no wallet for user '.$order->user_id);
+            return '0.00000000';
+        }
+        $result = $this->ci->ledgerservice->refund(
+            $wallet->id, $outstanding, 'ORDER', $order->public_id,
+            'order:refund:'.$order->public_id
+        );
+        if (empty($result['ok'])) {
+            log_message('error', 'order refund failed for '.$order->public_id.': '.($result['error'] ?? 'unknown'));
+            return '0.00000000';
+        }
+        // A duplicate means an earlier run already credited this order; leave
+        // refunded_amount as it stands rather than double-counting it.
+        if (empty($result['duplicate'])) {
+            $this->ci->db->where('id', $order->id)->update('orders', array(
+                'refunded_amount' => bcadd($already, $outstanding, 8),
+                'updated_at'      => gmdate('Y-m-d H:i:s'),
+            ));
+        }
+        return $outstanding;
     }
 
     private function apply_partial($order, $remains, $source, $reason) {
@@ -202,7 +294,33 @@ class OrderService {
                 $this->ci->db->where('id',$order->id)->update('orders', array('refunded_amount'=>$refund));
             }
         }
-        return array('ok'=>true, 'order'=>$this->ci->Order_model->find_by_id($order->id));
+        $order = $this->ci->Order_model->find_by_id($order->id);
+        $this->sync_affiliate($order);
+        return array('ok'=>true, 'order'=>$order);
+    }
+
+    /**
+     * Keep referral commissions in step with the order's final state
+     * (Session 14). Accrues on COMPLETED/PARTIAL, reverses unpaid commissions
+     * when the order ends up canceled/refunded/failed. Never fatal: an
+     * affiliate bookkeeping error must not fail an order status update.
+     */
+    private function sync_affiliate($order) {
+        if (!$order) return;
+        try {
+            $this->ci->load->library('AffiliateService');
+            if (!isset($this->ci->affiliateservice)
+                || !method_exists($this->ci->affiliateservice, 'record_for_order')) {
+                return;
+            }
+            if (in_array($order->status, array('COMPLETED','PARTIAL'), true)) {
+                $this->ci->affiliateservice->record_for_order($order);
+            } elseif (in_array($order->status, array('CANCELED','CANCELLED','REFUNDED','FAILED'), true)) {
+                $this->ci->affiliateservice->reverse_for_order($order);
+            }
+        } catch (Exception $e) {
+            log_message('error', 'affiliate sync failed: '.$e->getMessage());
+        }
     }
 
     /* -------------------------------------------------------------- */
@@ -271,6 +389,11 @@ class OrderService {
             'fields'            => !empty($ctx['input']['fields']) ? json_encode($ctx['input']['fields']) : null,
             'source'            => $ctx['input']['source'] ?? 'WEB',
             'note'              => $ctx['input']['note'] ?? null,
+            // Link a child order back to the schedule that produced it, so a
+            // drip-feed/subscription run is traceable from the order row.
+            'dripfeed_order_id'   => $ctx['input']['dripfeed_order_id'] ?? null,
+            'dripfeed_run_number' => $ctx['input']['dripfeed_run_number'] ?? null,
+            'subscription_id'     => $ctx['input']['subscription_id'] ?? null,
             'idempotency_key'   => $ctx['idem'],
             'created_at'        => gmdate('Y-m-d H:i:s'),
         ));
@@ -311,8 +434,17 @@ class OrderService {
         }
     }
 
+    /**
+     * Move an order to a new state: validate the transition, write the order
+     * row and append the history entry — the two must always happen together,
+     * or `orders.status` and `order_status_history` drift apart (§26/29).
+     */
     private function transition($order_id, $from, $to, $source, $reason = null) {
         OrderStateMachine::assert($from, $to);
+        $this->ci->db->where('id', $order_id)->update('orders', array(
+            'status'     => $to,
+            'updated_at' => gmdate('Y-m-d H:i:s'),
+        ));
         $this->ci->Order_status_history_model->record($order_id, $from, $to, $source, $reason);
     }
 

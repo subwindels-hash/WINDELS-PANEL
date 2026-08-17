@@ -95,15 +95,15 @@ $badges = array(
               <span class="muted">Total</span>
               <strong id="ws-total" style="font-size:1.25rem"><?=windels_money($u->rate)?></strong>
             </div>
-            <button class="btn btn-primary btn-block" type="submit" <?=($this->auth && $this->auth->check()) ? '' : 'disabled'?>>
-              <?=($this->auth && $this->auth->check()) ? 'Continue to order →' : 'Log in to order'?>
+            <button class="btn btn-primary btn-block" type="submit" <?=!empty($current_user) ? '' : 'disabled'?>>
+              <?=!empty($current_user) ? 'Continue to order →' : 'Log in to order'?>
             </button>
-            <?php if (!($this->auth && $this->auth->check())): ?>
+            <?php if (empty($current_user)): ?>
               <p class="hint text-center"><a href="<?=site_url('login')?>">Log in</a> or <a href="<?=site_url('register')?>">create an account</a> to order.</p>
             <?php endif; ?>
           </form>
 
-          <?php if ($this->auth && $this->auth->check()): ?>
+          <?php if (!empty($current_user)): ?>
             <div class="mt-4 pt-4" style="border-top:1px solid var(--slate-100)">
               <form method="post" action="<?=site_url($is_favorite ? 'dashboard/favorites/remove/'.$u->public_id : 'dashboard/favorites/add/'.$u->public_id)?>">
                 <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
@@ -129,7 +129,7 @@ $badges = array(
   </div>
 </section>
 
-<script>
+<script <?=csp_nonce_attr()?>>
 (function(){
   var qty=document.getElementById('ws-qty'), total=document.getElementById('ws-total');
   if(!qty||!total) return;

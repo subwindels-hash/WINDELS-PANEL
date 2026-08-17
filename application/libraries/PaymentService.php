@@ -80,6 +80,8 @@ class PaymentService {
             'created_at'         => gmdate('Y-m-d H:i:s'),
         ));
 
+        $this->transition($tx->id, null, self::STATUS_CREATED, 'SYSTEM', 'Initialised');
+
         $gateway = $this->gateway_for($method);
         $init = $gateway->initiate($tx, $user);
         if (empty($init['ok'])) {
@@ -143,7 +145,6 @@ class PaymentService {
         $tx = $this->ci->Payment_transaction_model->find_by_id($tx_id);
         if (!$tx || in_array($tx->status, array(self::STATUS_SUCCESS, self::STATUS_FAILED), true)) return;
         $this->transition($tx->id, $tx->status, self::STATUS_FAILED, 'SYSTEM', $reason);
-        $this->ci->Payment_transaction_model->update_status($tx->id, array('status'=>self::STATUS_FAILED));
     }
 
     /**
@@ -152,9 +153,16 @@ class PaymentService {
      * @return array{ok:bool, already_seen?:bool, transaction?:object, error?:string}
      */
     public function record_webhook($gateway_type, $raw_body, array $headers) {
-        $gateway = $this->gateway_for_code($gateway_type);
-        $sig_ok = $gateway ? $gateway->verify_webhook($raw_body, $headers) : null;
-        $event = $gateway ? $gateway->parse_event($raw_body) : array('event_id'=>null,'type'=>'unknown');
+        // Only 'manual' has a real adapter today. Anything else is handled by
+        // the generic HMAC/JSON envelope below until its adapter ships, so an
+        // unconfigured gateway can never silently accept a forged callback.
+        $gateway = $gateway_type === 'manual' ? new ManualGateway() : null;
+        $sig_ok = $gateway
+            ? $gateway->verify_webhook($raw_body, $headers)
+            : $this->verify_generic_signature($gateway_type, $raw_body, $headers);
+        $event = $gateway
+            ? $gateway->parse_event($raw_body)
+            : $this->parse_generic_event($raw_body);
 
         $id = $this->ci->Payment_webhook_model->record_once(
             $gateway_type,
@@ -173,6 +181,17 @@ class PaymentService {
                 array('processed'=>1,'processed_at'=>gmdate('Y-m-d H:i:s'),'error'=>'invalid signature'));
             return array('ok'=>false,'error'=>'Invalid signature');
         }
+        // null means "no secret configured, cannot verify": store the event for
+        // the operator to inspect but never move money on it.
+        if ($sig_ok === null) {
+            $this->ci->db->where('id', $id)->update('payment_webhooks', array(
+                'processed' => 1,
+                'processed_at' => gmdate('Y-m-d H:i:s'),
+                'error' => 'unverified: no webhook secret configured for '.$gateway_type,
+            ));
+            return array('ok'=>true,'unverified'=>true);
+        }
+
         $terminal = strtolower($event['status'] ?? '');
         if (!in_array($terminal, array('success','succeeded','completed','paid','approved'), true)) {
             $this->ci->db->where('id', $id)->update('payment_webhooks', array('processed'=>1,'processed_at'=>gmdate('Y-m-d H:i:s')));
@@ -187,9 +206,16 @@ class PaymentService {
             $tx = $this->ci->Payment_transaction_model->find_by_idempotency_key($event['metadata']['idempotency_key']);
         }
         if (!$tx) {
-            $this->ci->db->where('id', $id)->update('payment_webhooks',
-                array('error'=>'no matching transaction'));
-            return array('ok'=>false,'error'=>'No matching transaction');
+            // Accepted and logged, but there is nothing to reconcile — the
+            // event references no transaction of ours. Treat it as processed
+            // so the gateway stops retrying; the error column flags it for the
+            // operator.
+            $this->ci->db->where('id', $id)->update('payment_webhooks', array(
+                'processed' => 1,
+                'processed_at' => gmdate('Y-m-d H:i:s'),
+                'error' => 'no matching transaction',
+            ));
+            return array('ok'=>true,'unmatched'=>true,'error'=>'No matching transaction');
         }
 
         $res = $this->confirm($tx, 'WEBHOOK', $event['provider_tx_id'] ?? null);
@@ -239,6 +265,15 @@ class PaymentService {
     }
 
     private function transition($tx_id, $from, $to, $source, $reason = null) {
+        // Persist the new state first, then append to the (append-only) event
+        // log. Writing only the log would leave the transaction stuck in its
+        // previous status forever.
+        if ($from !== $to) {
+            $this->ci->Payment_transaction_model->update_status($tx_id, array(
+                'status'     => $to,
+                'updated_at' => gmdate('Y-m-d H:i:s'),
+            ));
+        }
         $this->ci->db->insert('payment_events', array(
             'payment_transaction_id' => $tx_id,
             'from_status' => $from,
@@ -247,6 +282,54 @@ class PaymentService {
             'reason' => $reason,
             'created_at' => gmdate('Y-m-d H:i:s'),
         ));
+    }
+
+    /**
+     * Verify an HMAC-SHA256 signature header against the configured secret.
+     *
+     * @return bool|null true/false when we can decide, null when no secret is
+     *                   configured (the caller must not process the event).
+     */
+    private function verify_generic_signature($gateway_type, $raw_body, array $headers) {
+        $sig = null;
+        foreach ($headers as $name => $value) {
+            if (stripos((string)$name, 'signature') !== false) { $sig = trim((string)$value); break; }
+        }
+        // An unsigned callback is always rejected.
+        if ($sig === null || $sig === '') return false;
+
+        $secret = $this->ci->Setting_model->get('payments.'.$gateway_type.'.webhook_secret');
+        if (!$secret) $secret = getenv('WINDELS_'.strtoupper($gateway_type).'_WEBHOOK_SECRET') ?: null;
+        if (!$secret) return null;
+
+        $expected = hash_hmac('sha256', (string)$raw_body, (string)$secret);
+        // Strip an optional "sha256=" / "v1=" prefix before comparing.
+        if (strpos($sig, '=') !== false) {
+            $parts = explode('=', $sig, 2);
+            if (ctype_alnum($parts[0])) $sig = $parts[1];
+        }
+        return hash_equals($expected, $sig);
+    }
+
+    /** Parse a plain JSON webhook envelope into the normalised event shape. */
+    private function parse_generic_event($raw_body) {
+        $data = json_decode((string)$raw_body, true);
+        if (!is_array($data)) return array('event_id'=>null,'type'=>'unknown');
+        $pick = function(array $keys) use ($data) {
+            foreach ($keys as $k) {
+                if (isset($data[$k]) && $data[$k] !== '') return $data[$k];
+            }
+            return null;
+        };
+        return array(
+            'event_id'       => $pick(array('id','event_id','eventId')),
+            'type'           => $pick(array('type','event','event_type')) ?: 'unknown',
+            'provider_tx_id' => $pick(array('provider_tx_id','transaction_id','reference','txn_id')),
+            'status'         => $pick(array('status','state','result')),
+            'amount'         => $pick(array('amount','value')),
+            'currency'       => $pick(array('currency','currency_code')),
+            'metadata'       => isset($data['metadata']) && is_array($data['metadata']) ? $data['metadata'] : array(),
+        );
     }
 
     private function normalise_amount($v) {

@@ -23,6 +23,7 @@ class Demo_seeder extends Seeder {
         $user_ids      = $this->seed_users();
         $this->seed_wallets($user_ids);
         $this->seed_orders($user_ids, $service_ids);
+        $this->seed_referral_commissions($user_ids);
         $this->seed_content($user_ids);
 
         $this->out('demo seed complete — login with any demo account:');
@@ -338,6 +339,41 @@ class Demo_seeder extends Seeder {
                 ));
             }
         }
+    }
+
+    /**
+     * A PENDING referral commission on the demo referral edge (Session 14).
+     *
+     * Deliberately left PENDING and unpaid: paying it would have to move money,
+     * and only LedgerService may do that. `php index.php cron affiliate_payouts`
+     * is the supported way to settle it in a demo environment.
+     */
+    private function seed_referral_commissions($user_ids) {
+        if (empty($user_ids['demo']) || empty($user_ids['reseller'])) return;
+
+        $referral = $this->ci->db->where('referred_id', $user_ids['reseller'])->get('referrals')->row();
+        if (!$referral) return;
+
+        $account = $this->ci->db->where('id', $referral->referral_account_id)->get('referral_accounts')->row();
+        $percent = $account ? (string)$account->commission_percent : '5.0000';
+
+        // Attribute it to the reseller's most valuable completed order, if any.
+        $order = $this->ci->db->where('user_id', $user_ids['reseller'])
+            ->where_in('status', array('COMPLETED','PARTIAL'))
+            ->order_by('charge', 'DESC')->limit(1)->get('orders')->row();
+
+        $charge = $order ? (string)$order->charge : '40.00000000';
+        $amount = bcdiv(bcmul($charge, $percent, 12), '100', 8);
+        if (bccomp($amount, '0', 8) <= 0) return;
+
+        $this->insert_once('referral_commissions', array(
+            'referral_id' => $referral->id,
+            'order_id'    => $order ? $order->id : NULL,
+        ), array(
+            'amount'   => $amount,
+            'currency' => 'USD',
+            'status'   => 'PENDING',
+        ));
     }
 
     private function seed_content($user_ids) {

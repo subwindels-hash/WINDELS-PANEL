@@ -20,8 +20,7 @@ class DripfeedService {
         $this->ci =& get_instance();
         $this->ci->load->model(array(
             'Service_model', 'Dripfeed_order_model', 'Dripfeed_run_model',
-            'Wallet_model', 'Blacklist_model',
-        ));
+            'Wallet_model', 'Blacklist_model','User_model'));
         $this->ci->load->library(array('PricingService', 'LedgerService', 'OrderService'));
     }
 
@@ -109,6 +108,96 @@ class DripfeedService {
 
         $drip = $this->ci->Dripfeed_order_model->find_by_id($drip_id);
         return array('ok'=>true,'dripfeed'=>$drip);
+    }
+
+    /**
+     * Execute the next due run of a schedule (called by the cron worker).
+     *
+     * Concurrency: the run row is claimed with a compare-and-set on
+     * (id, status='PENDING'), so if two workers overlap only one places the
+     * order. The child order is prepaid — the whole charge was reserved when
+     * the schedule was created — and carries a deterministic idempotency key,
+     * so even a retry after a crash cannot place it twice.
+     *
+     * @return array{ok:bool, skipped?:bool, order?:object, error?:string, code?:string}
+     */
+    public function execute_due_run($drip) {
+        $drip = is_object($drip) ? $drip : $this->ci->Dripfeed_order_model->find_by_id((int)$drip);
+        if (!$drip) return array('ok'=>false,'error'=>'Schedule not found','code'=>'NOT_FOUND');
+        if ($drip->status !== 'ACTIVE') return array('ok'=>true,'skipped'=>true,'reason'=>'not active');
+        if ($drip->next_run_at !== null && $drip->next_run_at > gmdate('Y-m-d H:i:s')) {
+            return array('ok'=>true,'skipped'=>true,'reason'=>'not due');
+        }
+
+        $run = $this->ci->Dripfeed_run_model->next_pending($drip->id);
+        if (!$run) {
+            // Nothing left to do: close the schedule out.
+            $this->ci->db->where('id', $drip->id)->update('dripfeed_orders', array(
+                'status' => 'COMPLETED', 'next_run_at' => null,
+            ));
+            return array('ok'=>true,'skipped'=>true,'reason'=>'no pending runs');
+        }
+
+        // Claim the run: only the worker that flips PENDING -> RUNNING owns it.
+        $this->ci->db->where('id', $run->id)->where('status', 'PENDING')
+            ->update('dripfeed_runs', array('status' => 'RUNNING'));
+        if ((int)$this->ci->db->affected_rows() !== 1) {
+            return array('ok'=>true,'skipped'=>true,'reason'=>'claimed by another worker');
+        }
+
+        $user = $this->ci->User_model->find_by_id($drip->user_id);
+        if (!$user) {
+            $this->fail_run($run->id, 'User not found');
+            return array('ok'=>false,'error'=>'User not found','code'=>'NO_USER');
+        }
+
+        $result = $this->ci->orderservice->place_prepaid($user, array(
+            'service'         => $drip->service_id,
+            'link'            => $drip->link,
+            'quantity'        => (int)$drip->quantity_per_run,
+            'fields'          => $drip->fields ? json_decode($drip->fields, true) : null,
+            // Deterministic per (schedule, run): a retry resolves to the order
+            // that already exists instead of placing a second one.
+            'idempotency_key' => 'dripfeed:'.$drip->public_id.':run:'.$run->run_number,
+        ), array(
+            'source'              => 'DRIPFEED',
+            'dripfeed_order_id'   => $drip->id,
+            'dripfeed_run_number' => (int)$run->run_number,
+        ));
+
+        if (empty($result['ok'])) {
+            $this->fail_run($run->id, $result['error'] ?? 'Order failed');
+            return array('ok'=>false,'error'=>$result['error'] ?? 'Order failed','code'=>$result['code'] ?? 'RUN_FAILED');
+        }
+
+        $order = $result['order'];
+        $this->ci->db->where('id', $run->id)->update('dripfeed_runs', array(
+            'status'      => 'COMPLETED',
+            'order_id'    => $order->id,
+            'executed_at' => gmdate('Y-m-d H:i:s'),
+            'error'       => null,
+        ));
+
+        $completed = (int)$drip->runs_completed + 1;
+        $finished  = $completed >= (int)$drip->runs;
+        $this->ci->db->where('id', $drip->id)->update('dripfeed_orders', array(
+            'runs_completed' => $completed,
+            'status'         => $finished ? 'COMPLETED' : 'ACTIVE',
+            'next_run_at'    => $finished ? null
+                : gmdate('Y-m-d H:i:s', time() + ((int)$drip->interval_minutes * 60)),
+            'updated_at'     => gmdate('Y-m-d H:i:s'),
+        ));
+
+        return array('ok'=>true,'order'=>$order,'run_number'=>(int)$run->run_number,'finished'=>$finished);
+    }
+
+    /** Mark a claimed run failed; the schedule stays active for the next tick. */
+    private function fail_run($run_id, $error) {
+        $this->ci->db->where('id', $run_id)->update('dripfeed_runs', array(
+            'status'      => 'FAILED',
+            'error'       => substr((string)$error, 0, 1000),
+            'executed_at' => gmdate('Y-m-d H:i:s'),
+        ));
     }
 
     public function pause($drip_public_id, $user) {

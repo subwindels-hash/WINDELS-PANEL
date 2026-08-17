@@ -1,10 +1,21 @@
 <?php
 /**
  * FakeDb — an in-memory stand-in for CI3's database driver, built from the real
- * migration DDL so seeders can be executed (and their SQL surface verified)
- * without a MySQL server.
+ * migration DDL so seeders and services can be executed (and their SQL surface
+ * verified) without a MySQL server.
  *
- * It supports exactly the query-builder surface the seeders use:
+ * Session 19 widened this from "enough for the seeders" to "enough to run the
+ * real services end to end", which is what the integration tests need:
+ * comparison operators in where(), affected_rows() for compare-and-set claims,
+ * insert_batch(), a query() that understands the SELECT ... FOR UPDATE the
+ * ledger uses, and from()/join() so model reads resolve.
+ *
+ * Joins are modelled as a flat merge of the joined row's columns, prefixed with
+ * their alias. That is enough for "does the service name come back" without
+ * pretending to be a SQL engine — anything relying on join semantics beyond
+ * column projection should be tested against a real database.
+ *
+ * It supports the query-builder surface the seeders use:
  *   ->where(array|string, value?)->get($table)->row()
  *   ->insert($table, $data) / ->insert_id()
  *   ->where(...)->update($table, $data)
@@ -24,6 +35,13 @@ class FakeDb
     public $raw_updates = array();
 
     private $pending_where = array();
+    private $pending_or_where = array();
+    private $pending_from = null;
+    private $pending_joins = array();
+    private $pending_select = array();
+    private $affected = 0;
+    private $pending_order = array();
+    private $pending_limit = null;
     private $auto_increment = array();
     private $last_insert_id = 0;
     private $trans_depth = 0;
@@ -93,7 +111,7 @@ class FakeDb
 
     /* -------------------------- query builder -------------------------- */
 
-    public function where($key, $value = null)
+    public function where($key, $value = null, $escape = null)
     {
         if (is_array($key)) {
             foreach ($key as $k => $v) $this->pending_where[$k] = $v;
@@ -103,15 +121,70 @@ class FakeDb
         return $this;
     }
 
-    public function get($table)
+    public function or_where($key, $value = null, $escape = null)
     {
+        // Modelled as an alternative set; matches() ORs these against the
+        // main predicate group.
+        $this->pending_or_where[$key] = $value;
+        return $this;
+    }
+
+    /**
+     * where_in('col', array(...)) — matched by the sentinel below in matches().
+     */
+    public function where_in($key, array $values)
+    {
+        $this->pending_where[$key] = array('__in' => array_map('strval', $values));
+        return $this;
+    }
+
+    public function get($table = null)
+    {
+        $table = $table ?: $this->pending_from;
+        $joins = $this->pending_joins;
+        $select = $this->pending_select;
+        $this->pending_from = null; $this->pending_joins = array();
+        $this->pending_select = array();
+
         $this->assertTable($table, 'get');
         $where = $this->takeWhere();
+        $or    = $this->takeOrWhere();
         $this->queries[] = array('op' => 'select', 'table' => $table, 'where' => $where);
         $matched = array();
         foreach ($this->rows[$table] as $row) {
-            if ($this->matches($row, $where)) $matched[] = (object)$row;
+            if (!$this->matches($row, $where, $or)) continue;
+            // A real SELECT * returns every column, nulls included. Returning
+            // only the keys that were inserted would let production code that
+            // reads a never-written nullable column pass here and warn in
+            // production, so fill the shape out first.
+            $full = $this->applyJoins($this->hydrate($table, $row), $joins);
+            if ($select) {
+                $projected = array();
+                foreach ($select as $column) {
+                    if (array_key_exists($column, $full)) $projected[$column] = $full[$column];
+                }
+                $full = $projected;
+            }
+            $matched[] = (object)$full;
         }
+
+        $order = $this->pending_order; $this->pending_order = array();
+        $limit = $this->pending_limit; $this->pending_limit = null;
+        if ($order) {
+            usort($matched, function($a, $b) use ($order) {
+                foreach ($order as $spec) {
+                    list($col, $dir) = $spec;
+                    $av = isset($a->$col) ? $a->$col : null;
+                    $bv = isset($b->$col) ? $b->$col : null;
+                    $cmp = (is_numeric($av) && is_numeric($bv))
+                        ? ($av <=> $bv) : strcmp((string)$av, (string)$bv);
+                    if ($cmp !== 0) return $dir === 'DESC' ? -$cmp : $cmp;
+                }
+                return 0;
+            });
+        }
+        if ($limit) $matched = array_slice($matched, $limit[1], $limit[0]);
+
         return new FakeDbResult($matched);
     }
 
@@ -169,11 +242,160 @@ class FakeDb
         if ($table === 'wallets' && array_key_exists('balance', $data)) {
             $this->raw_updates[] = 'wallets.balance';
         }
+        $this->affected = 0;
         foreach ($this->rows[$table] as $i => $row) {
             if ($this->matches($row, $where)) {
                 $this->rows[$table][$i] = array_merge($row, $data);
+                $this->affected++;
             }
         }
+        return true;
+    }
+
+    /* ---- ordering / limiting: recorded, then applied in get() ---- */
+
+    public function order_by($key, $dir = 'ASC') {
+        $this->pending_order[] = array((string)$key, strtoupper($dir) === 'DESC' ? 'DESC' : 'ASC');
+        return $this;
+    }
+
+    public function limit($limit, $offset = 0) {
+        $this->pending_limit = array((int)$limit, (int)$offset);
+        return $this;
+    }
+
+    /**
+     * Records the projection so get() returns only the named columns. A no-op
+     * select() would hand every test a full row and hide production code that
+     * reads a column its own query never asked for.
+     */
+    public function select($fields, $escape = null)
+    {
+        $list = array();
+        foreach (explode(',', (string)$fields) as $field) {
+            $field = trim(preg_replace('/\s+/', ' ', $field));
+            if ($field === '' || $field === '*') continue;
+            // Handle "t.col" and "col AS alias".
+            if (preg_match('/\bAS\s+(\S+)$/i', $field, $m)) {
+                $field = $m[1];
+            }
+            $parts = explode('.', $field);
+            $list[] = trim(end($parts), '`');
+        }
+        if ($list) {
+            $this->pending_select = array_merge($this->pending_select, $list);
+        }
+        return $this;
+    }
+
+    /* ---- from/join: enough for column projection, not a SQL engine ---- */
+
+    public function from($table)
+    {
+        // "orders o" / "wallet_transactions wt" — keep the table, drop the alias.
+        $this->pending_from = preg_split('~\s+~', trim($table))[0];
+        return $this;
+    }
+
+    public function join($table, $condition, $type = '')
+    {
+        $parts = preg_split('~\s+~', trim($table));
+        $this->pending_joins[] = array(
+            'table' => $parts[0],
+            'alias' => isset($parts[1]) ? $parts[1] : $parts[0],
+            'on'    => $condition,
+            'type'  => strtolower($type),
+        );
+        return $this;
+    }
+
+    /**
+     * Merge joined columns onto the base row.
+     *
+     * The ON clause is parsed for the simple `a.col = b.col` form the codebase
+     * uses; the joined row's columns are merged in without clobbering the base
+     * row, plus alias-prefixed copies so `services.name AS service_name` style
+     * projections can be read as either.
+     */
+    private function applyJoins(array $row, array $joins)
+    {
+        foreach ($joins as $j) {
+            if (!isset($this->rows[$j['table']])) continue;
+            if (!preg_match('~([\w.]+)\s*=\s*([\w.]+)~', $j['on'], $m)) continue;
+
+            list($left, $right) = array($m[1], $m[2]);
+            $lcol = substr($left, strrpos($left, '.') + 1);
+            $rcol = substr($right, strrpos($right, '.') + 1);
+            $lq   = strpos($left, $j['alias'].'.') === 0 || strpos($left, $j['table'].'.') === 0;
+
+            // Whichever side names the joined table supplies its key column.
+            $joined_col = $lq ? $lcol : $rcol;
+            $base_col   = $lq ? $rcol : $lcol;
+            if (!array_key_exists($base_col, $row)) continue;
+
+            foreach ($this->rows[$j['table']] as $cand) {
+                if (!array_key_exists($joined_col, $cand)) continue;
+                if ((string)$cand[$joined_col] !== (string)$row[$base_col]) continue;
+                foreach ($cand as $k => $v) {
+                    $row[$j['alias'].'.'.$k] = $v;
+                    if (!array_key_exists($k, $row)) $row[$k] = $v;
+                }
+                break;
+            }
+        }
+        return $row;
+    }
+
+    public function affected_rows() { return $this->affected; }
+
+    public function insert_batch($table, array $rows)
+    {
+        foreach ($rows as $r) $this->insert($table, $r);
+        $this->affected = count($rows);
+        return count($rows);
+    }
+
+    /**
+     * Raw query support, limited to the one shape the application uses:
+     * LedgerService's `SELECT * FROM wallets WHERE id=? FOR UPDATE`.
+     * Anything else throws rather than silently returning an empty set.
+     */
+    public function query($sql, $binds = array())
+    {
+        $this->queries[] = array('op' => 'raw', 'sql' => $sql, 'binds' => $binds);
+        if (preg_match('~^\s*SELECT\s+\*\s+FROM\s+(\w+)\s+WHERE\s+(\w+)\s*=\s*\?~i', $sql, $m)) {
+            $table = $m[1]; $col = $m[2];
+            $this->assertTable($table, 'query');
+            $needle = is_array($binds) ? reset($binds) : $binds;
+            $out = array();
+            foreach ($this->rows[$table] as $row) {
+                if (array_key_exists($col, $row) && (string)$row[$col] === (string)$needle) {
+                    $out[] = (object)$row;
+                }
+            }
+            return new FakeDbResult($out);
+        }
+        throw new RuntimeException('FakeDb: unsupported raw query: '.trim($sql));
+    }
+
+    public function group_start() { return $this; }
+    public function group_end()   { return $this; }
+    public function reset_query() {
+        $this->pending_where = array(); $this->pending_or_where = array();
+        $this->pending_order = array(); $this->pending_limit = null;
+        $this->pending_from = null; $this->pending_joins = array();
+        return $this;
+    }
+    public function delete($table)
+    {
+        $this->assertTable($table, 'delete');
+        $where = $this->takeWhere();
+        $kept = array(); $this->affected = 0;
+        foreach ($this->rows[$table] as $row) {
+            if ($this->matches($row, $where)) { $this->affected++; continue; }
+            $kept[] = $row;
+        }
+        $this->rows[$table] = $kept;
         return true;
     }
 
@@ -194,6 +416,17 @@ class FakeDb
 
     /* ------------------------------ util ------------------------------ */
 
+    /** Every column the table declares, missing ones as null. */
+    private function hydrate($table, array $row)
+    {
+        $full = array();
+        foreach ($this->schema[$table]['columns'] as $column => $_) {
+            $full[$column] = array_key_exists($column, $row) ? $row[$column] : null;
+        }
+        // Keep anything extra (e.g. alias-prefixed join columns).
+        return array_merge($full, $row);
+    }
+
     private function takeWhere()
     {
         $w = $this->pending_where;
@@ -201,12 +434,91 @@ class FakeDb
         return $w;
     }
 
-    private function matches(array $row, array $where)
+    private function takeOrWhere()
+    {
+        $w = $this->pending_or_where;
+        $this->pending_or_where = array();
+        return $w;
+    }
+
+    public function count_all_results($table = null)
+    {
+        $table = $table ?: $this->pending_from;
+        $this->pending_from = null; $this->pending_joins = array();
+        $this->assertTable($table, 'count_all_results');
+        $where = $this->takeWhere();
+        $this->pending_order = array(); $this->pending_limit = null;
+        $or = $this->takeOrWhere();
+        $n = 0;
+        foreach ($this->rows[$table] as $row) if ($this->matches($row, $where, $or)) $n++;
+        return $n;
+    }
+
+    private function matches(array $row, array $where, array $or_where = array())
     {
         foreach ($where as $k => $v) {
-            if (!array_key_exists($k, $row)) return false;
-            if ((string)$row[$k] !== (string)$v) return false;
+            if (!$this->matchesOne($row, $k, $v)) {
+                // An or_where group can still rescue the row.
+                foreach ($or_where as $ok => $ov) {
+                    if ($this->matchesOne($row, $ok, $ov)) return true;
+                }
+                return false;
+            }
         }
+        if ($where === array() && $or_where !== array()) {
+            foreach ($or_where as $ok => $ov) {
+                if ($this->matchesOne($row, $ok, $ov)) return true;
+            }
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * One predicate. CI3 puts the operator in the key ("created_at <=") and
+     * bare SQL fragments in the key too ("provider_order_id IS NOT NULL").
+     */
+    private function matchesOne(array $row, $key, $value)
+    {
+        $key = trim($key);
+
+        // Bare SQL fragments used with escaping disabled.
+        if (preg_match('~^(\w+)\s+IS\s+NOT\s+NULL$~i', $key, $m)) {
+            return array_key_exists($m[1], $row) && $row[$m[1]] !== null && $row[$m[1]] !== '';
+        }
+        if (preg_match('~^(\w+)\s+IS\s+NULL$~i', $key, $m)) {
+            return !array_key_exists($m[1], $row) || $row[$m[1]] === null;
+        }
+        // Anything else with parentheses/OR is a raw fragment this double
+        // cannot evaluate; treat it as satisfied rather than silently
+        // dropping every row.
+        if (strpbrk($key, '()') !== false) return true;
+
+        $op = '=';
+        if (preg_match('~^(.+?)\s*(<=|>=|!=|<>|<|>)$~', $key, $m)) {
+            $key = trim($m[1]);
+            $op  = $m[2];
+        }
+        // Qualified column ("orders.status") — compare on the bare name.
+        if (strpos($key, '.') !== false) {
+            $key = substr($key, strrpos($key, '.') + 1);
+        }
+        if (!array_key_exists($key, $row)) return false;
+
+        if (is_array($value) && isset($value['__in'])) {
+            return in_array((string)$row[$key], $value['__in'], true);
+        }
+
+        $a = $row[$key];
+        $b = $value;
+        if ($op === '=')  return (string)$a === (string)$b;
+        if ($op === '!=' || $op === '<>') return (string)$a !== (string)$b;
+
+        $cmp = (is_numeric($a) && is_numeric($b)) ? ($a <=> $b) : strcmp((string)$a, (string)$b);
+        if ($op === '<')  return $cmp < 0;
+        if ($op === '<=') return $cmp <= 0;
+        if ($op === '>')  return $cmp > 0;
+        if ($op === '>=') return $cmp >= 0;
         return true;
     }
 

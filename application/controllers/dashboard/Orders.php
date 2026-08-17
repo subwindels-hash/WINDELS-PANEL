@@ -32,6 +32,7 @@ class Orders extends Auth_Controller {
         $this->load->view('layouts/app', array(
             'title'        => 'My Orders',
             'nav_active'   => 'dashboard/orders',
+            'unread'       => $this->dashboardstats->unread_count($this->current_user->id),
             'content_view' => 'dashboard/orders/index',
             'current_user' => $this->current_user,
             'permissions'  => $this->auth->permissions(),
@@ -53,6 +54,7 @@ class Orders extends Auth_Controller {
         $this->load->view('layouts/app', array(
             'title'        => 'Order #'.$public_id,
             'nav_active'   => 'dashboard/orders',
+            'unread'       => $this->dashboardstats->unread_count($this->current_user->id),
             'content_view' => 'dashboard/orders/detail',
             'current_user' => $this->current_user,
             'permissions'  => $this->auth->permissions(),
@@ -73,12 +75,13 @@ class Orders extends Auth_Controller {
                 : $this->Service_model->find_by_public_id($svc_param);
         }
         $categories = $this->db->order_by('sorting','ASC')->get('service_categories')->result();
-        $services = $this->Service_model->active();
+        $services = $this->Service_model->active_for_picker();
         $wallet = $this->Wallet_model->for_user($this->current_user->id);
 
         $this->load->view('layouts/app', array(
             'title'        => 'New Order',
             'nav_active'   => 'dashboard/new-order',
+            'unread'       => $this->dashboardstats->unread_count($this->current_user->id),
             'content_view' => 'dashboard/orders/new_order',
             'current_user' => $this->current_user,
             'permissions'  => $this->auth->permissions(),
