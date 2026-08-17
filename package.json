@@ -1,0 +1,15 @@
+{
+  "name": "windels-panel-assets",
+  "version": "0.4.0",
+  "private": true,
+  "description": "WINDELS PANEL — frontend asset build (Tailwind CLI). PHP views render with assets/css/design-system.css even without a build.",
+  "scripts": {
+    "build:css": "tailwindcss -i ./assets/css/app.css -o ./assets/css/tailwind.css --minified",
+    "watch:css": "tailwindcss -i ./assets/css/app.css -o ./assets/css/tailwind.css --watch",
+    "build": "npm run build:css"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.10",
+    "lucide": "^0.441.0"
+  }
+}

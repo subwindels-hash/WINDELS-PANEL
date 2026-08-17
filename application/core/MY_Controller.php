@@ -2,10 +2,15 @@
 defined('BASEPATH') OR exit('No direct script access allowed');
 
 /**
- * Base controllers — thin, enforce auth/CSRF/audit/rate-limit/request-id.
+ * Base controllers — enforce auth/CSRF/audit/rate-limit/request-id.
+ *
+ * Authentication & authorization is delegated to the AuthService library
+ * (Session 03): the base classes below are thin gates, child controllers call
+ * $this->require_perm('orders.view') for granular checks.
  */
 class MY_Controller extends CI_Controller {
     protected $request_id;
+    protected $auth;
 
     public function __construct() {
         parent::__construct();
@@ -16,6 +21,15 @@ class MY_Controller extends CI_Controller {
         $this->output->set_header('X-Content-Type-Options: nosniff');
         $this->output->set_header('X-Frame-Options: SAMEORIGIN');
         $this->output->set_header('Referrer-Policy: strict-origin-when-cross-origin');
+
+        // AuthService is available to every controller but loaded defensively:
+        // CLI maintenance flows (migrate/seed) run before the schema exists.
+        try {
+            $this->load->library('AuthService');
+            $this->auth = $this->authservice;
+        } catch (Exception $e) {
+            $this->auth = null;
+        }
     }
 
     protected function json($data, $http=200) {
@@ -41,46 +55,64 @@ class MY_Controller extends CI_Controller {
             show_404();
         }
     }
+
+    protected function current_user() {
+        return $this->auth ? $this->auth->user() : null;
+    }
 }
 
 class Public_Controller extends MY_Controller {
-    public function __construct(){ parent::__construct();
-        // Load homepage setting (DB overrides config) if table exists — fail open
+    public function __construct(){
+        parent::__construct();
+        // Load homepage setting (DB overrides config) if table exists — fail open.
         try { $this->load->model('Setting_model'); } catch (Exception $e) {}
+        // Share the authenticated user with every public view/partial.
+        $this->load->vars(array('current_user' => $this->current_user()));
+    }
+
+    /** Render a page inside the public shell, passing the current user to views. */
+    protected function render_public($content_view, $data = array()) {
+        $this->load->view('layouts/public', array('content_view' => $content_view, 'data' => $data));
     }
 }
 
 class Auth_Controller extends MY_Controller {
     protected $current_user;
+
     public function __construct(){
         parent::__construct();
-        $this->load->library('session');
-        $uid = $this->session->userdata('user_id');
-        if (!$uid) { redirect('login'); }
-        $this->load->model('User_model');
-        $this->current_user = $this->User_model->find_by_id($uid);
-        if (!$this->current_user || $this->current_user->status !== 'ACTIVE') {
-            $this->session->sess_destroy();
+        if (!$this->auth || !$this->auth->check()) {
+            // Persist the intended destination across the GET login form and
+            // the subsequent POST — flashdata would expire in between. Store a
+            // relative path so it can never become an open redirect.
+            $dest = $this->input->server('REQUEST_URI');
+            if (!is_string($dest) || $dest === '' || $dest[0] !== '/') {
+                $dest = '/dashboard';
+            }
+            $this->session->set_userdata('redirect_after_login', $dest);
             redirect('login');
         }
+        $this->current_user = $this->auth->user();
+        // Expose the unread notification count to every authenticated view so
+        // the shell's bell badge works without each controller passing it.
+        $this->load->vars(array('unread' => $this->auth->unread_count()));
     }
 }
 
 class Admin_Controller extends Auth_Controller {
     public function __construct(){
         parent::__construct();
-        $role = $this->current_user->role ?? '';
-        if (!in_array($role, array('SUPER_ADMIN','ADMIN','STAFF'), TRUE)) {
+        // Admin area is restricted to staff/admin roles; fine-grained perms
+        // are enforced per-action via require_perm().
+        if (!$this->auth->has_role(array('SUPER_ADMIN','ADMIN','STAFF'))) {
             show_error('Forbidden — admin only', 403);
         }
-        // Permission gate: child controllers call $this->require_perm('orders.view')
     }
+
+    /** Enforce a granular permission key from the RBAC catalog (Session 03). */
     protected function require_perm($key){
-        $this->load->model('Permission_model');
-        // Simplified: SUPER_ADMIN bypass; else check role_permissions (stub until Session 03)
-        if ($this->current_user->role === 'SUPER_ADMIN') return;
-        // TODO Session 03: real RBAC check — for foundation, allow ADMIN/STAFF
-        if (!in_array($this->current_user->role, array('ADMIN','STAFF'), TRUE)) {
+        if (!$this->auth->can($key)) {
+            log_message('error', "permission denied: {$this->current_user->role} lacks {$key}");
             show_error('Forbidden — missing permission: '.$key, 403);
         }
     }
@@ -89,6 +121,7 @@ class Admin_Controller extends Auth_Controller {
 class Api_Controller extends MY_Controller {
     protected $api_key_row;
     protected $api_user;
+
     public function __construct(){
         parent::__construct();
         $key = $this->input->get_request_header('X-Api-Key', TRUE) ?: $this->input->get_request_header('x-api-key', TRUE);
@@ -101,9 +134,13 @@ class Api_Controller extends MY_Controller {
             }
         }
     }
+
     protected function require_api_key(){
         if (!$this->api_key_row || !$this->api_user) {
             $this->json_error('UNAUTHORIZED','Invalid or missing API key',401);
+        }
+        if ($this->api_user->status !== 'ACTIVE') {
+            $this->json_error('ACCOUNT_DISABLED','Account is not active',403);
         }
         // IP whitelist
         $wl = json_decode($this->api_key_row->ip_whitelist ?? '[]', TRUE);

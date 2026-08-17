@@ -12,4 +12,17 @@ class Notification_model extends MY_Model {
         if ($public_id) $this->db->where('public_id',$public_id);
         return $this->db->update($this->table, array('is_read'=>1,'read_at'=>$this->now_utc()));
     }
+
+    /** Paginated notifications for a user, read + unread. */
+    public function for_user($user_id, $limit=25, $offset=0){
+        return $this->db->where('user_id',$user_id)
+                        ->order_by('created_at','DESC')
+                        ->limit($limit,$offset)->get($this->table)->result();
+    }
+
+    public function count_for_user($user_id, $unread_only=false){
+        $this->db->where('user_id',$user_id);
+        if ($unread_only) $this->db->where('is_read',0);
+        return (int)$this->db->count_all_results($this->table);
+    }
 }
