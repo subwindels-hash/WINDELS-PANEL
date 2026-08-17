@@ -28,6 +28,10 @@ class OrderService {
 
     public function __construct() {
         $this->ci =& get_instance();
+        // OrderStateMachine is a static utility, not a CI library, so the
+        // loader will not bring it in — and every transition below calls it.
+        // Without this an order placement fatals on the first status change.
+        require_once __DIR__.'/OrderStateMachine.php';
         $this->ci->load->model(array(
             'Service_model', 'Order_model', 'Order_status_history_model',
             'Provider_model', 'Wallet_model', 'Blacklist_model',
