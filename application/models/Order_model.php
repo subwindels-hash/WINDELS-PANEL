@@ -24,6 +24,26 @@ class Order_model extends MY_Model {
                         ->get($this->table)->row();
     }
 
+    /**
+     * Several of a user's orders by public id, keyed by public id.
+     *
+     * The bulk status endpoint used to loop find_public_for_user(), issuing up
+     * to 100 point queries for one API call. One WHERE IN does the same work in
+     * a single round-trip, and the user_id predicate still scopes it so a
+     * caller cannot read someone else's orders by guessing ids.
+     */
+    public function find_public_many_for_user(array $public_ids, $user_id){
+        $public_ids = array_values(array_unique(array_filter(array_map('strval', $public_ids), 'strlen')));
+        if (!$public_ids) return array();
+
+        $rows = $this->db->where_in('public_id', $public_ids)
+                         ->where('user_id', $user_id)
+                         ->get($this->table)->result();
+        $out = array();
+        foreach ($rows as $r) $out[$r->public_id] = $r;
+        return $out;
+    }
+
     /** Order with its service name joined (for list/detail views). */
     public function for_user_with_service($user_id, $limit=25, $offset=0, $status=NULL){
         $this->db->select('orders.*, services.name AS service_name, services.slug AS service_slug')

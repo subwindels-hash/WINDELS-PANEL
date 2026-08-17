@@ -22,7 +22,7 @@ class Subscriptions extends Auth_Controller {
             'current_user' => $this->current_user,
             'permissions' => $this->auth->permissions(),
             'subscriptions' => $rows,
-            'services' => $this->Service_model->active(),
+            'services' => $this->Service_model->active_for_picker(),
         ));
     }
 

@@ -128,9 +128,13 @@ class Api_v1 extends MY_Controller {
         $body = $this->json_body();
         $ids = isset($body['orderIds']) && is_array($body['orderIds']) ? array_slice($body['orderIds'], 0, 100) : array();
         if (!$ids) $this->fail(422, 'BAD_REQUEST', 'Provide an array of orderIds (up to 100).');
+        // One query for the batch rather than one per id (Session 18).
+        $found = $this->Order_model->find_public_many_for_user($ids, $this->user->id);
         $out = array();
         foreach ($ids as $id) {
-            $o = $this->Order_model->find_public_for_user((string)$id, $this->user->id);
+            $o = $found[(string)$id] ?? null;
+            // Unknown ids still get an explicit null so the response shape
+            // matches the request exactly.
             $out[(string)$id] = $o ? array('status'=>$o->status,'charge'=>$o->charge,'currency'=>$o->currency,'remains'=>$o->remains,'start_count'=>$o->start_count) : null;
         }
         $this->ok($out);

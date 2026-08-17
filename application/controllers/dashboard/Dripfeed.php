@@ -26,7 +26,7 @@ class Dripfeed extends Auth_Controller {
             'permissions' => $this->auth->permissions(),
             'unread' => $this->dashboardstats->unread_count($this->current_user->id),
             'dripfeeds' => $rows,
-            'services' => $this->Service_model->active(),
+            'services' => $this->Service_model->active_for_picker(),
             'page' => $page,
             'total_pages' => max(1, (int)ceil($total / $limit)),
         ));
