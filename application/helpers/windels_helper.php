@@ -17,3 +17,30 @@ if (!function_exists('windels_money')) {
 if (!function_exists('windels_request_id')) {
     function windels_request_id(){ return bin2hex(random_bytes(8)); }
 }
+
+if (!function_exists('csp_nonce')) {
+    /**
+     * The current request's Content-Security-Policy nonce.
+     *
+     * Set by MY_Controller::send_security_headers(). Returns '' outside a web
+     * request (CLI, tests) so views degrade rather than fatal.
+     */
+    function csp_nonce() {
+        return isset($GLOBALS['__windels_csp_nonce']) ? $GLOBALS['__windels_csp_nonce'] : '';
+    }
+}
+
+if (!function_exists('csp_nonce_attr')) {
+    /**
+     * Ready-to-print nonce attribute for an inline <script> tag:
+     *   <script <?=csp_nonce_attr()?>> ... </script>
+     *
+     * Without this the script is silently dropped by the browser, since the
+     * policy does not allow 'unsafe-inline'.
+     */
+    function csp_nonce_attr() {
+        $nonce = csp_nonce();
+        return $nonce === '' ? '' : 'nonce="'.htmlspecialchars($nonce, ENT_QUOTES).'"';
+    }
+}
+

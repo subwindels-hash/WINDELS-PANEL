@@ -99,7 +99,7 @@ $user_rate = $user_rate ?? null;
   </aside>
 </div>
 
-<script>
+<script <?=csp_nonce_attr()?>>
 (function(){
   var sel=document.getElementById('ws-service'),
       qty=document.getElementById('ws-qty'),

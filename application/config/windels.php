@@ -38,6 +38,11 @@ $config['provider_http'] = array(
     'backoff_ms' => array(500, 1500, 4000),
 );
 
+/* SSRF guard (SecureHttpClient): allow provider/webhook URLs that resolve to
+   private or loopback addresses. Off by default; enable only for self-hosted
+   deployments where providers genuinely live on the LAN. */
+$config['http_allow_private_hosts'] = (bool)getenv('HTTP_ALLOW_PRIVATE_HOSTS');
+
 /* Where cron jobs keep their exclusive lock files (see JobRunner). */
 $config['cron_lock_dir'] = sys_get_temp_dir().'/windels-locks';
 

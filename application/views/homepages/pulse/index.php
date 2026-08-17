@@ -202,7 +202,7 @@ $faqs = array(
   .ws-fast-grid{grid-template-columns:1fr}
 }
 </style>
-<script>
+<script <?=csp_nonce_attr()?>>
 // Live quick-order estimate (no network call — pricing is illustrative).
 (function(){
   var qty=document.getElementById('ws-qty'), total=document.getElementById('ws-total');

@@ -193,6 +193,17 @@ class AuthService {
      * @param string $code  6-digit TOTP or a recovery code
      * @return array{ok:bool,error?:string,used_recovery?:bool}
      */
+    /**
+     * Stable identifier for the half-authenticated user awaiting MFA, for
+     * rate-limit bucketing. Returns '' when there is no pending challenge —
+     * the caller then throttles on IP alone.
+     */
+    public function pending_mfa_identifier() {
+        $pending = $this->ci->session->userdata(self::SESSION_MFA_KEY);
+        if (!$pending || !is_array($pending) || empty($pending['user_id'])) return '';
+        return 'user:'.(int)$pending['user_id'];
+    }
+
     public function verify_mfa($code, $ip = null, $user_agent = null) {
         $pending = $this->ci->session->userdata(self::SESSION_MFA_KEY);
         if (!$pending || !is_array($pending) || (int)($pending['expires_at'] ?? 0) < time()) {

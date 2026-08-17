@@ -12,15 +12,15 @@ class MY_Controller extends CI_Controller {
     protected $request_id;
     protected $auth;
 
+    /** Per-request CSP nonce; views use csp_nonce() to whitelist inline JS. */
+    protected $csp_nonce;
+
     public function __construct() {
         parent::__construct();
         $this->request_id = bin2hex(random_bytes(8));
         // UTC
         date_default_timezone_set('UTC');
-        // Security headers
-        $this->output->set_header('X-Content-Type-Options: nosniff');
-        $this->output->set_header('X-Frame-Options: SAMEORIGIN');
-        $this->output->set_header('Referrer-Policy: strict-origin-when-cross-origin');
+        $this->send_security_headers();
 
         // AuthService is available to every controller but loaded defensively:
         // CLI maintenance flows (migrate/seed) run before the schema exists.
@@ -30,6 +30,59 @@ class MY_Controller extends CI_Controller {
         } catch (Exception $e) {
             $this->auth = null;
         }
+    }
+
+    /**
+     * Security response headers (§61).
+     *
+     * The CSP is nonce-based rather than 'unsafe-inline': a handful of views
+     * ship inline <script> blocks, and allowing unsafe-inline to accommodate
+     * them would forfeit most of the protection the policy exists to provide.
+     * Views emit their inline scripts as <script <?=csp_nonce_attr()?>>.
+     *
+     * Inline *styles* are still allowed. They are used widely for layout in the
+     * admin views and cannot execute script, so the tradeoff is different.
+     */
+    protected function send_security_headers() {
+        $this->csp_nonce = base64_encode(random_bytes(16));
+        // Expose it to views via the helper, which does not depend on knowing
+        // which controller rendered the page.
+        $GLOBALS['__windels_csp_nonce'] = $this->csp_nonce;
+
+        $csp = array(
+            "default-src 'self'",
+            "base-uri 'self'",
+            // No plugins, and nothing may frame us (the modern X-Frame-Options).
+            "object-src 'none'",
+            "frame-ancestors 'self'",
+            "form-action 'self'",
+            "script-src 'self' 'nonce-{$this->csp_nonce}'",
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+            "font-src 'self' https://fonts.gstatic.com",
+            "img-src 'self' data: https:",
+            "connect-src 'self'",
+        );
+
+        $this->output->set_header('X-Content-Type-Options: nosniff');
+        $this->output->set_header('X-Frame-Options: SAMEORIGIN');
+        $this->output->set_header('Referrer-Policy: strict-origin-when-cross-origin');
+        $this->output->set_header('Content-Security-Policy: '.implode('; ', $csp));
+        // Browsers ignore the legacy per-feature opt-outs; deny the powerful
+        // ones a panel never needs.
+        $this->output->set_header('Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=()');
+
+        // HSTS only over TLS: sending it on a plaintext dev host would pin
+        // developers into https://localhost for six months.
+        if (getenv('APP_ENV') === 'production' && $this->is_https()) {
+            $this->output->set_header('Strict-Transport-Security: max-age=15552000; includeSubDomains');
+        }
+    }
+
+    private function is_https() {
+        if (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off') return true;
+        // Behind Nginx/a load balancer the origin request is plaintext.
+        $proto = $_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '';
+        return strtolower($proto) === 'https';
     }
 
     protected function json($data, $http=200) {

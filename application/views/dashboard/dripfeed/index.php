@@ -63,7 +63,7 @@
 
 <style>.ws-dialog{border:0;border-radius:1rem;padding:0;width:min(620px,92vw);box-shadow:0 30px 80px -20px rgba(0,0,0,.4)}
 .ws-dialog::backdrop{background:rgba(15,23,42,.55)} .ws-dialog form{padding:1.5rem}</style>
-<script>
+<script <?=csp_nonce_attr()?>>
 (function(){
   var d=document.getElementById('ws-new-drip'); if(!d)return;
   function recalc(){

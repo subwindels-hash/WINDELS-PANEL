@@ -129,7 +129,7 @@ $badges = array(
   </div>
 </section>
 
-<script>
+<script <?=csp_nonce_attr()?>>
 (function(){
   var qty=document.getElementById('ws-qty'), total=document.getElementById('ws-total');
   if(!qty||!total) return;

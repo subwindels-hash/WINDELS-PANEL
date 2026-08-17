@@ -51,7 +51,11 @@ $config['csrf_token_name'] = 'csrf_windels';
 $config['csrf_cookie_name'] = 'csrf_cookie_windels';
 $config['csrf_expire'] = 7200;
 $config['csrf_regenerate'] = TRUE;
-$config['csrf_exclude_uris'] = array('webhook/.*', 'api/v1/.*', 'health.*');
+// CI3 anchors these as #^<pattern>$#i. Keep them tight: 'health.*' would also
+// exempt any future route merely starting with "health". Webhooks and the API
+// are exempt because they authenticate by HMAC signature and API key
+// respectively, not by session cookie, so CSRF does not apply.
+$config['csrf_exclude_uris'] = array('webhook/.+', 'api/v1/.+', 'health(/.+)?');
 
 $config['compress_output'] = FALSE;
 $config['time_reference'] = 'UTC';
