@@ -32,6 +32,8 @@ $route['robots\.txt'] = 'home/robots';
 $route['login'] = 'auth/login';
 $route['register'] = 'auth/register';
 $route['logout'] = 'auth/logout';
+// The only state-changing request allowed inside a read-only impersonation.
+$route['impersonation/stop'] = 'impersonation/stop';
 $route['forgot-password'] = 'auth/forgot_password';
 $route['reset-password/(:any)'] = 'auth/reset_password/$1';
 $route['verify-email/resend'] = 'auth/verify_email_resend';
@@ -48,6 +50,8 @@ $route['dashboard/orders/(:any)/cancel'] = 'dashboard/orders/cancel/$1';
 $route['dashboard/orders/(:any)/refill'] = 'dashboard/orders/refill/$1';
 $route['dashboard/orders/(:any)'] = 'dashboard/orders/detail/$1';
 $route['dashboard/new-order'] = 'dashboard/orders/new_order';
+// Named mass-order submission must precede the GET form route.
+$route['dashboard/mass-order/create'] = 'dashboard/orders/mass_create';
 $route['dashboard/mass-order'] = 'dashboard/orders/mass_order';
 $route['dashboard/drip-feed'] = 'dashboard/dripfeed/index';
 $route['dashboard/drip-feed/create'] = 'dashboard/dripfeed/create';
@@ -100,6 +104,22 @@ $route['dashboard/giftcards/history'] = 'dashboard/giftcards/history';
 $route['dashboard/giftcards/buy'] = 'dashboard/giftcards/buy';
 $route['dashboard/giftcards/(:any)/reveal/(:any)'] = 'dashboard/giftcards/reveal/$1/$2';
 $route['dashboard/giftcards/(:any)'] = 'dashboard/giftcards/detail/$1';
+
+// Marketplace: named seller/order actions must precede the listing catch-all.
+$route['dashboard/marketplace'] = 'dashboard/marketplace/index';
+$route['dashboard/marketplace/seller'] = 'dashboard/marketplace/seller';
+$route['dashboard/marketplace/seller/apply'] = 'dashboard/marketplace/apply';
+$route['dashboard/marketplace/seller/listings'] = 'dashboard/marketplace/save_listing';
+$route['dashboard/marketplace/seller/listings/(:any)/status'] = 'dashboard/marketplace/listing_status/$1';
+$route['dashboard/marketplace/seller/listings/(:any)'] = 'dashboard/marketplace/save_listing/$1';
+$route['dashboard/marketplace/orders'] = 'dashboard/marketplace/orders';
+$route['dashboard/marketplace/orders/(:any)/deliver'] = 'dashboard/marketplace/deliver/$1';
+$route['dashboard/marketplace/orders/(:any)/reveal'] = 'dashboard/marketplace/reveal/$1';
+$route['dashboard/marketplace/orders/(:any)/accept'] = 'dashboard/marketplace/accept/$1';
+$route['dashboard/marketplace/orders/(:any)/dispute'] = 'dashboard/marketplace/dispute/$1';
+$route['dashboard/marketplace/orders/(:any)'] = 'dashboard/marketplace/order/$1';
+$route['dashboard/marketplace/(:any)/buy'] = 'dashboard/marketplace/buy/$1';
+$route['dashboard/marketplace/(:any)'] = 'dashboard/marketplace/listing/$1';
 $route['dashboard/services'] = 'dashboard/services/index';
 $route['dashboard/favorites'] = 'dashboard/services/favorites';
 $route['dashboard/favorites/add/(:any)'] = 'dashboard/favorites/add/$1';
@@ -109,6 +129,10 @@ $route['dashboard/wallet/deposit'] = 'dashboard/wallet/deposit';
 $route['dashboard/wallet/deposits'] = 'dashboard/wallet/deposits';
 $route['dashboard/wallet/deposits/(:any)'] = 'dashboard/wallet/deposits/$1';
 $route['dashboard/transactions'] = 'dashboard/wallet/transactions';
+$route['dashboard/withdrawals'] = 'dashboard/withdrawals/index';
+$route['dashboard/withdrawals/create'] = 'dashboard/withdrawals/create';
+$route['dashboard/withdrawals/(:any)/cancel'] = 'dashboard/withdrawals/cancel/$1';
+$route['dashboard/withdrawals/(:any)'] = 'dashboard/withdrawals/detail/$1';
 $route['dashboard/tickets'] = 'dashboard/tickets/index';
 $route['dashboard/tickets/create'] = 'dashboard/tickets/create';
 $route['dashboard/tickets/(:any)/reply'] = 'dashboard/tickets/reply/$1';
@@ -155,6 +179,13 @@ $route['admin/giftcards/(:any)/abandon'] = 'admin/giftcards/abandon/$1';
 $route['admin/giftcards/(:any)/refund'] = 'admin/giftcards/refund/$1';
 $route['admin/giftcards/(:any)/reveal/(:any)'] = 'admin/giftcards/reveal/$1/$2';
 $route['admin/giftcards/(:any)'] = 'admin/giftcards/detail/$1';
+
+$route['admin/marketplace'] = 'admin/marketplace/index';
+$route['admin/marketplace/sellers/(:any)/moderate'] = 'admin/marketplace/moderate_seller/$1';
+$route['admin/marketplace/listings/(:any)/moderate'] = 'admin/marketplace/moderate_listing/$1';
+$route['admin/marketplace/orders/(:any)/reveal'] = 'admin/marketplace/reveal/$1';
+$route['admin/marketplace/orders/(:any)/resolve'] = 'admin/marketplace/resolve/$1';
+$route['admin/marketplace/orders/(:any)'] = 'admin/marketplace/order/$1';
 // Catalogue: pricing and shelf control for every product domain.
 // Action routes must precede the catch-all detail route below.
 $route['admin/catalogue'] = 'admin/catalogue/index';
@@ -163,6 +194,20 @@ $route['admin/catalogue/(:any)/(:any)/update'] = 'admin/catalogue/update/$1/$2';
 $route['admin/catalogue/(:any)/(:any)/status'] = 'admin/catalogue/status/$1/$2';
 $route['admin/catalogue/(:any)/(:any)'] = 'admin/catalogue/edit/$1/$2';
 $route['admin/catalogue/(:any)'] = 'admin/catalogue/domain/$1';
+// Customer-facing SMM services. Every named mutation must precede the
+// public-id catch-all or "create" would be treated as a service ID.
+$route['admin/services'] = 'admin/services/index';
+$route['admin/services/create'] = 'admin/services/create';
+$route['admin/services/(:any)/update'] = 'admin/services/update/$1';
+$route['admin/services/(:any)/archive'] = 'admin/services/archive/$1';
+$route['admin/services/(:any)/pricing/group/(:num)'] = 'admin/services/group_rate/$1/$2';
+$route['admin/services/(:any)/pricing/user'] = 'admin/services/user_rate/$1';
+$route['admin/services/(:any)'] = 'admin/services/edit/$1';
+// Reseller API key policy and usage. Writes precede the detail catch-all.
+$route['admin/api-keys'] = 'admin/api_keys/index';
+$route['admin/api-keys/(:any)/policy'] = 'admin/api_keys/update/$1';
+$route['admin/api-keys/(:any)/revoke'] = 'admin/api_keys/revoke/$1';
+$route['admin/api-keys/(:any)'] = 'admin/api_keys/show/$1';
 // System: categories, blacklist and the (read-only) audit trail.
 $route['admin/categories'] = 'admin/system/categories';
 $route['admin/categories/save'] = 'admin/system/save_category';
@@ -177,6 +222,7 @@ $route['admin/providers/(:any)'] = 'admin/providers/detail/$1';
 $route['admin/customers'] = 'admin/users/customers';
 $route['admin/wallets'] = 'admin/users/wallets';
 // Action routes must precede the catch-all detail route below.
+$route['admin/customers/(:any)/impersonate'] = 'admin/users/impersonate/$1';
 $route['admin/customers/(:any)/status'] = 'admin/users/status/$1';
 $route['admin/customers/(:any)/role'] = 'admin/users/role/$1';
 $route['admin/customers/(:any)/price-group'] = 'admin/users/price_group/$1';
@@ -186,6 +232,12 @@ $route['admin/payments'] = 'admin/payments/index';
 $route['admin/payments/(:any)/approve'] = 'admin/payments/approve/$1';
 $route['admin/payments/(:any)/reject'] = 'admin/payments/reject/$1';
 $route['admin/payments/(:any)'] = 'admin/payments/detail/$1';
+$route['admin/withdrawals'] = 'admin/withdrawals/index';
+$route['admin/withdrawals/(:any)/approve'] = 'admin/withdrawals/approve/$1';
+$route['admin/withdrawals/(:any)/reject'] = 'admin/withdrawals/reject/$1';
+$route['admin/withdrawals/(:any)/paid'] = 'admin/withdrawals/paid/$1';
+$route['admin/withdrawals/(:any)/reveal'] = 'admin/withdrawals/reveal/$1';
+$route['admin/withdrawals/(:any)'] = 'admin/withdrawals/detail/$1';
 // Order operations: four queues over the existing engines, one controller.
 // Action routes must precede each catch-all.
 $route['admin/refills'] = 'admin/operations/refills';
@@ -247,6 +299,8 @@ $route['admin/media/(:any)/delete'] = 'admin/media/delete/$1';
 $route['api/v1/services'] = 'api_v1/services';
 $route['api/v1/services/(:any)'] = 'api_v1/service_detail/$1';
 $route['api/v1/orders'] = 'api_v1/orders';
+// Named bulk actions must precede the public-order-id catch-all.
+$route['api/v1/orders/mass'] = 'api_v1/create_mass_order';
 $route['api/v1/orders/status'] = 'api_v1/orders_status';
 $route['api/v1/orders/(:any)'] = 'api_v1/order_detail/$1';
 $route['api/v1/balance'] = 'api_v1/balance';

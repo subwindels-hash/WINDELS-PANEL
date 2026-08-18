@@ -48,7 +48,14 @@ class Core_seeder extends Seeder {
             // so reading one is closer to opening the till than to reading a
             // record (§23).
             'giftcards'  => array('giftcards.view','giftcards.manage','giftcards.refund','giftcards.reveal'),
+            // Fulfilment reveal and escrow resolution are kept distinct from
+            // ordinary queue access and catalogue moderation.
+            'marketplace'=> array('marketplace.view','marketplace.moderate_sellers',
+                                  'marketplace.moderate_listings','marketplace.resolve','marketplace.reveal'),
             'payments'   => array('payments.view','payments.manage','wallets.adjust'),
+            // Processing and opening payout instructions are independent from
+            // viewing the masked withdrawal queue.
+            'withdrawals'=> array('withdrawals.view','withdrawals.process','withdrawals.reveal'),
             'support'    => array('tickets.view','tickets.reply','tickets.manage'),
             'content'    => array('blog.manage','faq.manage','announcements.manage','media.manage'),
             'affiliates' => array('affiliates.view','affiliates.manage'),
@@ -60,6 +67,9 @@ class Core_seeder extends Seeder {
         return array(
             'SUPER_ADMIN' => '*',
             'ADMIN'       => array(
+                // users.impersonate is intentionally not a default operational
+                // grant. A SUPER_ADMIN may delegate it explicitly in the RBAC
+                // matrix after accepting the read-only support policy.
                 'reports.view','users.view','users.edit','staff.manage','pricing.manage',
                 'services.view','services.manage','categories.manage',
                 'providers.view','providers.manage','providers.sync',
@@ -68,7 +78,10 @@ class Core_seeder extends Seeder {
                 'numbers.view','numbers.manage','numbers.refund',
                 'identity.view','identity.manage','identity.refund','identity.reveal',
                 'giftcards.view','giftcards.manage','giftcards.refund','giftcards.reveal',
+                'marketplace.view','marketplace.moderate_sellers','marketplace.moderate_listings',
+                'marketplace.resolve','marketplace.reveal',
                 'payments.view','payments.manage','wallets.adjust',
+                'withdrawals.view','withdrawals.process','withdrawals.reveal',
                 'tickets.view','tickets.reply','tickets.manage',
                 'blog.manage','faq.manage','announcements.manage','media.manage',
                 'affiliates.view','affiliates.manage',
@@ -87,7 +100,10 @@ class Core_seeder extends Seeder {
                 // was delivered, but not read the code. Answering "where is my
                 // card?" does not require holding something spendable.
                 'giftcards.view','giftcards.manage',
-                'payments.view','tickets.view','tickets.reply','affiliates.view',
+                // Staff may work the Marketplace catalogue queue, but cannot
+                // reveal fulfilment, approve seller identities, or move escrow.
+                'marketplace.view','marketplace.moderate_listings',
+                'payments.view','withdrawals.view','tickets.view','tickets.reply','affiliates.view',
             ),
             'CUSTOMER'    => array(),
         );
@@ -395,6 +411,13 @@ class Core_seeder extends Seeder {
             // orders
             array('min_deposit','500.00000000','payments',1),
             array('max_deposit','5000000.00000000','payments',1),
+            // Identity verification defaults off: new installations may not
+            // have a KYC provider yet. Operators can enable the policy.
+            array('withdrawal_min_amount','1000.00000000','withdrawals',0),
+            array('withdrawal_max_amount','1000000.00000000','withdrawals',0),
+            array('withdrawal_fee_fixed','0.00000000','withdrawals',0),
+            array('withdrawal_fee_percent','1.0000','withdrawals',0),
+            array('withdrawal_require_verified_identity',FALSE,'withdrawals',0),
             array('order_auto_submit',TRUE,'orders',0),
             array('partial_refund_enabled',TRUE,'orders',0),
             // security
@@ -415,6 +438,11 @@ class Core_seeder extends Seeder {
             // receipt: it is what the recipient sees the card came from, so it
             // is a branding decision rather than a constant.
             array('giftcard_sender_name','WINDELS PANEL','giftcards',0),
+            // Marketplace policy is snapshotted onto each order at purchase,
+            // so later policy edits never rewrite an existing escrow split.
+            array('marketplace_fee_percent','10.00000000','marketplace',0),
+            array('marketplace_auto_release_hours',72,'marketplace',0),
+            array('marketplace_require_verified_identity',TRUE,'marketplace',0),
         );
     }
 
@@ -437,6 +465,7 @@ class Core_seeder extends Seeder {
             array('mass_order', TRUE, 'Mass order form'),
             array('reseller_api', TRUE, '/api/v1 reseller API'),
             array('affiliate_program', TRUE, 'Referral commissions'),
+            array('marketplace', TRUE, 'Moderated customer marketplace and escrow'),
             array('tickets', TRUE, 'Support ticket system'),
             array('blog', TRUE, 'Public blog'),
         );

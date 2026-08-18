@@ -9,12 +9,16 @@ $nav = $is_admin ? array(
     array('admin/numbers',      'Numbers',    'numbers.view',    'hash'),
     array('admin/identity',     'Identity',   'identity.view',   'badge-check'),
     array('admin/giftcards',    'Gift cards', 'giftcards.view',  'gift-card'),
+    array('admin/marketplace',  'Marketplace','marketplace.view','shopping-bag'),
     array('admin/analytics',    'Analytics',  'reports.view',    'chart'),
-    array('admin/customers',    'Customers',  'users.view',      'users'),
+    array('admin/customers',    'Customers',   'users.view',      'users'),
+    array('admin/services',     'SMM services','services.view',   'zap'),
     array('admin/catalogue',    'Catalogue',  'services.view',   'package'),
     array('admin/refills',      'Operations', 'orders.refill',   'repeat'),
     array('admin/providers',    'Providers',  'providers.view',  'server'),
+    array('admin/api-keys',     'Reseller API','api.manage',     'key'),
     array('admin/payments',     'Payments',   'payments.view',   'credit-card'),
+    array('admin/withdrawals',  'Withdrawals','withdrawals.view','wallet'),
     array('admin/tickets',      'Tickets',    'tickets.view',    'message-square'),
     array('admin/affiliates',   'Affiliates', 'affiliates.view', 'gift'),
     array('admin/blog',         'Content',    'blog.manage',     'list'),
@@ -25,22 +29,42 @@ $nav = $is_admin ? array(
 ) : array(
     array('dashboard',           'Dashboard',  null, 'dashboard'),
     array('dashboard/new-order', 'New Order',  null, 'zap'),
+    array('dashboard/mass-order','Mass Order', null, 'list'),
     array('dashboard/orders',    'My Orders',  null, 'shopping-bag'),
     array('dashboard/history',   'History',    null, 'list'),
     array('dashboard/vtu',       'VTU',        null, 'smartphone'),
     array('dashboard/numbers',   'Numbers',    null, 'hash'),
     array('dashboard/identity',  'Identity',   null, 'badge-check'),
     array('dashboard/giftcards', 'Gift cards', null, 'gift-card'),
+    array('dashboard/marketplace','Marketplace',null,'shopping-bag'),
     array('dashboard/services',  'Services',   null, 'package'),
     array('dashboard/favorites', 'Favorites',  null, 'star'),
     array('dashboard/drip-feed', 'Drip-feed',  null, 'zap'),
     array('dashboard/subscriptions','Subscriptions', null, 'repeat'),
     array('dashboard/add-funds', 'Add Funds',  null, 'wallet'),
     array('dashboard/transactions','Transactions', null, 'list'),
+    array('dashboard/withdrawals','Withdrawals', null, 'wallet'),
     array('dashboard/tickets',   'Support',    null, 'message-square'),
     array('dashboard/referrals', 'Referrals',  null, 'gift'),
     array('dashboard/api',       'API',        null, 'key'),
 );
+
+// Keep disabled modules out of customer navigation as well as guarding their
+// controllers. Read defensively because the installer can render before the
+// feature_flags table exists.
+if (!$is_admin) {
+    $mass_order_enabled = false;
+    try {
+        $CI =& get_instance();
+        $CI->load->model('Feature_flag_model');
+        $mass_order_enabled = $CI->Feature_flag_model->enabled('mass_order');
+    } catch (Exception $e) { /* hidden until the feature table is available */ }
+    if (!$mass_order_enabled) {
+        $nav = array_values(array_filter($nav, function ($item) {
+            return $item[0] !== 'dashboard/mass-order';
+        }));
+    }
+}
 
 // Branding, set from Admin -> Appearance. Read defensively: the layout also
 // renders on the CLI-ish paths and during install, before settings exist.
@@ -66,8 +90,41 @@ try {
 <?php if (!empty($brand['brand_primary_color'])): ?>
 <style><?=':root{--ws-primary:'.htmlspecialchars($brand['brand_primary_color']).'}'?></style>
 <?php endif; ?>
+<?php if (!empty($impersonation['active'])): ?>
+<style>
+/* UX guard only; MY_Controller remains the authoritative server-side gate. */
+.impersonation-read-only main form[method="post" i] { opacity:.48; pointer-events:none; filter:grayscale(.35); }
+</style>
+<?php endif; ?>
 </head>
-<body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
+<body class="min-h-screen bg-slate-50 text-slate-900 antialiased<?=!empty($impersonation['active']) ? ' impersonation-read-only' : ''?>">
+<?php if (!empty($impersonation['active'])): ?>
+<?php
+  $__imp_actor = $impersonation['actor'] ?? null;
+  $__imp_ctx = $impersonation['context'] ?? array();
+  $__imp_minutes = max(0, (int)ceil(((int)($__imp_ctx['expires_at'] ?? time()) - time()) / 60));
+?>
+<div role="alert" aria-live="assertive" style="position:sticky;top:0;z-index:1000;background:#7f1d1d;color:#fff;border-bottom:4px solid #fbbf24;padding:.75rem 1rem;box-shadow:0 4px 12px rgba(0,0,0,.3)">
+  <div class="row justify-between" style="align-items:center;gap:1rem;flex-wrap:wrap;max-width:90rem;margin:0 auto">
+    <div>
+      <strong style="display:block;letter-spacing:.03em">IMPERSONATING CUSTOMER — READ-ONLY SUPPORT SESSION</strong>
+      <span class="text-sm">
+        Staff: <?=htmlspecialchars((string)($__imp_actor->username ?? 'staff'))?> ·
+        Customer: <?=htmlspecialchars((string)($current_user->username ?? 'customer'))?> ·
+        hard expiry in approximately <?=$__imp_minutes?> minute<?=$__imp_minutes === 1 ? '' : 's'?>.
+        Every viewed page is audited; all changes and non-dashboard routes are blocked.
+      </span>
+    </div>
+    <form method="post" action="<?=site_url('impersonation/stop')?>" style="margin:0">
+      <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>"
+             value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
+      <button class="btn btn-sm" type="submit" style="background:#fff;color:#7f1d1d;border:2px solid #fff;font-weight:700;white-space:nowrap">
+        End impersonation and return to staff
+      </button>
+    </form>
+  </div>
+</div>
+<?php endif; ?>
 <div class="flex min-h-screen">
   <!-- Sidebar (desktop) -->
   <aside class="w-64 shrink-0 border-r bg-white hidden md:flex flex-col">

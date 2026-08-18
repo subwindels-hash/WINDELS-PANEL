@@ -22,11 +22,11 @@
           <tbody>
           <?php foreach ($keys as $k): ?>
             <tr>
-              <td><?=htmlspecialchars($k->name)?></td>
+              <td><?=htmlspecialchars((string)$k->name)?></td>
               <td class="mono text-xs"><?=htmlspecialchars($k->prefix)?>…</td>
               <td><?=(int)$k->rate_limit_per_minute?> /min</td>
               <td class="text-xs muted"><?=date('M j, Y', strtotime($k->created_at))?></td>
-              <td><?=$k->revoked_at ? '<span class="badge badge-default">revoked</span>' : '<span class="badge badge-success badge-dot">active</span>'?></td>
+              <td><?php if ($k->revoked_at): ?><span class="badge badge-default">revoked</span><?php elseif (!empty($k->expires_at) && strtotime($k->expires_at) <= time()): ?><span class="badge badge-warning">expired</span><?php else: ?><span class="badge badge-success badge-dot">active</span><?php endif; ?></td>
               <td>
                 <?php if (!$k->revoked_at): ?>
                 <form method="post" action="<?=site_url('dashboard/api/revoke/'.$k->public_id)?>" onsubmit="return confirm('Revoke this key? Applications using it will stop working immediately.')">

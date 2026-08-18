@@ -20,6 +20,22 @@ class Service_transaction_model extends MY_Model {
         return $this->db->where('id',$id)->update($this->table, $fields);
     }
 
+    /** Lock one lifecycle row while its status and any refund move together. */
+    public function find_for_update($id){
+        return $this->db->query(
+            'SELECT * FROM service_transactions WHERE id=? FOR UPDATE',
+            array((int)$id)
+        )->row();
+    }
+
+    /** Compare-and-set status transition used by TransactionEngine. */
+    public function transition($id, $from, array $fields){
+        $fields['updated_at'] = $this->now_utc();
+        $this->db->where('id', (int)$id)->where('status', $from)
+                 ->update($this->table, $fields);
+        return $this->db->affected_rows() === 1;
+    }
+
     public function find_by_idempotency_key($key){
         if (!$key) return null;
         return $this->db->where('idempotency_key',$key)->get($this->table)->row();
@@ -134,6 +150,21 @@ class Service_transaction_model extends MY_Model {
                 'giftcard_orders.service_transaction_id = service_transactions.id', 'left')
                      ->join('giftcard_brands',
                 'giftcard_brands.id = giftcard_orders.brand_id', 'left');
+        } elseif ($domain === 'MARKETPLACE') {
+            // Fulfilment is deliberately excluded. It is encrypted at rest and
+            // only MarketplaceService::reveal() may open it, with an audit
+            // entry. The queue gets enough state to operate escrow safely.
+            $columns .= ', marketplace_orders.public_id AS marketplace_order_id,
+                          marketplace_orders.status AS order_status,
+                          marketplace_orders.quantity, marketplace_orders.gross_amount,
+                          marketplace_orders.fee_amount, marketplace_orders.seller_amount,
+                          marketplace_orders.delivered_at, marketplace_orders.release_due_at,
+                          marketplace_orders.disputed_at, marketplace_orders.released_at,
+                          marketplace_listings.title AS listing_title';
+            $this->db->join('marketplace_orders',
+                'marketplace_orders.service_transaction_id = service_transactions.id', 'left')
+                     ->join('marketplace_listings',
+                'marketplace_listings.id = marketplace_orders.listing_id', 'left');
         }
 
         $this->db->select($columns, false);

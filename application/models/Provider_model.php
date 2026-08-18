@@ -13,6 +13,25 @@ class Provider_model extends MY_Model {
         return $this->db->order_by('name','ASC')->get($this->table)->result();
     }
 
+    /** SMM providers only, projected and bounded for service-editor pickers. */
+    public function smm_for_picker($limit=200){
+        return $this->smm_picker_projection()
+            ->order_by('name','ASC')->limit(max(1, min(500, (int)$limit)))
+            ->get($this->table)->result();
+    }
+
+    /** Project one selected SMM provider without ever passing its key to a view. */
+    public function smm_picker_by_id($id){
+        return $this->smm_picker_projection()->where('id', (int)$id)
+            ->get($this->table)->row();
+    }
+
+    private function smm_picker_projection(){
+        return $this->db->select('id, public_id, name, api_type, status, currency,
+                rate_multiplier, markup', false)
+            ->where_in('api_type', array('STANDARD_SMM','MOCK'));
+    }
+
     public function paginated($limit, $offset, $status = null){
         if ($status) $this->db->where('status', $status);
         return $this->db->order_by('name','ASC')->limit($limit,$offset)->get($this->table)->result();

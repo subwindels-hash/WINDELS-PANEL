@@ -55,6 +55,17 @@ class SettingsService {
             'max_deposit' => array('money', 'payments', 'Maximum deposit',
                 'The largest single top-up, before manual review.', '5000000.00000000'),
 
+            'withdrawal_min_amount' => array('money', 'withdrawals', 'Minimum withdrawal',
+                'The smallest gross wallet amount a customer may request.', '1000.00000000'),
+            'withdrawal_max_amount' => array('money', 'withdrawals', 'Maximum withdrawal',
+                'The largest gross wallet amount a customer may request at once.', '1000000.00000000'),
+            'withdrawal_fee_fixed' => array('money', 'withdrawals', 'Fixed withdrawal fee',
+                'Fixed fee deducted from each requested amount and frozen on the request.', '0.00000000'),
+            'withdrawal_fee_percent' => array('percent', 'withdrawals', 'Withdrawal fee',
+                'Percentage deducted from the requested amount and frozen on the request (0–25%).', '1.0000'),
+            'withdrawal_require_verified_identity' => array('bool', 'withdrawals', 'Require verified identity',
+                'Only customers with a successful identity check may request a payout.', false),
+
             'referral_commission_percent' => array('percent', 'affiliate', 'Referral commission',
                 'Percentage of a referred customer’s spend paid to the referrer.', '5.0000'),
             'referral_commission_scope' => array('choice:LIFETIME|FIRST_ORDER', 'affiliate', 'Commission scope',
@@ -69,6 +80,13 @@ class SettingsService {
                 .'A legal answer, not an engineering one — check your jurisdiction.', 30),
             'giftcard_sender_name' => array('text', 'giftcards', 'Gift card sender name',
                 'The “from” name the recipient sees on a delivered card.', 'WINDELS PANEL'),
+
+            'marketplace_fee_percent' => array('percent', 'marketplace', 'Marketplace fee',
+                'Percentage of each Marketplace purchase retained by the platform (0–50%). The value is frozen on purchase.', '10.00000000'),
+            'marketplace_auto_release_hours' => array('int', 'marketplace', 'Escrow auto-release (hours)',
+                'Hours after fulfilment before an undisputed order pays its seller automatically (1–720).', 72),
+            'marketplace_require_verified_identity' => array('bool', 'marketplace', 'Require seller identity verification',
+                'Only customers with a successful identity check may submit a seller application.', true),
         );
     }
 
@@ -174,6 +192,31 @@ class SettingsService {
         if (bccomp((string)$merged['min_deposit'], (string)$merged['max_deposit'], 8) > 0) {
             return array('ok' => false, 'changed' => array(),
                 'error' => 'The minimum deposit cannot be larger than the maximum.');
+        }
+        if (bccomp((string)$merged['withdrawal_min_amount'], (string)$merged['withdrawal_max_amount'], 8) > 0) {
+            return array('ok' => false, 'changed' => array(),
+                'error' => 'The minimum withdrawal cannot be larger than the maximum.');
+        }
+        if (bccomp((string)$merged['withdrawal_fee_percent'], '25', 4) > 0) {
+            return array('ok' => false, 'changed' => array(),
+                'error' => 'The withdrawal fee cannot be greater than 25%.');
+        }
+        $smallestPayout = bcsub((string)$merged['withdrawal_min_amount'],
+            bcadd((string)$merged['withdrawal_fee_fixed'],
+                bcdiv(bcmul((string)$merged['withdrawal_min_amount'],
+                    (string)$merged['withdrawal_fee_percent'], 8), '100', 8), 8), 8);
+        if (bccomp($smallestPayout, '0', 8) <= 0) {
+            return array('ok' => false, 'changed' => array(),
+                'error' => 'Withdrawal fees must leave a positive payout at the minimum amount.');
+        }
+        if (bccomp((string)$merged['marketplace_fee_percent'], '50', 4) > 0) {
+            return array('ok' => false, 'changed' => array(),
+                'error' => 'The Marketplace fee cannot be greater than 50%.');
+        }
+        if ((int)$merged['marketplace_auto_release_hours'] < 1
+            || (int)$merged['marketplace_auto_release_hours'] > 720) {
+            return array('ok' => false, 'changed' => array(),
+                'error' => 'Marketplace escrow auto-release must be between 1 and 720 hours.');
         }
 
         foreach ($clean as $key => $value) {

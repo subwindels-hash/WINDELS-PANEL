@@ -45,4 +45,48 @@ class Service_model extends MY_Model {
         return $this->db->where("MATCH(name, description) AGAINST (".$this->db->escape($term)." IN NATURAL LANGUAGE MODE)", NULL, FALSE)
                         ->where('status','ACTIVE')->limit($limit)->get($this->table)->result();
     }
+
+    /** Bounded, joined service grid for the admin editor. */
+    public function admin_search(array $filters, $limit=25, $offset=0){
+        $this->db->select('services.*, service_categories.name AS category_name,
+                service_categories.public_id AS category_public_id,
+                providers.name AS provider_name, providers.public_id AS provider_public_id', false)
+            ->from($this->table)
+            ->join('service_categories', 'service_categories.id = services.category_id', 'left')
+            ->join('providers', 'providers.id = services.provider_id', 'left');
+        $this->admin_filters($filters);
+        return $this->db->order_by('services.sorting','ASC')
+            ->order_by('services.name','ASC')
+            ->limit(max(1, min(100, (int)$limit)), max(0, (int)$offset))
+            ->get()->result();
+    }
+
+    public function admin_count(array $filters){
+        $this->db->from($this->table)
+            ->join('service_categories', 'service_categories.id = services.category_id', 'left')
+            ->join('providers', 'providers.id = services.provider_id', 'left');
+        $this->admin_filters($filters);
+        return (int)$this->db->count_all_results();
+    }
+
+    private function admin_filters(array $filters){
+        if (!empty($filters['status']) && in_array($filters['status'], array('ACTIVE','INACTIVE','ARCHIVED'), true)) {
+            $this->db->where('services.status', $filters['status']);
+        }
+        if (!empty($filters['category_public_id'])) {
+            $this->db->where('service_categories.public_id', (string)$filters['category_public_id']);
+        }
+        if (!empty($filters['provider_public_id'])) {
+            $this->db->where('providers.public_id', (string)$filters['provider_public_id']);
+        }
+        if (!empty($filters['service_type'])) $this->db->where('services.service_type', $filters['service_type']);
+        if (!empty($filters['search'])) {
+            $term = trim((string)$filters['search']);
+            $this->db->group_start()
+                ->like('services.name', $term)
+                ->or_like('services.slug', $term)
+                ->or_like('services.provider_service_id', $term)
+                ->group_end();
+        }
+    }
 }

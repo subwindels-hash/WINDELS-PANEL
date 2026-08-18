@@ -133,6 +133,8 @@ All under `/admin` — `Admin/*` controllers, `AdminController`, permission chec
 | POST | `/admin/providers/:public_id/sync-balance` | `Admin/Providers::sync_balance` | `providers.manage` |
 | GET | `/admin/customers` | `Admin/Users::customers` | `users.view` |
 | GET | `/admin/customers/:public_id` | `Admin/Users::detail` — wallet, orders, tx, audit | `users.view` |
+| POST | `/admin/customers/:public_id/impersonate` | `Admin/Users::impersonate` — start an audited 30-minute read-only support session | `users.impersonate` |
+| POST | `/impersonation/stop` | `Impersonation::stop` — restore the original active staff identity | active impersonation + CSRF |
 | POST | `/admin/customers/:public_id/adjust-balance` | `Admin/Users::adjust_balance` — ledger + audit | `payments.manage` |
 | POST | `/admin/customers/:public_id/price` | `Admin/Users::set_user_price` — `user_service_prices` | `services.manage` |
 | GET | `/admin/wallets` | `Admin/Users::wallets` | `payments.manage` |

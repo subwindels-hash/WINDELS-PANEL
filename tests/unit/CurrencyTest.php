@@ -102,7 +102,7 @@ class CurrencyTest extends TestCase
                 }
             }
         }
-        $this->assertSame(6, $found, 'the six defaulted currency columns are all naira');
+        $this->assertSame(7, $found, 'the seven defaulted currency columns are all naira');
     }
 
     /* ----------------------- application source ------------------------- */

@@ -37,6 +37,40 @@ class MY_Controller extends CI_Controller {
         } catch (Exception $e) {
             $this->auth = null;
         }
+
+        // A customer impersonation is a read-only support lens, not a second
+        // customer login. Keep its request boundary in the common base so an
+        // operator cannot bypass it by posting to a public/auth controller
+        // instead of a dashboard controller. The one exception is the
+        // dedicated POST endpoint that restores the original staff identity.
+        $this->enforce_impersonation_request_boundary();
+    }
+
+    private function enforce_impersonation_request_boundary() {
+        if (!isset($this->session)) return;
+        $context = $this->session->userdata('customer_impersonation');
+        if ($context === null) return;
+
+        $path = isset($this->uri) ? trim((string)$this->uri->uri_string(), '/') : '';
+        if ($path === '' && isset($this->input)) {
+            $request_uri = (string)$this->input->server('REQUEST_URI');
+            $path = trim((string)parse_url($request_uri, PHP_URL_PATH), '/');
+        }
+
+        // Never let the ordinary logout action discard the only copy of the
+        // original staff identity. Operators must use the signed stop form.
+        if ($path === 'logout') {
+            $this->session->set_flashdata('warning',
+                'End customer impersonation before signing out of your staff account.');
+            redirect('dashboard');
+        }
+        $method = isset($this->input) ? strtoupper((string)$this->input->method(true)) : '';
+        if ($path === 'impersonation/stop' && $method === 'POST') return;
+        $dashboard_read = ($method === 'GET' || $method === 'HEAD')
+            && ($path === 'dashboard' || strpos($path, 'dashboard/') === 0);
+        if (!$dashboard_read) {
+            show_error('Customer impersonation is read-only. End it before making changes.', 403);
+        }
     }
 
     /**
@@ -138,9 +172,30 @@ class Public_Controller extends MY_Controller {
 
 class Auth_Controller extends MY_Controller {
     protected $current_user;
+    protected $impersonation = array('active' => false);
 
     public function __construct(){
         parent::__construct();
+
+        // Revalidate both identities, the permission and the hard expiry on
+        // every impersonated dashboard request. This runs before check() so a
+        // target suspended mid-session restores the staff account instead of
+        // stranding the browser at the customer login screen.
+        if ($this->session->userdata('customer_impersonation') !== null) {
+            $this->load->library('ImpersonationService');
+            $this->impersonation = $this->impersonationservice->enforce(
+                $this->input->ip_address(),
+                $this->input->user_agent(),
+                $this->request_id
+            );
+            if (!empty($this->impersonation['ended'])) {
+                $this->session->set_flashdata('warning',
+                    'The customer impersonation session ended: '
+                    .strtolower(str_replace('_', ' ', $this->impersonation['reason'] ?? 'invalid session')).'.');
+                redirect(!empty($this->impersonation['actor_restored']) ? 'admin' : 'login');
+            }
+        }
+
         if (!$this->auth || !$this->auth->check()) {
             // Persist the intended destination across the GET login form and
             // the subsequent POST — flashdata would expire in between. Store a
@@ -153,9 +208,29 @@ class Auth_Controller extends MY_Controller {
             redirect('login');
         }
         $this->current_user = $this->auth->user();
-        // Expose the unread notification count to every authenticated view so
-        // the shell's bell badge works without each controller passing it.
-        $this->load->vars(array('unread' => $this->auth->unread_count()));
+
+        if (!empty($this->impersonation['active'])) {
+            $path = trim((string)$this->uri->uri_string(), '/');
+            $logged = $this->impersonationservice->record_access(
+                $this->impersonation,
+                $this->input->method(true),
+                $path,
+                $this->input->ip_address(),
+                $this->input->user_agent(),
+                $this->request_id
+            );
+            if (!$logged) {
+                $this->impersonationservice->end('AUDIT_UNAVAILABLE');
+                show_error('The impersonation audit trail is unavailable. The session has been ended.', 503);
+            }
+        }
+
+        // Expose the unread count and the persistent impersonation banner to
+        // every authenticated layout.
+        $this->load->vars(array(
+            'unread'        => $this->auth->unread_count(),
+            'impersonation' => $this->impersonation,
+        ));
     }
 }
 

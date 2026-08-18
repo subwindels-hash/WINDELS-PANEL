@@ -79,6 +79,16 @@ class OrderService {
         if ($idem) {
             $existing = $this->ci->Order_model->find_by_idempotency_key($idem);
             if ($existing) {
+                // Idempotency keys are never an authorization mechanism. A
+                // caller must not be able to discover another customer's order
+                // by deliberately colliding with its key.
+                if ((int)$existing->user_id !== (int)$user->id) {
+                    return array(
+                        'ok' => false,
+                        'code' => 'IDEMPOTENCY_CONFLICT',
+                        'error' => 'That idempotency key is already in use.',
+                    );
+                }
                 return array('ok' => true, 'order' => $existing, 'duplicate' => true);
             }
         }
@@ -338,7 +348,8 @@ class OrderService {
         if (!empty($input['service'])) {
             $v = $input['service'];
             if (ctype_digit((string)$v)) return $this->ci->Service_model->find_by_id((int)$v);
-            return $this->ci->Service_model->find_by_slug((string)$v);
+            $service = $this->ci->Service_model->find_by_slug((string)$v);
+            return $service ?: $this->ci->Service_model->find_by_public_id((string)$v);
         }
         return null;
     }

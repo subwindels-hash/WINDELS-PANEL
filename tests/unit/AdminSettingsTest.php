@@ -157,6 +157,26 @@ class AdminSettingsTest extends TestCase
         }
     }
 
+    public function testMarketplacePolicyLimitsMatchTheRuntimeLimits()
+    {
+        $app = $this->app();
+
+        $fee = $app->settingsservice->save(array('marketplace_fee_percent' => '50.0001'));
+        $this->assertFalse($fee['ok']);
+        $this->assertStringContainsString('50%', $fee['error']);
+
+        foreach (array('0', '721') as $hours) {
+            $res = $app->settingsservice->save(array('marketplace_auto_release_hours' => $hours));
+            $this->assertFalse($res['ok'], "auto release '{$hours}' must be refused");
+        }
+
+        $valid = $app->settingsservice->save(array(
+            'marketplace_fee_percent' => '50',
+            'marketplace_auto_release_hours' => '720',
+        ));
+        $this->assertTrue($valid['ok'], $valid['error'] ?? '');
+    }
+
     public function testAnUnknownChoiceIsRefused()
     {
         $app = $this->app();

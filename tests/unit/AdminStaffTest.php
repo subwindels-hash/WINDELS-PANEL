@@ -309,8 +309,8 @@ class AdminStaffTest extends TestCase
      * does not keep, and — as with `admin/customers` — usually means a whole
      * screen is absent.
      *
-     * Three keys are known-dead and listed here rather than silently tolerated.
-     * The list may shrink; it must not grow without a deliberate edit.
+     * Known-dead keys are listed here rather than silently tolerated. The list
+     * may shrink as modules ship; it must not grow without a deliberate edit.
      */
     public function testEverySeededPermissionIsEnforcedSomewhere()
     {
@@ -327,21 +327,8 @@ class AdminStaffTest extends TestCase
             }
         }
 
-        // Enforced nowhere, and knowingly so:
-        $known_dead = array(
-            // No service editor exists yet; the catalogue screen covers the
-            // four product domains but not SMM services themselves.
-            'services.manage',
-            // Reseller API keys are issued from the customer dashboard; there
-            // is no admin-side API administration screen.
-            'api.manage',
-            // Deliberately not built. "Log in as this customer" is the single
-            // most abusable button in a panel that holds wallets: it would let
-            // staff spend someone else's balance with no way, after the fact,
-            // to tell their actions apart from the customer's own. Admin ->
-            // Customers answers the same support questions read-only.
-            'users.impersonate',
-        );
+        // Every seeded permission must be enforced by a concrete runtime path.
+        $known_dead = array();
 
         $dead = array();
         foreach (Core_seeder::permission_catalog() as $keys) {

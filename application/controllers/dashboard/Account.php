@@ -8,7 +8,7 @@ class Account extends Auth_Controller {
 
     public function __construct() {
         parent::__construct();
-        $this->load->library(array('form_validation', 'AuthService'));
+        $this->load->library(array('form_validation', 'AuthService', 'ApiKeyPolicy'));
         $this->load->model(array('Api_key_model', 'Audit_log_model'));
         $this->load->library('DashboardStats');
     }
@@ -55,9 +55,8 @@ class Account extends Auth_Controller {
         if ($this->input->method(true) === 'POST') {
             return $this->security_update();
         }
-        // Latest API keys and MFA status for the security page.
-        $keys = $this->db->where('user_id', $this->current_user->id)
-            ->order_by('created_at', 'DESC')->get('api_keys')->result();
+        // Safe projection keeps the stored credential verifier out of views.
+        $keys = $this->Api_key_model->for_user_safe($this->current_user->id);
 
         $this->render('Security', 'dashboard/account/security', 'dashboard/security', array(
             'keys'  => $keys,
@@ -97,8 +96,7 @@ class Account extends Auth_Controller {
         if ($this->input->method(true) === 'POST') {
             $new_key = $this->create_api_key();
         }
-        $keys = $this->db->where('user_id', $this->current_user->id)
-            ->order_by('created_at', 'DESC')->get('api_keys')->result();
+        $keys = $this->Api_key_model->for_user_safe($this->current_user->id);
 
         $this->render('API Keys', 'dashboard/account/api_keys', 'dashboard/api', array(
             'keys'    => $keys,
@@ -112,11 +110,12 @@ class Account extends Auth_Controller {
             $this->session->set_flashdata('error', validation_errors());
             return null;
         }
-        $whitelist = trim((string)$this->input->post('ip_whitelist'));
-        $opts = array();
-        if ($whitelist !== '') {
-            $opts['ip_whitelist'] = array_filter(array_map('trim', preg_split('/[\s,]+/', $whitelist)));
+        $parsed = $this->apikeypolicy->parse_ip_whitelist($this->input->post('ip_whitelist'));
+        if (empty($parsed['ok'])) {
+            $this->session->set_flashdata('error', $parsed['error']);
+            return null;
         }
+        $opts = $parsed['value'] ? array('ip_whitelist'=>$parsed['value']) : array();
         $result = $this->auth->create_api_key(
             $this->current_user->id,
             $this->input->post('name', true),
@@ -127,11 +126,25 @@ class Account extends Auth_Controller {
     }
 
     public function revoke_api_key($public_id = null) {
+        if (strtoupper($this->input->method()) !== 'POST') show_error('Method Not Allowed', 405);
         if (!$public_id) show_404();
-        $this->db->where('public_id', $public_id)->where('user_id', $this->current_user->id)
-            ->where('revoked_at IS NULL')
-            ->update('api_keys', array('revoked_at' => gmdate('Y-m-d H:i:s')));
-        $this->session->set_flashdata('success', 'API key revoked.');
+        $key = $this->Api_key_model->safe_for_user($public_id, $this->current_user->id);
+        if (!$key) show_404();
+        if (!empty($key->revoked_at)) {
+            $this->session->set_flashdata('success', 'API key was already revoked.');
+            return redirect('dashboard/api');
+        }
+        $revoked_at = gmdate('Y-m-d H:i:s');
+        $this->db->where('id', $key->id)->where('revoked_at IS NULL', null, false)
+            ->update('api_keys', array('revoked_at'=>$revoked_at));
+        if ($this->db->affected_rows() > 0) {
+            $this->Audit_log_model->record($this->current_user->id, 'api_key.revoked', 'api_keys',
+                $key->public_id, array('revoked_at'=>null), array('revoked_at'=>$revoked_at),
+                $this->input->ip_address(), $this->input->user_agent(), $this->request_id);
+            $this->session->set_flashdata('success', 'API key revoked permanently.');
+        } else {
+            $this->session->set_flashdata('error', 'API key changed before it could be revoked. Reload and try again.');
+        }
         redirect('dashboard/api');
     }
 

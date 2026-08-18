@@ -1475,7 +1475,9 @@ class GiftcardsTest extends TestCase
             Migration_Giftcards::tables());
 
         $config = file_get_contents(self::$root.'/application/config/migration.php');
-        $this->assertStringContainsString("\$config['migration_version'] = 14;", $config);
+        preg_match("/migration_version'\]\s*=\s*(\d+)/", $config, $m);
+        $this->assertGreaterThanOrEqual(14, (int)($m[1] ?? 0),
+            'later domains may add migrations, but the gift-card migration must stay registered');
     }
 
     public function testTheEnvExampleDocumentsTheVendor()

@@ -62,7 +62,7 @@ class ResellerApiTest extends TestCase
         $routes = file_get_contents(self::$root.'/application/config/routes.php');
         foreach (array(
             "'api/v1/services'", "'api/v1/services/(:any)'",
-            "'api/v1/orders'", "'api/v1/orders/status'", "'api/v1/orders/(:any)'",
+            "'api/v1/orders'", "'api/v1/orders/mass'", "'api/v1/orders/status'", "'api/v1/orders/(:any)'",
             "'api/v1/balance'", "'api/v1/refills'", "'api/v1/refills/(:any)'",
             "'api/v1/cancellations'", "'api/docs'", "'api/docs/json'",
         ) as $r) {
@@ -85,7 +85,7 @@ class ResellerApiTest extends TestCase
     public function testControllerImplementsAllEndpoints()
     {
         $src = file_get_contents(self::$root.'/application/controllers/Api_v1.php');
-        foreach (array('services','service_detail','orders','create_order','order_detail',
+        foreach (array('services','service_detail','orders','create_order','create_mass_order','order_detail',
                        'orders_status','refills','refill_detail','cancellations','balance',
                        'docs','docs_json') as $m) {
             $this->assertStringContainsString('function '.$m.'(', $src, "missing method {$m}");

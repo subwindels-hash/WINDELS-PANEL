@@ -818,12 +818,10 @@ class CatalogueTest extends TestCase
         $layout = file_get_contents(self::$root.'/application/views/layouts/app.php');
         $this->assertStringContainsString('admin/catalogue', $layout);
 
-        // A dead nav entry is worse than none: admin/services had no
-        // controller at all, so the menu linked staff to a 404.
-        $this->assertStringNotContainsString("array('admin/services',", $layout,
-            'the nav must not link a controller that does not exist');
-        $this->assertFileDoesNotExist(self::$root.'/application/controllers/admin/Services.php',
-            'if this ships, give it back its nav entry');
+        // The SMM catalogue and the four-domain catalogue are distinct admin
+        // surfaces. Now that the service editor exists, both links must remain.
+        $this->assertStringContainsString("array('admin/services',", $layout);
+        $this->assertFileExists(self::$root.'/application/controllers/admin/Services.php');
     }
 
     /** An icon the whitelist does not define renders an empty box. */

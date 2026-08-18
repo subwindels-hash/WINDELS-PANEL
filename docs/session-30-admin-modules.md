@@ -130,15 +130,17 @@ direction that hides defects:
 
 `FakeDb` also gained `distinct()`.
 
-## Not built
+## Not built in Session 30
 
-- **`users.impersonate`.** "Log in as this customer" is the most abusable
-  button in a panel holding wallets: staff could spend someone else's balance
-  with nothing in the ledger to distinguish their actions from the customer's
-  afterwards. Admin → Customers answers the same support questions read-only.
+- **`users.impersonate`** was deliberately deferred here and completed in
+  later work as a 30-minute, audited, strictly read-only support lens. It does
+  not permit staff to spend or mutate customer data; see
+  [`customer-impersonation.md`](customer-impersonation.md).
 - **`services.manage`** — no SMM service editor; Admin → Catalogue covers the
   four product domains.
-- **`api.manage`** — reseller keys are issued from the customer dashboard.
+- **`api.manage`** was completed in later work. It now gates Admin → Reseller
+  API, where operators can inspect safe key metadata and usage, constrain
+  policies, and permanently revoke keys without recovering credentials.
 - **Withdrawals** and the **marketplace half of phase F**, both tracked in
   `rebuild-spec-audit.md`.
 

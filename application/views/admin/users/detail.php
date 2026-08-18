@@ -6,9 +6,10 @@ $csrf  = function () { return '<input type="hidden" name="'.htmlspecialchars($th
 
 $can_edit  = $has('users.edit');
 $can_role  = $has('staff.manage');
-$can_price = $has('pricing.manage');
-$can_money = $has('wallets.adjust');
-$self      = (int)$current_user->id === (int)$user->id;
+$can_price       = $has('pricing.manage');
+$can_money       = $has('wallets.adjust');
+$can_impersonate = $has('users.impersonate');
+$self            = (int)$current_user->id === (int)$user->id;
 
 $status_badge = function ($s) {
     $map = array('ACTIVE'=>'badge-success','SUSPENDED'=>'badge-warning','BANNED'=>'badge-danger','PENDING'=>'badge-default');
@@ -129,6 +130,28 @@ $nonce = bin2hex(random_bytes(8));
     <?php endif; ?>
   </div>
 </div>
+
+<?php if ($can_impersonate && !$self && $user->status === 'ACTIVE' && $user->role === 'CUSTOMER'): ?>
+<div class="card mb-4" style="border-color:var(--color-warning,#f59e0b)">
+  <h3 style="font-size:1rem;font-weight:600" class="mb-1">Read-only customer impersonation</h3>
+  <p class="muted text-xs mb-3">
+    Open this customer's dashboard for support diagnosis. The session is audited, expires after 30 minutes,
+    blocks every write action and never reveals credentials. Use only with customer authorization or an approved support reason.
+  </p>
+  <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/impersonate')?>">
+    <?=$csrf()?>
+    <label class="field mb-2"><span class="label">Support reason</span>
+      <textarea class="input" name="reason" rows="2" minlength="5" maxlength="500" required
+                placeholder="Ticket reference and issue being investigated"></textarea>
+    </label>
+    <label class="row text-xs mb-3" style="gap:.5rem;align-items:flex-start">
+      <input type="checkbox" name="confirm" value="1" required style="margin-top:.2rem">
+      <span>I understand this switches my effective identity to this customer and I must use the warning banner to return to my staff account.</span>
+    </label>
+    <button class="btn btn-warning btn-sm" type="submit">Start read-only impersonation</button>
+  </form>
+</div>
+<?php endif; ?>
 
 <?php if ($can_money): ?>
 <div class="card mb-4">

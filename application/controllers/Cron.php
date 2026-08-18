@@ -15,7 +15,7 @@ class Cron extends Cron_Controller {
     /** Jobs that can be invoked, in the order `index` lists them. */
     private static $jobs = array(
         'dripfeed', 'order_status', 'vtu_status', 'numbers_status', 'identity_purge',
-        'giftcard_codes',
+        'giftcard_codes', 'marketplace_release',
         'subscriptions', 'provider_health',
         'refill_status', 'payment_reconciliation', 'email_queue',
         'analytics', 'provider_sync', 'affiliate_payouts',
@@ -86,6 +86,13 @@ class Cron extends Cron_Controller {
     public function giftcard_codes() {
         $this->execute('giftcard_codes', function () {
             return $this->cronworkers->giftcard_codes();
+        });
+    }
+
+    /** Release undisputed marketplace deliveries after the review window. */
+    public function marketplace_release() {
+        $this->execute('marketplace_release', function () {
+            return $this->cronworkers->marketplace_release();
         });
     }
 
