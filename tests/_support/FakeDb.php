@@ -207,7 +207,11 @@ class FakeDb
             $full = $this->applyJoins($this->hydrate($table, $row), $joins);
             $full = $this->applyAliases($full, $aliases);
             if (!$this->matches($full, $where, $or, $like)) continue;
-            if ($select && !$select_all) {
+            // Projection is deferred when there are aggregates: SUM(amount)
+            // needs `amount` on the row, and the projected shape only carries
+            // the alias. Stripping first would sum a column that is no longer
+            // there and quietly report zero revenue.
+            if ($select && !$select_all && !$aggregates) {
                 $projected = array();
                 foreach ($select as $column) {
                     if (array_key_exists($column, $full)) $projected[$column] = $full[$column];
@@ -217,9 +221,6 @@ class FakeDb
             $matched[] = (object)$full;
         }
 
-        // GROUP BY, with COUNT(*) as the one aggregate this double computes.
-        // Only applied when a grouping was actually requested, so ungrouped
-        // selects keep their previous shape.
         if ($group) {
             $buckets = array();
             foreach ($matched as $rowObj) {
@@ -229,17 +230,30 @@ class FakeDb
                     $key[] = isset($rowObj->$bare) ? (string)$rowObj->$bare : '';
                 }
                 $key = implode("\0", $key);
-                if (!isset($buckets[$key])) { $buckets[$key] = array('row' => $rowObj, 'n' => 0); }
-                $buckets[$key]['n']++;
+                if (!isset($buckets[$key])) { $buckets[$key] = array('row' => $rowObj, 'rows' => array()); }
+                $buckets[$key]['rows'][] = $rowObj;
             }
             $matched = array();
             foreach ($buckets as $bucket) {
                 $out = $bucket['row'];
-                foreach ($aggregates as $alias => $kind) {
-                    if ($kind === 'count') $out->$alias = $bucket['n'];
+                foreach ($aggregates as $alias => $spec) {
+                    $out->$alias = $this->aggregate($spec, $bucket['rows']);
                 }
-                $matched[] = $out;
+                // Now that the aggregates are computed, apply the projection
+                // that was deferred above.
+                $matched[] = ($select && !$select_all)
+                    ? (object)$this->project((array)$out, $select) : $out;
             }
+        } elseif ($aggregates) {
+            // An aggregate with no GROUP BY collapses to exactly one row, and
+            // does so even when nothing matched — SELECT COUNT(*) over an
+            // empty table returns 0, not no rows. Returning an empty set here
+            // would make every caller's ?? fallback hide a real query bug.
+            $out = new stdClass();
+            foreach ($aggregates as $alias => $spec) {
+                $out->$alias = $this->aggregate($spec, $matched);
+            }
+            $matched = array($out);
         }
 
         $order = $this->pending_order; $this->pending_order = array();
@@ -346,7 +360,11 @@ class FakeDb
     public function select($fields, $escape = null)
     {
         $list = array();
-        foreach (explode(',', (string)$fields) as $field) {
+        // Split on top-level commas only. A naive explode(',') cuts
+        // COALESCE(SUM(x),0) in half, and the halves then look like two
+        // unrecognised plain columns — which is silent, and turns a revenue
+        // figure into an undefined property rather than an error.
+        foreach ($this->splitSelectFields((string)$fields) as $field) {
             $field = trim(preg_replace('/\s+/', ' ', $field));
             if ($field === '') continue;
             // "*" or "orders.*" selects the whole base row; the joined columns
@@ -356,13 +374,28 @@ class FakeDb
                 $this->pending_select_all = true;
                 continue;
             }
-            // COUNT(*) AS alias — the only aggregate this double computes.
-            // Anything richer belongs in a test against a real database.
+            // COUNT(*) AS alias.
             if (preg_match('/^COUNT\(\s*\*?\s*\)\s+AS\s+(\S+)$/i', $field, $m)) {
                 $alias = trim($m[1], '`');
-                $this->pending_aggregates[$alias] = 'count';
+                $this->pending_aggregates[$alias] = array('kind' => 'count');
                 $list[] = $alias;
                 continue;
+            }
+            // SUM(col) AS alias, optionally wrapped in COALESCE(...,0), and
+            // the conditional form SUM(CASE WHEN <col> <op> <value> THEN <x>
+            // ELSE 0 END). Money reporting is built out of exactly these, so a
+            // double that could only count would push every revenue figure
+            // into "trust the reviewer" territory — which is how a revenue
+            // query that silently omits a whole domain survives code review.
+            // Anything richer still belongs in a test against a real database.
+            if (preg_match('/^(?:COALESCE\(\s*)?SUM\((.+?)\)(?:\s*,\s*0\s*\))?\s+AS\s+(\S+)$/i', $field, $m)) {
+                $alias = trim($m[2], '`');
+                $spec  = $this->parseSumExpression(trim($m[1]));
+                if ($spec !== null) {
+                    $this->pending_aggregates[$alias] = $spec;
+                    $list[] = $alias;
+                    continue;
+                }
             }
             // "table.col AS alias" — remember where the alias comes from so
             // get() can materialise it. A real SELECT returns provider_name;
@@ -680,6 +713,147 @@ class FakeDb
         if ($op === '>')  return $cmp > 0;
         if ($op === '>=') return $cmp >= 0;
         return true;
+    }
+
+    /** Keep only the named columns, as a real projection would. */
+    private function project(array $row, array $select)
+    {
+        $out = array();
+        foreach ($select as $column) {
+            if (array_key_exists($column, $row)) $out[$column] = $row[$column];
+        }
+        return $out;
+    }
+
+    /** Split a select list on commas that are not inside parentheses or quotes. */
+    private function splitSelectFields($fields)
+    {
+        $out = array();
+        $buf = '';
+        $depth = 0;
+        $quote = null;
+        $len = strlen($fields);
+        for ($i = 0; $i < $len; $i++) {
+            $ch = $fields[$i];
+            if ($quote !== null) {
+                $buf .= $ch;
+                if ($ch === $quote) $quote = null;
+                continue;
+            }
+            if ($ch === "'" || $ch === '"') { $quote = $ch; $buf .= $ch; continue; }
+            if ($ch === '(') $depth++;
+            if ($ch === ')') $depth--;
+            if ($ch === ',' && $depth === 0) { $out[] = $buf; $buf = ''; continue; }
+            $buf .= $ch;
+        }
+        if (trim($buf) !== '') $out[] = $buf;
+        return $out;
+    }
+
+    /**
+     * The inside of a SUM(), reduced to something evaluable per row.
+     *
+     * Two shapes, both of which the reporting code actually writes:
+     *   SUM(charge)
+     *   SUM(CASE WHEN status = 'COMPLETED' THEN charge ELSE 0 END)
+     *
+     * Returns NULL for anything else, so an unsupported expression falls
+     * through to being treated as a plain column rather than quietly summing
+     * to zero — a zero here would look exactly like "no revenue".
+     */
+    private function parseSumExpression($expr)
+    {
+        if (preg_match('/^CASE\s+WHEN\s+(.+?)\s+THEN\s+(\S+)\s+ELSE\s+(\S+)\s+END$/is', $expr, $m)) {
+            $cond = $this->parseSumCondition(trim($m[1]));
+            if ($cond === null) return null;
+            return array(
+                'kind' => 'sum_case',
+                'cond' => $cond,
+                'then' => trim($m[2], "'` "),
+                'else' => trim($m[3], "'` "),
+            );
+        }
+        if (preg_match('/^[\w.`]+$/', $expr)) {
+            return array('kind' => 'sum', 'column' => $this->bareColumn(trim($expr, '`')));
+        }
+        return null;
+    }
+
+    /**
+     * `status = 'X'`, `status IN (...)`, `col >= 'v'` or `col IS [NOT] NULL`
+     * inside a CASE.
+     *
+     * The NULL forms matter more than they look: "how many of these sales
+     * recorded a vendor cost?" is what stops a margin computed from three rows
+     * out of four hundred being presented as though it covered all of them.
+     */
+    private function parseSumCondition($cond)
+    {
+        if (preg_match('/^([\w.`]+)\s+IS\s+NOT\s+NULL$/i', $cond, $m)) {
+            return array('column' => $this->bareColumn(trim($m[1], '`')), 'op' => 'NOT NULL');
+        }
+        if (preg_match('/^([\w.`]+)\s+IS\s+NULL$/i', $cond, $m)) {
+            return array('column' => $this->bareColumn(trim($m[1], '`')), 'op' => 'NULL');
+        }
+        if (preg_match('/^([\w.`]+)\s+IN\s*\((.+)\)$/is', $cond, $m)) {
+            $values = array();
+            foreach (explode(',', $m[2]) as $v) $values[] = trim($v, " '\"`");
+            return array('column' => $this->bareColumn(trim($m[1], '`')),
+                         'op' => 'IN', 'values' => $values);
+        }
+        if (preg_match('/^([\w.`]+)\s*(=|!=|<>|<=|>=|<|>)\s*(.+)$/s', $cond, $m)) {
+            return array('column' => $this->bareColumn(trim($m[1], '`')),
+                         'op' => $m[2], 'value' => trim($m[3], " '\"`"));
+        }
+        return null;
+    }
+
+    /** One aggregate over a bucket of already-matched rows. */
+    private function aggregate(array $spec, array $rows)
+    {
+        if ($spec['kind'] === 'count') return count($rows);
+
+        $total = '0';
+        foreach ($rows as $rowObj) {
+            $row = (array)$rowObj;
+            if ($spec['kind'] === 'sum') {
+                $v = $row[$spec['column']] ?? 0;
+                $total = bcadd($total, is_numeric($v) ? (string)$v : '0', 8);
+                continue;
+            }
+            // sum_case
+            $c   = $spec['cond'];
+            $lhs = $row[$c['column']] ?? null;
+            $hit = false;
+            if ($c['op'] === 'NOT NULL') {
+                $hit = $lhs !== null && $lhs !== '';
+            } elseif ($c['op'] === 'NULL') {
+                $hit = $lhs === null || $lhs === '';
+            } elseif ($c['op'] === 'IN') {
+                $hit = in_array((string)$lhs, $c['values'], true);
+            } else {
+                $cmp = (is_numeric($lhs) && is_numeric($c['value']))
+                    ? ($lhs <=> $c['value']) : strcmp((string)$lhs, (string)$c['value']);
+                switch ($c['op']) {
+                    case '=':  $hit = $cmp === 0; break;
+                    case '!=':
+                    case '<>': $hit = $cmp !== 0; break;
+                    case '<':  $hit = $cmp < 0;   break;
+                    case '<=': $hit = $cmp <= 0;  break;
+                    case '>':  $hit = $cmp > 0;   break;
+                    case '>=': $hit = $cmp >= 0;  break;
+                }
+            }
+            $branch = $hit ? $spec['then'] : $spec['else'];
+            // The branch is either a literal (1, 0) or a column name.
+            $v = is_numeric($branch) ? $branch
+                : (isset($row[$branch]) && is_numeric($row[$branch]) ? $row[$branch] : 0);
+            $total = bcadd($total, (string)$v, 8);
+        }
+        // Integer-valued sums read back as integers, as MySQL returns them for
+        // COUNT-shaped CASE sums; money keeps its 8dp string form.
+        return (strpos($total, '.') !== false && rtrim(substr($total, strpos($total, '.') + 1), '0') === '')
+            ? (string)(int)$total : $total;
     }
 
     /** "giftcard_products.price" → "price"; joins merge columns flat. */

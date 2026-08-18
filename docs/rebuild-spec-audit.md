@@ -178,6 +178,23 @@ a vendor-set `expires_at`, and a deadline that passes without an OTP refunds
 through `TransactionEngine` exactly as a provider failure does. It is not
 mock-only from birth: `FiveSimAdapter` implements the 5sim contract, pinned by
 captured fixtures, alongside an offline `MockNumberAdapter`.
+**E** landed in [session 26](session-26-identity.md): migration 013, the §22
+sensitive-data controls (blind index, encryption at rest, one audited path to
+plaintext, retention sweep) and `DojahAdapter`.
+**F** landed in [session 27](session-27-giftcards.md) — the gift card half.
+Migration 014 plus `ReloadlyAdapter`; the marketplace half is deliberately
+deferred (escrow, disputes and two-sided KYC share none of the panel's
+"vendor → panel → customer" shape) and is the one remaining item in this table.
+**G** landed in [session 28](session-28-analytics.md): unified purchase history
+(§20) at `dashboard/history`, and `admin/analytics` (§25/§26) with per-domain
+revenue, margin, delivery health and vendor reliability. It opened by fixing a
+silent revenue bug — `AdminStats` had read only the `orders` table since session
+21, so every VTU, number, identity and gift card sale was reported as zero
+revenue on the admin landing page.
+
+**Remaining:** the marketplace half of F, and per-domain catalogue CRUD screens
+(prices for VTU, numbers, identity and gift cards are set directly in the
+database rather than through the admin UI).
 
 Phase A is the one that determines whether this stays coherent. If each domain is
 built without it, the result is six parallel half-copies of the order engine.

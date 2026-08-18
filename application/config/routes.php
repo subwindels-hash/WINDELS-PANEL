@@ -92,6 +92,9 @@ $route['dashboard/identity/(:any)'] = 'dashboard/identity/detail/$1';
 
 // Gift cards (§23). Same rule again: fixed segments and two-segment actions
 // come before the catch-all, or /history routes into detail().
+// Unified purchase history (§20) — every domain in one list.
+$route['dashboard/history'] = 'dashboard/history/index';
+
 $route['dashboard/giftcards'] = 'dashboard/giftcards/index';
 $route['dashboard/giftcards/history'] = 'dashboard/giftcards/history';
 $route['dashboard/giftcards/buy'] = 'dashboard/giftcards/buy';
@@ -145,6 +148,7 @@ $route['admin/identity/(:any)/reveal'] = 'admin/identity/reveal/$1';
 $route['admin/identity/(:any)/refund'] = 'admin/identity/refund/$1';
 $route['admin/identity/(:any)/purge'] = 'admin/identity/purge/$1';
 $route['admin/identity/(:any)'] = 'admin/identity/detail/$1';
+$route['admin/analytics'] = 'admin/analytics/index';
 $route['admin/giftcards'] = 'admin/giftcards/index';
 $route['admin/giftcards/(:any)/collect'] = 'admin/giftcards/collect/$1';
 $route['admin/giftcards/(:any)/abandon'] = 'admin/giftcards/abandon/$1';
