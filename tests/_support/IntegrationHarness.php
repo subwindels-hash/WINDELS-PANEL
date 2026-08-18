@@ -162,14 +162,14 @@ class IntegrationHarness
             $this->db->insert('roles', array('name' => $role, 'created_at' => $now));
         }
         $this->db->insert('currencies', array(
-            'code' => 'USD', 'name' => 'US Dollar', 'symbol' => '$',
+            'code' => 'NGN', 'name' => 'Nigerian Naira', 'symbol' => '₦',
             'exchange_rate' => '1.00000000', 'is_base' => 1, 'is_active' => 1,
             'updated_at' => $now,
         ));
         $this->db->insert('providers', array(
             'public_id' => 'PROV0000000000000000000001', 'name' => 'Acme SMM',
             'api_url' => 'https://api.acme.test/v2', 'api_key_encrypted' => 'enc:test',
-            'api_type' => 'STANDARD_SMM', 'status' => 'ACTIVE', 'currency' => 'USD',
+            'api_type' => 'STANDARD_SMM', 'status' => 'ACTIVE', 'currency' => 'NGN',
             'created_at' => $now, 'updated_at' => $now,
         ));
         $this->db->insert('service_categories', array(
@@ -204,7 +204,7 @@ class IntegrationHarness
         $this->db->insert('providers', array(
             'public_id' => 'PROV0000000000000000000002', 'name' => 'Acme VTU',
             'api_url' => 'https://api.vtu.test', 'api_key_encrypted' => 'enc:test',
-            'api_type' => 'MOCK', 'status' => 'ACTIVE', 'currency' => 'USD',
+            'api_type' => 'MOCK', 'status' => 'ACTIVE', 'currency' => 'NGN',
             'created_at' => $now, 'updated_at' => $now,
         ));
         $provider_id = $this->db->insert_id();
@@ -250,6 +250,196 @@ class IntegrationHarness
         return $this;
     }
 
+    /**
+     * Virtual-number catalogue, plus a number-capable provider.
+     *
+     * Mirrors what an operator would have after seeding the reference data
+     * and pricing one synced product: countries and services from the core
+     * seed, and priced (country, service) rows on top. WHATSAPP is priced and
+     * in stock, NOSTOCK is priced but out of stock, and SLOW exists so the
+     * "no code ever arrives" path is reachable — see MockNumberAdapter.
+     */
+    public function seed_numbers()
+    {
+        $now = gmdate('Y-m-d H:i:s');
+
+        $this->db->insert('providers', array(
+            'public_id' => 'PROV0000000000000000000003', 'name' => 'Acme Numbers',
+            'api_url' => 'https://api.numbers.test', 'api_key_encrypted' => 'enc:test',
+            'api_type' => 'MOCK_NUMBER', 'status' => 'ACTIVE', 'currency' => 'NGN',
+            'created_at' => $now, 'updated_at' => $now,
+        ));
+        $provider_id = $this->db->insert_id();
+
+        $countries = array(array('NG', 'Nigeria', '+234'), array('GB', 'United Kingdom', '+44'));
+        $country_ids = array();
+        foreach ($countries as $i => $c) {
+            $this->db->insert('number_countries', array(
+                'public_id' => 'NCTY'.str_pad((string)($i + 1), 22, '0', STR_PAD_LEFT),
+                'code' => $c[0], 'name' => $c[1], 'dial_prefix' => $c[2],
+                'is_active' => 1, 'sorting' => $i,
+                'created_at' => $now, 'updated_at' => $now,
+            ));
+            $country_ids[$c[0]] = $this->db->insert_id();
+        }
+
+        $services = array(
+            array('WHATSAPP', 'WhatsApp'),
+            array('TELEGRAM', 'Telegram'),
+            array('NOSTOCK',  'Out of stock service'),
+            array('SLOW',     'Never receives a code'),
+        );
+        $service_ids = array();
+        foreach ($services as $i => $s) {
+            $this->db->insert('number_services', array(
+                'public_id' => 'NSVC'.str_pad((string)($i + 1), 22, '0', STR_PAD_LEFT),
+                'code' => $s[0], 'name' => $s[1], 'is_active' => 1, 'sorting' => $i,
+                'created_at' => $now, 'updated_at' => $now,
+            ));
+            $service_ids[$s[0]] = $this->db->insert_id();
+        }
+
+        $products = array(
+            // country, service, price, cost, stock, ttl
+            array('NG', 'WHATSAPP', '450.00000000', '250.00000000', 812, 15),
+            array('NG', 'TELEGRAM', '500.00000000', '300.00000000', 415, 15),
+            array('NG', 'NOSTOCK',  '400.00000000', '200.00000000', 0,   15),
+            array('NG', 'SLOW',     '350.00000000', '180.00000000', 99,  15),
+            array('GB', 'WHATSAPP', '900.00000000', '600.00000000', 40,  20),
+        );
+        foreach ($products as $i => $p) {
+            $this->db->insert('number_products', array(
+                'public_id' => 'NPRD'.str_pad((string)($i + 1), 22, '0', STR_PAD_LEFT),
+                'country_id' => $country_ids[$p[0]], 'service_id' => $service_ids[$p[1]],
+                'provider_id' => $provider_id,
+                'code' => $p[0].'-'.$p[1],
+                'provider_country' => strtolower($p[0]),
+                'provider_operator' => 'any',
+                'provider_product' => strtolower($p[1]),
+                'price' => $p[2], 'provider_cost' => $p[3], 'stock' => $p[4],
+                'ttl_minutes' => $p[5], 'is_active' => 1, 'sorting' => $i,
+                'created_at' => $now, 'updated_at' => $now,
+            ));
+        }
+        return $this;
+    }
+
+    /**
+     * Identity domain: a MOCK_IDENTITY provider and a priced catalogue.
+     *
+     * NIN_UNPRICED is seeded deliberately. The catalogue rule that unpriced
+     * rows are not sellable is enforced in Identity_product_model::active()
+     * and re-checked in IdentityService::verify(), and a fixture that only
+     * ever contains priced rows cannot tell whether either check is still
+     * there.
+     */
+    public function seed_identity()
+    {
+        $now = gmdate('Y-m-d H:i:s');
+
+        $this->db->insert('providers', array(
+            'public_id' => 'PROV0000000000000000000004', 'name' => 'Acme Identity',
+            'api_url' => 'https://api.identity.test', 'api_key_encrypted' => 'enc:test',
+            'api_type' => 'MOCK_IDENTITY', 'status' => 'ACTIVE', 'currency' => 'NGN',
+            'created_at' => $now, 'updated_at' => $now,
+        ));
+        $provider_id = $this->db->insert_id();
+
+        $products = array(
+            // code, name, id_type, lookup_field, provider_code, price, cost, active
+            array('NIN_BASIC',    'NIN verification',   'NIN', 'IDENTIFIER', 'kyc/nin',
+                  '250.00000000', '120.00000000', 1),
+            array('BVN_BASIC',    'BVN verification',   'BVN', 'IDENTIFIER', 'kyc/bvn',
+                  '300.00000000', '150.00000000', 1),
+            array('NIN_PHONE',    'NIN by phone',       'NIN', 'PHONE',      'kyc/nin/phone_number',
+                  '400.00000000', '200.00000000', 1),
+            array('NIN_UNPRICED', 'NIN premium',        'NIN', 'IDENTIFIER', 'kyc/nin/advance',
+                  null,            null,           1),
+            array('BVN_OFF',      'BVN advanced',       'BVN', 'IDENTIFIER', 'kyc/bvn/advance',
+                  '500.00000000', '300.00000000', 0),
+        );
+        foreach ($products as $i => $p) {
+            $this->db->insert('identity_products', array(
+                'public_id' => 'IDPR'.str_pad((string)($i + 1), 22, '0', STR_PAD_LEFT),
+                'code' => $p[0], 'name' => $p[1], 'id_type' => $p[2],
+                'lookup_field' => $p[3], 'provider_id' => $provider_id,
+                'provider_code' => $p[4], 'price' => $p[5], 'provider_cost' => $p[6],
+                'is_active' => $p[7], 'sorting' => $i,
+                'created_at' => $now, 'updated_at' => $now,
+            ));
+        }
+        return $this;
+    }
+
+    /** Brands and denominations, with a MOCK_GIFTCARD vendor behind them. */
+    public function seed_giftcards()
+    {
+        $now = gmdate('Y-m-d H:i:s');
+
+        $this->db->insert('providers', array(
+            'public_id' => 'PROV0000000000000000000005', 'name' => 'Acme Gift Cards',
+            'api_url' => 'https://api.giftcards.test', 'api_key_encrypted' => 'enc:test',
+            'api_type' => 'MOCK_GIFTCARD', 'status' => 'ACTIVE', 'currency' => 'NGN',
+            'created_at' => $now, 'updated_at' => $now,
+        ));
+        $provider_id = $this->db->insert_id();
+
+        $brands = array(
+            array('AMAZON', 'Amazon', 1),
+            array('STEAM',  'Steam',  1),
+            array('SWITCHED-OFF', 'Switched Off', 0),
+        );
+        $brand_ids = array();
+        foreach ($brands as $i => $b) {
+            $this->db->insert('giftcard_brands', array(
+                'public_id' => 'GCBR'.str_pad((string)($i + 1), 22, '0', STR_PAD_LEFT),
+                'code' => $b[0], 'name' => $b[1],
+                'redeem_instructions' => 'Redeem at '.$b[1].'.',
+                'is_active' => $b[2], 'sorting' => $i,
+                'created_at' => $now, 'updated_at' => $now,
+            ));
+            $brand_ids[$b[0]] = $this->db->insert_id();
+        }
+
+        $products = array(
+            // code, brand, name, vendor product id, type, face, price, cost, max qty, active
+            array('AMAZON-US-25', 'AMAZON', 'Amazon US $25', '11', 'FIXED',
+                  '25.00000000',  '42000.00000000', '38000.00000000', 5, 1),
+            array('AMAZON-US-50', 'AMAZON', 'Amazon US $50', '12', 'FIXED',
+                  '50.00000000',  '83000.00000000', '76000.00000000', 3, 1),
+            array('STEAM-US-20',  'STEAM',  'Steam US $20',  '13', 'FIXED',
+                  '20.00000000',  '34000.00000000', '30000.00000000', 5, 1),
+            // Out of stock at the mock vendor: its product id ends in 0.
+            array('STEAM-US-10',  'STEAM',  'Steam US $10',  '10', 'FIXED',
+                  '10.00000000',  '17000.00000000', '15000.00000000', 5, 1),
+            // Accepted but never delivered at the mock vendor: id ends in 7.
+            array('AMAZON-US-100','AMAZON', 'Amazon US $100','17', 'FIXED',
+                  '100.00000000', '166000.00000000','152000.00000000', 2, 1),
+            // Imported by a sync and not yet priced — must not be buyable.
+            array('AMAZON-GB-10', 'AMAZON', 'Amazon UK £10', '21', 'FIXED',
+                  '10.00000000',  null, null, 5, 1),
+            // Custom-amount card: no fixed denomination, so not sellable yet.
+            array('AMAZON-US-RANGE','AMAZON','Amazon US custom','31','RANGE',
+                  null, '50000.00000000', '46000.00000000', 1, 1),
+            // Switched off by an operator.
+            array('STEAM-US-5',   'STEAM',  'Steam US $5',   '14', 'FIXED',
+                  '5.00000000',   '9000.00000000',  '8000.00000000', 5, 0),
+        );
+        foreach ($products as $i => $p) {
+            $this->db->insert('giftcard_products', array(
+                'public_id' => 'GCPR'.str_pad((string)($i + 1), 22, '0', STR_PAD_LEFT),
+                'brand_id' => $brand_ids[$p[1]], 'provider_id' => $provider_id,
+                'code' => $p[0], 'name' => $p[2], 'country_code' => 'US',
+                'provider_product_id' => $p[3], 'denomination_type' => $p[4],
+                'recipient_currency' => 'USD', 'face_value' => $p[5],
+                'price' => $p[6], 'provider_cost' => $p[7],
+                'max_quantity' => $p[8], 'is_active' => $p[9], 'sorting' => $i,
+                'created_at' => $now, 'updated_at' => $now,
+            ));
+        }
+        return $this;
+    }
+
     /* ----------------------------- factories ---------------------------- */
 
     /** A user with a wallet, created the way the app creates them. */
@@ -270,7 +460,7 @@ class IntegrationHarness
         $id = $this->db->insert_id();
         $this->db->insert('wallets', array(
             'public_id' => 'WAL'.str_pad((string)$id, 23, '0', STR_PAD_LEFT),
-            'user_id' => $id, 'balance' => '0.00000000', 'currency' => 'USD',
+            'user_id' => $id, 'balance' => '0.00000000', 'currency' => 'NGN',
             'created_at' => $now, 'updated_at' => $now,
         ));
         return $this->db->where('id', $id)->get('users')->row();

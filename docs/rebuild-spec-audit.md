@@ -69,8 +69,8 @@ Controller / library / model audit found **nothing** for:
 | §34 module | Controllers | Libraries/Models | Tables |
 | --- | --- | --- | --- |
 | VTU (airtime, data, cable, electricity, education) | 0 | 0 | 0 of 6 |
-| Virtual Numbers | 0 | 0 | 0 of 2 |
-| OTP | 0 | 0 | 0 |
+| Virtual Numbers | 0 → 2 | 0 → 6 | 0 of 2 → 4 (session 25) |
+| OTP | 0 | 0 → 1 | 0 → 1 (session 25) |
 | Identity (NIN/BVN) | 0 | 0 | 0 |
 | Gift Cards | 0 | 0 | 0 of 2 |
 | Marketplace | 0 | 0 | 0 |
@@ -126,15 +126,18 @@ migrations (unsafe — they have run in real deployments).
 from 001, matching `migration_version`", keeping the ordering guarantee that
 gives the test its value.
 
-### 6.2 Base currency is USD; the spec shows ₦
+### 6.2 Base currency is USD; the spec shows ₦ — **RESOLVED (session 22)**
 
-`config/windels.php` sets `base_currency = 'USD'` and both money tables default
+`config/windels.php` set `base_currency = 'USD'` and both money tables defaulted
 `currency CHAR(3) NOT NULL DEFAULT 'USD'`. §16 shows balances as `₦XX,XXX.XX`,
 and VTU/NIN/BVN/exam-PIN services are Nigeria-specific.
 
-A `currencies` table already exists (PK `code`, `exchange_rate`), so multi-currency
-is supported — but the **default** is wrong for the target market. Changing it
-affects existing rows and every seeded price.
+**Resolved:** the panel is now denominated in Naira. See
+`docs/session-22-currency.md`. Migration `011_base_currency_ngn` moves the column
+defaults and relabels existing rows; `currencies` is rebased so NGN sits at 1.0;
+`windels_base_currency()` is now the single source of truth and the ~20 hardcoded
+`'USD'` fallbacks scattered through libraries, controllers, models and views were
+replaced with calls to it.
 
 ### 6.3 Session numbering has diverged
 
@@ -161,6 +164,62 @@ shared infrastructure first so the domains do not each invent their own.
 | **E** | Identity (NIN/BVN) | Needs the §22 sensitive-data controls: encryption, access control, log minimisation |
 | **F** | Gift cards + marketplace | Inventory and trading semantics |
 | **G** | Unified history (§20), admin sections + analytics (§25/§26) for all new domains | Cross-cutting; cheapest once the domains exist |
+
+Progress: **A** and **B** landed in session 21; **C** is implemented in
+`VtuService` and, since [session 24](session-24-vtpass.md), exercised against a
+real vendor — `VtpassAdapter` covers all five VTU types plus meter/smartcard
+verification, requery settlement and catalogue sync, with the whole contract
+pinned by captured fixtures rather than live credentials. The **G** slice for
+VTU — the admin queue, detail, refund and manual re-check — landed in
+[session 23](session-23-admin-vtu.md), which sets the pattern D–F should copy.
+**D** landed in [session 25](session-25-numbers.md): migration 012 adds the
+reservation lifecycle this table flagged as missing — `virtual_numbers` carries
+a vendor-set `expires_at`, and a deadline that passes without an OTP refunds
+through `TransactionEngine` exactly as a provider failure does. It is not
+mock-only from birth: `FiveSimAdapter` implements the 5sim contract, pinned by
+captured fixtures, alongside an offline `MockNumberAdapter`.
+**E** landed in [session 26](session-26-identity.md): migration 013, the §22
+sensitive-data controls (blind index, encryption at rest, one audited path to
+plaintext, retention sweep) and `DojahAdapter`.
+**F** landed in [session 27](session-27-giftcards.md) — the gift card half.
+Migration 014 plus `ReloadlyAdapter`; the marketplace half is deliberately
+deferred (escrow, disputes and two-sided KYC share none of the panel's
+"vendor → panel → customer" shape) and is the one remaining item in this table.
+**G** landed in [session 28](session-28-analytics.md): unified purchase history
+(§20) at `dashboard/history`, and `admin/analytics` (§25/§26) with per-domain
+revenue, margin, delivery health and vendor reliability. It opened by fixing a
+silent revenue bug — `AdminStats` had read only the `orders` table since session
+21, so every VTU, number, identity and gift card sale was reported as zero
+revenue on the admin landing page.
+
+Per-domain catalogue CRUD landed in [session 29](session-29-catalogue.md):
+`admin/catalogue` prices and switches on products in all four domains behind
+`pricing.manage`. It closes the other half of the catalogue-sync rule — syncs
+import `is_active = 0, price = NULL` on purpose, and until this screen nothing
+could supply the price they refuse to invent, so a fresh install had no sellable
+product and every price change was hand-written SQL. It also removed a dead
+`admin/services` nav entry that had been a 404 for every operator.
+
+Sixteen missing admin modules landed in [session 30](session-30-admin-modules.md).
+An audit of `routes.php` against `controllers/admin/` found fifteen admin
+routes with no controller behind them — including `admin/customers` and
+`admin/settings`, both of which were **live entries in the sidebar that 404'd
+for every operator**. The same shape as the VTU gap reported in session 23:
+permissions seeded and granted, no UI behind them. Twenty-nine of the ~31
+seeded permission keys now gate real code, and a test fails if that regresses.
+
+**Remaining:**
+
+- The **marketplace half of F** — escrow, disputes, two-sided KYC.
+- **Withdrawals.** Deposits work through `PaymentService`; withdrawal exists
+  only as a label in `DashboardStats::transaction_label()`. No table, no
+  request flow, no approval queue.
+- Three permissions still gate nothing, by decision rather than omission:
+  `services.manage` (no SMM service editor; the catalogue screen covers the
+  four product domains only), `api.manage` (reseller keys are issued from the
+  customer dashboard), and `users.impersonate` — deliberately unbuilt, because
+  "log in as this customer" would let staff spend someone else's wallet with
+  nothing in the ledger to tell the two apart afterwards.
 
 Phase A is the one that determines whether this stays coherent. If each domain is
 built without it, the result is six parallel half-copies of the order engine.

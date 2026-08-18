@@ -1,0 +1,11 @@
+{
+  "entity": {
+    "bvn": {"value": "22222222222", "status": true},
+    "first_name": {"confidence_value": 100, "value": "Ada", "status": true},
+    "last_name": {"confidence_value": 100, "value": "Okafor", "status": true},
+    "date_of_birth": {"confidence_value": 100, "value": "1990-04-12", "status": true},
+    "phone_number1": {"confidence_value": 100, "value": "08031234567", "status": true},
+    "gender": {"value": "Female", "status": true},
+    "image": {"value": "/9j/4AAQSkZJRgABAgAAAQABAAD-bvn-portrait", "status": true}
+  }
+}

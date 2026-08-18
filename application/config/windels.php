@@ -15,7 +15,7 @@ $config['windels'] = array(
     'support_email' => getenv('MAIL_FROM_ADDRESS') ?: 'support@windels.local',
     'active_homepage' => 'AURORA', // AURORA | NEXUS | PULSE — overridden by settings table
     'homepages' => array('AURORA', 'NEXUS', 'PULSE'),
-    'base_currency' => 'USD',
+    'base_currency' => 'NGN',
     'maintenance' => FALSE,
 );
 
@@ -47,6 +47,16 @@ $config['provider_http'] = array(
    deployments where providers genuinely live on the LAN. */
 $config['http_allow_private_hosts'] = env_bool('HTTP_ALLOW_PRIVATE_HOSTS');
 
+/* Gift cards (§23). Which markets the catalogue sync imports — Reloadly lists
+   thousands of products across 140 countries, and importing all of them buries
+   the handful an operator will actually price. Comma-separated ISO-2 codes. */
+$config['giftcard_countries'] = env_str('GIFTCARD_COUNTRIES', 'US,GB,NG');
+
+/* How long a placed gift card order may go without the vendor issuing a code
+   before it is written off and refunded. The vendor has already billed us by
+   then, so this number is a real cost/patience trade-off, not a timeout. */
+$config['giftcard_give_up_minutes'] = 60;
+
 /* Where cron jobs keep their exclusive lock files (see JobRunner). */
 $config['cron_lock_dir'] = sys_get_temp_dir().'/windels-locks';
 
@@ -54,6 +64,9 @@ $config['cron_lock_dir'] = sys_get_temp_dir().'/windels-locks';
 $config['cron'] = array(
     'dripfeed' => '* * * * *',
     'vtu_status'             => '*/2 * * * *',
+    'numbers_status'         => '* * * * *',
+    'identity_purge'         => '30 3 * * *',
+    'giftcard_codes'         => '*/2 * * * *',
     'order_status' => '*/2 * * * *',
     'subscriptions' => '*/5 * * * *',
     'provider_health' => '*/5 * * * *',

@@ -290,7 +290,7 @@ class AdvFakeCI {
             'provider_id'=>5,'provider_service_id'=>'1001',
         );
         $this->provider = (object)array('id'=>5,'status'=>'ACTIVE','api_type'=>'MOCK');
-        $this->wallet = (object)array('id'=>11,'balance'=>'100.00000000','currency'=>'USD');
+        $this->wallet = (object)array('id'=>11,'balance'=>'100.00000000','currency'=>'NGN');
         $this->order = (object)array(
             'id'=>99,'public_id'=>'ORDER1','status'=>'COMPLETED','charge'=>'1.20000000',
             'quantity'=>100,'user_id'=>7,'service_id'=>3,'provider_id'=>5,'provider_order_id'=>'mock_1',
@@ -434,7 +434,7 @@ class AdvMockRefillAdapter implements ProviderAdapterInterface {
     public function createOrder($p){return array('ok'=>true,'provider_order_id'=>'mock_1');}
     public function getOrderStatus($id){return array('ok'=>true,'data'=>array('status'=>'Completed'));}
     public function getMultipleOrderStatus(array $ids){return array('ok'=>true,'data'=>array());}
-    public function getBalance(){return array('ok'=>true,'data'=>array('balance'=>'100','currency'=>'USD'));}
+    public function getBalance(){return array('ok'=>true,'data'=>array('balance'=>'100','currency'=>'NGN'));}
     public function requestRefill($id){return array('ok'=>true,'provider_refill_id'=>'r_42');}
     public function getRefillStatus($id){return array('ok'=>true,'data'=>array('status'=>'Pending'));}
     public function requestCancel($id){return array('ok'=>true);}

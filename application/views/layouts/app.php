@@ -5,18 +5,32 @@ $active   = isset($nav_active) ? $nav_active : trim($this->uri->uri_string(), '/
 $nav = $is_admin ? array(
     array('admin',              'Overview',   'reports.view',    'dashboard'),
     array('admin/orders',       'Orders',     'orders.view',     'shopping-bag'),
+    array('admin/vtu',          'VTU',        'vtu.view',        'smartphone'),
+    array('admin/numbers',      'Numbers',    'numbers.view',    'hash'),
+    array('admin/identity',     'Identity',   'identity.view',   'badge-check'),
+    array('admin/giftcards',    'Gift cards', 'giftcards.view',  'gift-card'),
+    array('admin/analytics',    'Analytics',  'reports.view',    'chart'),
     array('admin/customers',    'Customers',  'users.view',      'users'),
-    array('admin/services',     'Services',   'services.manage', 'package'),
-    array('admin/providers',    'Providers',  'providers.manage','server'),
+    array('admin/catalogue',    'Catalogue',  'services.view',   'package'),
+    array('admin/refills',      'Operations', 'orders.refill',   'repeat'),
+    array('admin/providers',    'Providers',  'providers.view',  'server'),
     array('admin/payments',     'Payments',   'payments.view',   'credit-card'),
     array('admin/tickets',      'Tickets',    'tickets.view',    'message-square'),
     array('admin/affiliates',   'Affiliates', 'affiliates.view', 'gift'),
+    array('admin/blog',         'Content',    'blog.manage',     'list'),
+    array('admin/staff',        'Staff',      'staff.manage',    'shield'),
+    array('admin/media',        'Media',      'media.manage',    'star'),
+    array('admin/categories',   'System',     'audit.view',      'globe'),
     array('admin/settings',     'Settings',   'settings.manage', 'settings'),
 ) : array(
     array('dashboard',           'Dashboard',  null, 'dashboard'),
     array('dashboard/new-order', 'New Order',  null, 'zap'),
     array('dashboard/orders',    'My Orders',  null, 'shopping-bag'),
+    array('dashboard/history',   'History',    null, 'list'),
     array('dashboard/vtu',       'VTU',        null, 'smartphone'),
+    array('dashboard/numbers',   'Numbers',    null, 'hash'),
+    array('dashboard/identity',  'Identity',   null, 'badge-check'),
+    array('dashboard/giftcards', 'Gift cards', null, 'gift-card'),
     array('dashboard/services',  'Services',   null, 'package'),
     array('dashboard/favorites', 'Favorites',  null, 'star'),
     array('dashboard/drip-feed', 'Drip-feed',  null, 'zap'),
@@ -27,6 +41,15 @@ $nav = $is_admin ? array(
     array('dashboard/referrals', 'Referrals',  null, 'gift'),
     array('dashboard/api',       'API',        null, 'key'),
 );
+
+// Branding, set from Admin -> Appearance. Read defensively: the layout also
+// renders on the CLI-ish paths and during install, before settings exist.
+$brand = array('brand_primary_color' => null, 'brand_logo_url' => null, 'brand_favicon_url' => null);
+try {
+    $CI =& get_instance();
+    $CI->load->model('Setting_model');
+    foreach (array_keys($brand) as $__k) $brand[$__k] = $CI->Setting_model->get($__k);
+} catch (Exception $e) { /* defaults stand */ }
 ?>
 <!doctype html>
 <html lang="en">
@@ -34,16 +57,27 @@ $nav = $is_admin ? array(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title><?=htmlspecialchars($title ?? 'WINDELS PANEL')?></title>
+<?php if (!empty($brand['brand_favicon_url'])): ?>
+<link rel="icon" href="<?=htmlspecialchars($brand['brand_favicon_url'])?>">
+<?php endif; ?>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap">
 <link rel="stylesheet" href="<?=base_url('assets/css/tailwind.css')?>">
 <link rel="stylesheet" href="<?=base_url('assets/css/design-system.css')?>">
+<?php if (!empty($brand['brand_primary_color'])): ?>
+<style><?=':root{--ws-primary:'.htmlspecialchars($brand['brand_primary_color']).'}'?></style>
+<?php endif; ?>
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
 <div class="flex min-h-screen">
   <!-- Sidebar (desktop) -->
   <aside class="w-64 shrink-0 border-r bg-white hidden md:flex flex-col">
     <div class="h-16 flex items-center px-6 border-b">
-      <a href="<?=site_url()?>" class="font-bold tracking-tight">WINDELS PANEL</a>
+      <a href="<?=site_url()?>" class="font-bold tracking-tight">
+        <?php if (!empty($brand['brand_logo_url'])): ?>
+          <img src="<?=htmlspecialchars($brand['brand_logo_url'])?>" alt="WINDELS PANEL"
+               style="max-height:2rem;max-width:10rem">
+        <?php else: ?>WINDELS PANEL<?php endif; ?>
+      </a>
     </div>
     <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-0.5" aria-label="Primary">
       <?php foreach ($nav as $item): list($href,$label,$perm) = $item; ?>
@@ -94,8 +128,16 @@ $nav = $is_admin ? array(
     <main class="flex-1 p-4 md:p-6 pb-24 md:pb-6">
       <?php $flash_success = $this->session->flashdata('success'); ?>
       <?php $flash_error   = $this->session->flashdata('error'); ?>
+      <?php // A change that went through but that the operator should look at
+            // twice — selling below cost, a product hidden behind an inactive
+            // parent. Distinct from an error: refusing these would refuse
+            // legitimate decisions, and hiding them would let a typo ship.
+            $flash_warning = $this->session->flashdata('warning'); ?>
       <?php if ($flash_success): ?>
         <div class="alert alert-success"><?=htmlspecialchars($flash_success)?></div>
+      <?php endif; ?>
+      <?php if ($flash_warning): ?>
+        <div class="alert alert-warning"><?=htmlspecialchars($flash_warning)?></div>
       <?php endif; ?>
       <?php if ($flash_error): ?>
         <div class="alert alert-danger"><?=htmlspecialchars($flash_error)?></div>

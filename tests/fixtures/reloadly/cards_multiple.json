@@ -1,0 +1,14 @@
+[
+    {
+        "cardNumber": "6120200345149064",
+        "pinCode": "EFSDCEAFSD",
+        "redemptionUrl": "https://redeem.example.com/1",
+        "expiryDate": "2027-06-30"
+    },
+    {
+        "cardNumber": "6120200345149072",
+        "pinCode": "QQWEDCXZAS",
+        "redemptionUrl": "https://redeem.example.com/2",
+        "expiryDate": "2027-06-30"
+    }
+]

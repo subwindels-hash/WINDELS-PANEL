@@ -381,6 +381,111 @@ class SecurityHardeningTest extends TestCase
         }
     }
 
+    /**
+     * The identity domain (§22) puts a new class of value in scope: a NIN, a
+     * BVN and a decrypted identity record are as damaging in a log line as an
+     * API key, and rather more likely to end up there by accident — they
+     * arrive as ordinary request input and travel through error paths that
+     * were written when the worst thing in a variable was an order id.
+     */
+    public function testIdentityDataIsNeverLogged()
+    {
+        foreach ($this->php_files() as $file) {
+            $src = file_get_contents($file);
+            if (!preg_match_all('~log_message\([^;]*;~s', $src, $m)) continue;
+            foreach ($m[0] as $call) {
+                $this->assertDoesNotMatchRegularExpression(
+                    '~\$(?:\w+->)*(?:nin|bvn|identifier|identity_number|photo|entity)\b~i',
+                    $call,
+                    basename($file).' logs identity data: '.substr(trim($call), 0, 90));
+            }
+        }
+    }
+
+    /**
+     * The identifier must not reach the session store either. Flash data is
+     * written to files or a database table that nothing encrypts and no
+     * retention sweep touches, so a NIN put there outlives every control the
+     * identity domain has.
+     */
+    public function testTheIdentifierIsNeverFlashedOrStoredInTheSession()
+    {
+        foreach ($this->php_files() as $file) {
+            $src = file_get_contents($file);
+            if (!preg_match_all('~(?:set_flashdata|set_userdata)\([^;]*;~s', $src, $m)) continue;
+            foreach ($m[0] as $call) {
+                $this->assertDoesNotMatchRegularExpression(
+                    '~\bpost\(\s*.identifier.|\$(?:\w+->)*(?:nin|bvn|identifier)\b~i',
+                    $call,
+                    basename($file).' puts an identifier in the session: '.substr(trim($call), 0, 90));
+            }
+        }
+    }
+
+    /**
+     * A gift card code is the one payload in the panel that is *directly*
+     * spendable. Everything the identity rules protect is damaging because of
+     * what it reveals; a card number is damaging because of what it buys, so
+     * it must not reach a log line or the session store either.
+     */
+    public function testGiftCardCodesAreNeverLoggedOrSessioned()
+    {
+        foreach ($this->php_files() as $file) {
+            $src = file_get_contents($file);
+            if (preg_match_all('~(?:log_message|set_flashdata|set_userdata)\([^;]*;~s', $src, $m)) {
+                foreach ($m[0] as $call) {
+                    $this->assertDoesNotMatchRegularExpression(
+                        '~\$(?:\w+->)*(?:card_number|pin_code|pinCode|cardNumber|redeem_code)\b~i',
+                        $call,
+                        basename($file).' exposes a gift card code: '.substr(trim($call), 0, 90));
+                }
+            }
+        }
+    }
+
+    /**
+     * The same single-door rule the identity result has, for the same reason
+     * and with higher stakes: a controller or view decrypting a card directly
+     * would be an unlogged read of something a staff member can spend.
+     */
+    public function testOnlyTheAuditedServicePathDecryptsAGiftCardCode()
+    {
+        $callers = array();
+        foreach (array_merge($this->php_files(), $this->view_files()) as $file) {
+            if (basename($file) === 'GiftcardService.php') continue;
+            $src = file_get_contents($file);
+            if (strpos($src, 'card_number_encrypted') === false
+                && strpos($src, 'pin_encrypted') === false) continue;
+            if (preg_match('~encryptionservice->(?:open|decrypt)~i', $src)) {
+                $callers[] = basename($file);
+            }
+        }
+        $this->assertSame(array(), $callers,
+            'decrypting outside GiftcardService::reveal() bypasses the access log: '
+            .implode(', ', $callers));
+    }
+
+    /**
+     * There must be exactly one route to a plaintext identity result, and it
+     * is the one that audits the access. A controller or view calling the
+     * decryptor directly would be a silent read.
+     */
+    public function testOnlyTheAuditedServicePathDecryptsAnIdentityResult()
+    {
+        $callers = array();
+        foreach (array_merge($this->php_files(), $this->view_files()) as $file) {
+            if (basename($file) === 'IdentityService.php') continue;
+            $src = file_get_contents($file);
+            if (strpos($src, 'result_encrypted') === false) continue;
+            if (preg_match('~encryptionservice->(?:open|decrypt)~i', $src)) {
+                $callers[] = basename($file);
+            }
+        }
+        $this->assertSame(array(), $callers,
+            'decrypting outside IdentityService::reveal() bypasses the access log: '
+            .implode(', ', $callers));
+    }
+
     public function testApiKeysAreStoredHashed()
     {
         $src = file_get_contents(self::$root.'/application/models/Api_key_model.php');

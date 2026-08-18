@@ -14,7 +14,9 @@ class Cron extends Cron_Controller {
 
     /** Jobs that can be invoked, in the order `index` lists them. */
     private static $jobs = array(
-        'dripfeed', 'order_status', 'vtu_status', 'subscriptions', 'provider_health',
+        'dripfeed', 'order_status', 'vtu_status', 'numbers_status', 'identity_purge',
+        'giftcard_codes',
+        'subscriptions', 'provider_health',
         'refill_status', 'payment_reconciliation', 'email_queue',
         'analytics', 'provider_sync', 'affiliate_payouts',
     );
@@ -45,6 +47,45 @@ class Cron extends Cron_Controller {
     public function vtu_status() {
         $this->execute('vtu_status', function () {
             return $this->cronworkers->vtu_status();
+        });
+    }
+
+    /**
+     * Settle virtual-number reservations: collect OTPs, expire the rest.
+     *
+     * Runs every minute rather than every two: a reservation lives for about
+     * fifteen, and the customer is watching the screen for their code.
+     */
+    public function numbers_status() {
+        $this->execute('numbers_status', function () {
+            return $this->cronworkers->numbers_status();
+        });
+    }
+
+    /**
+     * Scrub identity results past their retention period (§22).
+     *
+     * Nightly and off-peak: retention is measured in days, so there is nothing
+     * to gain from running it during business hours and something to lose —
+     * deleting a record while support has it open.
+     */
+    public function identity_purge() {
+        $this->execute('identity_purge', function () {
+            return $this->cronworkers->identity_purge();
+        });
+    }
+
+    /**
+     * Collect gift card codes for orders the vendor has accepted (§23).
+     *
+     * Every two minutes. A gift card order is accepted in one call and
+     * delivered in another, and until the second one lands the customer has
+     * paid for nothing they can spend. The same sweep writes off orders the
+     * vendor never fulfilled, which refunds them.
+     */
+    public function giftcard_codes() {
+        $this->execute('giftcard_codes', function () {
+            return $this->cronworkers->giftcard_codes();
         });
     }
 

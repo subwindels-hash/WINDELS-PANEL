@@ -1,10 +1,15 @@
-<?php defined('BASEPATH') OR exit('No direct script access allowed'); ?>
+<?php defined('BASEPATH') OR exit('No direct script access allowed');
+$perms = $permissions ?? array();
+$has   = function ($k) use ($perms) { return in_array('*', $perms, true) || in_array($k, $perms, true); };
+?>
 <div class="row justify-between" style="margin-bottom:1rem;align-items:flex-start">
   <div>
     <h2 class="mb-0" style="font-size:1.4rem;font-weight:600">Providers</h2>
     <p class="muted text-sm">Upstream SMM panels. API keys are encrypted at rest and never displayed after creation.</p>
   </div>
-  <button class="btn btn-primary" onclick="document.getElementById('ws-new-provider').showModal()">+ Add provider</button>
+  <?php if ($has('providers.manage')): ?>
+    <button class="btn btn-primary" onclick="document.getElementById('ws-new-provider').showModal()">+ Add provider</button>
+  <?php endif; ?>
 </div>
 
 <div class="card">
@@ -45,6 +50,7 @@
 </div>
 
 <!-- Create provider dialog -->
+<?php if ($has('providers.manage')): ?>
 <dialog id="ws-new-provider" class="ws-dialog" onclick="if(event.target===this)this.close()">
   <form method="post" action="<?=site_url('admin/providers/create')?>" class="stack">
     <h3 class="card-title mb-0">Add provider</h3>
@@ -60,9 +66,10 @@
     </label>
     <div class="row" style="gap:.75rem">
       <label class="field" style="flex:1"><span class="label">Type</span>
-        <select class="select" name="api_type">
-          <option value="STANDARD_SMM">STANDARD_SMM</option>
-          <option value="MOCK">MOCK (offline test)</option>
+        <select class="select" name="api_type" id="ws-api-type">
+          <?php foreach (($api_types ?? array('STANDARD_SMM'=>'SMM','MOCK'=>'SMM')) as $type => $family): ?>
+            <option value="<?=htmlspecialchars($type)?>"><?=htmlspecialchars($type)?><?=$type==='MOCK'?' (offline test)':' · '.htmlspecialchars($family)?></option>
+          <?php endforeach; ?>
         </select>
       </label>
       <label class="field" style="flex:1"><span class="label">Status</span>
@@ -77,6 +84,51 @@
         <input class="input" type="number" name="sync_interval_minutes" value="60" min="1">
       </label>
     </div>
+    <details class="text-sm muted">
+      <summary>VTpass keys (VTPASS only)</summary>
+      <p class="text-xs muted" style="margin-top:.5rem">
+        VTpass authenticates GET and POST with different keys, so both are required.
+        Sandbox API URL: <span class="mono">https://sandbox.vtpass.com/api</span> ·
+        live: <span class="mono">https://vtpass.com/api</span>. All three values are
+        encrypted together at rest.
+      </p>
+      <div class="row" style="gap:.75rem;margin-top:.5rem">
+        <label class="field" style="flex:1"><span class="label">Public key (reads)</span>
+          <input class="input" name="public_key" autocomplete="off" placeholder="PK_...">
+        </label>
+        <label class="field" style="flex:1"><span class="label">Secret key (purchases)</span>
+          <input class="input" name="secret_key" autocomplete="off" placeholder="SK_...">
+        </label>
+      </div>
+    </details>
+    <details class="text-sm muted">
+      <summary>Dojah AppId (DOJAH only)</summary>
+      <p class="text-xs muted" style="margin-top:.5rem">
+        Dojah sends the secret key in <span class="mono">Authorization</span> with no
+        <span class="mono">Bearer</span> prefix, plus an <span class="mono">AppId</span> header —
+        both are required or every call returns 401. Sandbox API URL:
+        <span class="mono">https://sandbox.dojah.io</span> · live:
+        <span class="mono">https://api.dojah.io</span>. Sandbox keys do not work
+        against the live URL.
+      </p>
+      <label class="field" style="margin-top:.5rem"><span class="label">AppId</span>
+        <input class="input" name="app_id" autocomplete="off" placeholder="From the Dojah dashboard">
+      </label>
+    </details>
+    <details class="text-sm muted">
+      <summary>Reloadly client secret (RELOADLY only)</summary>
+      <p class="text-xs muted" style="margin-top:.5rem">
+        Reloadly is OAuth2, not an API key: put the <span class="mono">client id</span> in the
+        API key field above and the secret here. They are exchanged for a bearer token that
+        lasts about 60 days and is cached on the provider. Sandbox API URL:
+        <span class="mono">https://giftcards-sandbox.reloadly.com</span> · live:
+        <span class="mono">https://giftcards.reloadly.com</span> — the token audience follows
+        the URL, so sandbox credentials cannot reach the live wallet.
+      </p>
+      <label class="field" style="margin-top:.5rem"><span class="label">Client secret</span>
+        <input class="input" name="client_secret" autocomplete="off" placeholder="From the Reloadly dashboard">
+      </label>
+    </details>
     <details class="text-sm muted">
       <summary>Advanced</summary>
       <div class="row" style="gap:.75rem;margin-top:.5rem">
@@ -94,6 +146,7 @@
     </div>
   </form>
 </dialog>
+<?php endif; ?>
 
 <style>
 .ws-dialog{border:0;border-radius:1rem;padding:0;width:min(560px,92vw);box-shadow:0 30px 80px -20px rgba(0,0,0,.4)}

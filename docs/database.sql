@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS wallets (
   public_id CHAR(26) NOT NULL UNIQUE,
   user_id BIGINT UNSIGNED NOT NULL UNIQUE,
   balance DECIMAL(20,8) NOT NULL DEFAULT 0.00000000,
-  currency CHAR(3) NOT NULL DEFAULT 'USD',
+  currency CHAR(3) NOT NULL DEFAULT 'NGN',
   total_deposited DECIMAL(20,8) NOT NULL DEFAULT 0.00000000,
   total_spent DECIMAL(20,8) NOT NULL DEFAULT 0.00000000,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -159,7 +159,7 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
   amount DECIMAL(20,8) NOT NULL,
   balance_before DECIMAL(20,8) NOT NULL,
   balance_after DECIMAL(20,8) NOT NULL,
-  currency CHAR(3) NOT NULL DEFAULT 'USD',
+  currency CHAR(3) NOT NULL DEFAULT 'NGN',
   reference_type VARCHAR(64) NULL COMMENT 'Order|PaymentTransaction|...',
   reference_id VARCHAR(64) NULL,
   note VARCHAR(255) NULL,
@@ -311,7 +311,7 @@ CREATE TABLE IF NOT EXISTS providers (
   api_key_encrypted VARCHAR(512) NOT NULL COMMENT 'encrypted at rest, never logged',
   api_type VARCHAR(32) NOT NULL DEFAULT 'STANDARD_SMM',
   status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
-  currency CHAR(3) NOT NULL DEFAULT 'USD',
+  currency CHAR(3) NOT NULL DEFAULT 'NGN',
   balance DECIMAL(20,8) NULL COMMENT 'last known provider balance',
   timeout_ms INT NOT NULL DEFAULT 15000,
   retry_policy JSON NULL COMMENT '{maxRetries, backoffMs[]}',
@@ -394,7 +394,7 @@ CREATE TABLE IF NOT EXISTS orders (
   charge DECIMAL(20,8) NOT NULL COMMENT 'what the customer paid',
   rate_at_order DECIMAL(20,8) NOT NULL COMMENT 'resolved price per 1000 at order time',
   provider_charge DECIMAL(20,8) NULL COMMENT 'frozen provider cost at order time (§56)',
-  currency CHAR(3) NOT NULL DEFAULT 'USD',
+  currency CHAR(3) NOT NULL DEFAULT 'NGN',
   fields JSON NULL COMMENT 'dynamic per service_type',
   remains INT NULL COMMENT 'for PARTIAL',
   start_count INT NULL,
@@ -519,7 +519,7 @@ CREATE TABLE IF NOT EXISTS dripfeed_orders (
   runs_completed INT NOT NULL DEFAULT 0,
   interval_minutes INT NOT NULL,
   charge DECIMAL(20,8) NOT NULL DEFAULT 0.00000000 COMMENT 'total reserved charge',
-  currency CHAR(3) NOT NULL DEFAULT 'USD',
+  currency CHAR(3) NOT NULL DEFAULT 'NGN',
   fields JSON NULL,
   start_at DATETIME NULL,
   next_run_at DATETIME NULL,
@@ -1021,7 +1021,7 @@ CREATE TABLE IF NOT EXISTS service_transactions (
   status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING|PROCESSING|SUCCESSFUL|FAILED|CANCELLED|REFUNDED',
   amount DECIMAL(20,8) NOT NULL COMMENT 'what the customer paid',
   provider_cost DECIMAL(20,8) NULL COMMENT 'frozen at request time (§15)',
-  currency CHAR(3) NOT NULL DEFAULT 'USD',
+  currency CHAR(3) NOT NULL DEFAULT 'NGN',
   wallet_transaction_id BIGINT UNSIGNED NULL COMMENT 'the debit; NULL until charged',
   refunded_amount DECIMAL(20,8) NOT NULL DEFAULT 0.00000000,
   provider_reference VARCHAR(128) NULL,
@@ -1133,6 +1133,307 @@ CREATE TABLE IF NOT EXISTS vtu_transactions (
   CONSTRAINT fk_vtx_product FOREIGN KEY (product_id) REFERENCES vtu_products(id) ON DELETE SET NULL,
   INDEX idx_vtx_recipient (recipient),
   INDEX idx_vtx_type (service_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- migration 011_base_currency_ngn
+-- ---------------------------------------------------------------------
+
+ALTER TABLE wallets MODIFY currency CHAR(3) NOT NULL DEFAULT 'NGN';
+
+ALTER TABLE wallet_transactions MODIFY currency CHAR(3) NOT NULL DEFAULT 'NGN';
+
+ALTER TABLE providers MODIFY currency CHAR(3) NOT NULL DEFAULT 'NGN';
+
+ALTER TABLE orders MODIFY currency CHAR(3) NOT NULL DEFAULT 'NGN';
+
+ALTER TABLE dripfeed_orders MODIFY currency CHAR(3) NOT NULL DEFAULT 'NGN';
+
+ALTER TABLE service_transactions MODIFY currency CHAR(3) NOT NULL DEFAULT 'NGN';
+
+UPDATE wallets SET currency = 'NGN' WHERE currency = 'USD';
+
+UPDATE wallet_transactions SET currency = 'NGN' WHERE currency = 'USD';
+
+UPDATE ledger_entries SET currency = 'NGN' WHERE currency = 'USD';
+
+UPDATE orders SET currency = 'NGN' WHERE currency = 'USD';
+
+UPDATE dripfeed_orders SET currency = 'NGN' WHERE currency = 'USD';
+
+UPDATE payment_transactions SET currency = 'NGN' WHERE currency = 'USD';
+
+UPDATE referral_commissions SET currency = 'NGN' WHERE currency = 'USD';
+
+UPDATE service_transactions SET currency = 'NGN' WHERE currency = 'USD';
+
+UPDATE currencies SET is_base = 0;
+
+UPDATE currencies SET is_base = 1, exchange_rate = '1.00000000', is_active = 1 WHERE code = 'NGN';
+
+UPDATE currencies SET exchange_rate = '0.00064516' WHERE code = 'USD';
+
+UPDATE currencies SET exchange_rate = '0.00059355' WHERE code = 'EUR';
+
+UPDATE currencies SET exchange_rate = '0.00050968' WHERE code = 'GBP';
+
+UPDATE currencies SET exchange_rate = '0.05354839' WHERE code = 'INR';
+
+UPDATE currencies SET exchange_rate = '0.00348387' WHERE code = 'BRL';
+
+UPDATE settings SET setting_value = JSON_OBJECT('value', 'NGN') WHERE setting_key = 'base_currency';
+
+UPDATE settings SET setting_value = JSON_OBJECT('value', '500.00000000') WHERE setting_key = 'min_deposit';
+
+UPDATE settings SET setting_value = JSON_OBJECT('value', '5000000.00000000') WHERE setting_key = 'max_deposit';
+
+UPDATE settings SET setting_value = JSON_OBJECT('value', '100.00000000') WHERE setting_key = 'referral_min_payout';
+
+UPDATE payment_methods SET min_amount = '500.00000000', max_amount = '5000000.00000000', currencies = JSON_ARRAY('NGN');
+
+-- ---------------------------------------------------------------------
+-- migration 012_virtual_numbers_otp
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS number_countries (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  code VARCHAR(32) NOT NULL UNIQUE COMMENT 'our stable code: NG, GB, US',
+  name VARCHAR(64) NOT NULL,
+  dial_prefix VARCHAR(8) NULL COMMENT '+234, for display only',
+  flag_emoji VARCHAR(16) NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  sorting INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_ncty_active (is_active, sorting)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS number_services (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  code VARCHAR(48) NOT NULL UNIQUE COMMENT 'WHATSAPP|TELEGRAM|...',
+  name VARCHAR(64) NOT NULL,
+  logo_url VARCHAR(512) NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  sorting INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_nsvc_active (is_active, sorting)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS number_products (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  country_id BIGINT UNSIGNED NOT NULL,
+  service_id BIGINT UNSIGNED NOT NULL,
+  provider_id BIGINT UNSIGNED NULL,
+  code VARCHAR(96) NOT NULL COMMENT 'our stable code, NG-WHATSAPP',
+  provider_country VARCHAR(48) NULL,
+  provider_operator VARCHAR(48) NULL COMMENT 'any, unless pinned',
+  provider_product VARCHAR(48) NULL,
+  price DECIMAL(20,8) NULL COMMENT 'customer price in base currency',
+  provider_cost DECIMAL(20,8) NULL COMMENT 'vendor cost, converted to base currency',
+  stock INT NULL COMMENT 'last known vendor availability, advisory',
+  ttl_minutes INT NOT NULL DEFAULT 15 COMMENT 'vendor hold time; the reservation carries the real deadline',
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  sorting INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_nprod_country FOREIGN KEY (country_id) REFERENCES number_countries(id) ON DELETE CASCADE,
+  CONSTRAINT fk_nprod_service FOREIGN KEY (service_id) REFERENCES number_services(id) ON DELETE CASCADE,
+  CONSTRAINT fk_nprod_provider FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL,
+  UNIQUE KEY uq_nprod_code (country_id, service_id, code),
+  INDEX idx_nprod_active (is_active, sorting),
+  INDEX idx_nprod_provider (provider_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS virtual_numbers (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  service_transaction_id BIGINT UNSIGNED NOT NULL UNIQUE,
+  country_id BIGINT UNSIGNED NULL,
+  service_id BIGINT UNSIGNED NULL,
+  product_id BIGINT UNSIGNED NULL,
+  msisdn VARCHAR(32) NOT NULL COMMENT 'the rented number, E.164',
+  operator VARCHAR(48) NULL,
+  provider_order_id VARCHAR(64) NULL COMMENT 'vendor order id; also the transaction provider_reference',
+  status VARCHAR(16) NOT NULL DEFAULT 'RESERVED' COMMENT 'RESERVED|RECEIVED|COMPLETED|CANCELLED|EXPIRED|BANNED',
+  sms_count INT NOT NULL DEFAULT 0,
+  last_code VARCHAR(32) NULL COMMENT 'most recent extracted code, for the list view',
+  reserved_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at DATETIME NULL COMMENT 'vendor deadline; the expiry sweep reads this',
+  released_at DATETIME NULL,
+  extra JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_vnum_stx FOREIGN KEY (service_transaction_id) REFERENCES service_transactions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_vnum_country FOREIGN KEY (country_id) REFERENCES number_countries(id) ON DELETE SET NULL,
+  CONSTRAINT fk_vnum_service FOREIGN KEY (service_id) REFERENCES number_services(id) ON DELETE SET NULL,
+  CONSTRAINT fk_vnum_product FOREIGN KEY (product_id) REFERENCES number_products(id) ON DELETE SET NULL,
+  INDEX idx_vnum_status_expires (status, expires_at),
+  INDEX idx_vnum_msisdn (msisdn)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS otp_messages (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  virtual_number_id BIGINT UNSIGNED NOT NULL,
+  provider_message_id VARCHAR(64) NULL,
+  sender VARCHAR(64) NULL,
+  body TEXT NULL,
+  code VARCHAR(32) NULL COMMENT 'extracted OTP, when the vendor or we can find one',
+  received_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_otp_number FOREIGN KEY (virtual_number_id) REFERENCES virtual_numbers(id) ON DELETE CASCADE,
+  UNIQUE KEY uq_otp_msg (virtual_number_id, provider_message_id),
+  INDEX idx_otp_number_created (virtual_number_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- migration 013_identity_verification
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS identity_products (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  code VARCHAR(48) NOT NULL UNIQUE COMMENT 'our stable code: NIN_BASIC, BVN_BASIC',
+  name VARCHAR(96) NOT NULL,
+  id_type VARCHAR(16) NOT NULL COMMENT 'NIN|BVN',
+  lookup_field VARCHAR(16) NOT NULL DEFAULT 'IDENTIFIER' COMMENT 'IDENTIFIER|PHONE — what the customer types',
+  provider_id BIGINT UNSIGNED NULL,
+  provider_code VARCHAR(64) NULL COMMENT 'vendor endpoint key, e.g. kyc/nin',
+  description VARCHAR(255) NULL,
+  price DECIMAL(20,8) NULL COMMENT 'customer price in base currency',
+  provider_cost DECIMAL(20,8) NULL COMMENT 'what the vendor charges us',
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  sorting INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_idprod_provider FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL,
+  INDEX idx_idprod_active (is_active, sorting),
+  INDEX idx_idprod_type (id_type, is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS identity_checks (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  service_transaction_id BIGINT UNSIGNED NOT NULL UNIQUE,
+  product_id BIGINT UNSIGNED NULL,
+  id_type VARCHAR(16) NOT NULL COMMENT 'NIN|BVN',
+  lookup_field VARCHAR(16) NOT NULL DEFAULT 'IDENTIFIER',
+  identifier_hash CHAR(64) NOT NULL COMMENT 'HMAC blind index — the raw NIN/BVN is never stored',
+  identifier_last4 VARCHAR(8) NULL COMMENT 'masked tail, for display only',
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING|VERIFIED|NOT_FOUND|FAILED',
+  result_encrypted MEDIUMTEXT NULL COMMENT 'AES-256-GCM JSON of the vendor entity; photo never stored',
+  provider_reference VARCHAR(64) NULL,
+  consent_at DATETIME NULL COMMENT 'when the customer confirmed they have the subject consent',
+  consent_ip VARCHAR(45) NULL,
+  reveal_count INT NOT NULL DEFAULT 0 COMMENT 'how many times staff opened the result',
+  last_revealed_at DATETIME NULL,
+  last_revealed_by BIGINT UNSIGNED NULL,
+  purged_at DATETIME NULL COMMENT 'retention sweep scrubbed result_encrypted',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_idchk_stx FOREIGN KEY (service_transaction_id) REFERENCES service_transactions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_idchk_product FOREIGN KEY (product_id) REFERENCES identity_products(id) ON DELETE SET NULL,
+  CONSTRAINT fk_idchk_revealer FOREIGN KEY (last_revealed_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_idchk_hash (identifier_hash),
+  INDEX idx_idchk_status_created (status, created_at),
+  INDEX idx_idchk_purge (purged_at, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- migration 014_giftcards
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS giftcard_brands (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  code VARCHAR(64) NOT NULL UNIQUE COMMENT 'our stable code: AMAZON, STEAM',
+  name VARCHAR(128) NOT NULL,
+  provider_brand_id VARCHAR(48) NULL COMMENT 'vendor brand id, advisory',
+  logo_url VARCHAR(512) NULL,
+  redeem_instructions TEXT NULL COMMENT 'how the customer spends the code',
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  sorting INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_gcbrand_active (is_active, sorting)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS giftcard_products (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  brand_id BIGINT UNSIGNED NOT NULL,
+  provider_id BIGINT UNSIGNED NULL,
+  code VARCHAR(96) NOT NULL COMMENT 'our stable code: AMAZON-US-25',
+  name VARCHAR(160) NOT NULL,
+  country_code CHAR(2) NOT NULL DEFAULT 'US',
+  provider_product_id VARCHAR(48) NULL COMMENT 'vendor productId',
+  denomination_type VARCHAR(8) NOT NULL DEFAULT 'FIXED' COMMENT 'FIXED|RANGE',
+  recipient_currency CHAR(3) NOT NULL COMMENT 'currency the card is denominated in — never defaulted, see below',
+  face_value DECIMAL(20,8) NULL COMMENT 'card denomination in recipient_currency',
+  min_face_value DECIMAL(20,8) NULL COMMENT 'RANGE products only',
+  max_face_value DECIMAL(20,8) NULL COMMENT 'RANGE products only',
+  price DECIMAL(20,8) NULL COMMENT 'customer price in base currency; NULL = not for sale',
+  provider_cost DECIMAL(20,8) NULL COMMENT 'vendor cost in base currency',
+  max_quantity INT NOT NULL DEFAULT 5 COMMENT 'cards per order',
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  sorting INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_gcprod_brand FOREIGN KEY (brand_id) REFERENCES giftcard_brands(id) ON DELETE CASCADE,
+  CONSTRAINT fk_gcprod_provider FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL,
+  UNIQUE KEY uq_gcprod_code (code),
+  INDEX idx_gcprod_active (is_active, sorting),
+  INDEX idx_gcprod_brand (brand_id, is_active),
+  INDEX idx_gcprod_provider (provider_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS giftcard_orders (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  service_transaction_id BIGINT UNSIGNED NOT NULL UNIQUE,
+  product_id BIGINT UNSIGNED NULL,
+  brand_id BIGINT UNSIGNED NULL,
+  quantity INT NOT NULL DEFAULT 1,
+  face_value DECIMAL(20,8) NULL COMMENT 'per-card denomination, frozen at purchase',
+  recipient_currency CHAR(3) NOT NULL COMMENT 'copied from the product at purchase',
+  recipient_email VARCHAR(190) NULL COMMENT 'vendor delivery copy; the panel is the source of truth',
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING|PLACED|DELIVERED|FAILED|CANCELLED',
+  provider_order_id VARCHAR(64) NULL COMMENT 'vendor transactionId, what code retrieval is keyed on',
+  placed_at DATETIME NULL,
+  delivered_at DATETIME NULL,
+  code_attempts INT NOT NULL DEFAULT 0 COMMENT 'code-retrieval tries; bounds the retry worker',
+  last_attempt_at DATETIME NULL,
+  failure_reason VARCHAR(255) NULL,
+  reveal_count INT NOT NULL DEFAULT 0 COMMENT 'how many times a code was opened',
+  last_revealed_at DATETIME NULL,
+  last_revealed_by BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_gcord_stx FOREIGN KEY (service_transaction_id) REFERENCES service_transactions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_gcord_product FOREIGN KEY (product_id) REFERENCES giftcard_products(id) ON DELETE SET NULL,
+  CONSTRAINT fk_gcord_brand FOREIGN KEY (brand_id) REFERENCES giftcard_brands(id) ON DELETE SET NULL,
+  CONSTRAINT fk_gcord_revealer FOREIGN KEY (last_revealed_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_gcord_status (status, last_attempt_at),
+  INDEX idx_gcord_placed (status, placed_at),
+  INDEX idx_gcord_provider_ref (provider_order_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS giftcard_codes (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  giftcard_order_id BIGINT UNSIGNED NOT NULL,
+  card_index INT NOT NULL DEFAULT 1 COMMENT '1..quantity, stable ordering for the customer',
+  card_number_encrypted TEXT NOT NULL COMMENT 'AES-256-GCM; never rendered without an audited reveal',
+  pin_encrypted TEXT NULL COMMENT 'AES-256-GCM; many brands have no PIN',
+  card_last4 VARCHAR(8) NULL COMMENT 'display only, so a customer can tell two cards apart',
+  redemption_url VARCHAR(512) NULL,
+  expires_on DATE NULL COMMENT 'vendor expiry, where one is given',
+  revealed_at DATETIME NULL COMMENT 'first time this specific card was opened',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_gccode_order FOREIGN KEY (giftcard_order_id) REFERENCES giftcard_orders(id) ON DELETE CASCADE,
+  UNIQUE KEY uq_gccode_slot (giftcard_order_id, card_index),
+  INDEX idx_gccode_order (giftcard_order_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;

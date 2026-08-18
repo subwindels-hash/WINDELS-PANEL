@@ -296,7 +296,7 @@ class OrderFakeCI {
             'cancel_supported'=>1,'refill_supported'=>0,'average_time'=>'0-1h',
         );
         $this->provider = (object)array('id'=>5,'status'=>'ACTIVE','api_type'=>'MOCK','name'=>'Mock');
-        $this->wallet = (object)array('id'=>11,'balance'=>'100.00000000','currency'=>'USD');
+        $this->wallet = (object)array('id'=>11,'balance'=>'100.00000000','currency'=>'NGN');
         $this->order = (object)array(
             'id'=>99,'public_id'=>'01ORDER99','status'=>'PENDING','charge'=>'1.20000000',
             'quantity'=>100,'user_id'=>7,'service_id'=>3,'provider_id'=>5,'provider_order_id'=>null,

@@ -1,0 +1,30 @@
+{
+    "transactionId": 4412,
+    "amount": 26.5,
+    "discount": 0,
+    "currencyCode": "USD",
+    "fee": 1.5,
+    "customIdentifier": "01JWINDELSTXPUBLICID000009",
+    "status": "SUCCESSFUL",
+    "product": {
+        "productId": 11,
+        "productName": "Amazon US",
+        "countryCode": "US",
+        "quantity": 1,
+        "unitPrice": 25,
+        "totalPrice": 25,
+        "currencyCode": "USD",
+        "brand": { "brandId": 2, "brandName": "Amazon" }
+    },
+    "totalFee": 1.5,
+    "transactionCreatedTime": "2026-02-28 13:46:00",
+    "preOrdered": false,
+    "balanceInfo": {
+        "oldBalance": 900.5,
+        "newBalance": 874.0,
+        "cost": 26.5,
+        "currencyCode": "USD",
+        "currencyName": "US Dollar",
+        "updatedAt": "2026-02-28 13:46:00"
+    }
+}

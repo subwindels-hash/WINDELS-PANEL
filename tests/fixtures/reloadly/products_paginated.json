@@ -1,0 +1,21 @@
+{
+    "content": [
+        {
+            "productId": 77,
+            "productName": "Google Play GB",
+            "denominationType": "FIXED",
+            "recipientCurrencyCode": "GBP",
+            "senderCurrencyCode": "NGN",
+            "fixedRecipientDenominations": [10],
+            "fixedRecipientToSenderDenominationsMap": { "10.00": 21500.0 },
+            "logoUrls": ["https://cdn.reloadly.com/giftcards/gplay.jpg"],
+            "brand": { "brandId": 31, "brandName": "Google Play" },
+            "country": { "isoName": "GB", "name": "United Kingdom" },
+            "redeemInstruction": { "concise": "Redeem in the Play Store", "verbose": "Open the Google Play Store, tap your profile, choose Payments & subscriptions, then Redeem code." }
+        }
+    ],
+    "totalPages": 1,
+    "totalElements": 1,
+    "number": 0,
+    "size": 200
+}

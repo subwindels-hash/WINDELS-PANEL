@@ -87,12 +87,12 @@ class AuthService {
         ));
         $user_id = $this->ci->db->insert_id();
 
-        // Every customer has a USD wallet (§24).
+        // Every customer has a wallet in the panel's base currency (§24).
         $this->ci->db->insert('wallets', array(
             'public_id'  => windels_public_id(),
             'user_id'    => $user_id,
             'balance'    => '0.00000000',
-            'currency'   => 'USD',
+            'currency'   => windels_base_currency(),
             'created_at' => gmdate('Y-m-d H:i:s'),
             'updated_at' => gmdate('Y-m-d H:i:s'),
         ));

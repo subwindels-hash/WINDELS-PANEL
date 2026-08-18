@@ -1,0 +1,13 @@
+{
+  "code": "000",
+  "content": {
+    "Customer_Name": "NGOZI OKAFOR",
+    "Status": "Open",
+    "Due_Date": "2026-09-01T00:00:00+01:00",
+    "Customer_Number": 200234567,
+    "Customer_Type": "DSTV",
+    "Current_Bouquet": "DStv Compact",
+    "Current_Bouquet_Code": "dstv79",
+    "Renewal_Amount": 7900
+  }
+}

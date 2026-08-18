@@ -22,6 +22,9 @@ class Core_seeder extends Seeder {
         $this->seed_email_templates();
         $this->seed_faqs();
         $this->seed_vtu_catalogue();
+        $this->seed_number_catalogue();
+        $this->seed_identity_catalogue();
+        $this->seed_giftcard_catalogue();
         $this->out('core seed complete');
     }
 
@@ -35,6 +38,16 @@ class Core_seeder extends Seeder {
             'providers'  => array('providers.view','providers.manage','providers.sync'),
             'orders'     => array('orders.view','orders.edit','orders.refund','orders.cancel','orders.refill'),
             'vtu'        => array('vtu.view','vtu.manage','vtu.refund'),
+            'numbers'    => array('numbers.view','numbers.manage','numbers.refund'),
+            // identity.reveal is deliberately separate from identity.view:
+            // seeing that a check happened and reading the person's details
+            // are different levels of access (§22).
+            'identity'   => array('identity.view','identity.manage','identity.refund','identity.reveal'),
+            // giftcards.reveal is separate from giftcards.view for a sharper
+            // reason than identity's: a gift card code is a bearer instrument,
+            // so reading one is closer to opening the till than to reading a
+            // record (§23).
+            'giftcards'  => array('giftcards.view','giftcards.manage','giftcards.refund','giftcards.reveal'),
             'payments'   => array('payments.view','payments.manage','wallets.adjust'),
             'support'    => array('tickets.view','tickets.reply','tickets.manage'),
             'content'    => array('blog.manage','faq.manage','announcements.manage','media.manage'),
@@ -52,6 +65,9 @@ class Core_seeder extends Seeder {
                 'providers.view','providers.manage','providers.sync',
                 'orders.view','orders.edit','orders.refund','orders.cancel','orders.refill',
                 'vtu.view','vtu.manage','vtu.refund',
+                'numbers.view','numbers.manage','numbers.refund',
+                'identity.view','identity.manage','identity.refund','identity.reveal',
+                'giftcards.view','giftcards.manage','giftcards.refund','giftcards.reveal',
                 'payments.view','payments.manage','wallets.adjust',
                 'tickets.view','tickets.reply','tickets.manage',
                 'blog.manage','faq.manage','announcements.manage','media.manage',
@@ -61,7 +77,16 @@ class Core_seeder extends Seeder {
             'STAFF'       => array(
                 'reports.view','users.view','services.view','providers.view',
                 'orders.view','orders.edit','orders.refill',
-                'vtu.view',
+                'vtu.view','numbers.view',
+                // Support can see that an identity check ran and how it went,
+                // but not open the record. Reading a stranger's date of birth
+                // is not needed to answer "did my check work?", and the
+                // narrower default is the one worth shipping.
+                'identity.view',
+                // Support can chase a stuck gift card order and see whether it
+                // was delivered, but not read the code. Answering "where is my
+                // card?" does not require holding something spendable.
+                'giftcards.view','giftcards.manage',
                 'payments.view','tickets.view','tickets.reply','affiliates.view',
             ),
             'CUSTOMER'    => array(),
@@ -115,13 +140,16 @@ class Core_seeder extends Seeder {
     }
 
     private function seed_currencies() {
+        // Rates are "units of this currency per ₦1". NGN is the base, so it is
+        // pinned at exactly 1 and every other rate is the reciprocal of its
+        // naira price (₦1550 to the dollar => 0.00064516 USD per naira).
         $currencies = array(
-            array('USD','$','US Dollar',2,'1.00000000',1),
-            array('EUR','€','Euro',2,'0.92000000',0),
-            array('GBP','£','British Pound',2,'0.79000000',0),
-            array('NGN','₦','Nigerian Naira',2,'1550.00000000',0),
-            array('INR','₹','Indian Rupee',2,'83.00000000',0),
-            array('BRL','R$','Brazilian Real',2,'5.40000000',0),
+            array('NGN','₦','Nigerian Naira',2,'1.00000000',1),
+            array('USD','$','US Dollar',2,'0.00064516',0),
+            array('EUR','€','Euro',2,'0.00059355',0),
+            array('GBP','£','British Pound',2,'0.00050968',0),
+            array('INR','₹','Indian Rupee',2,'0.05354839',0),
+            array('BRL','R$','Brazilian Real',2,'0.00348387',0),
         );
         foreach ($currencies as $c) {
             $this->upsert('currencies', array('code'=>$c[0]), array(
@@ -196,6 +224,158 @@ class Core_seeder extends Seeder {
         }
     }
 
+    /**
+     * Virtual-number countries and services (§10, §11).
+     *
+     * Reference data only. Deliberately no `number_products`: a product needs
+     * a price, and the price depends on what a vendor charges, which nobody
+     * knows until a vendor is connected and synced. Seeding a priced product
+     * would either invent a margin or ship something buyable for nothing —
+     * the catalogue sync creates those rows, inactive, for an admin to price.
+     */
+    public static function number_countries() {
+        return array(
+            // code, name, dial prefix, flag
+            array('NG', 'Nigeria',        '+234', '🇳🇬'),
+            array('GH', 'Ghana',          '+233', '🇬🇭'),
+            array('KE', 'Kenya',          '+254', '🇰🇪'),
+            array('ZA', 'South Africa',   '+27',  '🇿🇦'),
+            array('GB', 'United Kingdom', '+44',  '🇬🇧'),
+            array('US', 'United States',  '+1',   '🇺🇸'),
+            array('IN', 'India',          '+91',  '🇮🇳'),
+        );
+    }
+
+    public static function number_services() {
+        return array(
+            array('WHATSAPP',  'WhatsApp'),
+            array('TELEGRAM',  'Telegram'),
+            array('FACEBOOK',  'Facebook'),
+            array('INSTAGRAM', 'Instagram'),
+            array('GOOGLE',    'Google'),
+            array('TWITTER',   'X (Twitter)'),
+            array('TIKTOK',    'TikTok'),
+            array('DISCORD',   'Discord'),
+            array('UBER',      'Uber'),
+            array('AMAZON',    'Amazon'),
+            array('OTHER',     'Any other service'),
+        );
+    }
+
+    private function seed_number_catalogue() {
+        $sort = 0;
+        foreach (self::number_countries() as $c) {
+            $this->upsert('number_countries', array('code' => $c[0]), array(
+                'public_id'   => windels_public_id(),
+                'name'        => $c[1],
+                'dial_prefix' => $c[2],
+                'flag_emoji'  => $c[3],
+                'is_active'   => 1,
+                'sorting'     => $sort++,
+            ));
+        }
+
+        $sort = 0;
+        foreach (self::number_services() as $s) {
+            $this->upsert('number_services', array('code' => $s[0]), array(
+                'public_id' => windels_public_id(),
+                'name'      => $s[1],
+                'is_active' => 1,
+                'sorting'   => $sort++,
+            ));
+        }
+    }
+
+    /**
+     * What identity lookups the panel sells (§22).
+     *
+     * Prices are left NULL on purpose. Every other reference table in the
+     * panel seeds a working price, but a KYC lookup has a real per-query cost
+     * that depends on the contract you signed with the vendor, and a guessed
+     * default here would either sell below cost or look like a considered
+     * number. The products seed inactive-with-no-price; Identity_product_model
+     * ::active() hides unpriced rows, so the storefront stays empty until an
+     * operator sets a price they have actually agreed. Same rule as a
+     * catalogue sync, which also never invents a price.
+     */
+    public static function identity_products() {
+        return array(
+            // code, name, id_type, lookup_field, provider_code, description
+            array('NIN_BASIC', 'NIN verification', 'NIN', 'IDENTIFIER', 'kyc/nin',
+                  'Confirm a National Identification Number and return the registered name, date of birth and gender.'),
+            array('BVN_BASIC', 'BVN verification', 'BVN', 'IDENTIFIER', 'kyc/bvn',
+                  'Confirm a Bank Verification Number against the NIBSS record.'),
+            array('NIN_PHONE', 'NIN by phone number', 'NIN', 'PHONE', 'kyc/nin/phone_number',
+                  'Find the NIN record linked to a Nigerian phone number.'),
+        );
+    }
+
+    private function seed_identity_catalogue() {
+        $sort = 0;
+        foreach (self::identity_products() as $p) {
+            $this->upsert('identity_products', array('code' => $p[0]), array(
+                'public_id'     => windels_public_id(),
+                'name'          => $p[1],
+                'id_type'       => $p[2],
+                'lookup_field'  => $p[3],
+                'provider_code' => $p[4],
+                'description'   => $p[5],
+                'is_active'     => 0,
+                'sorting'       => $sort++,
+            ));
+        }
+    }
+
+    /**
+     * Gift card brands (§23).
+     *
+     * Brands only. Deliberately no `giftcard_products`, for the same reason
+     * there are no seeded `number_products`: a denomination needs a price, and
+     * the price depends on the FX rate and the discount a vendor gives you,
+     * which nobody knows until a vendor is connected and synced. Seeding a
+     * priced $25 Amazon card would either invent a margin or — because the
+     * naira/dollar rate moves — ship something sold well below cost.
+     *
+     * The brands are worth seeding because they are stable, they carry the
+     * redeem instructions, and they give the catalogue sync something to
+     * attach imported denominations to rather than inventing brand names from
+     * vendor product strings.
+     */
+    public static function giftcard_brands() {
+        return array(
+            // code, name, redeem instructions
+            array('AMAZON', 'Amazon',
+                  'Go to amazon.com/redeem and enter the claim code to add it to your Amazon balance.'),
+            array('APPLE', 'App Store & iTunes',
+                  'Go to apple.com/redeem, or open the App Store, tap your profile and choose Redeem Gift Card.'),
+            array('GOOGLE_PLAY', 'Google Play',
+                  'Open the Google Play Store, tap your profile, choose Payments & subscriptions, then Redeem code.'),
+            array('STEAM', 'Steam',
+                  'Open Steam, choose Games then Redeem a Steam Wallet Code, and enter the code.'),
+            array('NETFLIX', 'Netflix',
+                  'Go to netflix.com/redeem and enter the code to add it to your Netflix account.'),
+            array('SPOTIFY', 'Spotify',
+                  'Go to spotify.com/redeem and enter the code to add Premium time to your account.'),
+            array('XBOX', 'Xbox',
+                  'Sign in at redeem.microsoft.com and enter the 25-character code.'),
+            array('PLAYSTATION', 'PlayStation Store',
+                  'Sign in to PlayStation Store, choose Redeem Codes, and enter the 12-digit code.'),
+        );
+    }
+
+    private function seed_giftcard_catalogue() {
+        $sort = 0;
+        foreach (self::giftcard_brands() as $b) {
+            $this->upsert('giftcard_brands', array('code' => $b[0]), array(
+                'public_id'           => windels_public_id(),
+                'name'                => $b[1],
+                'redeem_instructions' => $b[2],
+                'is_active'           => 1,
+                'sorting'             => $sort++,
+            ));
+        }
+    }
+
     public static function default_settings() {
         return array(
             // general
@@ -210,11 +390,11 @@ class Core_seeder extends Seeder {
             array('brand_favicon_url',NULL,'branding',1),
             array('default_theme','system','branding',1),
             // currency
-            array('base_currency','USD','currency',1),
+            array('base_currency','NGN','currency',1),
             array('currency_display','symbol','currency',1),
             // orders
-            array('min_deposit','5.00000000','payments',1),
-            array('max_deposit','10000.00000000','payments',1),
+            array('min_deposit','500.00000000','payments',1),
+            array('max_deposit','5000000.00000000','payments',1),
             array('order_auto_submit',TRUE,'orders',0),
             array('partial_refund_enabled',TRUE,'orders',0),
             // security
@@ -226,7 +406,15 @@ class Core_seeder extends Seeder {
             array('referral_commission_percent','5.0000','affiliate',1),
             array('referral_commission_scope','LIFETIME','affiliate',1),
             array('referral_hold_hours',24,'affiliate',0),
-            array('referral_min_payout','0.01000000','affiliate',0),
+            array('referral_min_payout','100.00000000','affiliate',0),
+            // identity / KYC (§22). Retention is a setting rather than a
+            // constant because the right number is a legal answer, not an
+            // engineering one, and it differs by jurisdiction.
+            array('identity_retention_days',30,'identity',0),
+            // gift cards (§23). The sender name printed on the vendor's
+            // receipt: it is what the recipient sees the card came from, so it
+            // is a branding decision rather than a constant.
+            array('giftcard_sender_name','WINDELS PANEL','giftcards',0),
         );
     }
 
@@ -278,9 +466,9 @@ class Core_seeder extends Seeder {
                 'type'       => $m[2],
                 'is_active'  => $m[3],
                 'sorting'    => $m[4],
-                'min_amount' => '5.00000000',
-                'max_amount' => '10000.00000000',
-                'currencies' => json_encode(array('USD')),
+                'min_amount' => '500.00000000',
+                'max_amount' => '5000000.00000000',
+                'currencies' => json_encode(array('NGN')),
             ));
         }
     }

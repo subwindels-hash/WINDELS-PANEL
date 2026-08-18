@@ -73,6 +73,33 @@ $route['dashboard/vtu/data'] = 'dashboard/vtu/data';
 $route['dashboard/vtu/cable'] = 'dashboard/vtu/cable';
 $route['dashboard/vtu/electricity'] = 'dashboard/vtu/electricity';
 $route['dashboard/vtu/education'] = 'dashboard/vtu/education';
+// Virtual numbers (§10, §11). Same rule as VTU: named segments first, or
+// 'history' would be read as a reservation public_id.
+$route['dashboard/numbers'] = 'dashboard/numbers/index';
+$route['dashboard/numbers/history'] = 'dashboard/numbers/history';
+$route['dashboard/numbers/rent'] = 'dashboard/numbers/rent';
+$route['dashboard/numbers/(:any)/check'] = 'dashboard/numbers/check/$1';
+$route['dashboard/numbers/(:any)/cancel'] = 'dashboard/numbers/cancel/$1';
+$route['dashboard/numbers/(:any)/release'] = 'dashboard/numbers/release/$1';
+$route['dashboard/numbers/(:any)/report'] = 'dashboard/numbers/report/$1';
+$route['dashboard/numbers/(:any)'] = 'dashboard/numbers/detail/$1';
+// Identity verification (§22). Named segments before the catch-all detail.
+$route['dashboard/identity'] = 'dashboard/identity/index';
+$route['dashboard/identity/history'] = 'dashboard/identity/history';
+$route['dashboard/identity/verify'] = 'dashboard/identity/verify';
+$route['dashboard/identity/(:any)/reveal'] = 'dashboard/identity/reveal/$1';
+$route['dashboard/identity/(:any)'] = 'dashboard/identity/detail/$1';
+
+// Gift cards (§23). Same rule again: fixed segments and two-segment actions
+// come before the catch-all, or /history routes into detail().
+// Unified purchase history (§20) — every domain in one list.
+$route['dashboard/history'] = 'dashboard/history/index';
+
+$route['dashboard/giftcards'] = 'dashboard/giftcards/index';
+$route['dashboard/giftcards/history'] = 'dashboard/giftcards/history';
+$route['dashboard/giftcards/buy'] = 'dashboard/giftcards/buy';
+$route['dashboard/giftcards/(:any)/reveal/(:any)'] = 'dashboard/giftcards/reveal/$1/$2';
+$route['dashboard/giftcards/(:any)'] = 'dashboard/giftcards/detail/$1';
 $route['dashboard/services'] = 'dashboard/services/index';
 $route['dashboard/favorites'] = 'dashboard/services/favorites';
 $route['dashboard/favorites/add/(:any)'] = 'dashboard/favorites/add/$1';
@@ -104,8 +131,43 @@ $route['admin/orders/(:any)/status'] = 'admin/orders/status/$1';
 $route['admin/orders/(:any)/cancel'] = 'admin/orders/cancel/$1';
 $route['admin/orders/(:any)/refund'] = 'admin/orders/refund/$1';
 $route['admin/orders/(:any)'] = 'admin/orders/detail/$1';
-$route['admin/services'] = 'admin/services/index';
-$route['admin/categories'] = 'admin/categories/index';
+$route['admin/vtu'] = 'admin/vtu/index';
+// Action routes must precede the catch-all detail route below.
+$route['admin/vtu/(:any)/recheck'] = 'admin/vtu/recheck/$1';
+$route['admin/vtu/(:any)/refund'] = 'admin/vtu/refund/$1';
+$route['admin/vtu/(:any)'] = 'admin/vtu/detail/$1';
+$route['admin/numbers'] = 'admin/numbers/index';
+// Action routes must precede the catch-all detail route below.
+$route['admin/numbers/(:any)/recheck'] = 'admin/numbers/recheck/$1';
+$route['admin/numbers/(:any)/release'] = 'admin/numbers/release/$1';
+$route['admin/numbers/(:any)/refund'] = 'admin/numbers/refund/$1';
+$route['admin/numbers/(:any)'] = 'admin/numbers/detail/$1';
+$route['admin/identity'] = 'admin/identity/index';
+// Action routes must precede the catch-all detail route below.
+$route['admin/identity/(:any)/reveal'] = 'admin/identity/reveal/$1';
+$route['admin/identity/(:any)/refund'] = 'admin/identity/refund/$1';
+$route['admin/identity/(:any)/purge'] = 'admin/identity/purge/$1';
+$route['admin/identity/(:any)'] = 'admin/identity/detail/$1';
+$route['admin/analytics'] = 'admin/analytics/index';
+$route['admin/giftcards'] = 'admin/giftcards/index';
+$route['admin/giftcards/(:any)/collect'] = 'admin/giftcards/collect/$1';
+$route['admin/giftcards/(:any)/abandon'] = 'admin/giftcards/abandon/$1';
+$route['admin/giftcards/(:any)/refund'] = 'admin/giftcards/refund/$1';
+$route['admin/giftcards/(:any)/reveal/(:any)'] = 'admin/giftcards/reveal/$1/$2';
+$route['admin/giftcards/(:any)'] = 'admin/giftcards/detail/$1';
+// Catalogue: pricing and shelf control for every product domain.
+// Action routes must precede the catch-all detail route below.
+$route['admin/catalogue'] = 'admin/catalogue/index';
+$route['admin/catalogue/(:any)/create'] = 'admin/catalogue/create/$1';
+$route['admin/catalogue/(:any)/(:any)/update'] = 'admin/catalogue/update/$1/$2';
+$route['admin/catalogue/(:any)/(:any)/status'] = 'admin/catalogue/status/$1/$2';
+$route['admin/catalogue/(:any)/(:any)'] = 'admin/catalogue/edit/$1/$2';
+$route['admin/catalogue/(:any)'] = 'admin/catalogue/domain/$1';
+// System: categories, blacklist and the (read-only) audit trail.
+$route['admin/categories'] = 'admin/system/categories';
+$route['admin/categories/save'] = 'admin/system/save_category';
+$route['admin/categories/(:any)/save'] = 'admin/system/save_category/$1';
+$route['admin/categories/(:any)/delete'] = 'admin/system/delete_category/$1';
 $route['admin/providers'] = 'admin/providers/index';
 $route['admin/providers/create'] = 'admin/providers/create';
 $route['admin/providers/(:any)/test'] = 'admin/providers/test/$1';
@@ -113,16 +175,27 @@ $route['admin/providers/(:any)/sync'] = 'admin/providers/sync/$1';
 $route['admin/providers/(:any)/sync-balance'] = 'admin/providers/sync_balance/$1';
 $route['admin/providers/(:any)'] = 'admin/providers/detail/$1';
 $route['admin/customers'] = 'admin/users/customers';
-$route['admin/customers/(:any)'] = 'admin/users/detail/$1';
 $route['admin/wallets'] = 'admin/users/wallets';
+// Action routes must precede the catch-all detail route below.
+$route['admin/customers/(:any)/status'] = 'admin/users/status/$1';
+$route['admin/customers/(:any)/role'] = 'admin/users/role/$1';
+$route['admin/customers/(:any)/price-group'] = 'admin/users/price_group/$1';
+$route['admin/customers/(:any)/adjust'] = 'admin/users/adjust/$1';
+$route['admin/customers/(:any)'] = 'admin/users/detail/$1';
 $route['admin/payments'] = 'admin/payments/index';
 $route['admin/payments/(:any)/approve'] = 'admin/payments/approve/$1';
 $route['admin/payments/(:any)/reject'] = 'admin/payments/reject/$1';
 $route['admin/payments/(:any)'] = 'admin/payments/detail/$1';
-$route['admin/refills'] = 'admin/refills/index';
-$route['admin/cancellations'] = 'admin/cancellations/index';
-$route['admin/drip-feed'] = 'admin/dripfeed/index';
-$route['admin/subscriptions'] = 'admin/subscriptions/index';
+// Order operations: four queues over the existing engines, one controller.
+// Action routes must precede each catch-all.
+$route['admin/refills'] = 'admin/operations/refills';
+$route['admin/refills/(:any)/request'] = 'admin/operations/refill_request/$1';
+$route['admin/cancellations'] = 'admin/operations/cancellations';
+$route['admin/cancellations/(:any)/cancel'] = 'admin/operations/cancel/$1';
+$route['admin/drip-feed'] = 'admin/operations/dripfeed';
+$route['admin/drip-feed/(:any)/(pause|resume|cancel)'] = 'admin/operations/dripfeed_action/$1/$2';
+$route['admin/subscriptions'] = 'admin/operations/subscriptions';
+$route['admin/subscriptions/(:any)/(pause|resume|cancel)'] = 'admin/operations/subscription_action/$1/$2';
 $route['admin/tickets'] = 'admin/tickets/index';
 $route['admin/tickets/(:any)/reply'] = 'admin/tickets/reply/$1';
 $route['admin/tickets/(:any)/assign'] = 'admin/tickets/assign/$1';
@@ -132,16 +205,43 @@ $route['admin/tickets/(:any)'] = 'admin/tickets/detail/$1';
 $route['admin/affiliates'] = 'admin/affiliates/index';
 $route['admin/affiliates/payout'] = 'admin/affiliates/payout';
 $route['admin/affiliates/(:num)/rate'] = 'admin/affiliates/rate/$1';
-$route['admin/blog'] = 'admin/blog/index';
-$route['admin/faq'] = 'admin/faq/index';
-$route['admin/announcements'] = 'admin/announcements/index';
+// Content: blog, FAQ and announcements share one controller.
+// Action routes must precede the catch-all edit route in each block.
+$route['admin/blog'] = 'admin/content/domain/blog';
+$route['admin/blog/new'] = 'admin/content/create_form/blog';
+$route['admin/blog/create'] = 'admin/content/create/blog';
+$route['admin/blog/(:any)/update'] = 'admin/content/update/blog/$1';
+$route['admin/blog/(:any)/delete'] = 'admin/content/delete/blog/$1';
+$route['admin/blog/(:any)'] = 'admin/content/edit/blog/$1';
+$route['admin/faq'] = 'admin/content/domain/faq';
+$route['admin/faq/new'] = 'admin/content/create_form/faq';
+$route['admin/faq/create'] = 'admin/content/create/faq';
+$route['admin/faq/(:any)/update'] = 'admin/content/update/faq/$1';
+$route['admin/faq/(:any)/status'] = 'admin/content/status/faq/$1';
+$route['admin/faq/(:any)/delete'] = 'admin/content/delete/faq/$1';
+$route['admin/faq/(:any)'] = 'admin/content/edit/faq/$1';
+$route['admin/announcements'] = 'admin/content/domain/announcements';
+$route['admin/announcements/new'] = 'admin/content/create_form/announcements';
+$route['admin/announcements/create'] = 'admin/content/create/announcements';
+$route['admin/announcements/(:any)/update'] = 'admin/content/update/announcements/$1';
+$route['admin/announcements/(:any)/status'] = 'admin/content/status/announcements/$1';
+$route['admin/announcements/(:any)/delete'] = 'admin/content/delete/announcements/$1';
+$route['admin/announcements/(:any)'] = 'admin/content/edit/announcements/$1';
 $route['admin/staff'] = 'admin/staff/index';
-$route['admin/audit-logs'] = 'admin/audit_logs/index';
-$route['admin/appearance'] = 'admin/appearances/index';
-$route['admin/appearance/homepage'] = 'admin/appearances/homepage';
+// Action routes must precede the catch-all below.
+$route['admin/staff/permissions'] = 'admin/staff/permissions';
+$route['admin/staff/permissions/(:any)'] = 'admin/staff/save_permissions/$1';
+$route['admin/audit-logs'] = 'admin/system/audit_logs';
+$route['admin/appearance'] = 'admin/media/appearance';
+$route['admin/appearance/save'] = 'admin/media/save_appearance';
 $route['admin/settings'] = 'admin/settings/index';
-$route['admin/blacklist'] = 'admin/blacklist/index';
+$route['admin/settings/save'] = 'admin/settings/save';
+$route['admin/blacklist'] = 'admin/system/blacklist';
+$route['admin/blacklist/(:any)/add'] = 'admin/system/blacklist_add/$1';
+$route['admin/blacklist/(:any)/(:num)/remove'] = 'admin/system/blacklist_remove/$1/$2';
 $route['admin/media'] = 'admin/media/index';
+$route['admin/media/upload'] = 'admin/media/upload';
+$route['admin/media/(:any)/delete'] = 'admin/media/delete/$1';
 
 // API v1 — reseller
 $route['api/v1/services'] = 'api_v1/services';

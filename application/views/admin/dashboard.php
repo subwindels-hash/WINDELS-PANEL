@@ -44,6 +44,10 @@ $healthy = (int)($health['HEALTHY'] ?? 0);
       array('tickets',            'Open tickets',             'admin/tickets?status=OPEN',     'tickets.view'),
       array('unassigned_tickets', 'Unassigned tickets',       'admin/tickets?unassigned=1',    'tickets.view'),
       array('stuck_orders',       'Orders pending >24h',      'admin/orders?status=PENDING',   'orders.view'),
+      // A far tighter window than the SMM one, because these domains settle in
+      // seconds: a gift card or airtime purchase still processing after half an
+      // hour is a customer who paid and got nothing.
+      array('stuck_services',     'Services stuck >30m',      'admin/analytics',               'reports.view'),
     );
     foreach ($items as $item): list($key, $label, $href, $perm) = $item;
       $count = (int)($queue[$key] ?? 0);
@@ -82,31 +86,34 @@ $healthy = (int)($health['HEALTHY'] ?? 0);
 
   <div class="card">
     <div class="row justify-between mb-2">
-      <h3 class="text-sm font-semibold mb-0">Recent orders</h3>
-      <?php if ($has('orders.view')): ?>
-        <a class="text-xs" href="<?=site_url('admin/orders')?>">All orders →</a>
+      <h3 class="text-sm font-semibold mb-0">Recent sales</h3>
+      <?php if ($has('reports.view')): ?>
+        <a class="text-xs" href="<?=site_url('admin/analytics')?>">Analytics →</a>
       <?php endif; ?>
     </div>
     <?php if (empty($recent)): ?>
-      <p class="muted text-sm">No orders yet.</p>
+      <p class="muted text-sm">No sales yet.</p>
     <?php else: ?>
     <div class="overflow-x-auto">
       <table class="table">
-        <thead><tr><th>Order</th><th>Customer</th><th class="text-right">Charge</th><th>Status</th></tr></thead>
+        <thead><tr><th>Sale</th><th>Customer</th><th class="text-right">Charge</th><th>Status</th></tr></thead>
         <tbody>
-        <?php foreach ($recent as $o): ?>
+        <?php foreach ($recent as $r): ?>
           <tr>
             <td>
-              <?php if ($has('orders.view')): ?>
-                <a class="mono text-xs" href="<?=site_url('admin/orders/'.$o->public_id)?>"><?=htmlspecialchars($o->public_id)?></a>
+              <?php if ($r['url']): ?>
+                <a class="mono text-xs" href="<?=site_url($r['url'])?>"><?=htmlspecialchars($r['public_id'])?></a>
               <?php else: ?>
-                <span class="mono text-xs"><?=htmlspecialchars($o->public_id)?></span>
+                <span class="mono text-xs"><?=htmlspecialchars($r['public_id'])?></span>
               <?php endif; ?>
-              <div class="text-xs muted"><?=htmlspecialchars((string)$o->service_name)?></div>
+              <div class="text-xs muted">
+                <span class="badge badge-default"><?=htmlspecialchars($r['domain'])?></span>
+                <?=htmlspecialchars($r['label'])?>
+              </div>
             </td>
-            <td class="text-sm"><?=htmlspecialchars((string)$o->username)?></td>
-            <td class="text-right mono"><?=windels_money($o->charge)?></td>
-            <td><span class="<?=DashboardStats::status_badge($o->status)?>"><?=htmlspecialchars($o->status)?></span></td>
+            <td class="text-sm"><?=htmlspecialchars((string)$r['username'])?></td>
+            <td class="text-right mono"><?=windels_money($r['amount'], $r['currency'])?></td>
+            <td><span class="<?=DashboardStats::status_badge($r['status'])?>"><?=htmlspecialchars($r['status'])?></span></td>
           </tr>
         <?php endforeach; ?>
         </tbody>
@@ -114,4 +121,33 @@ $healthy = (int)($health['HEALTHY'] ?? 0);
     </div>
     <?php endif; ?>
   </div>
+</div>
+
+<div class="card mt-4">
+  <div class="row justify-between mb-2">
+    <h3 class="text-sm font-semibold mb-0">Revenue by domain · 30 days</h3>
+    <a class="text-xs" href="<?=site_url('admin/analytics')?>">Full analytics →</a>
+  </div>
+  <?php if (empty($domains)): ?>
+    <p class="muted text-sm">Nothing sold in the last 30 days.</p>
+  <?php else: ?>
+  <div class="overflow-x-auto">
+    <table class="table">
+      <thead><tr><th>Domain</th><th class="text-right">Sales</th>
+                 <th class="text-right">Net</th><th class="text-right">Margin</th></tr></thead>
+      <tbody>
+      <?php foreach ($domains as $domain => $d): ?>
+        <tr>
+          <td><?=htmlspecialchars($domain)?></td>
+          <td class="text-right mono"><?=number_format((int)$d['sales'])?></td>
+          <td class="text-right mono"><?=windels_money($d['net'])?></td>
+          <td class="text-right mono">
+            <?=$d['margin'] === null ? '<span class="muted">—</span>' : windels_money($d['margin'])?>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+  <?php endif; ?>
 </div>

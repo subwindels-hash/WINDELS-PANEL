@@ -117,6 +117,9 @@ class DashboardStats {
             'PROCESSING'  => 'badge badge-info',
             'IN_PROGRESS' => 'badge badge-info badge-dot',
             'COMPLETED'   => 'badge badge-success badge-dot',
+            // Service transactions (VTU and every later domain) end in
+            // SUCCESSFUL rather than COMPLETED.
+            'SUCCESSFUL'  => 'badge badge-success badge-dot',
             'PARTIAL'     => 'badge badge-warning badge-dot',
             'CANCELED'    => 'badge badge-default',
             'CANCELLED'   => 'badge badge-default',

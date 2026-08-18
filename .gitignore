@@ -6,3 +6,5 @@
 /storage/cache/*
 /node_modules/
 /assets/css/tailwind.css
+/assets/uploads/*
+!/assets/uploads/.gitignore

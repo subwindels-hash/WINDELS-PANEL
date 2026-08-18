@@ -10,6 +10,12 @@ class Vtu_network_model extends MY_Model {
         return $this->db->order_by('sorting','ASC')->get($this->table)->result();
     }
 
+    /** Every network, switched on or not — the admin catalogue picker. */
+    public function all_networks(){
+        return $this->db->order_by('service_type','ASC')->order_by('sorting','ASC')
+                        ->get($this->table)->result();
+    }
+
     public function find_by_code($code){
         return $this->db->where('code',$code)->get($this->table)->row();
     }

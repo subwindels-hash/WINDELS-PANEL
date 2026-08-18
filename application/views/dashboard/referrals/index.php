@@ -1,6 +1,6 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
 $percent  = rtrim(rtrim(number_format((float)$stats['percent'], 4, '.', ''), '0'), '.');
-$currency = 'USD';
+$currency = windels_base_currency();
 ?>
 <?php if (empty($stats['enabled'])): ?>
   <div class="alert alert-warning">The referral program is currently paused. Existing commissions are unaffected.</div>

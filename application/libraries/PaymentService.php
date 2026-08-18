@@ -52,7 +52,7 @@ class PaymentService {
         if ($method->max_amount !== null && bccomp($amount, (string)$method->max_amount, 8) > 0)
             return array('ok'=>false,'error'=>'Maximum is '.$method->max_amount,'code'=>'AMOUNT_TOO_HIGH');
 
-        $currency = strtoupper($input['currency'] ?? 'USD');
+        $currency = strtoupper($input['currency'] ?? windels_base_currency());
         if (!preg_match('/^[A-Z]{3}$/', $currency)) return array('ok'=>false,'error'=>'Bad currency','code'=>'BAD_CURRENCY');
 
         $idem = $this->normalise_idem($input['idempotency_key'] ?? null, $user);

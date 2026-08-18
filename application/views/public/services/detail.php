@@ -135,10 +135,13 @@ $badges = array(
   if(!qty||!total) return;
   var perUnit=parseFloat(<?=json_encode($per_unit, JSON_PRESERVE_ZERO_FRACTION)?>);
   var isPackage=<?=json_encode($u->service_type === 'PACKAGE')?>;
+  // Currency symbol from the server so live totals match server-rendered prices.
+  var sym=<?=json_encode(trim(str_replace(array('0','.',','), '', windels_money(0))))?>;
+  function fmt(v){return sym+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
   function recalc(){
     var q=parseInt(qty.value,10)||0;
     var v = isPackage ? perUnit : perUnit*q;
-    total.textContent='$'+v.toFixed(2);
+    total.textContent=fmt(v);
   }
   qty.addEventListener('input',recalc); recalc();
 })();

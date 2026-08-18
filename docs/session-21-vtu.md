@@ -149,7 +149,7 @@ Phases C–G from the audit, unchanged:
 - **C** — cable/electricity/education are implemented in the service, but only
   airtime and data have had real provider integration exercised; meter
   verification is wired but unproven against a live vendor.
-- **D** — virtual numbers + OTP (new lifecycle: reservation, expiry, messages)
+- ~~**D** — virtual numbers + OTP (new lifecycle: reservation, expiry, messages)~~ — done, [session 25](session-25-numbers.md)
 - **E** — identity NIN/BVN (needs the §22 sensitive-data controls)
 - **F** — gift cards + marketplace
 - **G** — admin sections and analytics for every new domain (§25/§26)
@@ -157,3 +157,15 @@ Phases C–G from the audit, unchanged:
 Also deferred: the base currency is still `USD` while the spec shows ₦ — that
 decision is still open, and changing it affects existing rows and every seeded
 price.
+
+> **Update.** The currency question was settled in
+> [session 22](session-22-currency.md): the base is now NGN. The admin VTU
+> screens — the missing surface for the `vtu.*` permissions seeded here — landed
+> in [session 23](session-23-admin-vtu.md), which also covers phase G for the
+> VTU domain. Phase C's open question — no live vendor, meter verification
+> unproven — was closed in [session 24](session-24-vtpass.md): `VtpassAdapter`
+> integrates all five VTU types, verification and requery settlement against
+> real VTpass response shapes. Note that `StandardVtuAdapter`, written here from
+> a remembered VTpass shape, turned out to have three money-losing defects
+> (Bearer auth, requerying by the wrong identifier, and refunding on timeout);
+> it remains registered but VTpass deployments should use `VTPASS`.

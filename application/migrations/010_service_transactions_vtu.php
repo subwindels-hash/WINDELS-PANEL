@@ -39,7 +39,7 @@ class Migration_Service_transactions_vtu extends CI_Migration {
               status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING|PROCESSING|SUCCESSFUL|FAILED|CANCELLED|REFUNDED',
               amount DECIMAL(20,8) NOT NULL COMMENT 'what the customer paid',
               provider_cost DECIMAL(20,8) NULL COMMENT 'frozen at request time (§15)',
-              currency CHAR(3) NOT NULL DEFAULT 'USD',
+              currency CHAR(3) NOT NULL DEFAULT 'NGN',
               wallet_transaction_id BIGINT UNSIGNED NULL COMMENT 'the debit; NULL until charged',
               refunded_amount DECIMAL(20,8) NOT NULL DEFAULT 0.00000000,
               provider_reference VARCHAR(128) NULL,

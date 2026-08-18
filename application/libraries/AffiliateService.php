@@ -191,7 +191,7 @@ class AffiliateService {
             'referral_id' => $referral->id,
             'order_id'    => $order->id,
             'amount'      => $amount,
-            'currency'    => $order->currency ?? 'USD',
+            'currency'    => $order->currency ?? windels_base_currency(),
             'status'      => Referral_commission_model::STATUS_PENDING,
             'created_at'  => gmdate('Y-m-d H:i:s'),
         ));

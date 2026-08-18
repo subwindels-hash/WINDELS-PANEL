@@ -18,6 +18,10 @@ class Demo_seeder extends Seeder {
         $this->password = getenv('DEMO_PASSWORD') ?: 'Demo!' . bin2hex(random_bytes(4));
 
         $provider_id   = $this->seed_provider();
+        $this->seed_vtpass_provider();
+        $this->seed_fivesim_provider();
+        $this->seed_dojah_provider();
+        $this->seed_reloadly_provider();
         $category_ids  = $this->seed_categories();
         $service_ids   = $this->seed_services($category_ids, $provider_id);
         $user_ids      = $this->seed_users();
@@ -44,7 +48,7 @@ class Demo_seeder extends Seeder {
             'api_key_encrypted'     => $enc,
             'api_type'              => 'MOCK',
             'status'                => 'ACTIVE',
-            'currency'              => 'USD',
+            'currency'              => windels_base_currency(),
             'balance'               => '1000.00000000',
             'timeout_ms'            => 15000,
             'retry_policy'          => json_encode(array('maxRetries'=>3,'backoffMs'=>array(500,1500,4000))),
@@ -53,6 +57,187 @@ class Demo_seeder extends Seeder {
             'sync_interval_minutes' => 60,
             'health_status'         => 'ONLINE',
             'notes'                 => 'Offline adapter used by tests and APP_ENV=demo. No real network calls.',
+        ));
+    }
+
+    /**
+     * A VTpass sandbox provider, but only when its credentials are in the
+     * environment.
+     *
+     * Seeding it unconditionally would be worse than not seeding it: an ACTIVE
+     * VTU provider with no keys is picked ahead of the MOCK adapter by
+     * VtuService::provider_for(), so every demo purchase would start failing
+     * against a vendor nobody configured. With keys present it is seeded
+     * INACTIVE anyway — an admin turns it on deliberately, after testing the
+     * connection.
+     */
+    private function seed_vtpass_provider() {
+        $api_key = getenv('VTPASS_API_KEY');
+        $public  = getenv('VTPASS_PUBLIC_KEY');
+        $secret  = getenv('VTPASS_SECRET_KEY');
+        if (!$api_key || !$public || !$secret) {
+            $this->out('vtpass: no VTPASS_* credentials in env — skipping (MOCK stays the VTU provider)');
+            return null;
+        }
+
+        $this->ci->load->library('EncryptionService');
+        $enc = $this->ci->encryptionservice->encrypt(json_encode(array(
+            'api_key' => $api_key, 'public_key' => $public, 'secret_key' => $secret,
+        )));
+        $url = getenv('VTPASS_BASE_URL') ?: 'https://sandbox.vtpass.com/api';
+
+        return $this->upsert('providers', array('name'=>'VTpass'), array(
+            'public_id'             => $this->pid(),
+            'api_url'               => rtrim($url, '/'),
+            'api_key_encrypted'     => $enc,
+            'api_type'              => 'VTPASS',
+            'status'                => 'INACTIVE',
+            'currency'              => 'NGN',
+            'timeout_ms'            => 20000,
+            'retry_policy'          => json_encode(array(
+                'maxRetries' => 2, 'backoffMs' => array(500, 1500),
+            )),
+            'rate_multiplier'       => '1.00000000',
+            'markup'                => '0.00000000',
+            'sync_interval_minutes' => 720,
+            'notes'                 => 'Live VTU vendor. Test the connection, sync the '
+                                      .'catalogue and price the products before activating.',
+        ));
+    }
+
+    /**
+     * A 5sim virtual-number vendor, on the same terms as VTpass: only when
+     * its token is in the environment, and INACTIVE even then.
+     *
+     * The rate_to_base note matters. 5sim quotes roubles; this panel is
+     * denominated in naira. Without FIVESIM_RATE_TO_BASE the adapter reports
+     * no converted cost at all, which shows up as an unknown margin rather
+     * than a rouble figure masquerading as naira.
+     */
+    private function seed_fivesim_provider() {
+        $token = getenv('FIVESIM_API_KEY');
+        if (!$token) {
+            $this->out('5sim: no FIVESIM_API_KEY in env — skipping (MOCK_NUMBER stays the numbers provider)');
+            return null;
+        }
+
+        $this->ci->load->library('EncryptionService');
+        $enc = $this->ci->encryptionservice->encrypt($token);
+        $url = getenv('FIVESIM_BASE_URL') ?: 'https://5sim.net/v1';
+        $rate = getenv('FIVESIM_RATE_TO_BASE');
+
+        $config = array('maxRetries' => 2, 'backoffMs' => array(500, 1500));
+        if ($rate && is_numeric($rate) && (float)$rate > 0) {
+            $config['fivesim'] = array('rate_to_base' => (string)$rate);
+        }
+
+        return $this->upsert('providers', array('name'=>'5sim'), array(
+            'public_id'             => $this->pid(),
+            'api_url'               => rtrim($url, '/'),
+            'api_key_encrypted'     => $enc,
+            'api_type'              => 'FIVESIM',
+            'status'                => 'INACTIVE',
+            'currency'              => 'RUB',
+            'timeout_ms'            => 20000,
+            'retry_policy'          => json_encode($config),
+            'rate_multiplier'       => '1.00000000',
+            'markup'                => '0.00000000',
+            'sync_interval_minutes' => 60,
+            'notes'                 => 'Live virtual-number vendor, priced in RUB. Set '
+                                      .'FIVESIM_RATE_TO_BASE before syncing, or costs come '
+                                      .'back unconverted. Sync and price the products before activating.',
+        ));
+    }
+
+    /**
+     * A Dojah identity vendor, on the same env-gated, INACTIVE terms as the
+     * other two live vendors.
+     *
+     * The default URL is the sandbox. Pointing a demo install at api.dojah.io
+     * with real keys would spend real money on every click, and the failure
+     * mode of the reverse mistake — sandbox keys against the live URL — is a
+     * flat 401, which is a much better afternoon.
+     */
+    private function seed_dojah_provider() {
+        $api_key = getenv('DOJAH_API_KEY');
+        $app_id  = getenv('DOJAH_APP_ID');
+        if (!$api_key || !$app_id) {
+            $this->out('dojah: no DOJAH_* credentials in env — skipping (MOCK_IDENTITY stays the identity provider)');
+            return null;
+        }
+
+        $this->ci->load->library('EncryptionService');
+        $enc = $this->ci->encryptionservice->encrypt(json_encode(array(
+            'api_key' => $api_key, 'app_id' => $app_id,
+        )));
+        $url = getenv('DOJAH_BASE_URL') ?: 'https://sandbox.dojah.io';
+
+        return $this->upsert('providers', array('name'=>'Dojah'), array(
+            'public_id'             => $this->pid(),
+            'api_url'               => rtrim($url, '/'),
+            'api_key_encrypted'     => $enc,
+            'api_type'              => 'DOJAH',
+            'status'                => 'INACTIVE',
+            'currency'              => 'NGN',
+            'timeout_ms'            => 30000,
+            'retry_policy'          => json_encode(array(
+                'maxRetries' => 2, 'backoffMs' => array(500, 1500),
+            )),
+            'rate_multiplier'       => '1.00000000',
+            'markup'                => '0.00000000',
+            'sync_interval_minutes' => 1440,
+            'notes'                 => 'Live identity/KYC vendor. There is no catalogue to '
+                                      .'sync — price the identity products by hand against your '
+                                      .'per-lookup contract, then activate. Every lookup is billable, '
+                                      .'including ones that find nobody.',
+        ));
+    }
+
+    /**
+     * A Reloadly gift card vendor, on the same env-gated, INACTIVE terms as
+     * the other live vendors.
+     *
+     * The default URL is the sandbox, and the adapter derives its OAuth
+     * audience from that URL — so a demo install cannot accidentally mint a
+     * production token and start spending real money on test clicks. The
+     * reverse mistake, sandbox credentials against the live host, is a flat
+     * 401, which is a much better afternoon.
+     *
+     * No catalogue is seeded with it: run the sync, then price the
+     * denominations against the rate you actually get, then activate.
+     */
+    private function seed_reloadly_provider() {
+        $client_id     = getenv('RELOADLY_CLIENT_ID');
+        $client_secret = getenv('RELOADLY_CLIENT_SECRET');
+        if (!$client_id || !$client_secret) {
+            $this->out('reloadly: no RELOADLY_* credentials in env — skipping (MOCK_GIFTCARD stays the gift card provider)');
+            return null;
+        }
+
+        $this->ci->load->library('EncryptionService');
+        $enc = $this->ci->encryptionservice->encrypt(json_encode(array(
+            'client_id' => $client_id, 'client_secret' => $client_secret,
+        )));
+        $url = getenv('RELOADLY_BASE_URL') ?: 'https://giftcards-sandbox.reloadly.com';
+
+        return $this->upsert('providers', array('name'=>'Reloadly'), array(
+            'public_id'             => $this->pid(),
+            'api_url'               => rtrim($url, '/'),
+            'api_key_encrypted'     => $enc,
+            'api_type'              => 'RELOADLY',
+            'status'                => 'INACTIVE',
+            'currency'              => 'NGN',
+            'timeout_ms'            => 30000,
+            'retry_policy'          => json_encode(array(
+                'maxRetries' => 2, 'backoffMs' => array(500, 1500),
+            )),
+            'rate_multiplier'       => '1.00000000',
+            'markup'                => '0.00000000',
+            'sync_interval_minutes' => 720,
+            'notes'                 => 'Live gift card vendor. Sync the catalogue, then price the '
+                                      .'denominations by hand — vendor cost moves with the FX rate, so '
+                                      .'a sync never sets your selling price. Cards are charged to your '
+                                      .'Reloadly wallet whether or not the code reaches the customer.',
         ));
     }
 
@@ -230,7 +415,7 @@ class Demo_seeder extends Seeder {
             $wallet_id = $this->insert_once('wallets', array('user_id'=>$uid), array(
                 'public_id' => $this->pid(),
                 'balance'   => '0.00000000',
-                'currency'  => 'USD',
+                'currency'  => windels_base_currency(),
             ));
             $target = $balances[$username] ?? '0.00000000';
             if (bccomp($target, '0', 8) <= 0) continue;
@@ -248,7 +433,7 @@ class Demo_seeder extends Seeder {
                 'amount'          => $target,
                 'balance_before'  => '0.00000000',
                 'balance_after'   => $target,
-                'currency'        => 'USD',
+                'currency'        => windels_base_currency(),
                 'reference_type'  => 'Seed',
                 'reference_id'    => 'demo',
                 'note'            => 'Demo opening balance',
@@ -264,7 +449,7 @@ class Demo_seeder extends Seeder {
                     'account'               => $entry[0],
                     'direction'             => $entry[1],
                     'amount'                => $target,
-                    'currency'              => 'USD',
+                    'currency'              => windels_base_currency(),
                     'created_at'            => $this->now(),
                 ));
                 $this->bump('ledger_entries','inserted');
@@ -311,7 +496,7 @@ class Demo_seeder extends Seeder {
                 'charge'              => $charge,
                 'rate_at_order'       => $service->rate,
                 'provider_charge'     => $pcharge,
-                'currency'            => 'USD',
+                'currency'            => windels_base_currency(),
                 'start_count'         => ($status === 'PENDING') ? NULL : 1000 + $i * 37,
                 'remains'             => ($status === 'PARTIAL') ? (int)round($qty * 0.2) : (($status === 'COMPLETED') ? 0 : NULL),
                 'refunded_amount'     => ($status === 'PARTIAL') ? bcmul($charge, '0.2', 8) : '0.00000000',
@@ -371,7 +556,7 @@ class Demo_seeder extends Seeder {
             'order_id'    => $order ? $order->id : NULL,
         ), array(
             'amount'   => $amount,
-            'currency' => 'USD',
+            'currency' => windels_base_currency(),
             'status'   => 'PENDING',
         ));
     }

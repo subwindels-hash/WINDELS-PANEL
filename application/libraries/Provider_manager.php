@@ -3,6 +3,9 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 
 require_once __DIR__.'/ProviderAdapterInterface.php';
 require_once __DIR__.'/VtuProviderInterface.php';
+require_once __DIR__.'/NumberProviderInterface.php';
+require_once __DIR__.'/IdentityProviderInterface.php';
+require_once __DIR__.'/GiftcardProviderInterface.php';
 
 /**
  * Provider_manager — one registry over every provider family (§14).
@@ -17,8 +20,11 @@ require_once __DIR__.'/VtuProviderInterface.php';
  */
 class Provider_manager {
 
-    const FAMILY_SMM = 'SMM';
-    const FAMILY_VTU = 'VTU';
+    const FAMILY_SMM    = 'SMM';
+    const FAMILY_VTU    = 'VTU';
+    const FAMILY_NUMBER = 'NUMBER';
+    const FAMILY_IDENTITY = 'IDENTITY';
+    const FAMILY_GIFTCARD = 'GIFTCARD';
 
     /** family => [api_type => [class, file]] */
     private static $registry = array(
@@ -29,6 +35,19 @@ class Provider_manager {
         self::FAMILY_VTU => array(
             'MOCK'         => array('MockVtuAdapter', 'MockVtuAdapter.php'),
             'STANDARD_VTU' => array('StandardVtuAdapter', 'StandardVtuAdapter.php'),
+            'VTPASS'       => array('VtpassAdapter', 'VtpassAdapter.php'),
+        ),
+        self::FAMILY_NUMBER => array(
+            'MOCK_NUMBER' => array('MockNumberAdapter', 'MockNumberAdapter.php'),
+            'FIVESIM'     => array('FiveSimAdapter', 'FiveSimAdapter.php'),
+        ),
+        self::FAMILY_IDENTITY => array(
+            'MOCK_IDENTITY' => array('MockIdentityAdapter', 'MockIdentityAdapter.php'),
+            'DOJAH'         => array('DojahAdapter', 'DojahAdapter.php'),
+        ),
+        self::FAMILY_GIFTCARD => array(
+            'MOCK_GIFTCARD' => array('MockGiftcardAdapter', 'MockGiftcardAdapter.php'),
+            'RELOADLY'      => array('ReloadlyAdapter', 'ReloadlyAdapter.php'),
         ),
     );
 
@@ -73,9 +92,10 @@ class Provider_manager {
         list($class, $file) = self::$registry[$family][$type];
         require_once __DIR__.'/'.$file;
 
-        // MOCK adapters are offline doubles. Some predate this registry and
-        // take no constructor argument at all, so match what they declare.
-        if ($type === 'MOCK') {
+        // MOCK adapters are offline doubles (MOCK, MOCK_NUMBER, ...). Some
+        // predate this registry and take no constructor argument at all, so
+        // match what they declare rather than assuming the two-arg shape.
+        if (strpos($type, 'MOCK') === 0) {
             $ref = new ReflectionClass($class);
             $ctor = $ref->getConstructor();
             return ($ctor && $ctor->getNumberOfParameters() > 0)

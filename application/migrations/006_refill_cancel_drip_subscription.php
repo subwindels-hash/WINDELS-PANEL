@@ -75,7 +75,7 @@ class Migration_Refill_cancel_drip_subscription extends CI_Migration {
               runs_completed INT NOT NULL DEFAULT 0,
               interval_minutes INT NOT NULL,
               charge DECIMAL(20,8) NOT NULL DEFAULT 0.00000000 COMMENT 'total reserved charge',
-              currency CHAR(3) NOT NULL DEFAULT 'USD',
+              currency CHAR(3) NOT NULL DEFAULT 'NGN',
               fields JSON NULL,
               start_at DATETIME NULL,
               next_run_at DATETIME NULL,

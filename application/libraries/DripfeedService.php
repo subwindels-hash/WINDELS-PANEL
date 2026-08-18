@@ -84,7 +84,7 @@ class DripfeedService {
             'runs_completed' => 0,
             'interval_minutes' => $interval,
             'charge' => $charge,
-            'currency' => 'USD',
+            'currency' => windels_base_currency(),
             'fields' => !empty($input['fields']) ? json_encode($input['fields']) : null,
             'start_at' => $start_at,
             'next_run_at' => $next_run_at,

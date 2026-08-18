@@ -4,6 +4,18 @@
 * * * * * cd /var/www/html && php index.php cron dripfeed >> storage/logs/cron.log 2>&1
 */2 * * * * cd /var/www/html && php index.php cron order_status >> storage/logs/cron.log 2>&1
 */2 * * * * cd /var/www/html && php index.php cron vtu_status >> storage/logs/cron.log 2>&1
+# Virtual numbers expire in minutes, so this one runs every minute: a missed
+# tick is a customer charged for a reservation nobody polled before it died.
+* * * * * cd /var/www/html && php index.php cron numbers_status >> storage/logs/cron.log 2>&1
+
+# Identity results are deleted once past the retention window set in settings
+# (identity_retention_days). Nightly and off-peak on purpose.
+30 3 * * * cd /var/www/html && php index.php cron identity_purge >> storage/logs/cron.log 2>&1
+
+# Gift cards are ordered in one call and issued in another. Until the codes
+# land the customer has paid for nothing, so this chases them — and writes off
+# (and refunds) the orders a vendor accepted but never fulfilled.
+*/2 * * * * cd /var/www/html && php index.php cron giftcard_codes >> storage/logs/cron.log 2>&1
 */5 * * * * cd /var/www/html && php index.php cron subscriptions >> storage/logs/cron.log 2>&1
 */5 * * * * cd /var/www/html && php index.php cron provider_health >> storage/logs/cron.log 2>&1
 */5 * * * * cd /var/www/html && php index.php cron refill_status >> storage/logs/cron.log 2>&1

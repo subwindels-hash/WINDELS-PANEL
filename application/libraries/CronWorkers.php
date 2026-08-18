@@ -109,6 +109,119 @@ class CronWorkers {
         );
     }
 
+    /* ================= virtual number settlement (§10, §11) ================ */
+
+    /**
+     * Poll live virtual-number reservations for their OTP, and expire the ones
+     * whose deadline has passed.
+     *
+     * This is the worker the whole domain hinges on. A virtual number is the
+     * first thing this panel sells where doing nothing is the expensive
+     * option: the customer has already paid, the vendor is holding a number
+     * for a handful of minutes, and if nobody checks, the reservation dies
+     * unfulfilled with the charge still taken. So it must run often — and
+     * every outcome, including "the deadline passed", is settled through
+     * NumberService, which refunds via TransactionEngine.
+     *
+     * Expiry runs *after* polling on purpose: a code that arrived in the last
+     * few seconds before the deadline still counts, and checking first means
+     * the customer keeps a number they actually received a code on.
+     */
+    public function numbers_status($limit = 200) {
+        $this->need(array('Virtual_number_model', 'Service_transaction_model'),
+                    array('NumberService'));
+
+        $live = $this->ci->Virtual_number_model->awaiting_sms($limit);
+        $expired = $this->ci->Virtual_number_model->expired(null, $limit);
+        if (!$live && !$expired) {
+            return array('processed'=>0, 'failed'=>0, 'message'=>'no live number reservations');
+        }
+
+        $processed = 0; $failed = 0; $received = 0; $released = 0;
+        $handled = array();
+
+        foreach ($live as $number) {
+            $handled[(int)$number->id] = true;
+            try {
+                $res = $this->ci->numberservice->poll($number, 'CRON');
+            } catch (Exception $e) {
+                log_message('error', 'numbers_status poll: '.$e->getMessage());
+                $failed++;
+                continue;
+            }
+            $processed++;
+            if (empty($res['ok'])) { $failed++; continue; }
+            if (!empty($res['new_messages'])) $received++;
+            if (in_array($res['state'] ?? '', array('EXPIRED','CANCELLED','BANNED'), true)) $released++;
+        }
+
+        // Reservations the poll did not reach — no vendor reference, or the
+        // list was truncated by $limit — still have to be settled, or a
+        // customer stays charged for a number nobody will ever check again.
+        foreach ($expired as $number) {
+            if (isset($handled[(int)$number->id])) continue;
+            try {
+                $res = $this->ci->numberservice->expire($number, 'CRON');
+            } catch (Exception $e) {
+                log_message('error', 'numbers_status expire: '.$e->getMessage());
+                $failed++;
+                continue;
+            }
+            $processed++;
+            if (empty($res['ok'])) { $failed++; continue; }
+            $released++;
+        }
+
+        return array(
+            'processed' => $processed,
+            'failed'    => $failed,
+            'message'   => $received.' received a code, '.$released.' released of '.$processed.' checked',
+        );
+    }
+
+    /* ======================== identity retention =========================== */
+
+    /**
+     * Delete identity results that have outlived their retention window (§22).
+     *
+     * This is the job that makes the promise on the customer-facing page true.
+     * It is scheduled nightly rather than hourly because retention is measured
+     * in days, and a sweep that runs while staff are working is a sweep that
+     * deletes a record somebody has open.
+     *
+     * The work itself lives in IdentityService::purge_expired(), so the
+     * scheduled sweep and the admin's "delete this now" button clear exactly
+     * the same fields. Only the payload goes; the row, the money and the audit
+     * trail stay.
+     */
+    public function identity_purge($limit = 500) {
+        $this->need(array('Identity_check_model'), array('IdentityService'));
+        return $this->ci->identityservice->purge_expired(null, $limit);
+    }
+
+    /* ===================== gift card delivery (§23) ======================== */
+
+    /**
+     * Chase gift card orders the vendor accepted but has not issued codes for.
+     *
+     * This is the worker that closes the gap the domain is built around: a
+     * gift card order is accepted in one call and delivered in another, and
+     * between them the customer has paid for a code that does not exist yet.
+     * Doing nothing leaves them charged indefinitely, so this runs every two
+     * minutes — often enough that the usual case (a card issued seconds later,
+     * already collected inline by the purchase itself) is a no-op, and slow
+     * enough not to hammer a vendor that is genuinely still minting.
+     *
+     * The work lives in GiftcardService::settle_open_orders(), so the sweep,
+     * the purchase path and the admin's "check now" button apply identical
+     * rules — including the one that decides when an undelivered order stops
+     * being worth retrying and becomes a refund.
+     */
+    public function giftcard_codes($limit = 100) {
+        $this->need(array('Giftcard_order_model'), array('GiftcardService'));
+        return $this->ci->giftcardservice->settle_open_orders($limit);
+    }
+
     /* ===================== order status synchronisation ==================== */
 
     /**
