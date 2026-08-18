@@ -163,7 +163,11 @@ $route['admin/catalogue/(:any)/(:any)/update'] = 'admin/catalogue/update/$1/$2';
 $route['admin/catalogue/(:any)/(:any)/status'] = 'admin/catalogue/status/$1/$2';
 $route['admin/catalogue/(:any)/(:any)'] = 'admin/catalogue/edit/$1/$2';
 $route['admin/catalogue/(:any)'] = 'admin/catalogue/domain/$1';
-$route['admin/categories'] = 'admin/categories/index';
+// System: categories, blacklist and the (read-only) audit trail.
+$route['admin/categories'] = 'admin/system/categories';
+$route['admin/categories/save'] = 'admin/system/save_category';
+$route['admin/categories/(:any)/save'] = 'admin/system/save_category/$1';
+$route['admin/categories/(:any)/delete'] = 'admin/system/delete_category/$1';
 $route['admin/providers'] = 'admin/providers/index';
 $route['admin/providers/create'] = 'admin/providers/create';
 $route['admin/providers/(:any)/test'] = 'admin/providers/test/$1';
@@ -227,12 +231,14 @@ $route['admin/staff'] = 'admin/staff/index';
 // Action routes must precede the catch-all below.
 $route['admin/staff/permissions'] = 'admin/staff/permissions';
 $route['admin/staff/permissions/(:any)'] = 'admin/staff/save_permissions/$1';
-$route['admin/audit-logs'] = 'admin/audit_logs/index';
+$route['admin/audit-logs'] = 'admin/system/audit_logs';
 $route['admin/appearance'] = 'admin/appearances/index';
 $route['admin/appearance/homepage'] = 'admin/appearances/homepage';
 $route['admin/settings'] = 'admin/settings/index';
 $route['admin/settings/save'] = 'admin/settings/save';
-$route['admin/blacklist'] = 'admin/blacklist/index';
+$route['admin/blacklist'] = 'admin/system/blacklist';
+$route['admin/blacklist/(:any)/add'] = 'admin/system/blacklist_add/$1';
+$route['admin/blacklist/(:any)/(:num)/remove'] = 'admin/system/blacklist_remove/$1/$2';
 $route['admin/media'] = 'admin/media/index';
 
 // API v1 — reseller

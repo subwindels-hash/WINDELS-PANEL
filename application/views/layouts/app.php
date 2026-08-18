@@ -19,6 +19,7 @@ $nav = $is_admin ? array(
     array('admin/affiliates',   'Affiliates', 'affiliates.view', 'gift'),
     array('admin/blog',         'Content',    'blog.manage',     'list'),
     array('admin/staff',        'Staff',      'staff.manage',    'shield'),
+    array('admin/categories',   'System',     'audit.view',      'globe'),
     array('admin/settings',     'Settings',   'settings.manage', 'settings'),
 ) : array(
     array('dashboard',           'Dashboard',  null, 'dashboard'),

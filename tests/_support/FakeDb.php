@@ -36,6 +36,7 @@ class FakeDb
 
     private $pending_where = array();
     private $pending_or_where = array();
+    private $pending_distinct = false;
     private $pending_groups = array();
     private $current_group = array('and' => array(), 'or' => array());
     private $group_depth = 0;
@@ -183,6 +184,19 @@ class FakeDb
     /**
      * where_in('col', array(...)) — matched by the sentinel below in matches().
      */
+    /**
+     * SELECT DISTINCT.
+     *
+     * Applied over the projected rows, so it de-duplicates on the selected
+     * columns rather than the whole row — which is what makes
+     * `select('resource')->distinct()` return one entry per resource.
+     */
+    public function distinct($flag = true)
+    {
+        $this->pending_distinct = (bool)$flag;
+        return $this;
+    }
+
     public function where_in($key, array $values)
     {
         $this->pending_where[$key] = array('__in' => array_map('strval', $values));
@@ -198,6 +212,7 @@ class FakeDb
         $aliases = $this->pending_aliases;
         $aggregates = $this->pending_aggregates;
         $group = $this->pending_group;
+        $distinct = $this->pending_distinct; $this->pending_distinct = false;
         $this->pending_from = null; $this->pending_joins = array();
         $this->pending_select = array(); $this->pending_aggregates = array();
         $this->pending_group = array(); $this->pending_select_all = false;
@@ -238,6 +253,17 @@ class FakeDb
                 }
                 $matched[] = (object)$full;
             }
+        }
+
+        if ($distinct) {
+            $seen = array(); $unique = array();
+            foreach ($matched as $rowObj) {
+                $key = serialize(get_object_vars($rowObj));
+                if (isset($seen[$key])) continue;
+                $seen[$key] = true;
+                $unique[] = $rowObj;
+            }
+            $matched = $unique;
         }
 
         if ($group) {
@@ -605,6 +631,7 @@ class FakeDb
         $this->pending_where = array(); $this->pending_or_where = array();
         $this->pending_groups = array(); $this->group_depth = 0;
         $this->current_group = array('and' => array(), 'or' => array());
+        $this->pending_distinct = false;
         $this->pending_like = array();
         $this->pending_order = array(); $this->pending_limit = null;
         $this->pending_from = null; $this->pending_joins = array();
