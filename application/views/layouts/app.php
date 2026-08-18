@@ -12,6 +12,7 @@ $nav = $is_admin ? array(
     array('admin/analytics',    'Analytics',  'reports.view',    'chart'),
     array('admin/customers',    'Customers',  'users.view',      'users'),
     array('admin/catalogue',    'Catalogue',  'services.view',   'package'),
+    array('admin/refills',      'Operations', 'orders.refill',   'repeat'),
     array('admin/providers',    'Providers',  'providers.manage','server'),
     array('admin/payments',     'Payments',   'payments.view',   'credit-card'),
     array('admin/tickets',      'Tickets',    'tickets.view',    'message-square'),

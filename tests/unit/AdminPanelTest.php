@@ -254,6 +254,8 @@ class AdminPanelTest extends TestCase
             'Catalogue.php'=> array('create','update','status'),
             // Users suspends accounts, grants roles and adjusts balances.
             'Users.php'    => array('status','role','price_group','adjust'),
+            // Operations refunds through the schedulers' own cancel paths.
+            'Operations.php' => array('refill_request','cancel','dripfeed_action','subscription_action'),
         );
         foreach ($expected as $file => $actions) {
             $src = file_get_contents(self::$root.'/application/controllers/admin/'.$file);

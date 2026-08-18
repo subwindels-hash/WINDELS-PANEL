@@ -182,10 +182,16 @@ $route['admin/payments'] = 'admin/payments/index';
 $route['admin/payments/(:any)/approve'] = 'admin/payments/approve/$1';
 $route['admin/payments/(:any)/reject'] = 'admin/payments/reject/$1';
 $route['admin/payments/(:any)'] = 'admin/payments/detail/$1';
-$route['admin/refills'] = 'admin/refills/index';
-$route['admin/cancellations'] = 'admin/cancellations/index';
-$route['admin/drip-feed'] = 'admin/dripfeed/index';
-$route['admin/subscriptions'] = 'admin/subscriptions/index';
+// Order operations: four queues over the existing engines, one controller.
+// Action routes must precede each catch-all.
+$route['admin/refills'] = 'admin/operations/refills';
+$route['admin/refills/(:any)/request'] = 'admin/operations/refill_request/$1';
+$route['admin/cancellations'] = 'admin/operations/cancellations';
+$route['admin/cancellations/(:any)/cancel'] = 'admin/operations/cancel/$1';
+$route['admin/drip-feed'] = 'admin/operations/dripfeed';
+$route['admin/drip-feed/(:any)/(pause|resume|cancel)'] = 'admin/operations/dripfeed_action/$1/$2';
+$route['admin/subscriptions'] = 'admin/operations/subscriptions';
+$route['admin/subscriptions/(:any)/(pause|resume|cancel)'] = 'admin/operations/subscription_action/$1/$2';
 $route['admin/tickets'] = 'admin/tickets/index';
 $route['admin/tickets/(:any)/reply'] = 'admin/tickets/reply/$1';
 $route['admin/tickets/(:any)/assign'] = 'admin/tickets/assign/$1';
