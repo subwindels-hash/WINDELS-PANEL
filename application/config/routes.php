@@ -232,14 +232,16 @@ $route['admin/staff'] = 'admin/staff/index';
 $route['admin/staff/permissions'] = 'admin/staff/permissions';
 $route['admin/staff/permissions/(:any)'] = 'admin/staff/save_permissions/$1';
 $route['admin/audit-logs'] = 'admin/system/audit_logs';
-$route['admin/appearance'] = 'admin/appearances/index';
-$route['admin/appearance/homepage'] = 'admin/appearances/homepage';
+$route['admin/appearance'] = 'admin/media/appearance';
+$route['admin/appearance/save'] = 'admin/media/save_appearance';
 $route['admin/settings'] = 'admin/settings/index';
 $route['admin/settings/save'] = 'admin/settings/save';
 $route['admin/blacklist'] = 'admin/system/blacklist';
 $route['admin/blacklist/(:any)/add'] = 'admin/system/blacklist_add/$1';
 $route['admin/blacklist/(:any)/(:num)/remove'] = 'admin/system/blacklist_remove/$1/$2';
 $route['admin/media'] = 'admin/media/index';
+$route['admin/media/upload'] = 'admin/media/upload';
+$route['admin/media/(:any)/delete'] = 'admin/media/delete/$1';
 
 // API v1 — reseller
 $route['api/v1/services'] = 'api_v1/services';

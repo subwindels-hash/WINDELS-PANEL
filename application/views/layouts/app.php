@@ -19,6 +19,7 @@ $nav = $is_admin ? array(
     array('admin/affiliates',   'Affiliates', 'affiliates.view', 'gift'),
     array('admin/blog',         'Content',    'blog.manage',     'list'),
     array('admin/staff',        'Staff',      'staff.manage',    'shield'),
+    array('admin/media',        'Media',      'media.manage',    'star'),
     array('admin/categories',   'System',     'audit.view',      'globe'),
     array('admin/settings',     'Settings',   'settings.manage', 'settings'),
 ) : array(
@@ -40,6 +41,15 @@ $nav = $is_admin ? array(
     array('dashboard/referrals', 'Referrals',  null, 'gift'),
     array('dashboard/api',       'API',        null, 'key'),
 );
+
+// Branding, set from Admin -> Appearance. Read defensively: the layout also
+// renders on the CLI-ish paths and during install, before settings exist.
+$brand = array('brand_primary_color' => null, 'brand_logo_url' => null, 'brand_favicon_url' => null);
+try {
+    $CI =& get_instance();
+    $CI->load->model('Setting_model');
+    foreach (array_keys($brand) as $__k) $brand[$__k] = $CI->Setting_model->get($__k);
+} catch (Exception $e) { /* defaults stand */ }
 ?>
 <!doctype html>
 <html lang="en">
@@ -47,16 +57,27 @@ $nav = $is_admin ? array(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title><?=htmlspecialchars($title ?? 'WINDELS PANEL')?></title>
+<?php if (!empty($brand['brand_favicon_url'])): ?>
+<link rel="icon" href="<?=htmlspecialchars($brand['brand_favicon_url'])?>">
+<?php endif; ?>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap">
 <link rel="stylesheet" href="<?=base_url('assets/css/tailwind.css')?>">
 <link rel="stylesheet" href="<?=base_url('assets/css/design-system.css')?>">
+<?php if (!empty($brand['brand_primary_color'])): ?>
+<style><?=':root{--ws-primary:'.htmlspecialchars($brand['brand_primary_color']).'}'?></style>
+<?php endif; ?>
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
 <div class="flex min-h-screen">
   <!-- Sidebar (desktop) -->
   <aside class="w-64 shrink-0 border-r bg-white hidden md:flex flex-col">
     <div class="h-16 flex items-center px-6 border-b">
-      <a href="<?=site_url()?>" class="font-bold tracking-tight">WINDELS PANEL</a>
+      <a href="<?=site_url()?>" class="font-bold tracking-tight">
+        <?php if (!empty($brand['brand_logo_url'])): ?>
+          <img src="<?=htmlspecialchars($brand['brand_logo_url'])?>" alt="WINDELS PANEL"
+               style="max-height:2rem;max-width:10rem">
+        <?php else: ?>WINDELS PANEL<?php endif; ?>
+      </a>
     </div>
     <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-0.5" aria-label="Primary">
       <?php foreach ($nav as $item): list($href,$label,$perm) = $item; ?>

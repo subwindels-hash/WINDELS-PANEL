@@ -1,0 +1,8 @@
+# Uploaded files are runtime data, not source. The directory itself is tracked
+# so a fresh checkout has somewhere to write; its contents never are.
+#
+# MediaService also drops a hardened .htaccess here on first upload, switching
+# off script execution: the document root is the repository root, so anything
+# under assets/ is directly fetchable by URL.
+*
+!.gitignore

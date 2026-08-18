@@ -82,9 +82,6 @@ class SettingsService {
         return array(
             'site_tagline'           => 'Nothing reads it; the homepages carry their own copy.',
             'maintenance_mode'       => 'Needs a gate in MY_Controller that shows a holding page to non-staff.',
-            'brand_primary_color'    => 'Needs the design system to read a CSS custom property from settings.',
-            'brand_logo_url'         => 'Needs the layout to render it, and Admin → Media to upload it.',
-            'brand_favicon_url'      => 'Needs the layout to render it.',
             'default_theme'          => 'No theme switcher exists yet.',
             'currency_display'       => 'windels_money() always prints a symbol.',
             'order_auto_submit'      => 'OrderService always submits to the provider immediately.',
@@ -99,6 +96,11 @@ class SettingsService {
         return array(
             'base_currency' => 'Changing this would reinterpret every stored amount. '
                 .'It moves by migration only — see docs/session-22-currency.md.',
+            // Wired, but edited on their own screen rather than as text fields:
+            // a logo is chosen from the media library, not typed as a URL.
+            'brand_primary_color' => 'Set in Admin → Appearance.',
+            'brand_logo_url'      => 'Set in Admin → Appearance, from the media library.',
+            'brand_favicon_url'   => 'Set in Admin → Appearance, from the media library.',
         );
     }
 
