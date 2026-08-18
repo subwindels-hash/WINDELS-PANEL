@@ -1,74 +1,95 @@
-# WINDELS PANEL — Session 12: Reseller API
+# WINDELS PANEL — Reseller API
 
 > JSON API at `/api/v1` for placing and tracking orders, authenticated by
-> `X-Api-Key` (sha256-hashed at rest) with per-key rate limiting, IP
-> whitelisting and idempotency. Built on the Session 09–11 services — the
-> controller never writes orders or wallets directly.
+> `X-Api-Key` (SHA-256 verifier at rest) with per-key scopes, rate limiting,
+> exact-IP allowlists, expiry, immutable revocation, and usage evidence.
 
 ## What shipped
 
 | Area | Files |
 |---|---|
-| API controller (all endpoints) | `controllers/Api_v1.php` |
-| Key authentication | `libraries/ApiAuthenticator.php` |
+| API controller and usage logging | `controllers/Api_v1.php` |
+| Key authentication and scope checks | `libraries/ApiAuthenticator.php` |
 | Rate limiting | `libraries/ApiRateLimiter.php` |
+| Customer key issuance | `controllers/dashboard/Account.php` |
+| Admin policy and usage console | `controllers/admin/Api_keys.php`, `libraries/ApiKeyAdminService.php` |
+| Shared policy validation | `libraries/ApiKeyPolicy.php` |
 | Human + machine docs | `views/api/docs.php` (`/api/docs`, `/api/docs/json`) |
-| Tests | `tests/unit/ResellerApiTest.php` |
+| Tests | `tests/unit/ResellerApiTest.php`, `tests/unit/AdminResellerApiManagementTest.php` |
 
-## Endpoints
+## Endpoints and scopes
 
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/api/v1/services` | Active services with the caller's resolved price; `?category`, `?q`, `?page`, `?limit` |
-| GET | `/api/v1/services/:public_id` | Single service |
-| GET | `/api/v1/balance` | Wallet balance + currency |
-| POST | `/api/v1/orders` | Place an order (`{service, link, quantity, fields?, note?}`) |
-| GET | `/api/v1/orders` | List own orders (`?status`, `?page`, `?limit`) |
-| GET | `/api/v1/orders/:public_id` | Order + status history |
-| POST | `/api/v1/orders/status` | Bulk status `{orderIds:[…]}` (max 100) |
-| POST | `/api/v1/refills` | Request `{orderId}` |
-| GET | `/api/v1/refills/:public_id` | Refill status |
-| POST | `/api/v1/cancellations` | Cancel `{orderId}` |
+| Method | Path | Required scope | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/services` | `services.read` | Active services with the caller's resolved price; `?category`, `?q`, `?page`, `?limit` |
+| GET | `/api/v1/services/:public_id` | `services.read` | Single service |
+| GET | `/api/v1/balance` | `account.read` | Wallet balance and currency |
+| POST | `/api/v1/orders` | `orders.write` | Place an order (`{service, link, quantity, fields?, note?}`) |
+| POST | `/api/v1/orders/mass` | `orders.write` | Place up to 100 independent instructions |
+| GET | `/api/v1/orders` | `orders.read` | List own orders (`?status`, `?page`, `?limit`) |
+| GET | `/api/v1/orders/:public_id` | `orders.read` | Order and status history |
+| POST | `/api/v1/orders/status` | `orders.read` | Bulk status `{orderIds:[…]}` (max 100) |
+| POST | `/api/v1/refills` | `orders.write` | Request `{orderId}` |
+| GET | `/api/v1/refills/:public_id` | `orders.read` | Refill status |
+| POST | `/api/v1/cancellations` | `orders.write` | Cancel `{orderId}` |
+| GET | `/api/v1/referrals` | `referrals.read` | Referral summary and commission totals |
 
-## Authentication & envelope
+A legacy `NULL` scope policy means full access for backward compatibility. Once
+an explicit JSON scope array is stored, it is an exact allowlist; an empty array
+blocks every endpoint and malformed policy fails closed. Access outside the
+allowlist returns `403 SCOPE_FORBIDDEN`.
 
-* Send the raw key as `X-Api-Key: wind_…`. It is hashed (sha256) before the DB
-  lookup; rejected if revoked/expired; the account must be ACTIVE; an optional
-  per-key IP whitelist is enforced. `last_used_at/ip` are touched on success.
+## Authentication and envelope
+
+* Send the raw key as `X-Api-Key: wind_…`. It is hashed before lookup and is
+  rejected if expired or revoked. The owning account must be `ACTIVE`.
+* An optional allowlist accepts exact IPv4 and IPv6 addresses only. CIDR is not
+  accepted because the runtime performs exact matching. Malformed stored
+  allowlist data fails closed.
 * All responses use `{ success:bool, data?:mixed, error?:{code,message}, meta?:object, requestId }`.
-* HTTP status codes: `200/201` success, `401` bad/missing key, `403` IP/account,
-  `404` not found, `422` validation, `402` insufficient balance, `429` rate
-  limited, `502` provider failure.
-* Public ULIDs only — sequential IDs never appear in URLs or payloads.
+* HTTP status codes include `200/201` success, `401` bad/missing key, `403`
+  account/IP/scope policy, `404` not found, `422` validation, `402` insufficient
+  balance, `429` rate limited, and `502` provider failure.
+* Public IDs only; sequential IDs never appear in API URLs or payloads.
 
-## Idempotency & rate limiting
+## Idempotency and rate limiting
 
-* `POST /api/v1/orders` honors an `Idempotency-Key` header (and falls back to a
-  deterministic hash) so retries don't double-charge; the underlying
-  `OrderService::place` also guards on the key.
-* Each key gets a fixed 60-second window (default 60, overridable per key via
-  `rate_limit_per_minute`). `X-RateLimit-Limit`, `X-RateLimit-Remaining` and
-  `Retry-After` are returned; `429 RATE_LIMITED` is emitted when exceeded. The
-  limiter uses an atomic file lock (swap for Redis in production behind the same
-  interface).
+* `POST /api/v1/orders` honors `Idempotency-Key` (with a deterministic fallback)
+  so retries do not double-charge. Mass order also supports exact replay.
+* Each key gets a fixed 60-second window. `rate_limit_per_minute` is validated
+  between 1 and 10,000. `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and
+  `Retry-After` describe the current window.
+
+## Usage evidence
+
+Every authenticated response path writes one best-effort `api_usage_logs` row
+with the normalized endpoint, HTTP method, source IP, status, duration, and key
+ID. This includes successful requests and authenticated failures such as rate,
+scope, validation, and provider errors. Logging failures are reported to the
+application log but never replace the API response. Unknown credentials are not
+persisted, which avoids turning the table into an unauthenticated write target.
+
+The `api.manage`-guarded admin console provides bounded/filterable safe key
+reads, policy editing, permanent revocation, recent calls, and grouped endpoint
+counts. Its projections never select `key_hash`, and it cannot recover raw
+credentials, rotate customer keys, un-revoke keys, or touch orders and wallets.
+Policy and revocation mutations are POST-only and append audit records.
+
+Customer key lists use the same safe projection. Customer revocation is also
+POST-only, ownership-scoped, compare-and-set, and audited.
 
 ## Delegation
 
-* Order create/cancel/refill call `OrderService` / `RefillService` (Sessions
-  09–10) — validation, wallet charge, state machine, provider submission and
-  partial refunds are reused unchanged.
-* Prices come from `PricingService` (user > group > default).
-* The controller contains no direct `INSERT`/`UPDATE` to orders, wallets or
-  wallet_transactions (enforced by a test) and never renders provider/payment
-  secrets.
+Order create, cancel, and refill continue through `OrderService` and
+`RefillService`; pricing comes from `PricingService`. The controller does not
+write orders or wallets directly.
 
 ## Docs
 
-`/api/docs` is a lightweight HTML reference; `/api/docs/json` returns the
-machine-readable endpoint list for code generation.
+`/api/docs` and `/api/docs/json` are public references. API requests themselves
+require a valid key.
 
-## Follow-ups
+## Follow-up
 
-* Redis-backed rate limiter and per-scope usage logging (`api_usage_logs`) in
-  the security/ops session.
-* Hosted-payment adapters don't affect this API; they only top up the wallet.
+A Redis-backed rate limiter can replace the current atomic-file implementation
+behind the existing interface for a horizontally scaled deployment.

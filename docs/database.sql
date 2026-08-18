@@ -1436,4 +1436,172 @@ CREATE TABLE IF NOT EXISTS giftcard_codes (
   INDEX idx_gccode_order (giftcard_order_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ---------------------------------------------------------------------
+-- migration 015_marketplace
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS marketplace_sellers (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  user_id BIGINT UNSIGNED NOT NULL UNIQUE,
+  identity_check_id BIGINT UNSIGNED NULL,
+  display_name VARCHAR(80) NOT NULL,
+  bio VARCHAR(500) NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING|APPROVED|SUSPENDED|REJECTED',
+  admin_note VARCHAR(500) NULL,
+  approved_at DATETIME NULL,
+  approved_by BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_mpseller_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_mpseller_identity FOREIGN KEY (identity_check_id) REFERENCES identity_checks(id) ON DELETE SET NULL,
+  CONSTRAINT fk_mpseller_approver FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_mpseller_status_created (status, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS marketplace_listings (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  seller_id BIGINT UNSIGNED NOT NULL,
+  title VARCHAR(120) NOT NULL,
+  category VARCHAR(64) NOT NULL,
+  description TEXT NOT NULL,
+  price DECIMAL(20,8) NOT NULL,
+  stock INT UNSIGNED NULL COMMENT 'NULL means unlimited',
+  delivery_days INT UNSIGNED NOT NULL DEFAULT 1,
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING|ACTIVE|PAUSED|REJECTED|ARCHIVED',
+  moderation_note VARCHAR(500) NULL,
+  approved_at DATETIME NULL,
+  approved_by BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_mplisting_seller FOREIGN KEY (seller_id) REFERENCES marketplace_sellers(id) ON DELETE CASCADE,
+  CONSTRAINT fk_mplisting_approver FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_mplisting_catalogue (status, category, created_at),
+  INDEX idx_mplisting_seller (seller_id, status, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS marketplace_orders (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  service_transaction_id BIGINT UNSIGNED NOT NULL UNIQUE,
+  listing_id BIGINT UNSIGNED NOT NULL,
+  buyer_id BIGINT UNSIGNED NOT NULL,
+  seller_id BIGINT UNSIGNED NOT NULL,
+  quantity INT UNSIGNED NOT NULL DEFAULT 1,
+  unit_price DECIMAL(20,8) NOT NULL,
+  gross_amount DECIMAL(20,8) NOT NULL,
+  fee_amount DECIMAL(20,8) NOT NULL DEFAULT 0,
+  seller_amount DECIMAL(20,8) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING|PAID|DELIVERED|DISPUTED|COMPLETED|REFUNDED|CANCELLED',
+  delivery_encrypted MEDIUMTEXT NULL,
+  delivered_at DATETIME NULL,
+  release_due_at DATETIME NULL,
+  released_at DATETIME NULL,
+  payout_wallet_transaction_id BIGINT UNSIGNED NULL,
+  dispute_reason VARCHAR(1000) NULL,
+  disputed_at DATETIME NULL,
+  resolved_at DATETIME NULL,
+  resolved_by BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_mporder_stx FOREIGN KEY (service_transaction_id) REFERENCES service_transactions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_mporder_listing FOREIGN KEY (listing_id) REFERENCES marketplace_listings(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_mporder_buyer FOREIGN KEY (buyer_id) REFERENCES users(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_mporder_seller FOREIGN KEY (seller_id) REFERENCES users(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_mporder_payout FOREIGN KEY (payout_wallet_transaction_id) REFERENCES wallet_transactions(id) ON DELETE SET NULL,
+  CONSTRAINT fk_mporder_resolver FOREIGN KEY (resolved_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_mporder_buyer (buyer_id, created_at),
+  INDEX idx_mporder_seller (seller_id, status, created_at),
+  INDEX idx_mporder_release (status, release_due_at),
+  INDEX idx_mporder_listing (listing_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS marketplace_order_events (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  order_id BIGINT UNSIGNED NOT NULL,
+  actor_id BIGINT UNSIGNED NULL,
+  event_type VARCHAR(32) NOT NULL,
+  from_status VARCHAR(16) NULL,
+  to_status VARCHAR(16) NULL,
+  note VARCHAR(500) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_mpevent_order FOREIGN KEY (order_id) REFERENCES marketplace_orders(id) ON DELETE CASCADE,
+  CONSTRAINT fk_mpevent_actor FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_mpevent_order_created (order_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- migration 016_withdrawals
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS withdrawal_requests (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  user_id BIGINT UNSIGNED NOT NULL,
+  wallet_transaction_id BIGINT UNSIGNED NOT NULL UNIQUE COMMENT 'wallet debit reserving the requested amount',
+  refund_wallet_transaction_id BIGINT UNSIGNED NULL UNIQUE,
+  amount DECIMAL(20,8) NOT NULL COMMENT 'gross amount reserved from the wallet',
+  fee_amount DECIMAL(20,8) NOT NULL DEFAULT 0.00000000,
+  payout_amount DECIMAL(20,8) NOT NULL COMMENT 'net amount transferred to the customer',
+  currency CHAR(3) NOT NULL DEFAULT 'NGN',
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING|APPROVED|PAID|REJECTED|CANCELLED',
+  destination_label VARCHAR(120) NOT NULL COMMENT 'safe masked bank and last four digits',
+  destination_encrypted MEDIUMTEXT NOT NULL,
+  idempotency_key VARCHAR(128) NOT NULL UNIQUE,
+  payout_reference VARCHAR(128) NULL,
+  admin_note VARCHAR(500) NULL,
+  approved_at DATETIME NULL,
+  approved_by BIGINT UNSIGNED NULL,
+  paid_at DATETIME NULL,
+  paid_by BIGINT UNSIGNED NULL,
+  resolved_at DATETIME NULL,
+  reveal_count INT UNSIGNED NOT NULL DEFAULT 0,
+  last_revealed_at DATETIME NULL,
+  last_revealed_by BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_withdrawal_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_withdrawal_wallet_tx FOREIGN KEY (wallet_transaction_id) REFERENCES wallet_transactions(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_withdrawal_refund_tx FOREIGN KEY (refund_wallet_transaction_id) REFERENCES wallet_transactions(id) ON DELETE SET NULL,
+  CONSTRAINT fk_withdrawal_approver FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_withdrawal_payer FOREIGN KEY (paid_by) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_withdrawal_revealer FOREIGN KEY (last_revealed_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_withdrawal_user_created (user_id, created_at),
+  INDEX idx_withdrawal_queue (status, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS withdrawal_events (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  withdrawal_id BIGINT UNSIGNED NOT NULL,
+  actor_id BIGINT UNSIGNED NULL,
+  event_type VARCHAR(32) NOT NULL,
+  from_status VARCHAR(16) NULL,
+  to_status VARCHAR(16) NULL,
+  note VARCHAR(500) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_withdrawal_event_request FOREIGN KEY (withdrawal_id) REFERENCES withdrawal_requests(id) ON DELETE CASCADE,
+  CONSTRAINT fk_withdrawal_event_actor FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_withdrawal_event_created (withdrawal_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- migration 017_mass_orders
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS mass_order_batches (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  user_id BIGINT UNSIGNED NOT NULL,
+  token_hash CHAR(64) NOT NULL,
+  request_hash CHAR(64) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'PROCESSING' COMMENT 'PROCESSING|COMPLETED',
+  result_json MEDIUMTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_mass_order_batch_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY uq_mass_order_batch_token (user_id, token_hash),
+  INDEX idx_mass_order_batch_created (user_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;

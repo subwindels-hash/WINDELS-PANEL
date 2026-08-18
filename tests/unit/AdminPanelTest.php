@@ -252,8 +252,9 @@ class AdminPanelTest extends TestCase
             'Tickets.php'  => array('reply','assign','status','priority'),
             // Catalogue changes a price, which is money by another name.
             'Catalogue.php'=> array('create','update','status'),
-            // Users suspends accounts, grants roles and adjusts balances.
-            'Users.php'    => array('status','role','price_group','adjust'),
+            // Users suspends accounts, grants roles, adjusts balances, and
+            // starts an explicitly guarded read-only support session.
+            'Users.php'    => array('status','role','price_group','adjust','impersonate'),
             // Operations refunds through the schedulers' own cancel paths.
             'Operations.php' => array('refill_request','cancel','dripfeed_action','subscription_action'),
         );

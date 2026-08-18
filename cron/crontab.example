@@ -16,6 +16,10 @@
 # land the customer has paid for nothing, so this chases them — and writes off
 # (and refunds) the orders a vendor accepted but never fulfilled.
 */2 * * * * cd /var/www/html && php index.php cron giftcard_codes >> storage/logs/cron.log 2>&1
+
+# Delivered marketplace orders auto-release only after their review window;
+# disputed orders are excluded by both state and a cleared release deadline.
+*/5 * * * * cd /var/www/html && php index.php cron marketplace_release >> storage/logs/cron.log 2>&1
 */5 * * * * cd /var/www/html && php index.php cron subscriptions >> storage/logs/cron.log 2>&1
 */5 * * * * cd /var/www/html && php index.php cron provider_health >> storage/logs/cron.log 2>&1
 */5 * * * * cd /var/www/html && php index.php cron refill_status >> storage/logs/cron.log 2>&1

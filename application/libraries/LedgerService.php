@@ -19,6 +19,19 @@ class LedgerService {
         return $this->credit($wallet_id, $amount, 'REFUND', $reference_type, $reference_id, $idempotency_key);
     }
 
+    /** Reserve customer funds for a withdrawal without classifying them as revenue. */
+    public function reserve_withdrawal($wallet_id, $amount, $reference_id, $idempotency_key, $metadata=null){
+        return $this->move($wallet_id, $amount, 'DEBIT', 'WITHDRAWAL', 'WITHDRAWAL',
+            $reference_id, $idempotency_key, $metadata, array(), 'withdrawal_payable');
+    }
+
+    /** Return a rejected/cancelled withdrawal reservation to the same wallet. */
+    public function refund_withdrawal($wallet_id, $amount, $reference_id, $idempotency_key){
+        return $this->move($wallet_id, $amount, 'CREDIT', 'REFUND', 'WITHDRAWAL',
+            $reference_id, $idempotency_key, array('reason' => 'withdrawal_released'),
+            array(), 'withdrawal_payable');
+    }
+
     /**
      * A manual balance correction made by a member of staff.
      *
@@ -40,7 +53,7 @@ class LedgerService {
             $idempotency_key, $metadata, array('actor_id' => $actor_id, 'note' => $note));
     }
 
-    private function move($wallet_id, $amount, $direction, $tx_type, $ref_type, $ref_id, $idem, $metadata, $extra=array()){
+    private function move($wallet_id, $amount, $direction, $tx_type, $ref_type, $ref_id, $idem, $metadata, $extra=array(), $counter_account=null){
         $this->ci->db->trans_start();
         // idempotency guard
         if ($idem) {
@@ -87,7 +100,7 @@ class LedgerService {
             'currency'=>$wallet->currency,
             'created_at'=>gmdate('Y-m-d H:i:s'),
         ));
-        $counter = $direction==='DEBIT' ? 'revenue' : 'liability';
+        $counter = $counter_account ?: ($direction==='DEBIT' ? 'revenue' : 'liability');
         $this->ci->db->insert('ledger_entries', array(
             'wallet_transaction_id'=>$wt_id,
             'account'=>$counter,

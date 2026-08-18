@@ -1,5 +1,12 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
 $p = $provider;
+$can_manage_services = (isset($family) && $family === 'SMM')
+    && (in_array('*', $permissions ?? array(), true)
+        || in_array('services.manage', $permissions ?? array(), true));
+$has = function ($permission) use ($permissions) {
+    return in_array('*', $permissions ?? array(), true)
+        || in_array($permission, $permissions ?? array(), true);
+};
 ?>
 <nav class="text-sm muted mb-4">
   <a href="<?=site_url('admin/providers')?>">Providers</a> · <span class="text-slate-700"><?=htmlspecialchars($p->name)?></span>
@@ -92,7 +99,7 @@ $p = $provider;
       <?php else: ?>
       <div class="overflow-x-auto mt-3">
         <table class="table">
-          <thead><tr><th>Provider ID</th><th>Name</th><th>Rate</th><th>Min/Max</th><th>Flags</th><th>Synced</th></tr></thead>
+          <thead><tr><th>Provider ID</th><th>Name</th><th>Rate</th><th>Min/Max</th><th>Flags</th><th>Synced</th><?php if ($can_manage_services): ?><th></th><?php endif; ?></tr></thead>
           <tbody>
           <?php foreach ($services as $s): ?>
             <tr>
@@ -106,6 +113,7 @@ $p = $provider;
                 <?php if ((int)$s->dripfeed_supported): ?><span class="badge badge-brand">drip</span><?php endif; ?>
               </td>
               <td class="text-xs muted"><?=date('M j, H:i', strtotime($s->last_synced_at))?></td>
+              <?php if ($can_manage_services): ?><td class="text-right"><a class="btn btn-ghost btn-sm" href="<?=site_url('admin/services/create?'.http_build_query(array('provider'=>$p->public_id,'provider_service'=>$s->provider_service_id)))?>">Create panel service →</a></td><?php endif; ?>
             </tr>
           <?php endforeach; ?>
           </tbody>

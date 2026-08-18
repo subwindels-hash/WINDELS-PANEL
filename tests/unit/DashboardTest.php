@@ -37,6 +37,7 @@ class DashboardTest extends TestCase
             'dashboard/orders/detail/$1'        => 'controllers/dashboard/Orders.php::detail',
             'dashboard/orders/new_order'        => 'controllers/dashboard/Orders.php::new_order',
             'dashboard/orders/mass_order'       => 'controllers/dashboard/Orders.php::mass_order',
+            'dashboard/orders/mass_create'      => 'controllers/dashboard/Orders.php::mass_create',
             'dashboard/dripfeed/index'          => 'controllers/dashboard/Dripfeed.php::index',
             'dashboard/subscriptions/index'     => 'controllers/dashboard/Subscriptions.php::index',
             'dashboard/services/index'          => 'controllers/dashboard/Services.php::index',

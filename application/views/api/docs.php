@@ -36,6 +36,19 @@
   </div>
 
   <div class="card">
+    <h2 class="card-title">Key scopes</h2>
+    <p>A key may have full access or an explicit allow-list. A request outside that allow-list returns
+      <code>403 SCOPE_FORBIDDEN</code>. Available scopes are:</p>
+    <table class="table"><tbody>
+      <tr><th><code>services.read</code></th><td>Read services and resolved prices.</td></tr>
+      <tr><th><code>orders.read</code></th><td>Read orders and refill statuses.</td></tr>
+      <tr><th><code>orders.write</code></th><td>Place, refill, and cancel orders.</td></tr>
+      <tr><th><code>account.read</code></th><td>Read wallet balance.</td></tr>
+      <tr><th><code>referrals.read</code></th><td>Read referral and commission totals.</td></tr>
+    </tbody></table>
+  </div>
+
+  <div class="card">
     <h2 class="card-title">Endpoints</h2>
     <div class="overflow-x-auto">
     <table class="table">
@@ -45,6 +58,7 @@
         <tr><td><span class="ws-method ws-get">GET</span></td><td><code>/services/:public_id</code></td><td>Single service.</td></tr>
         <tr><td><span class="ws-method ws-get">GET</span></td><td><code>/balance</code></td><td>Wallet balance and currency.</td></tr>
         <tr><td><span class="ws-method ws-post">POST</span></td><td><code>/orders</code></td><td>Place an order. Body: <code>{service, link, quantity, fields?, note?}</code>.</td></tr>
+        <tr><td><span class="ws-method ws-post">POST</span></td><td><code>/orders/mass</code></td><td>Place up to 100 instructions. Body: <code>{orders:[{service, link, quantity}]}</code>. Returns separate successful and failed rows.</td></tr>
         <tr><td><span class="ws-method ws-get">GET</span></td><td><code>/orders</code></td><td>List your orders (<code>status</code>, <code>page</code>, <code>limit</code>).</td></tr>
         <tr><td><span class="ws-method ws-get">GET</span></td><td><code>/orders/:public_id</code></td><td>Order status, charge and status history.</td></tr>
         <tr><td><span class="ws-method ws-post">POST</span></td><td><code>/orders/status</code></td><td>Bulk lookup: <code>{orderIds:[…]}</code> (max 100).</td></tr>

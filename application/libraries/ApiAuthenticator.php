@@ -10,6 +10,7 @@ class ApiAuthenticator {
 
     private $ci;
     private $last_error = null;
+    private $resolved_key = null;
 
     public function __construct() {
         $this->ci =& get_instance();
@@ -34,9 +35,11 @@ class ApiAuthenticator {
                 'message' => 'The API key is invalid, expired, or revoked.');
             return null;
         }
-        // IP whitelist
+        $this->resolved_key = $key;
+        // Exact-IP allowlist. Malformed stored JSON fails closed rather than
+        // silently disabling a restriction that an operator intended.
         $allowed = $this->whitelist($key);
-        if ($allowed !== null && !in_array($this->client_ip(), $allowed, true)) {
+        if ($allowed === false || ($allowed !== null && !in_array($this->client_ip(), $allowed, true))) {
             $this->last_error = array('code' => 'IP_NOT_ALLOWED', 'http' => 403,
                 'message' => 'Your IP address is not permitted for this key.');
             return null;
@@ -54,6 +57,22 @@ class ApiAuthenticator {
 
     public function last_error() { return $this->last_error; }
 
+    /** Key whose verifier matched, even when an IP/account policy denied it. */
+    public function resolved_key() { return $this->resolved_key; }
+
+    /**
+     * Legacy NULL/blank scopes retain full access. Once a JSON scope array is
+     * stored, it is an exact allow-list; malformed policy fails closed.
+     */
+    public function allows_scope($key, $required_scope) {
+        if (!$key) return false;
+        if ($key->scopes === null || $key->scopes === '') return true;
+        $scopes = json_decode($key->scopes, true);
+        if (!is_array($scopes) || array_values($scopes) !== $scopes) return false;
+        foreach ($scopes as $scope) if (!is_string($scope)) return false;
+        return in_array((string)$required_scope, $scopes, true);
+    }
+
     private function extract_key() {
         $key = $this->ci->input->get_request_header('X-Api-Key', true);
         if (!$key) {
@@ -67,12 +86,24 @@ class ApiAuthenticator {
     private function whitelist($key) {
         if (empty($key->ip_whitelist)) return null;
         $list = json_decode($key->ip_whitelist, true);
-        return is_array($list) ? array_values(array_filter(array_map('trim', $list))) : null;
+        if (!is_array($list) || array_values($list) !== $list) return false;
+        $valid = array();
+        foreach ($list as $ip) {
+            if (!is_string($ip) || filter_var($ip, FILTER_VALIDATE_IP) === false) return false;
+            $packed = @inet_pton($ip);
+            $canonical = $packed === false ? false : @inet_ntop($packed);
+            if ($canonical === false) return false;
+            $valid[] = $canonical;
+        }
+        return $valid;
     }
 
     private function client_ip() {
         $ip = $this->ci->input->ip_address();
-        return $ip === '0.0.0.0' ? '127.0.0.1' : $ip;
+        if ($ip === '0.0.0.0') $ip = '127.0.0.1';
+        $packed = @inet_pton($ip);
+        $canonical = $packed === false ? false : @inet_ntop($packed);
+        return $canonical === false ? $ip : $canonical;
     }
 
     private function touch($key) {

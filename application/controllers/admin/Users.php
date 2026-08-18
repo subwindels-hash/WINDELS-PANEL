@@ -20,8 +20,8 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *     LedgerService, so a manual correction is double-entry and idempotent
  *     like every other movement.
  *   - **Read or reset credentials.** No password hash, MFA secret or API key
- *     is loaded here. Suspending an account is support; becoming the customer
- *     is not.
+ *     is loaded here. Explicitly permitted staff may open a short-lived,
+ *     audited, read-only dashboard view; that session cannot submit changes.
  *   - **Delete anyone.** Accounts carry ledger history; they are suspended or
  *     banned, never removed.
  */
@@ -35,7 +35,7 @@ class Users extends Admin_Controller {
     public function __construct() {
         parent::__construct();
         $this->require_perm('users.view');
-        $this->load->library(array('UserAdminService', 'DashboardStats'));
+        $this->load->library(array('UserAdminService', 'ImpersonationService', 'DashboardStats'));
         $this->load->model(array(
             'User_model', 'Wallet_model', 'Wallet_transaction_model',
             'Order_model', 'Service_transaction_model', 'Audit_log_model',
@@ -174,6 +174,32 @@ class Users extends Admin_Controller {
         $this->audit('wallet.adjusted', $user, $res['before'], $res['after']);
         $this->done($user, 'Wallet adjusted. New balance '
             .windels_money($res['wallet']->balance, $res['wallet']->currency).'.');
+    }
+
+    /**
+     * POST /admin/customers/:id/impersonate — enter a read-only support lens.
+     *
+     * The service independently repeats the role, permission, target, reason
+     * and session checks. This controller gate keeps the route conventional;
+     * it is not the only thing protecting the identity switch.
+     */
+    public function impersonate($public_id) {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $user = $this->guard($public_id, 'users.impersonate');
+        $res = $this->impersonationservice->start(
+            $this->current_user,
+            $user,
+            $this->input->post('reason', true),
+            $this->input->post('confirm', true) === '1',
+            $this->input->ip_address(),
+            $this->input->user_agent(),
+            $this->request_id
+        );
+        if (empty($res['ok'])) return $this->fail($user, $res['error']);
+
+        $this->session->set_flashdata('success',
+            'Read-only customer impersonation started. End it from the persistent banner when finished.');
+        redirect('dashboard');
     }
 
     /* ------------------------------ helpers ----------------------------- */

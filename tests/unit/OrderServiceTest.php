@@ -157,6 +157,27 @@ class OrderServiceTest extends TestCase
         $this->assertSame($first['order']->id, $second['order']->id);
     }
 
+    public function testIdempotencyCollisionNeverRevealsAnotherUsersOrder()
+    {
+        $ci = $this->fresh_ci();
+        $foreign = clone $ci->order;
+        $foreign->user_id = 999;
+        $ci->Order_model->seedIdempotency('shared-key', $foreign);
+
+        $svc = new OrderService();
+        $res = $svc->place($ci->user, array(
+            'service'=>$ci->service->id,
+            'link'=>'https://x.com/a',
+            'quantity'=>100,
+            'idempotency_key'=>'shared-key',
+        ));
+
+        $this->assertFalse($res['ok']);
+        $this->assertSame('IDEMPOTENCY_CONFLICT', $res['code']);
+        $this->assertArrayNotHasKey('order', $res);
+        $this->assertSame(0, $ci->ledger_charges);
+    }
+
     public function testFailedProviderSubmissionRefundsAndFailsOrder()
     {
         $ci = $this->fresh_ci();
@@ -239,8 +260,8 @@ class OrderServiceTest extends TestCase
         $this->assertStringContainsString('function cancel', $src);
         $this->assertStringContainsString('OrderService', $src);
         $this->assertStringContainsString('function refill', $src);
-        // create / cancel / refill are all POST-only.
-        $this->assertSame(3, substr_count($src, "if (\$this->input->method(true) !== 'POST') show_404();"));
+        // create / mass create / cancel / refill are all POST-only.
+        $this->assertSame(4, substr_count($src, "if (\$this->input->method(true) !== 'POST') show_404();"));
     }
 
     public function testNoDirectOrderOrWalletMutationOutsideService()

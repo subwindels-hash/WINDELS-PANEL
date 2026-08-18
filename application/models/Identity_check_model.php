@@ -100,6 +100,17 @@ class Identity_check_model extends MY_Model {
         ));
     }
 
+    /** Whether this customer has ever completed a verified identity check. */
+    public function has_verified_for_user($user_id){
+        return (bool)$this->db->select('identity_checks.id', false)
+            ->from($this->table)
+            ->join('service_transactions',
+                'service_transactions.id = identity_checks.service_transaction_id', 'inner')
+            ->where('service_transactions.user_id', (int)$user_id)
+            ->where('identity_checks.status', 'VERIFIED')
+            ->limit(1)->get()->row();
+    }
+
     public function status_counts(){
         $rows = $this->db->select('status, COUNT(*) AS total', false)
                          ->group_by('status')->get($this->table)->result();

@@ -220,73 +220,107 @@ class TransactionEngine {
      * @param array $opts refund: bool (default true), amount: ?string partial
      */
     public function transition($tx_id, $new_status, $source = 'SYSTEM', $reason = null, array $opts = array()) {
-        $tx = $this->ci->Service_transaction_model->find_by_id($tx_id);
-        if (!$tx) return array('ok' => false, 'error' => 'Transaction not found', 'code' => 'NOT_FOUND');
-
-        $from = $tx->status;
-        // Terminal check first. Re-requesting REFUNDED on an already-refunded
-        // transaction must be an explicit rejection, not a quiet "unchanged"
-        // success — a caller that treats ok=true as "the refund happened" would
-        // otherwise report a second refund that never occurred.
-        if (in_array($from, self::$terminal_states, true)) {
-            return array('ok' => false, 'error' => 'Transaction is already '.$from, 'code' => 'TERMINAL');
-        }
-        if ($from === $new_status) {
-            return array('ok' => true, 'transaction' => $tx, 'unchanged' => true);
-        }
-        // Anything else already settled has had its money moved.
-        // A settled purchase may only move to a refunding state — an admin
-        // refund or cancellation. It must not go back to PROCESSING.
-        if (in_array($from, self::$settled_states, true)
-            && !in_array($new_status, self::$refunding_states, true)) {
-            return array('ok' => false,
-                'error' => 'A '.$from.' transaction can only be refunded or cancelled',
-                'code' => 'NOT_ALLOWED');
+        if (!$this->ci->db->trans_begin()) {
+            return array('ok' => false, 'error' => 'Could not start transaction', 'code' => 'DB_ERROR');
         }
 
-        $fields = array('status' => $new_status);
-        if (in_array($new_status, self::$terminal_states, true)
-            || in_array($new_status, self::$settled_states, true)) {
-            $fields['completed_at'] = gmdate('Y-m-d H:i:s');
-        }
-        if ($reason !== null) $fields['failure_reason'] = substr($reason, 0, 255);
-
-        $wants_refund = !array_key_exists('refund', $opts) || $opts['refund'];
-        $refund_amount = null;
-        if ($wants_refund && in_array($new_status, self::$refunding_states, true)) {
-            $already = $this->money(isset($tx->refunded_amount) ? $tx->refunded_amount : '0');
-            $charged = $this->money($tx->amount);
-            $target  = isset($opts['amount']) ? $this->money($opts['amount']) : $charged;
-            // Never refund more than was charged, in total.
-            $remaining = bcsub($charged, $already, 8);
-            if (bccomp($target, $remaining, 8) > 0) $target = $remaining;
-            if (bccomp($target, '0', 8) > 0 && $tx->wallet_transaction_id) {
-                $refund_amount = $target;
+        try {
+            // Serialize lifecycle changes before deciding whether money should
+            // move. This makes simultaneous admin/worker refunds converge on
+            // one winner instead of both observing the same stale status.
+            $tx = $this->ci->Service_transaction_model->find_for_update($tx_id);
+            if (!$tx) {
+                $this->ci->db->trans_rollback();
+                return array('ok' => false, 'error' => 'Transaction not found', 'code' => 'NOT_FOUND');
             }
-        }
 
-        if ($refund_amount !== null) {
-            $wallet = $this->ci->Wallet_model->for_user($tx->user_id);
-            if ($wallet) {
+            $from = $tx->status;
+            // Terminal check first. Re-requesting REFUNDED on an already-refunded
+            // transaction must be an explicit rejection, not a quiet "unchanged"
+            // success — a caller that treats ok=true as "the refund happened" would
+            // otherwise report a second refund that never occurred.
+            if (in_array($from, self::$terminal_states, true)) {
+                $this->ci->db->trans_rollback();
+                return array('ok' => false, 'error' => 'Transaction is already '.$from, 'code' => 'TERMINAL');
+            }
+            if ($from === $new_status) {
+                $this->ci->db->trans_commit();
+                return array('ok' => true, 'transaction' => $tx, 'unchanged' => true);
+            }
+            // Anything else already settled has had its money moved.
+            // A settled purchase may only move to a refunding state — an admin
+            // refund or cancellation. It must not go back to PROCESSING.
+            if (in_array($from, self::$settled_states, true)
+                && !in_array($new_status, self::$refunding_states, true)) {
+                $this->ci->db->trans_rollback();
+                return array('ok' => false,
+                    'error' => 'A '.$from.' transaction can only be refunded or cancelled',
+                    'code' => 'NOT_ALLOWED');
+            }
+
+            $fields = array('status' => $new_status);
+            if (in_array($new_status, self::$terminal_states, true)
+                || in_array($new_status, self::$settled_states, true)) {
+                $fields['completed_at'] = gmdate('Y-m-d H:i:s');
+            }
+            if ($reason !== null) $fields['failure_reason'] = substr($reason, 0, 255);
+
+            $wants_refund = !array_key_exists('refund', $opts) || $opts['refund'];
+            $refund_amount = null;
+            if ($wants_refund && in_array($new_status, self::$refunding_states, true)) {
+                $already = $this->money(isset($tx->refunded_amount) ? $tx->refunded_amount : '0');
+                $charged = $this->money($tx->amount);
+                $target  = isset($opts['amount']) ? $this->money($opts['amount']) : $charged;
+                // Never refund more than was charged, in total.
+                $remaining = bcsub($charged, $already, 8);
+                if (bccomp($target, $remaining, 8) > 0) $target = $remaining;
+                if (bccomp($target, '0', 8) > 0 && $tx->wallet_transaction_id) {
+                    $refund_amount = $target;
+                }
+            }
+
+            if ($refund_amount !== null) {
+                $wallet = $this->ci->Wallet_model->for_user($tx->user_id);
+                if (!$wallet) {
+                    $this->ci->db->trans_rollback();
+                    return array('ok' => false, 'error' => 'Wallet not found', 'code' => 'NO_WALLET');
+                }
                 $res = $this->ci->ledgerservice->refund(
                     $wallet->id, $refund_amount, self::REFERENCE_TYPE, $tx->id,
                     'stx:'.$tx->id.':refund:'.$new_status
                 );
-                if (!empty($res['ok'])) {
-                    $fields['refunded_amount'] = bcadd(
-                        $this->money($tx->refunded_amount), $refund_amount, 8);
+                if (empty($res['ok'])) {
+                    $this->ci->db->trans_rollback();
+                    return array('ok' => false,
+                        'error' => $res['error'] ?? 'Refund ledger move failed',
+                        'code' => 'REFUND_FAILED');
                 }
+                $fields['refunded_amount'] = bcadd($already, $refund_amount, 8);
             }
+
+            // The lock above is authoritative; the compare-and-set is a final
+            // guard against a driver or test double that cannot retain it.
+            if (!$this->ci->Service_transaction_model->transition($tx->id, $from, $fields)) {
+                $this->ci->db->trans_rollback();
+                return array('ok' => false, 'error' => 'Transaction status changed concurrently', 'code' => 'CONFLICT');
+            }
+            $this->record_status($tx->id, $from, $new_status, $source, $reason);
+
+            if ($this->ci->db->trans_status() === false || !$this->ci->db->trans_commit()) {
+                $this->ci->db->trans_rollback();
+                return array('ok' => false, 'error' => 'Transaction could not be committed', 'code' => 'DB_ERROR');
+            }
+
+            return array(
+                'ok' => true,
+                'transaction' => $this->ci->Service_transaction_model->find_by_id($tx->id),
+                'refunded' => $refund_amount,
+            );
+        } catch (Throwable $e) {
+            $this->ci->db->trans_rollback();
+            log_message('error', 'TransactionEngine transition failed: '.$e->getMessage());
+            return array('ok' => false, 'error' => 'Transaction could not be updated', 'code' => 'DB_ERROR');
         }
-
-        $this->ci->Service_transaction_model->update_fields($tx->id, $fields);
-        $this->record_status($tx->id, $from, $new_status, $source, $reason);
-
-        return array(
-            'ok' => true,
-            'transaction' => $this->ci->Service_transaction_model->find_by_id($tx->id),
-            'refunded' => $refund_amount,
-        );
     }
 
     /* -------------------------------------------------------------------- */

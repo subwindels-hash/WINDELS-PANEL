@@ -222,6 +222,37 @@ class CronWorkers {
         return $this->ci->giftcardservice->settle_open_orders($limit);
     }
 
+    /* ===================== marketplace escrow release ===================== */
+
+    /**
+     * Release delivered marketplace orders after their inspection window.
+     * Disputes never enter this query: opening one changes status and clears
+     * release_due_at. The limit bounds both runtime and wallet lock pressure.
+     */
+    public function marketplace_release($limit = 100) {
+        $this->need(array('Marketplace_order_model'), array('MarketplaceService'));
+        $due = $this->ci->Marketplace_order_model->due_for_release($limit);
+        if (!$due) return array('processed'=>0, 'failed'=>0, 'message'=>'no marketplace escrow due');
+
+        $processed = 0; $failed = 0; $released = 0;
+        foreach ($due as $order) {
+            try {
+                $res = $this->ci->marketplaceservice->release($order, 'CRON', null);
+            } catch (Exception $e) {
+                log_message('error', 'marketplace_release: '.$e->getMessage());
+                $failed++;
+                continue;
+            }
+            $processed++;
+            if (empty($res['ok'])) $failed++; else $released++;
+        }
+        return array(
+            'processed' => $processed,
+            'failed' => $failed,
+            'message' => $released.' marketplace escrow order(s) released',
+        );
+    }
+
     /* ===================== order status synchronisation ==================== */
 
     /**

@@ -55,6 +55,7 @@ class FakeDb
     private $last_insert_id = 0;
     private $trans_depth = 0;
     private $trans_ok = true;
+    private $trans_snapshot = null;
 
     public function __construct(array $statements)
     {
@@ -78,7 +79,7 @@ class FakeDb
                 if ($definition === '') continue;
                 $upper = strtoupper($definition);
 
-                if (preg_match('/^(PRIMARY KEY|UNIQUE KEY|KEY|INDEX|FULLTEXT|CONSTRAINT|FOREIGN KEY)/', $upper)) {
+                if (preg_match('/^(PRIMARY KEY|UNIQUE KEY|KEY|INDEX|FULLTEXT|CONSTRAINT|FOREIGN KEY)\b/', $upper)) {
                     if (preg_match('/^(?:UNIQUE KEY \w+|PRIMARY KEY)\s*\(([^)]*)\)/i', $definition, $u)) {
                         $cols = array_map(function ($c) { return trim($c, " `"); }, explode(',', $u[1]));
                         $this->schema[$table]['unique'][] = $cols;
@@ -660,9 +661,54 @@ class FakeDb
 
     public function list_tables() { return array_keys($this->schema); }
 
-    public function trans_start() { $this->trans_depth++; }
-    public function trans_complete() { $this->trans_depth--; }
-    public function trans_rollback() { $this->trans_ok = false; }
+    /**
+     * Snapshot-backed transactions make failure-path integration tests honest.
+     * Nested transactions mirror CI's depth semantics; any rollback aborts the
+     * whole in-memory unit so an outer escrow operation cannot partly persist.
+     */
+    public function trans_begin()
+    {
+        if ($this->trans_depth === 0) {
+            $this->trans_snapshot = array(
+                'rows' => $this->rows,
+                'auto_increment' => $this->auto_increment,
+                'last_insert_id' => $this->last_insert_id,
+            );
+            $this->trans_ok = true;
+        }
+        $this->trans_depth++;
+        return true;
+    }
+
+    public function trans_start() { return $this->trans_begin(); }
+
+    public function trans_commit()
+    {
+        if ($this->trans_depth <= 0) return false;
+        $this->trans_depth--;
+        if ($this->trans_depth === 0) $this->trans_snapshot = null;
+        return $this->trans_ok;
+    }
+
+    public function trans_complete()
+    {
+        if (!$this->trans_ok) return $this->trans_rollback();
+        return $this->trans_commit();
+    }
+
+    public function trans_rollback()
+    {
+        if ($this->trans_snapshot !== null) {
+            $this->rows = $this->trans_snapshot['rows'];
+            $this->auto_increment = $this->trans_snapshot['auto_increment'];
+            $this->last_insert_id = $this->trans_snapshot['last_insert_id'];
+        }
+        $this->trans_snapshot = null;
+        $this->trans_depth = 0;
+        $this->trans_ok = false;
+        return true;
+    }
+
     public function trans_status() { return $this->trans_ok; }
 
     public function count($table) { return isset($this->rows[$table]) ? count($this->rows[$table]) : 0; }
@@ -716,6 +762,7 @@ class FakeDb
     public function count_all_results($table = null)
     {
         $table = $table ?: $this->pending_from;
+        $joins = $this->pending_joins;
         $this->pending_from = null; $this->pending_joins = array();
         $this->pending_select = array(); $this->pending_aggregates = array();
         $this->pending_group = array(); $this->pending_select_all = false;
@@ -727,7 +774,11 @@ class FakeDb
         $like = $this->takeLike();
         $groups = $this->takeGroups();
         $n = 0;
-        foreach ($this->rows[$table] as $row) if ($this->matches($row, $where, $or, $like, $groups)) $n++;
+        foreach ($this->rows[$table] as $row) {
+            foreach ($this->applyJoins($row, $joins) as $joined) {
+                if ($this->matches($joined, $where, $or, $like, $groups)) $n++;
+            }
+        }
         return $n;
     }
 

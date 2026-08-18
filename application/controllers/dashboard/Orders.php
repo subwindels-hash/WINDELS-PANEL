@@ -139,8 +139,57 @@ class Orders extends Auth_Controller {
         redirect('dashboard/orders/'.$public_id);
     }
 
-    /** Placeholder; mass-order form ships in Session 10. */
-    public function mass_order() { redirect('dashboard/new-order'); }
+    /** GET /dashboard/mass-order — bounded bulk-entry form and last result. */
+    public function mass_order() {
+        $this->guard_mass_orders();
+        $this->load->model('Wallet_model');
+
+        $old = $this->session->flashdata('mass_old');
+        $wallet = $this->Wallet_model->for_user($this->current_user->id);
+        $services = $this->Service_model->active_for_picker();
+        $rates = array();
+        foreach ($services as $service) {
+            $rates[(int)$service->id] = $this->pricingservice->price_for($service, $this->current_user);
+        }
+
+        $this->load->view('layouts/app', array(
+            'title'        => 'Mass Order',
+            'nav_active'   => 'dashboard/mass-order',
+            'unread'       => $this->dashboardstats->unread_count($this->current_user->id),
+            'content_view' => 'dashboard/orders/mass_order',
+            'current_user' => $this->current_user,
+            'permissions'  => $this->auth->permissions(),
+            'services'     => $services,
+            'service_rates'=> $rates,
+            'wallet'       => $wallet,
+            'batch_token'  => !empty($old['batch_token']) ? $old['batch_token'] : $this->generate_mass_token(),
+            'mass_input'   => isset($old['orders']) ? $old['orders'] : '',
+            'mass_result'  => $this->session->flashdata('mass_result'),
+        ));
+    }
+
+    /** POST /dashboard/mass-order/create — process rows independently. */
+    public function mass_create() {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->guard_mass_orders();
+        $this->load->library('MassOrderService');
+
+        $orders_input = $this->input->post('orders');
+        $token_input = $this->input->post('batch_token');
+        $orders = is_string($orders_input) ? $orders_input : '';
+        $batch_token = is_scalar($token_input) ? (string)$token_input : '';
+        $result = $this->massorderservice->process_text($this->current_user, $orders, $batch_token);
+        if (empty($result['ok'])) {
+            $this->session->set_flashdata('error', $result['error'] ?? 'Could not process the mass order.');
+            $this->session->set_flashdata('mass_old', array(
+                'orders' => strlen($orders) <= MassOrderService::MAX_BYTES ? $orders : '',
+                'batch_token' => $batch_token,
+            ));
+        } else {
+            $this->session->set_flashdata('mass_result', $result);
+        }
+        redirect('dashboard/mass-order');
+    }
 
     /** POST /dashboard/orders/:public_id/refill */
     public function refill($public_id) {
@@ -159,6 +208,15 @@ class Orders extends Auth_Controller {
     private function generate_idem() {
         // Stored in the form so a back-button resubmit returns the same order.
         return 'web:'.$this->current_user->id.':'.bin2hex(random_bytes(12));
+    }
+
+    private function generate_mass_token() {
+        return 'mass.'.$this->current_user->id.'.'.bin2hex(random_bytes(24));
+    }
+
+    private function guard_mass_orders() {
+        $this->load->model('Feature_flag_model');
+        if (!$this->Feature_flag_model->enabled('mass_order')) show_404();
     }
 
     private function place_error($code, $fallback) {
