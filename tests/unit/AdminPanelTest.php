@@ -252,6 +252,8 @@ class AdminPanelTest extends TestCase
             'Tickets.php'  => array('reply','assign','status','priority'),
             // Catalogue changes a price, which is money by another name.
             'Catalogue.php'=> array('create','update','status'),
+            // Users suspends accounts, grants roles and adjusts balances.
+            'Users.php'    => array('status','role','price_group','adjust'),
         );
         foreach ($expected as $file => $actions) {
             $src = file_get_contents(self::$root.'/application/controllers/admin/'.$file);

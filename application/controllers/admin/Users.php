@@ -1,0 +1,227 @@
+<?php
+defined('BASEPATH') OR exit('No direct script access allowed');
+
+/**
+ * Admin/Users — the customer directory and one customer's file.
+ *
+ * This screen was routed and permissioned from Session 15 (`admin/customers`
+ * sits in the sidebar and `users.view` / `users.edit` were seeded into the
+ * role matrix) but never built, so the nav entry 404'd for every operator and
+ * `users.view` gated nothing. Support had no way to answer "why is this
+ * customer's balance wrong" or to suspend a fraudulent account without SQL.
+ *
+ * Read requires `users.view`. Changing an account requires `users.edit`;
+ * moving money requires `wallets.adjust`, which is a separate permission
+ * because reading a customer's file and reaching into their wallet are
+ * different levels of trust.
+ *
+ * What this controller deliberately cannot do:
+ *   - **Write a balance.** Adjustments go through UserAdminService →
+ *     LedgerService, so a manual correction is double-entry and idempotent
+ *     like every other movement.
+ *   - **Read or reset credentials.** No password hash, MFA secret or API key
+ *     is loaded here. Suspending an account is support; becoming the customer
+ *     is not.
+ *   - **Delete anyone.** Accounts carry ledger history; they are suspended or
+ *     banned, never removed.
+ */
+class Users extends Admin_Controller {
+
+    const PER_PAGE = 25;
+
+    /** Rows of recent activity shown on one customer's file. */
+    const RECENT = 10;
+
+    public function __construct() {
+        parent::__construct();
+        $this->require_perm('users.view');
+        $this->load->library(array('UserAdminService', 'DashboardStats'));
+        $this->load->model(array(
+            'User_model', 'Wallet_model', 'Wallet_transaction_model',
+            'Order_model', 'Service_transaction_model', 'Audit_log_model',
+        ));
+    }
+
+    public function index() {
+        redirect('admin/customers');
+    }
+
+    /** GET /admin/customers — the directory. */
+    public function customers() {
+        $filters = $this->filters();
+        $filters['customers_only'] = !$this->input->get('role');
+
+        $page  = max(1, (int)$this->input->get('page'));
+        $limit = self::PER_PAGE;
+        $grid  = $this->useradminservice->grid($filters, $limit, ($page - 1) * $limit);
+        $total = (int)$grid['total'];
+
+        $this->render('Customers', 'admin/users/index', array(
+            'users'       => $grid['rows'],
+            'counts'      => $this->User_model->status_counts(
+                                 array('customers_only' => !empty($filters['customers_only']))),
+            'filters'     => $filters,
+            'groups'      => $this->db->order_by('name', 'ASC')->get('price_groups')->result(),
+            'roles'       => UserAdminService::ROLES,
+            'page'        => $page,
+            'total'       => $total,
+            'total_pages' => max(1, (int)ceil($total / $limit)),
+        ));
+    }
+
+    /**
+     * GET /admin/wallets — every wallet, richest first.
+     *
+     * A separate view of the same table rather than a separate screen: the
+     * question "who is holding our float" is asked during reconciliation, and
+     * sorting the customer directory by balance answers it.
+     */
+    public function wallets() {
+        $filters = $this->filters();
+        $page    = max(1, (int)$this->input->get('page'));
+        $limit   = self::PER_PAGE;
+        $grid    = $this->useradminservice->grid($filters, $limit, ($page - 1) * $limit);
+
+        $this->render('Wallets', 'admin/users/wallets', array(
+            'users'       => $grid['rows'],
+            'filters'     => $filters,
+            'totals'      => $this->Wallet_model->totals(),
+            'page'        => $page,
+            'total'       => (int)$grid['total'],
+            'total_pages' => max(1, (int)ceil((int)$grid['total'] / $limit)),
+        ));
+    }
+
+    /** GET /admin/customers/:id — one customer's file. */
+    public function detail($public_id) {
+        $user = $this->useradminservice->profile($public_id);
+        if (!$user) show_404();
+
+        // A customer's file shows recent activity, not their whole history —
+        // a five-year-old account would otherwise load thousands of rows to
+        // render ten. The full lists live behind the per-domain queues.
+        $limit = self::RECENT;
+
+        $this->render($user->username, 'admin/users/detail', array(
+            'user'         => $user,
+            'movements'    => $this->Wallet_transaction_model->for_wallet($user->wallet->id, $limit),
+            'orders'       => $this->Order_model->admin_search(array('user_id' => $user->id), $limit),
+            'services'     => $this->Service_transaction_model->admin_search(array('user_id' => $user->id), $limit),
+            'groups'       => $this->db->order_by('name', 'ASC')->get('price_groups')->result(),
+            'roles'        => UserAdminService::ROLES,
+            'statuses'     => UserAdminService::STATUSES,
+            'is_last_admin'=> $this->useradminservice->is_last_super_admin($user),
+        ));
+    }
+
+    /* ------------------------------ actions ----------------------------- */
+
+    /** POST /admin/customers/:id/status — suspend, ban or reinstate. */
+    public function status($public_id) {
+        $user   = $this->guard($public_id, 'users.edit');
+        $status = $this->input->post('status', true);
+        $reason = trim((string)$this->input->post('reason', true));
+
+        $res = $this->useradminservice->set_status($this->current_user, $user, $status, $reason ?: null);
+        if (empty($res['ok'])) return $this->fail($user, $res['error']);
+
+        $this->audit('user.status_changed', $user, $res['before'], $res['after']);
+        $this->done($user, 'Account is now '.strtolower($status).'.');
+    }
+
+    /** POST /admin/customers/:id/role — promote or demote. */
+    public function role($public_id) {
+        $user = $this->guard($public_id, 'staff.manage');
+        $role = $this->input->post('role', true);
+
+        $res = $this->useradminservice->set_role($this->current_user, $user, $role);
+        if (empty($res['ok'])) return $this->fail($user, $res['error']);
+
+        $this->audit('user.role_changed', $user, $res['before'], $res['after']);
+        $this->done($user, $user->username.' is now '.$role.'.');
+    }
+
+    /** POST /admin/customers/:id/price-group — move onto custom pricing. */
+    public function price_group($public_id) {
+        $user = $this->guard($public_id, 'pricing.manage');
+
+        $res = $this->useradminservice->set_price_group($user, $this->input->post('price_group_id', true));
+        if (empty($res['ok'])) return $this->fail($user, $res['error']);
+
+        $this->audit('user.price_group_changed', $user, $res['before'], $res['after']);
+        $this->done($user, 'Price group updated.');
+    }
+
+    /**
+     * POST /admin/customers/:id/adjust — correct a balance by hand.
+     *
+     * Gated on `wallets.adjust` rather than `users.edit`: the ability to
+     * suspend an account and the ability to mint balance are different jobs.
+     */
+    public function adjust($public_id) {
+        $user = $this->guard($public_id, 'wallets.adjust');
+
+        $res = $this->useradminservice->adjust_wallet(
+            $this->current_user, $user,
+            $this->input->post('amount', true),
+            $this->input->post('direction', true),
+            $this->input->post('reason', true),
+            // One key per rendered form, so a double-submit cannot pay twice.
+            'admin:adjust:'.$user->id.':'.substr((string)$this->input->post('nonce', true), 0, 40)
+        );
+        if (empty($res['ok'])) return $this->fail($user, $res['error']);
+
+        $this->audit('wallet.adjusted', $user, $res['before'], $res['after']);
+        $this->done($user, 'Wallet adjusted. New balance '
+            .windels_money($res['wallet']->balance, $res['wallet']->currency).'.');
+    }
+
+    /* ------------------------------ helpers ----------------------------- */
+
+    private function filters() {
+        return array(
+            'status'         => $this->input->get('status', true),
+            'role'           => $this->input->get('role', true),
+            'search'         => $this->input->get('q', true),
+            'price_group_id' => (int)$this->input->get('group'),
+        );
+    }
+
+    private function render($title, $view, array $data) {
+        $this->load->view('layouts/app', array_merge(array(
+            'title'        => $title,
+            'nav_active'   => 'admin/customers',
+            'content_view' => $view,
+            'current_user' => $this->current_user,
+            'permissions'  => $this->auth->permissions(),
+            'unread'       => $this->dashboardstats->unread_count($this->current_user->id),
+        ), $data));
+    }
+
+    /** POST-only + permission + existence, shared by every mutation. */
+    private function guard($public_id, $perm) {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm($perm);
+        $user = $this->User_model->find_by_public_id($public_id);
+        if (!$user) show_404();
+        return $user;
+    }
+
+    private function fail($user, $message) {
+        $this->session->set_flashdata('error', $message);
+        redirect('admin/customers/'.$user->public_id);
+    }
+
+    private function done($user, $message) {
+        $this->session->set_flashdata('success', $message);
+        redirect('admin/customers/'.$user->public_id);
+    }
+
+    private function audit($action, $user, $before, $after) {
+        $this->Audit_log_model->record(
+            $this->current_user->id, $action, 'users', (string)$user->id,
+            $before, $after,
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
+    }
+}

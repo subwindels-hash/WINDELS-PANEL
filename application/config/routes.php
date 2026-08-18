@@ -171,8 +171,13 @@ $route['admin/providers/(:any)/sync'] = 'admin/providers/sync/$1';
 $route['admin/providers/(:any)/sync-balance'] = 'admin/providers/sync_balance/$1';
 $route['admin/providers/(:any)'] = 'admin/providers/detail/$1';
 $route['admin/customers'] = 'admin/users/customers';
-$route['admin/customers/(:any)'] = 'admin/users/detail/$1';
 $route['admin/wallets'] = 'admin/users/wallets';
+// Action routes must precede the catch-all detail route below.
+$route['admin/customers/(:any)/status'] = 'admin/users/status/$1';
+$route['admin/customers/(:any)/role'] = 'admin/users/role/$1';
+$route['admin/customers/(:any)/price-group'] = 'admin/users/price_group/$1';
+$route['admin/customers/(:any)/adjust'] = 'admin/users/adjust/$1';
+$route['admin/customers/(:any)'] = 'admin/users/detail/$1';
 $route['admin/payments'] = 'admin/payments/index';
 $route['admin/payments/(:any)/approve'] = 'admin/payments/approve/$1';
 $route['admin/payments/(:any)/reject'] = 'admin/payments/reject/$1';

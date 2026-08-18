@@ -19,7 +19,28 @@ class LedgerService {
         return $this->credit($wallet_id, $amount, 'REFUND', $reference_type, $reference_id, $idempotency_key);
     }
 
-    private function move($wallet_id, $amount, $direction, $tx_type, $ref_type, $ref_id, $idem, $metadata){
+    /**
+     * A manual balance correction made by a member of staff.
+     *
+     * This is the only entry point that writes `actor_id` and `note`, the two
+     * columns wallet_transactions carries specifically for "an admin forced
+     * this". A goodwill credit and a clawback are the same operation in
+     * opposite directions, so they share one method and one audit shape.
+     *
+     * It deliberately reuses move(): an adjustment is not exempt from the
+     * balance floor, the row lock or the idempotency guard just because a
+     * human typed it. A DEBIT larger than the balance fails here exactly as a
+     * purchase would, which is what stops a clawback driving a wallet
+     * negative.
+     */
+    public function adjust($wallet_id, $amount, $direction, $reference_type, $reference_id,
+                           $idempotency_key=null, $metadata=null, $actor_id=null, $note=null){
+        $direction = strtoupper($direction) === 'DEBIT' ? 'DEBIT' : 'CREDIT';
+        return $this->move($wallet_id, $amount, $direction, 'ADJUSTMENT', $reference_type, $reference_id,
+            $idempotency_key, $metadata, array('actor_id' => $actor_id, 'note' => $note));
+    }
+
+    private function move($wallet_id, $amount, $direction, $tx_type, $ref_type, $ref_id, $idem, $metadata, $extra=array()){
         $this->ci->db->trans_start();
         // idempotency guard
         if ($idem) {
@@ -37,7 +58,7 @@ class LedgerService {
             $bal_after = bcadd($bal_before, $amt, 8);
         }
         $public_id = windels_public_id();
-        $this->ci->db->insert('wallet_transactions', array(
+        $row = array(
             'public_id'=>$public_id,
             'wallet_id'=>$wallet_id,
             'type'=>$tx_type,
@@ -50,7 +71,12 @@ class LedgerService {
             'idempotency_key'=>$idem,
             'metadata'=> $metadata ? json_encode($metadata) : null,
             'created_at'=>gmdate('Y-m-d H:i:s'),
-        ));
+        );
+        // Only a staff adjustment supplies these; every other movement leaves
+        // them NULL so "a human did this" stays a searchable fact.
+        if (!empty($extra['actor_id'])) $row['actor_id'] = (int)$extra['actor_id'];
+        if (!empty($extra['note']))     $row['note']     = mb_substr((string)$extra['note'], 0, 255);
+        $this->ci->db->insert('wallet_transactions', $row);
         $wt_id = $this->ci->db->insert_id();
         // double-entry ledger
         $this->ci->db->insert('ledger_entries', array(
