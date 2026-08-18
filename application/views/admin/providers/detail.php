@@ -51,9 +51,42 @@ $p = $provider;
     </div>
 
     <div class="card">
-      <h3 class="card-title">Provider services</h3>
+      <?php $is_vtu = (isset($family) && $family === 'VTU'); ?>
+      <h3 class="card-title"><?=$is_vtu ? 'VTU catalogue' : 'Provider services'?></h3>
       <?php if (empty($services)): ?>
-        <p class="muted mt-2">No services synced yet. Run “Sync services” to pull the provider catalog.</p>
+        <p class="muted mt-2">
+          <?php if ($is_vtu): ?>
+            No products synced yet. Run “Sync services” to pull this vendor’s bundles,
+            packages and PIN types into the VTU catalogue.
+          <?php else: ?>
+            No services synced yet. Run “Sync services” to pull the provider catalog.
+          <?php endif; ?>
+        </p>
+      <?php elseif ($is_vtu): ?>
+      <p class="muted text-sm mt-2">Synced products start inactive and priced at cost —
+        set a price and activate before customers can buy them. A re-sync never
+        overwrites a price you have set.</p>
+      <div class="overflow-x-auto mt-3">
+        <table class="table">
+          <thead><tr><th>Type</th><th>Vendor code</th><th>Name</th><th>Cost</th><th>Price</th><th>Status</th></tr></thead>
+          <tbody>
+          <?php foreach ($services as $s): ?>
+            <tr>
+              <td class="mono text-xs"><?=htmlspecialchars($s->service_type)?></td>
+              <td class="mono text-xs"><?=htmlspecialchars((string)$s->provider_code)?></td>
+              <td><?=htmlspecialchars($s->name)?></td>
+              <td class="mono"><?=$s->provider_cost !== null ? windels_money($s->provider_cost) : '—'?></td>
+              <td class="mono"><?=$s->price !== null ? windels_money($s->price) : '—'?></td>
+              <td>
+                <span class="badge <?=(int)$s->is_active ? 'badge-success' : 'badge-default'?>">
+                  <?=(int)$s->is_active ? 'ACTIVE' : 'INACTIVE'?>
+                </span>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
       <?php else: ?>
       <div class="overflow-x-auto mt-3">
         <table class="table">

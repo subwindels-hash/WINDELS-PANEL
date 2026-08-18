@@ -1,0 +1,13 @@
+{
+  "response_description": "000",
+  "content": {
+    "ServiceName": "DSTV Subscription",
+    "serviceID": "dstv",
+    "convinience_fee": "N0.00",
+    "variations": [
+      { "variation_code": "dstv-padi", "name": "DStv Padi N2,150", "variation_amount": "2150.00", "fixedPrice": "Yes" },
+      { "variation_code": "dstv79", "name": "DStv Compact N7,900", "variation_amount": "7900.00", "fixedPrice": "Yes" },
+      { "variation_code": "dstv3", "name": "DStv Premium N18,400", "variation_amount": "18400.00", "fixedPrice": "Yes" }
+    ]
+  }
+}

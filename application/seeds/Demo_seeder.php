@@ -18,6 +18,7 @@ class Demo_seeder extends Seeder {
         $this->password = getenv('DEMO_PASSWORD') ?: 'Demo!' . bin2hex(random_bytes(4));
 
         $provider_id   = $this->seed_provider();
+        $this->seed_vtpass_provider();
         $category_ids  = $this->seed_categories();
         $service_ids   = $this->seed_services($category_ids, $provider_id);
         $user_ids      = $this->seed_users();
@@ -53,6 +54,51 @@ class Demo_seeder extends Seeder {
             'sync_interval_minutes' => 60,
             'health_status'         => 'ONLINE',
             'notes'                 => 'Offline adapter used by tests and APP_ENV=demo. No real network calls.',
+        ));
+    }
+
+    /**
+     * A VTpass sandbox provider, but only when its credentials are in the
+     * environment.
+     *
+     * Seeding it unconditionally would be worse than not seeding it: an ACTIVE
+     * VTU provider with no keys is picked ahead of the MOCK adapter by
+     * VtuService::provider_for(), so every demo purchase would start failing
+     * against a vendor nobody configured. With keys present it is seeded
+     * INACTIVE anyway — an admin turns it on deliberately, after testing the
+     * connection.
+     */
+    private function seed_vtpass_provider() {
+        $api_key = getenv('VTPASS_API_KEY');
+        $public  = getenv('VTPASS_PUBLIC_KEY');
+        $secret  = getenv('VTPASS_SECRET_KEY');
+        if (!$api_key || !$public || !$secret) {
+            $this->out('vtpass: no VTPASS_* credentials in env — skipping (MOCK stays the VTU provider)');
+            return null;
+        }
+
+        $this->ci->load->library('EncryptionService');
+        $enc = $this->ci->encryptionservice->encrypt(json_encode(array(
+            'api_key' => $api_key, 'public_key' => $public, 'secret_key' => $secret,
+        )));
+        $url = getenv('VTPASS_BASE_URL') ?: 'https://sandbox.vtpass.com/api';
+
+        return $this->upsert('providers', array('name'=>'VTpass'), array(
+            'public_id'             => $this->pid(),
+            'api_url'               => rtrim($url, '/'),
+            'api_key_encrypted'     => $enc,
+            'api_type'              => 'VTPASS',
+            'status'                => 'INACTIVE',
+            'currency'              => 'NGN',
+            'timeout_ms'            => 20000,
+            'retry_policy'          => json_encode(array(
+                'maxRetries' => 2, 'backoffMs' => array(500, 1500),
+            )),
+            'rate_multiplier'       => '1.00000000',
+            'markup'                => '0.00000000',
+            'sync_interval_minutes' => 720,
+            'notes'                 => 'Live VTU vendor. Test the connection, sync the '
+                                      .'catalogue and price the products before activating.',
         ));
     }
 

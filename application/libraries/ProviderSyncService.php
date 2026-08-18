@@ -1,12 +1,23 @@
 <?php
 defined('BASEPATH') OR exit('No direct script access allowed');
 
+// The api_type whitelist and the family split are read straight off the
+// registry, including from static context, so the class must be present even
+// when CI has not loaded the library yet.
+require_once __DIR__.'/Provider_manager.php';
+
 /**
  * ProviderSyncService — adapter factory, connection test, service sync and
- * balance sync for providers (Session 08).
+ * balance sync for providers (Session 08, extended in session 24).
  *
  * The service never logs the decrypted API key, always goes through
  * SecureHttpClient (TLS verify ON), and writes structured sync/health logs.
+ *
+ * Providers come in families. SMM panels answer getBalance()/getServices();
+ * VTU vendors answer balance() and a per-service variation list. Rather than
+ * pretend one is the other, everything here dispatches on the family the
+ * api_type belongs to, and VTU adapters are built by Provider_manager so there
+ * is still exactly one registry of integrations.
  */
 class ProviderSyncService {
 
@@ -19,7 +30,33 @@ class ProviderSyncService {
     }
 
     /**
-     * Build the adapter for a stored provider row.
+     * Which family a provider row belongs to.
+     *
+     * MOCK is registered in both families and stays SMM here: it is the demo
+     * seed's SMM panel, and VTU code reaches it through Provider_manager.
+     */
+    public static function family($provider) {
+        $type = strtoupper(is_object($provider) ? ($provider->api_type ?? '') : (string)$provider);
+        if ($type !== 'MOCK'
+            && in_array($type, Provider_manager::supported_types(Provider_manager::FAMILY_VTU), true)) {
+            return Provider_manager::FAMILY_VTU;
+        }
+        return Provider_manager::FAMILY_SMM;
+    }
+
+    /** Every api_type this build can talk to, across all families. */
+    public static function supported_types() {
+        $types = array();
+        foreach (Provider_manager::families() as $family) {
+            foreach (Provider_manager::supported_types($family) as $type) {
+                if (!in_array($type, $types, true)) $types[] = $type;
+            }
+        }
+        return $types;
+    }
+
+    /**
+     * Build the SMM adapter for a stored provider row.
      * MOCK providers use the offline adapter; everything else uses StandardSmmAdapter.
      */
     public function adapter($provider) {
@@ -30,12 +67,21 @@ class ProviderSyncService {
         return new StandardSmmAdapter($provider, $this->ci->securehttpclient);
     }
 
+    /** Build the VTU adapter through the one registry (§14). */
+    public function vtu_adapter($provider) {
+        $this->ci->load->library('Provider_manager');
+        return $this->ci->provider_manager->adapter($provider, Provider_manager::FAMILY_VTU);
+    }
+
     /**
-     * Live connectivity + auth check via the adapter's getBalance().
+     * Live connectivity + auth check via the adapter's balance call.
      *
      * @return array{ok:bool,balance?:string,currency?:string,latency_ms?:int,error?:string,http_code?:int}
      */
     public function test_connection($provider) {
+        if (self::family($provider) === Provider_manager::FAMILY_VTU) {
+            return $this->test_vtu_connection($provider);
+        }
         $start = microtime(true);
         try {
             $adapter = $this->adapter($provider);
@@ -77,11 +123,56 @@ class ProviderSyncService {
     }
 
     /**
+     * Connectivity + auth check for a VTU vendor.
+     *
+     * Same contract as the SMM path — health row, balance refresh, latency —
+     * but the adapter comes from Provider_manager and answers balance(), which
+     * for VTpass is also the cheapest way to prove the api-key/public-key pair
+     * is the right way round.
+     */
+    private function test_vtu_connection($provider) {
+        $start = microtime(true);
+        try {
+            $res = $this->vtu_adapter($provider)->balance();
+        } catch (Exception $e) {
+            $latency = (int)round((microtime(true) - $start) * 1000);
+            $this->ci->Provider_model->record_health($provider->id, 'OFFLINE', $latency, $e->getMessage());
+            return array('ok' => false, 'error' => $e->getMessage(), 'latency_ms' => $latency);
+        }
+        $latency = (int)round((microtime(true) - $start) * 1000);
+
+        if (empty($res['ok'])) {
+            $err = $res['error'] ?? 'Connection failed';
+            $this->ci->Provider_model->record_health($provider->id, 'OFFLINE', $latency, $err);
+            return array('ok' => false, 'error' => $err, 'latency_ms' => $latency);
+        }
+
+        $balance  = isset($res['balance']) ? (string)$res['balance'] : null;
+        $currency = $res['currency'] ?? ($provider->currency ?? windels_base_currency());
+
+        $this->ci->db->trans_start();
+        $this->ci->Provider_model->record_health($provider->id, 'ONLINE', $latency, null);
+        if ($balance !== null) {
+            $this->ci->Provider_model->update_provider($provider->id, array(
+                'balance'  => number_format((float)$balance, 8, '.', ''),
+                'currency' => $currency,
+            ));
+        }
+        $this->ci->db->trans_complete();
+
+        return array('ok' => true, 'balance' => $balance, 'currency' => $currency,
+                     'latency_ms' => $latency);
+    }
+
+    /**
      * Pull the provider's service list and upsert into provider_services.
      *
      * @return array{ok:bool,inserted?:int,updated?:int,total?:int,error?:string,latency_ms?:int}
      */
     public function sync_services($provider) {
+        if (self::family($provider) === Provider_manager::FAMILY_VTU) {
+            return $this->sync_vtu_catalogue($provider);
+        }
         $start = microtime(true);
         try {
             $res = $this->adapter($provider)->getServices();
@@ -120,6 +211,91 @@ class ProviderSyncService {
             'updated' => $updated,
             'total' => $inserted + $updated,
             'latency_ms' => (int)round((microtime(true) - $start) * 1000),
+        );
+    }
+
+    /**
+     * Pull a VTU vendor's price list into vtu_products.
+     *
+     * provider_services is an SMM-panel shape (rate per 1000, min/max
+     * quantity) and means nothing for a data bundle, so VTU syncs land in the
+     * VTU catalogue instead. Two rules make this safe to run on a live panel:
+     *
+     *   - it never overwrites a price we set. The vendor's amount becomes
+     *     provider_cost; our selling price is only filled in when the row does
+     *     not have one yet. A sync must not be able to move the panel onto a
+     *     losing margin.
+     *   - a network the vendor does not carry is skipped, not failed. One
+     *     unsupported disco should not abort the other twenty.
+     *
+     * @return array{ok:bool,inserted?:int,updated?:int,total?:int,skipped?:int,error?:string,latency_ms?:int}
+     */
+    private function sync_vtu_catalogue($provider) {
+        $this->ci->load->model(array('Vtu_network_model', 'Vtu_product_model'));
+        $start = microtime(true);
+
+        try {
+            $adapter = $this->vtu_adapter($provider);
+        } catch (Exception $e) {
+            $latency = (int)round((microtime(true) - $start) * 1000);
+            $this->ci->Provider_model->record_sync($provider->id, 'services', 'FAILED', $e->getMessage(), 0, $latency);
+            return array('ok' => false, 'error' => $e->getMessage(), 'latency_ms' => $latency);
+        }
+        if (!method_exists($adapter, 'variations')) {
+            $latency = (int)round((microtime(true) - $start) * 1000);
+            $err = 'This VTU adapter cannot list products.';
+            $this->ci->Provider_model->record_sync($provider->id, 'services', 'FAILED', $err, 0, $latency);
+            return array('ok' => false, 'error' => $err, 'latency_ms' => $latency);
+        }
+
+        $types = method_exists($adapter, 'catalogue_types')
+            ? $adapter::catalogue_types() : array('DATA', 'CABLE', 'EXAM_PIN');
+
+        $inserted = 0; $updated = 0; $skipped = 0; $errors = array();
+        foreach ($types as $type) {
+            foreach ($this->ci->Vtu_network_model->active($type) as $network) {
+                try {
+                    $res = $adapter->variations($network->code);
+                } catch (Exception $e) {
+                    $skipped++;
+                    $errors[] = $network->code.': '.$e->getMessage();
+                    continue;
+                }
+                if (empty($res['ok']) || empty($res['variations'])) {
+                    $skipped++;
+                    if (!empty($res['error'])) $errors[] = $network->code.': '.$res['error'];
+                    continue;
+                }
+                foreach ($res['variations'] as $i => $v) {
+                    $outcome = $this->ci->Vtu_product_model->upsert_from_provider(
+                        $provider->id, (int)$network->id, $type, $v, $i);
+                    if ($outcome === 'inserted') $inserted++;
+                    elseif ($outcome === 'updated') $updated++;
+                }
+            }
+        }
+
+        $latency = (int)round((microtime(true) - $start) * 1000);
+        // Nothing at all came back: that is a failed sync, not an empty one.
+        if ($inserted + $updated === 0 && $errors) {
+            $message = implode(' | ', array_slice($errors, 0, 5));
+            $this->ci->Provider_model->record_sync($provider->id, 'services', 'FAILED', $message, 0, $latency);
+            return array('ok' => false, 'error' => $message, 'latency_ms' => $latency);
+        }
+
+        $this->ci->Provider_model->record_sync(
+            $provider->id, 'services', 'SUCCESS',
+            $errors ? 'Skipped: '.implode(' | ', array_slice($errors, 0, 5)) : null,
+            $inserted + $updated, $latency
+        );
+
+        return array(
+            'ok'       => true,
+            'inserted' => $inserted,
+            'updated'  => $updated,
+            'total'    => $inserted + $updated,
+            'skipped'  => $skipped,
+            'latency_ms' => $latency,
         );
     }
 
@@ -223,7 +399,7 @@ class ProviderSyncService {
             'public_id'         => windels_public_id(),
             'name'              => trim($input['name']),
             'api_url'           => rtrim(trim($input['api_url']), '/'),
-            'api_key_encrypted' => $this->ci->encryptionservice->encrypt($input['api_key']),
+            'api_key_encrypted' => $this->ci->encryptionservice->encrypt($this->credential_payload($input)),
             'api_type'          => strtoupper($input['api_type'] ?? 'STANDARD_SMM'),
             'status'            => $input['status'] ?? 'ACTIVE',
             'currency'          => $input['currency'] ?? windels_base_currency(),
@@ -247,13 +423,50 @@ class ProviderSyncService {
         return array('ok' => true, 'provider' => $provider);
     }
 
+    /**
+     * What actually gets encrypted into providers.api_key_encrypted.
+     *
+     * Most vendors issue one key. VTpass issues three, split by method
+     * (api-key always, public-key for GET, secret-key for POST), so those are
+     * stored as a JSON blob in the same column rather than adding two more
+     * secret columns for one integration. VtpassAdapter reads either shape.
+     */
+    private function credential_payload(array $input) {
+        if (strtoupper($input['api_type'] ?? '') !== 'VTPASS') {
+            return $input['api_key'];
+        }
+        return json_encode(array(
+            'api_key'    => trim((string)$input['api_key']),
+            'public_key' => trim((string)($input['public_key'] ?? '')),
+            'secret_key' => trim((string)($input['secret_key'] ?? '')),
+        ));
+    }
+
+    /** VTpass is unusable without all three keys, so refuse to store a half-set. */
+    private function vtpass_credential_errors(array $input) {
+        $errors = array();
+        $public = trim((string)($input['public_key'] ?? ''));
+        $secret = trim((string)($input['secret_key'] ?? ''));
+        if ($public === '') $errors[] = 'VTpass needs a public key (PK_...) for lookups.';
+        elseif (stripos($public, 'PK_') !== 0) $errors[] = 'The VTpass public key should start with PK_.';
+        if ($secret === '') $errors[] = 'VTpass needs a secret key (SK_...) for purchases.';
+        elseif (stripos($secret, 'SK_') !== 0) $errors[] = 'The VTpass secret key should start with SK_.';
+        return $errors;
+    }
+
     private function validate(array $input) {
         $errors = array();
         if (empty($input['name']) || mb_strlen($input['name']) < 2) $errors[] = 'Name is required.';
         if (empty($input['api_url']) || !filter_var($input['api_url'], FILTER_VALIDATE_URL)) $errors[] = 'A valid API URL is required.';
         if (empty($input['api_key'])) $errors[] = 'API key is required.';
-        if (isset($input['api_type']) && !in_array(strtoupper($input['api_type']), array('STANDARD_SMM','MOCK'), true)) {
-            $errors[] = 'API type must be STANDARD_SMM or MOCK.';
+        // The whitelist is the registry, not a second hardcoded list: adding
+        // an adapter must not require remembering to edit this line.
+        if (isset($input['api_type'])
+            && !in_array(strtoupper($input['api_type']), self::supported_types(), true)) {
+            $errors[] = 'API type must be one of: '.implode(', ', self::supported_types()).'.';
+        }
+        if (isset($input['api_type']) && strtoupper($input['api_type']) === 'VTPASS') {
+            foreach ($this->vtpass_credential_errors($input) as $e) $errors[] = $e;
         }
         if (isset($input['timeout_ms']) && ((int)$input['timeout_ms'] < 1000 || (int)$input['timeout_ms'] > 60000)) {
             $errors[] = 'Timeout must be between 1000 and 60000 ms.';

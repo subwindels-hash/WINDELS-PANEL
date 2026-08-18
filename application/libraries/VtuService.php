@@ -129,7 +129,8 @@ class VtuService {
             'recipient_name' => $input['customer_name'] ?? null,
             'input'        => $input,
             'payload'      => array('smartcard' => $smartcard, 'provider_code' => $network->code,
-                                    'variation_code' => $product->provider_code ?: $product->code),
+                                    'variation_code' => $product->provider_code ?: $product->code,
+                                    'phone' => $this->contact_phone($user, $input)),
             'call'         => 'cable',
         ));
     }
@@ -170,7 +171,8 @@ class VtuService {
             'extra'        => array('meter_type' => $meter_type),
             'input'        => $input,
             'payload'      => array('meter' => $meter, 'disco_code' => $network->code,
-                                    'meter_type' => $meter_type, 'amount' => $face),
+                                    'meter_type' => $meter_type, 'amount' => $face,
+                                    'phone' => $this->contact_phone($user, $input)),
             'call'         => 'electricity',
         ));
     }
@@ -201,7 +203,8 @@ class VtuService {
             'extra'        => array('quantity' => $qty),
             'input'        => $input,
             'payload'      => array('exam_code' => $network->code, 'quantity' => $qty,
-                                    'variation_code' => $product->provider_code ?: $product->code),
+                                    'variation_code' => $product->provider_code ?: $product->code,
+                                    'phone' => $this->contact_phone($user, $input)),
             'call'         => 'education',
         ));
     }
@@ -382,6 +385,25 @@ class VtuService {
         $off = bcdiv(bcmul($face, $pct, 8), '100', 8);
         $net = bcsub($face, $off, 8);
         return bccomp($net, '0', 8) < 0 ? '0.00000000' : $net;
+    }
+
+    /**
+     * The phone number a live vendor notifies about a bill payment.
+     *
+     * Cable, electricity and exam purchases have no MSISDN of their own, but
+     * VTpass requires `phone` on every /pay and rejects the request without
+     * one. Prefer what the customer typed, fall back to their account phone,
+     * and only then to a placeholder — a purchase must not be blocked because
+     * a profile field is empty, but it should reach the right person when it
+     * can.
+     */
+    private function contact_phone($user, array $input) {
+        foreach (array($input['phone'] ?? null,
+                       is_object($user) ? ($user->phone ?? null) : null) as $candidate) {
+            $msisdn = $this->normalise_msisdn((string)$candidate);
+            if ($msisdn) return $msisdn;
+        }
+        return null;
     }
 
     private function normalise_msisdn($raw) {

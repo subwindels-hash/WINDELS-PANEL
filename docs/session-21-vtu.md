@@ -162,4 +162,10 @@ price.
 > [session 22](session-22-currency.md): the base is now NGN. The admin VTU
 > screens — the missing surface for the `vtu.*` permissions seeded here — landed
 > in [session 23](session-23-admin-vtu.md), which also covers phase G for the
-> VTU domain.
+> VTU domain. Phase C's open question — no live vendor, meter verification
+> unproven — was closed in [session 24](session-24-vtpass.md): `VtpassAdapter`
+> integrates all five VTU types, verification and requery settlement against
+> real VTpass response shapes. Note that `StandardVtuAdapter`, written here from
+> a remembered VTpass shape, turned out to have three money-losing defects
+> (Bearer auth, requerying by the wrong identifier, and refunding on timeout);
+> it remains registered but VTpass deployments should use `VTPASS`.

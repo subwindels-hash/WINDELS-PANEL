@@ -166,7 +166,10 @@ shared infrastructure first so the domains do not each invent their own.
 | **G** | Unified history (§20), admin sections + analytics (§25/§26) for all new domains | Cross-cutting; cheapest once the domains exist |
 
 Progress: **A** and **B** landed in session 21; **C** is implemented in
-`VtuService` but only exercised against the `MOCK` adapter. The **G** slice for
+`VtuService` and, since [session 24](session-24-vtpass.md), exercised against a
+real vendor — `VtpassAdapter` covers all five VTU types plus meter/smartcard
+verification, requery settlement and catalogue sync, with the whole contract
+pinned by captured fixtures rather than live credentials. The **G** slice for
 VTU — the admin queue, detail, refund and manual re-check — landed in
 [session 23](session-23-admin-vtu.md), which sets the pattern D–F should copy.
 

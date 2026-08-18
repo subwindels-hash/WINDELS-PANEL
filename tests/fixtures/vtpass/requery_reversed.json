@@ -1,0 +1,15 @@
+{
+  "code": "040",
+  "content": {
+    "transactions": {
+      "status": "reversed",
+      "product_name": "MTN Airtime VTU",
+      "unique_element": "300000000000",
+      "total_amount": 0,
+      "amount": 1000,
+      "transactionId": "17452788191111111111"
+    }
+  },
+  "response_description": "TRANSACTION REVERSED",
+  "requestId": "202608171832SANDBOXC3"
+}

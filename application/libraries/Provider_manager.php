@@ -29,6 +29,7 @@ class Provider_manager {
         self::FAMILY_VTU => array(
             'MOCK'         => array('MockVtuAdapter', 'MockVtuAdapter.php'),
             'STANDARD_VTU' => array('StandardVtuAdapter', 'StandardVtuAdapter.php'),
+            'VTPASS'       => array('VtpassAdapter', 'VtpassAdapter.php'),
         ),
     );
 

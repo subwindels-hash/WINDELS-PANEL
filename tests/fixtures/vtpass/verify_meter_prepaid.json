@@ -1,0 +1,14 @@
+{
+  "code": "000",
+  "content": {
+    "Customer_Name": "ABDULLAHI MUSA",
+    "Address": "12 KANO ROAD MINNA",
+    "Meter_Number": "1111111111111",
+    "Customer_Arrears": "N/A",
+    "Minimum_Amount": "500",
+    "Customer_Account_Type": "NMD",
+    "Meter_Type": "PREPAID",
+    "WrongBillersCode": false,
+    "Can_Vend": "yes"
+  }
+}

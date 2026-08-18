@@ -60,9 +60,10 @@
     </label>
     <div class="row" style="gap:.75rem">
       <label class="field" style="flex:1"><span class="label">Type</span>
-        <select class="select" name="api_type">
-          <option value="STANDARD_SMM">STANDARD_SMM</option>
-          <option value="MOCK">MOCK (offline test)</option>
+        <select class="select" name="api_type" id="ws-api-type">
+          <?php foreach (($api_types ?? array('STANDARD_SMM'=>'SMM','MOCK'=>'SMM')) as $type => $family): ?>
+            <option value="<?=htmlspecialchars($type)?>"><?=htmlspecialchars($type)?><?=$type==='MOCK'?' (offline test)':' · '.htmlspecialchars($family)?></option>
+          <?php endforeach; ?>
         </select>
       </label>
       <label class="field" style="flex:1"><span class="label">Status</span>
@@ -77,6 +78,23 @@
         <input class="input" type="number" name="sync_interval_minutes" value="60" min="1">
       </label>
     </div>
+    <details class="text-sm muted">
+      <summary>VTpass keys (VTPASS only)</summary>
+      <p class="text-xs muted" style="margin-top:.5rem">
+        VTpass authenticates GET and POST with different keys, so both are required.
+        Sandbox API URL: <span class="mono">https://sandbox.vtpass.com/api</span> ·
+        live: <span class="mono">https://vtpass.com/api</span>. All three values are
+        encrypted together at rest.
+      </p>
+      <div class="row" style="gap:.75rem;margin-top:.5rem">
+        <label class="field" style="flex:1"><span class="label">Public key (reads)</span>
+          <input class="input" name="public_key" autocomplete="off" placeholder="PK_...">
+        </label>
+        <label class="field" style="flex:1"><span class="label">Secret key (purchases)</span>
+          <input class="input" name="secret_key" autocomplete="off" placeholder="SK_...">
+        </label>
+      </div>
+    </details>
     <details class="text-sm muted">
       <summary>Advanced</summary>
       <div class="row" style="gap:.75rem;margin-top:.5rem">
