@@ -81,6 +81,12 @@ class ProviderSyncService {
         return $this->ci->provider_manager->adapter($provider, Provider_manager::FAMILY_NUMBER);
     }
 
+    /** Build the identity/KYC adapter through the same registry (§14, §22). */
+    public function identity_adapter($provider) {
+        $this->ci->load->library('Provider_manager');
+        return $this->ci->provider_manager->adapter($provider, Provider_manager::FAMILY_IDENTITY);
+    }
+
     /**
      * Live connectivity + auth check via the adapter's balance call.
      *
@@ -93,6 +99,9 @@ class ProviderSyncService {
         }
         if ($family === Provider_manager::FAMILY_NUMBER) {
             return $this->test_number_connection($provider);
+        }
+        if ($family === Provider_manager::FAMILY_IDENTITY) {
+            return $this->test_identity_connection($provider);
         }
         $start = microtime(true);
         try {
@@ -219,6 +228,50 @@ class ProviderSyncService {
     }
 
     /**
+     * Connectivity check for an identity/KYC vendor (§22).
+     *
+     * Same shape as the number probe, and deliberately the *balance* call
+     * rather than a sample lookup: a KYC vendor charges per query, so a test
+     * button that ran a real NIN search would bill us every time an admin
+     * clicked it — and would need somebody's actual NIN to click with.
+     * Checking the wallet proves the key, the AppId and the network without
+     * touching anybody's identity.
+     */
+    private function test_identity_connection($provider) {
+        $start = microtime(true);
+        try {
+            $res = $this->identity_adapter($provider)->balance();
+        } catch (Exception $e) {
+            $latency = (int)round((microtime(true) - $start) * 1000);
+            $this->ci->Provider_model->record_health($provider->id, 'OFFLINE', $latency, $e->getMessage());
+            return array('ok' => false, 'error' => $e->getMessage(), 'latency_ms' => $latency);
+        }
+        $latency = (int)round((microtime(true) - $start) * 1000);
+
+        if (empty($res['ok'])) {
+            $err = $res['error'] ?? 'Connection failed';
+            $this->ci->Provider_model->record_health($provider->id, 'OFFLINE', $latency, $err);
+            return array('ok' => false, 'error' => $err, 'latency_ms' => $latency);
+        }
+
+        $balance  = isset($res['balance']) ? (string)$res['balance'] : null;
+        $currency = $res['currency'] ?? ($provider->currency ?? windels_base_currency());
+
+        $this->ci->db->trans_start();
+        $this->ci->Provider_model->record_health($provider->id, 'ONLINE', $latency, null);
+        if ($balance !== null) {
+            $this->ci->Provider_model->update_provider($provider->id, array(
+                'balance'  => number_format((float)$balance, 8, '.', ''),
+                'currency' => $currency,
+            ));
+        }
+        $this->ci->db->trans_complete();
+
+        return array('ok' => true, 'balance' => $balance, 'currency' => $currency,
+                     'latency_ms' => $latency);
+    }
+
+    /**
      * Pull the provider's service list and upsert into provider_services.
      *
      * @return array{ok:bool,inserted?:int,updated?:int,total?:int,error?:string,latency_ms?:int}
@@ -230,6 +283,18 @@ class ProviderSyncService {
         }
         if ($family === Provider_manager::FAMILY_NUMBER) {
             return $this->sync_number_catalogue($provider);
+        }
+        if ($family === Provider_manager::FAMILY_IDENTITY) {
+            // Identity vendors publish no catalogue to mirror: there are a
+            // handful of lookup types, they do not change, and what they cost
+            // the customer is our pricing decision, not theirs. Say so plainly
+            // instead of falling through to the SMM path, which would call
+            // getServices() on an adapter that has no such method.
+            return array(
+                'ok'    => false,
+                'error' => 'Identity vendors have no catalogue to sync. '
+                          .'Lookup types and prices are managed in the identity product list.',
+            );
         }
         $start = microtime(true);
         try {
@@ -573,14 +638,34 @@ class ProviderSyncService {
      * secret columns for one integration. VtpassAdapter reads either shape.
      */
     private function credential_payload(array $input) {
-        if (strtoupper($input['api_type'] ?? '') !== 'VTPASS') {
-            return $input['api_key'];
+        $type = strtoupper($input['api_type'] ?? '');
+        if ($type === 'VTPASS') {
+            return json_encode(array(
+                'api_key'    => trim((string)$input['api_key']),
+                'public_key' => trim((string)($input['public_key'] ?? '')),
+                'secret_key' => trim((string)($input['secret_key'] ?? '')),
+            ));
         }
-        return json_encode(array(
-            'api_key'    => trim((string)$input['api_key']),
-            'public_key' => trim((string)($input['public_key'] ?? '')),
-            'secret_key' => trim((string)($input['secret_key'] ?? '')),
-        ));
+        // Dojah signs every call with a secret key *and* an AppId; the AppId
+        // is not really secret, but keeping the pair together in one blob
+        // means a key rotation swaps one column and cannot leave the two
+        // halves out of step.
+        if ($type === 'DOJAH') {
+            return json_encode(array(
+                'api_key' => trim((string)$input['api_key']),
+                'app_id'  => trim((string)($input['app_id'] ?? '')),
+            ));
+        }
+        return $input['api_key'];
+    }
+
+    /** Dojah returns 401 for every call if either half of the pair is missing. */
+    private function dojah_credential_errors(array $input) {
+        $errors = array();
+        if (trim((string)($input['app_id'] ?? '')) === '') {
+            $errors[] = 'Dojah needs the AppId from your dashboard alongside the secret key.';
+        }
+        return $errors;
     }
 
     /** VTpass is unusable without all three keys, so refuse to store a half-set. */
@@ -608,6 +693,9 @@ class ProviderSyncService {
         }
         if (isset($input['api_type']) && strtoupper($input['api_type']) === 'VTPASS') {
             foreach ($this->vtpass_credential_errors($input) as $e) $errors[] = $e;
+        }
+        if (isset($input['api_type']) && strtoupper($input['api_type']) === 'DOJAH') {
+            foreach ($this->dojah_credential_errors($input) as $e) $errors[] = $e;
         }
         if (isset($input['timeout_ms']) && ((int)$input['timeout_ms'] < 1000 || (int)$input['timeout_ms'] > 60000)) {
             $errors[] = 'Timeout must be between 1000 and 60000 ms.';

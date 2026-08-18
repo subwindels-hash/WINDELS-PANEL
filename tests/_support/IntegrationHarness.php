@@ -324,6 +324,53 @@ class IntegrationHarness
         return $this;
     }
 
+    /**
+     * Identity domain: a MOCK_IDENTITY provider and a priced catalogue.
+     *
+     * NIN_UNPRICED is seeded deliberately. The catalogue rule that unpriced
+     * rows are not sellable is enforced in Identity_product_model::active()
+     * and re-checked in IdentityService::verify(), and a fixture that only
+     * ever contains priced rows cannot tell whether either check is still
+     * there.
+     */
+    public function seed_identity()
+    {
+        $now = gmdate('Y-m-d H:i:s');
+
+        $this->db->insert('providers', array(
+            'public_id' => 'PROV0000000000000000000004', 'name' => 'Acme Identity',
+            'api_url' => 'https://api.identity.test', 'api_key_encrypted' => 'enc:test',
+            'api_type' => 'MOCK_IDENTITY', 'status' => 'ACTIVE', 'currency' => 'NGN',
+            'created_at' => $now, 'updated_at' => $now,
+        ));
+        $provider_id = $this->db->insert_id();
+
+        $products = array(
+            // code, name, id_type, lookup_field, provider_code, price, cost, active
+            array('NIN_BASIC',    'NIN verification',   'NIN', 'IDENTIFIER', 'kyc/nin',
+                  '250.00000000', '120.00000000', 1),
+            array('BVN_BASIC',    'BVN verification',   'BVN', 'IDENTIFIER', 'kyc/bvn',
+                  '300.00000000', '150.00000000', 1),
+            array('NIN_PHONE',    'NIN by phone',       'NIN', 'PHONE',      'kyc/nin/phone_number',
+                  '400.00000000', '200.00000000', 1),
+            array('NIN_UNPRICED', 'NIN premium',        'NIN', 'IDENTIFIER', 'kyc/nin/advance',
+                  null,            null,           1),
+            array('BVN_OFF',      'BVN advanced',       'BVN', 'IDENTIFIER', 'kyc/bvn/advance',
+                  '500.00000000', '300.00000000', 0),
+        );
+        foreach ($products as $i => $p) {
+            $this->db->insert('identity_products', array(
+                'public_id' => 'IDPR'.str_pad((string)($i + 1), 22, '0', STR_PAD_LEFT),
+                'code' => $p[0], 'name' => $p[1], 'id_type' => $p[2],
+                'lookup_field' => $p[3], 'provider_id' => $provider_id,
+                'provider_code' => $p[4], 'price' => $p[5], 'provider_cost' => $p[6],
+                'is_active' => $p[7], 'sorting' => $i,
+                'created_at' => $now, 'updated_at' => $now,
+            ));
+        }
+        return $this;
+    }
+
     /* ----------------------------- factories ---------------------------- */
 
     /** A user with a wallet, created the way the app creates them. */

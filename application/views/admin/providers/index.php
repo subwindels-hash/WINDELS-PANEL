@@ -96,6 +96,20 @@
       </div>
     </details>
     <details class="text-sm muted">
+      <summary>Dojah AppId (DOJAH only)</summary>
+      <p class="text-xs muted" style="margin-top:.5rem">
+        Dojah sends the secret key in <span class="mono">Authorization</span> with no
+        <span class="mono">Bearer</span> prefix, plus an <span class="mono">AppId</span> header —
+        both are required or every call returns 401. Sandbox API URL:
+        <span class="mono">https://sandbox.dojah.io</span> · live:
+        <span class="mono">https://api.dojah.io</span>. Sandbox keys do not work
+        against the live URL.
+      </p>
+      <label class="field" style="margin-top:.5rem"><span class="label">AppId</span>
+        <input class="input" name="app_id" autocomplete="off" placeholder="From the Dojah dashboard">
+      </label>
+    </details>
+    <details class="text-sm muted">
       <summary>Advanced</summary>
       <div class="row" style="gap:.75rem;margin-top:.5rem">
         <label class="field" style="flex:1"><span class="label">Rate multiplier</span>

@@ -1288,4 +1288,56 @@ CREATE TABLE IF NOT EXISTS otp_messages (
   INDEX idx_otp_number_created (virtual_number_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ---------------------------------------------------------------------
+-- migration 013_identity_verification
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS identity_products (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  code VARCHAR(48) NOT NULL UNIQUE COMMENT 'our stable code: NIN_BASIC, BVN_BASIC',
+  name VARCHAR(96) NOT NULL,
+  id_type VARCHAR(16) NOT NULL COMMENT 'NIN|BVN',
+  lookup_field VARCHAR(16) NOT NULL DEFAULT 'IDENTIFIER' COMMENT 'IDENTIFIER|PHONE — what the customer types',
+  provider_id BIGINT UNSIGNED NULL,
+  provider_code VARCHAR(64) NULL COMMENT 'vendor endpoint key, e.g. kyc/nin',
+  description VARCHAR(255) NULL,
+  price DECIMAL(20,8) NULL COMMENT 'customer price in base currency',
+  provider_cost DECIMAL(20,8) NULL COMMENT 'what the vendor charges us',
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  sorting INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_idprod_provider FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL,
+  INDEX idx_idprod_active (is_active, sorting),
+  INDEX idx_idprod_type (id_type, is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS identity_checks (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  service_transaction_id BIGINT UNSIGNED NOT NULL UNIQUE,
+  product_id BIGINT UNSIGNED NULL,
+  id_type VARCHAR(16) NOT NULL COMMENT 'NIN|BVN',
+  lookup_field VARCHAR(16) NOT NULL DEFAULT 'IDENTIFIER',
+  identifier_hash CHAR(64) NOT NULL COMMENT 'HMAC blind index — the raw NIN/BVN is never stored',
+  identifier_last4 VARCHAR(8) NULL COMMENT 'masked tail, for display only',
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING|VERIFIED|NOT_FOUND|FAILED',
+  result_encrypted MEDIUMTEXT NULL COMMENT 'AES-256-GCM JSON of the vendor entity; photo never stored',
+  provider_reference VARCHAR(64) NULL,
+  consent_at DATETIME NULL COMMENT 'when the customer confirmed they have the subject consent',
+  consent_ip VARCHAR(45) NULL,
+  reveal_count INT NOT NULL DEFAULT 0 COMMENT 'how many times staff opened the result',
+  last_revealed_at DATETIME NULL,
+  last_revealed_by BIGINT UNSIGNED NULL,
+  purged_at DATETIME NULL COMMENT 'retention sweep scrubbed result_encrypted',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_idchk_stx FOREIGN KEY (service_transaction_id) REFERENCES service_transactions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_idchk_product FOREIGN KEY (product_id) REFERENCES identity_products(id) ON DELETE SET NULL,
+  CONSTRAINT fk_idchk_revealer FOREIGN KEY (last_revealed_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_idchk_hash (identifier_hash),
+  INDEX idx_idchk_status_created (status, created_at),
+  INDEX idx_idchk_purge (purged_at, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;

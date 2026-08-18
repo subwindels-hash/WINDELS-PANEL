@@ -83,6 +83,12 @@ $route['dashboard/numbers/(:any)/cancel'] = 'dashboard/numbers/cancel/$1';
 $route['dashboard/numbers/(:any)/release'] = 'dashboard/numbers/release/$1';
 $route['dashboard/numbers/(:any)/report'] = 'dashboard/numbers/report/$1';
 $route['dashboard/numbers/(:any)'] = 'dashboard/numbers/detail/$1';
+// Identity verification (§22). Named segments before the catch-all detail.
+$route['dashboard/identity'] = 'dashboard/identity/index';
+$route['dashboard/identity/history'] = 'dashboard/identity/history';
+$route['dashboard/identity/verify'] = 'dashboard/identity/verify';
+$route['dashboard/identity/(:any)/reveal'] = 'dashboard/identity/reveal/$1';
+$route['dashboard/identity/(:any)'] = 'dashboard/identity/detail/$1';
 $route['dashboard/services'] = 'dashboard/services/index';
 $route['dashboard/favorites'] = 'dashboard/services/favorites';
 $route['dashboard/favorites/add/(:any)'] = 'dashboard/favorites/add/$1';
@@ -125,6 +131,12 @@ $route['admin/numbers/(:any)/recheck'] = 'admin/numbers/recheck/$1';
 $route['admin/numbers/(:any)/release'] = 'admin/numbers/release/$1';
 $route['admin/numbers/(:any)/refund'] = 'admin/numbers/refund/$1';
 $route['admin/numbers/(:any)'] = 'admin/numbers/detail/$1';
+$route['admin/identity'] = 'admin/identity/index';
+// Action routes must precede the catch-all detail route below.
+$route['admin/identity/(:any)/reveal'] = 'admin/identity/reveal/$1';
+$route['admin/identity/(:any)/refund'] = 'admin/identity/refund/$1';
+$route['admin/identity/(:any)/purge'] = 'admin/identity/purge/$1';
+$route['admin/identity/(:any)'] = 'admin/identity/detail/$1';
 $route['admin/services'] = 'admin/services/index';
 $route['admin/categories'] = 'admin/categories/index';
 $route['admin/providers'] = 'admin/providers/index';

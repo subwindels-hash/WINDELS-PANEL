@@ -22,4 +22,7 @@ $config['provider_adapters'] = array(
     // Virtual numbers / OTP
     'MOCK_NUMBER'  => 'MockNumberAdapter', // tests / APP_ENV=demo
     'FIVESIM'      => 'FiveSimAdapter',
+    // Identity / KYC
+    'MOCK_IDENTITY'=> 'MockIdentityAdapter', // tests / APP_ENV=demo
+    'DOJAH'        => 'DojahAdapter',
 );

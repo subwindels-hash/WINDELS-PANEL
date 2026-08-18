@@ -179,6 +179,26 @@ class CronWorkers {
         );
     }
 
+    /* ======================== identity retention =========================== */
+
+    /**
+     * Delete identity results that have outlived their retention window (§22).
+     *
+     * This is the job that makes the promise on the customer-facing page true.
+     * It is scheduled nightly rather than hourly because retention is measured
+     * in days, and a sweep that runs while staff are working is a sweep that
+     * deletes a record somebody has open.
+     *
+     * The work itself lives in IdentityService::purge_expired(), so the
+     * scheduled sweep and the admin's "delete this now" button clear exactly
+     * the same fields. Only the payload goes; the row, the money and the audit
+     * trail stay.
+     */
+    public function identity_purge($limit = 500) {
+        $this->need(array('Identity_check_model'), array('IdentityService'));
+        return $this->ci->identityservice->purge_expired(null, $limit);
+    }
+
     /* ===================== order status synchronisation ==================== */
 
     /**

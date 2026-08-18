@@ -20,6 +20,7 @@ class Demo_seeder extends Seeder {
         $provider_id   = $this->seed_provider();
         $this->seed_vtpass_provider();
         $this->seed_fivesim_provider();
+        $this->seed_dojah_provider();
         $category_ids  = $this->seed_categories();
         $service_ids   = $this->seed_services($category_ids, $provider_id);
         $user_ids      = $this->seed_users();
@@ -144,6 +145,50 @@ class Demo_seeder extends Seeder {
             'notes'                 => 'Live virtual-number vendor, priced in RUB. Set '
                                       .'FIVESIM_RATE_TO_BASE before syncing, or costs come '
                                       .'back unconverted. Sync and price the products before activating.',
+        ));
+    }
+
+    /**
+     * A Dojah identity vendor, on the same env-gated, INACTIVE terms as the
+     * other two live vendors.
+     *
+     * The default URL is the sandbox. Pointing a demo install at api.dojah.io
+     * with real keys would spend real money on every click, and the failure
+     * mode of the reverse mistake — sandbox keys against the live URL — is a
+     * flat 401, which is a much better afternoon.
+     */
+    private function seed_dojah_provider() {
+        $api_key = getenv('DOJAH_API_KEY');
+        $app_id  = getenv('DOJAH_APP_ID');
+        if (!$api_key || !$app_id) {
+            $this->out('dojah: no DOJAH_* credentials in env — skipping (MOCK_IDENTITY stays the identity provider)');
+            return null;
+        }
+
+        $this->ci->load->library('EncryptionService');
+        $enc = $this->ci->encryptionservice->encrypt(json_encode(array(
+            'api_key' => $api_key, 'app_id' => $app_id,
+        )));
+        $url = getenv('DOJAH_BASE_URL') ?: 'https://sandbox.dojah.io';
+
+        return $this->upsert('providers', array('name'=>'Dojah'), array(
+            'public_id'             => $this->pid(),
+            'api_url'               => rtrim($url, '/'),
+            'api_key_encrypted'     => $enc,
+            'api_type'              => 'DOJAH',
+            'status'                => 'INACTIVE',
+            'currency'              => 'NGN',
+            'timeout_ms'            => 30000,
+            'retry_policy'          => json_encode(array(
+                'maxRetries' => 2, 'backoffMs' => array(500, 1500),
+            )),
+            'rate_multiplier'       => '1.00000000',
+            'markup'                => '0.00000000',
+            'sync_interval_minutes' => 1440,
+            'notes'                 => 'Live identity/KYC vendor. There is no catalogue to '
+                                      .'sync — price the identity products by hand against your '
+                                      .'per-lookup contract, then activate. Every lookup is billable, '
+                                      .'including ones that find nobody.',
         ));
     }
 

@@ -105,6 +105,18 @@ class Service_transaction_model extends MY_Model {
                           virtual_numbers.last_code';
             $this->db->join('virtual_numbers',
                 'virtual_numbers.service_transaction_id = service_transactions.id', 'left');
+        } elseif ($domain === 'IDENTITY') {
+            // Only the masked tail and the outcome. identifier_hash is not
+            // selected — it is a lookup key, not something a list should carry
+            // around — and result_encrypted is never joined into a list query
+            // at all: a queue of 25 rows has no business dragging 25 encrypted
+            // identity records through the app, and the only legitimate way to
+            // read one is IdentityService::reveal(), which audits the access.
+            $columns .= ', identity_checks.id_type, identity_checks.identifier_last4,
+                          identity_checks.status AS check_status,
+                          identity_checks.reveal_count, identity_checks.purged_at';
+            $this->db->join('identity_checks',
+                'identity_checks.service_transaction_id = service_transactions.id', 'left');
         }
 
         $this->db->select($columns, false);

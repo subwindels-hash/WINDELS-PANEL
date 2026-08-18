@@ -14,7 +14,8 @@ class Cron extends Cron_Controller {
 
     /** Jobs that can be invoked, in the order `index` lists them. */
     private static $jobs = array(
-        'dripfeed', 'order_status', 'vtu_status', 'numbers_status', 'subscriptions', 'provider_health',
+        'dripfeed', 'order_status', 'vtu_status', 'numbers_status', 'identity_purge',
+        'subscriptions', 'provider_health',
         'refill_status', 'payment_reconciliation', 'email_queue',
         'analytics', 'provider_sync', 'affiliate_payouts',
     );
@@ -57,6 +58,19 @@ class Cron extends Cron_Controller {
     public function numbers_status() {
         $this->execute('numbers_status', function () {
             return $this->cronworkers->numbers_status();
+        });
+    }
+
+    /**
+     * Scrub identity results past their retention period (§22).
+     *
+     * Nightly and off-peak: retention is measured in days, so there is nothing
+     * to gain from running it during business hours and something to lose —
+     * deleting a record while support has it open.
+     */
+    public function identity_purge() {
+        $this->execute('identity_purge', function () {
+            return $this->cronworkers->identity_purge();
         });
     }
 

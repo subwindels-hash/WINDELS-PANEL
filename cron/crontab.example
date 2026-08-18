@@ -7,6 +7,10 @@
 # Virtual numbers expire in minutes, so this one runs every minute: a missed
 # tick is a customer charged for a reservation nobody polled before it died.
 * * * * * cd /var/www/html && php index.php cron numbers_status >> storage/logs/cron.log 2>&1
+
+# Identity results are deleted once past the retention window set in settings
+# (identity_retention_days). Nightly and off-peak on purpose.
+30 3 * * * cd /var/www/html && php index.php cron identity_purge >> storage/logs/cron.log 2>&1
 */5 * * * * cd /var/www/html && php index.php cron subscriptions >> storage/logs/cron.log 2>&1
 */5 * * * * cd /var/www/html && php index.php cron provider_health >> storage/logs/cron.log 2>&1
 */5 * * * * cd /var/www/html && php index.php cron refill_status >> storage/logs/cron.log 2>&1

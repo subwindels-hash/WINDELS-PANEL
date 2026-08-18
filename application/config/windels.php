@@ -55,6 +55,7 @@ $config['cron'] = array(
     'dripfeed' => '* * * * *',
     'vtu_status'             => '*/2 * * * *',
     'numbers_status'         => '* * * * *',
+    'identity_purge'         => '30 3 * * *',
     'order_status' => '*/2 * * * *',
     'subscriptions' => '*/5 * * * *',
     'provider_health' => '*/5 * * * *',

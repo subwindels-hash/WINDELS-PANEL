@@ -4,6 +4,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 require_once __DIR__.'/ProviderAdapterInterface.php';
 require_once __DIR__.'/VtuProviderInterface.php';
 require_once __DIR__.'/NumberProviderInterface.php';
+require_once __DIR__.'/IdentityProviderInterface.php';
 
 /**
  * Provider_manager — one registry over every provider family (§14).
@@ -21,6 +22,7 @@ class Provider_manager {
     const FAMILY_SMM    = 'SMM';
     const FAMILY_VTU    = 'VTU';
     const FAMILY_NUMBER = 'NUMBER';
+    const FAMILY_IDENTITY = 'IDENTITY';
 
     /** family => [api_type => [class, file]] */
     private static $registry = array(
@@ -36,6 +38,10 @@ class Provider_manager {
         self::FAMILY_NUMBER => array(
             'MOCK_NUMBER' => array('MockNumberAdapter', 'MockNumberAdapter.php'),
             'FIVESIM'     => array('FiveSimAdapter', 'FiveSimAdapter.php'),
+        ),
+        self::FAMILY_IDENTITY => array(
+            'MOCK_IDENTITY' => array('MockIdentityAdapter', 'MockIdentityAdapter.php'),
+            'DOJAH'         => array('DojahAdapter', 'DojahAdapter.php'),
         ),
     );
 

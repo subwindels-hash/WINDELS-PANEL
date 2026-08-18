@@ -23,6 +23,7 @@ class Core_seeder extends Seeder {
         $this->seed_faqs();
         $this->seed_vtu_catalogue();
         $this->seed_number_catalogue();
+        $this->seed_identity_catalogue();
         $this->out('core seed complete');
     }
 
@@ -37,6 +38,10 @@ class Core_seeder extends Seeder {
             'orders'     => array('orders.view','orders.edit','orders.refund','orders.cancel','orders.refill'),
             'vtu'        => array('vtu.view','vtu.manage','vtu.refund'),
             'numbers'    => array('numbers.view','numbers.manage','numbers.refund'),
+            // identity.reveal is deliberately separate from identity.view:
+            // seeing that a check happened and reading the person's details
+            // are different levels of access (§22).
+            'identity'   => array('identity.view','identity.manage','identity.refund','identity.reveal'),
             'payments'   => array('payments.view','payments.manage','wallets.adjust'),
             'support'    => array('tickets.view','tickets.reply','tickets.manage'),
             'content'    => array('blog.manage','faq.manage','announcements.manage','media.manage'),
@@ -55,6 +60,7 @@ class Core_seeder extends Seeder {
                 'orders.view','orders.edit','orders.refund','orders.cancel','orders.refill',
                 'vtu.view','vtu.manage','vtu.refund',
                 'numbers.view','numbers.manage','numbers.refund',
+                'identity.view','identity.manage','identity.refund','identity.reveal',
                 'payments.view','payments.manage','wallets.adjust',
                 'tickets.view','tickets.reply','tickets.manage',
                 'blog.manage','faq.manage','announcements.manage','media.manage',
@@ -65,6 +71,11 @@ class Core_seeder extends Seeder {
                 'reports.view','users.view','services.view','providers.view',
                 'orders.view','orders.edit','orders.refill',
                 'vtu.view','numbers.view',
+                // Support can see that an identity check ran and how it went,
+                // but not open the record. Reading a stranger's date of birth
+                // is not needed to answer "did my check work?", and the
+                // narrower default is the one worth shipping.
+                'identity.view',
                 'payments.view','tickets.view','tickets.reply','affiliates.view',
             ),
             'CUSTOMER'    => array(),
@@ -264,6 +275,46 @@ class Core_seeder extends Seeder {
         }
     }
 
+    /**
+     * What identity lookups the panel sells (§22).
+     *
+     * Prices are left NULL on purpose. Every other reference table in the
+     * panel seeds a working price, but a KYC lookup has a real per-query cost
+     * that depends on the contract you signed with the vendor, and a guessed
+     * default here would either sell below cost or look like a considered
+     * number. The products seed inactive-with-no-price; Identity_product_model
+     * ::active() hides unpriced rows, so the storefront stays empty until an
+     * operator sets a price they have actually agreed. Same rule as a
+     * catalogue sync, which also never invents a price.
+     */
+    public static function identity_products() {
+        return array(
+            // code, name, id_type, lookup_field, provider_code, description
+            array('NIN_BASIC', 'NIN verification', 'NIN', 'IDENTIFIER', 'kyc/nin',
+                  'Confirm a National Identification Number and return the registered name, date of birth and gender.'),
+            array('BVN_BASIC', 'BVN verification', 'BVN', 'IDENTIFIER', 'kyc/bvn',
+                  'Confirm a Bank Verification Number against the NIBSS record.'),
+            array('NIN_PHONE', 'NIN by phone number', 'NIN', 'PHONE', 'kyc/nin/phone_number',
+                  'Find the NIN record linked to a Nigerian phone number.'),
+        );
+    }
+
+    private function seed_identity_catalogue() {
+        $sort = 0;
+        foreach (self::identity_products() as $p) {
+            $this->upsert('identity_products', array('code' => $p[0]), array(
+                'public_id'     => windels_public_id(),
+                'name'          => $p[1],
+                'id_type'       => $p[2],
+                'lookup_field'  => $p[3],
+                'provider_code' => $p[4],
+                'description'   => $p[5],
+                'is_active'     => 0,
+                'sorting'       => $sort++,
+            ));
+        }
+    }
+
     public static function default_settings() {
         return array(
             // general
@@ -295,6 +346,10 @@ class Core_seeder extends Seeder {
             array('referral_commission_scope','LIFETIME','affiliate',1),
             array('referral_hold_hours',24,'affiliate',0),
             array('referral_min_payout','100.00000000','affiliate',0),
+            // identity / KYC (§22). Retention is a setting rather than a
+            // constant because the right number is a legal answer, not an
+            // engineering one, and it differs by jurisdiction.
+            array('identity_retention_days',30,'identity',0),
         );
     }
 

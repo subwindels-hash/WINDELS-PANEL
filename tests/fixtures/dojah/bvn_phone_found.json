@@ -1,0 +1,12 @@
+{
+  "entity": {
+    "first_name": "Musa",
+    "last_name": "Bello",
+    "middle_name": "Idris",
+    "date_of_birth": "1978-06-30",
+    "phone_number1": "08099887766",
+    "phone_number2": "07011223344",
+    "gender": "Male",
+    "image": "/9j/4AAQSkZJRgABAgAAAQABAAD-phone-portrait"
+  }
+}
