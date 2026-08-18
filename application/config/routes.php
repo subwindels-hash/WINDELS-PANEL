@@ -203,6 +203,7 @@ $route['admin/audit-logs'] = 'admin/audit_logs/index';
 $route['admin/appearance'] = 'admin/appearances/index';
 $route['admin/appearance/homepage'] = 'admin/appearances/homepage';
 $route['admin/settings'] = 'admin/settings/index';
+$route['admin/settings/save'] = 'admin/settings/save';
 $route['admin/blacklist'] = 'admin/blacklist/index';
 $route['admin/media'] = 'admin/media/index';
 
