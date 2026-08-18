@@ -73,6 +73,16 @@ $route['dashboard/vtu/data'] = 'dashboard/vtu/data';
 $route['dashboard/vtu/cable'] = 'dashboard/vtu/cable';
 $route['dashboard/vtu/electricity'] = 'dashboard/vtu/electricity';
 $route['dashboard/vtu/education'] = 'dashboard/vtu/education';
+// Virtual numbers (§10, §11). Same rule as VTU: named segments first, or
+// 'history' would be read as a reservation public_id.
+$route['dashboard/numbers'] = 'dashboard/numbers/index';
+$route['dashboard/numbers/history'] = 'dashboard/numbers/history';
+$route['dashboard/numbers/rent'] = 'dashboard/numbers/rent';
+$route['dashboard/numbers/(:any)/check'] = 'dashboard/numbers/check/$1';
+$route['dashboard/numbers/(:any)/cancel'] = 'dashboard/numbers/cancel/$1';
+$route['dashboard/numbers/(:any)/release'] = 'dashboard/numbers/release/$1';
+$route['dashboard/numbers/(:any)/report'] = 'dashboard/numbers/report/$1';
+$route['dashboard/numbers/(:any)'] = 'dashboard/numbers/detail/$1';
 $route['dashboard/services'] = 'dashboard/services/index';
 $route['dashboard/favorites'] = 'dashboard/services/favorites';
 $route['dashboard/favorites/add/(:any)'] = 'dashboard/favorites/add/$1';
@@ -109,6 +119,12 @@ $route['admin/vtu'] = 'admin/vtu/index';
 $route['admin/vtu/(:any)/recheck'] = 'admin/vtu/recheck/$1';
 $route['admin/vtu/(:any)/refund'] = 'admin/vtu/refund/$1';
 $route['admin/vtu/(:any)'] = 'admin/vtu/detail/$1';
+$route['admin/numbers'] = 'admin/numbers/index';
+// Action routes must precede the catch-all detail route below.
+$route['admin/numbers/(:any)/recheck'] = 'admin/numbers/recheck/$1';
+$route['admin/numbers/(:any)/release'] = 'admin/numbers/release/$1';
+$route['admin/numbers/(:any)/refund'] = 'admin/numbers/refund/$1';
+$route['admin/numbers/(:any)'] = 'admin/numbers/detail/$1';
 $route['admin/services'] = 'admin/services/index';
 $route['admin/categories'] = 'admin/categories/index';
 $route['admin/providers'] = 'admin/providers/index';

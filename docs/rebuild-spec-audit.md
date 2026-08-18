@@ -69,8 +69,8 @@ Controller / library / model audit found **nothing** for:
 | §34 module | Controllers | Libraries/Models | Tables |
 | --- | --- | --- | --- |
 | VTU (airtime, data, cable, electricity, education) | 0 | 0 | 0 of 6 |
-| Virtual Numbers | 0 | 0 | 0 of 2 |
-| OTP | 0 | 0 | 0 |
+| Virtual Numbers | 0 → 2 | 0 → 6 | 0 of 2 → 4 (session 25) |
+| OTP | 0 | 0 → 1 | 0 → 1 (session 25) |
 | Identity (NIN/BVN) | 0 | 0 | 0 |
 | Gift Cards | 0 | 0 | 0 of 2 |
 | Marketplace | 0 | 0 | 0 |
@@ -172,6 +172,12 @@ verification, requery settlement and catalogue sync, with the whole contract
 pinned by captured fixtures rather than live credentials. The **G** slice for
 VTU — the admin queue, detail, refund and manual re-check — landed in
 [session 23](session-23-admin-vtu.md), which sets the pattern D–F should copy.
+**D** landed in [session 25](session-25-numbers.md): migration 012 adds the
+reservation lifecycle this table flagged as missing — `virtual_numbers` carries
+a vendor-set `expires_at`, and a deadline that passes without an OTP refunds
+through `TransactionEngine` exactly as a provider failure does. It is not
+mock-only from birth: `FiveSimAdapter` implements the 5sim contract, pinned by
+captured fixtures, alongside an offline `MockNumberAdapter`.
 
 Phase A is the one that determines whether this stays coherent. If each domain is
 built without it, the result is six parallel half-copies of the order engine.

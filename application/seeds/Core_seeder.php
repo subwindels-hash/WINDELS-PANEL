@@ -22,6 +22,7 @@ class Core_seeder extends Seeder {
         $this->seed_email_templates();
         $this->seed_faqs();
         $this->seed_vtu_catalogue();
+        $this->seed_number_catalogue();
         $this->out('core seed complete');
     }
 
@@ -35,6 +36,7 @@ class Core_seeder extends Seeder {
             'providers'  => array('providers.view','providers.manage','providers.sync'),
             'orders'     => array('orders.view','orders.edit','orders.refund','orders.cancel','orders.refill'),
             'vtu'        => array('vtu.view','vtu.manage','vtu.refund'),
+            'numbers'    => array('numbers.view','numbers.manage','numbers.refund'),
             'payments'   => array('payments.view','payments.manage','wallets.adjust'),
             'support'    => array('tickets.view','tickets.reply','tickets.manage'),
             'content'    => array('blog.manage','faq.manage','announcements.manage','media.manage'),
@@ -52,6 +54,7 @@ class Core_seeder extends Seeder {
                 'providers.view','providers.manage','providers.sync',
                 'orders.view','orders.edit','orders.refund','orders.cancel','orders.refill',
                 'vtu.view','vtu.manage','vtu.refund',
+                'numbers.view','numbers.manage','numbers.refund',
                 'payments.view','payments.manage','wallets.adjust',
                 'tickets.view','tickets.reply','tickets.manage',
                 'blog.manage','faq.manage','announcements.manage','media.manage',
@@ -61,7 +64,7 @@ class Core_seeder extends Seeder {
             'STAFF'       => array(
                 'reports.view','users.view','services.view','providers.view',
                 'orders.view','orders.edit','orders.refill',
-                'vtu.view',
+                'vtu.view','numbers.view',
                 'payments.view','tickets.view','tickets.reply','affiliates.view',
             ),
             'CUSTOMER'    => array(),
@@ -195,6 +198,68 @@ class Core_seeder extends Seeder {
                 'min_amount'       => $is_airtime ? '50.00000000' : '500.00000000',
                 'max_amount'       => $is_airtime ? '50000.00000000' : '100000.00000000',
                 'is_active'        => 1,
+            ));
+        }
+    }
+
+    /**
+     * Virtual-number countries and services (§10, §11).
+     *
+     * Reference data only. Deliberately no `number_products`: a product needs
+     * a price, and the price depends on what a vendor charges, which nobody
+     * knows until a vendor is connected and synced. Seeding a priced product
+     * would either invent a margin or ship something buyable for nothing —
+     * the catalogue sync creates those rows, inactive, for an admin to price.
+     */
+    public static function number_countries() {
+        return array(
+            // code, name, dial prefix, flag
+            array('NG', 'Nigeria',        '+234', '🇳🇬'),
+            array('GH', 'Ghana',          '+233', '🇬🇭'),
+            array('KE', 'Kenya',          '+254', '🇰🇪'),
+            array('ZA', 'South Africa',   '+27',  '🇿🇦'),
+            array('GB', 'United Kingdom', '+44',  '🇬🇧'),
+            array('US', 'United States',  '+1',   '🇺🇸'),
+            array('IN', 'India',          '+91',  '🇮🇳'),
+        );
+    }
+
+    public static function number_services() {
+        return array(
+            array('WHATSAPP',  'WhatsApp'),
+            array('TELEGRAM',  'Telegram'),
+            array('FACEBOOK',  'Facebook'),
+            array('INSTAGRAM', 'Instagram'),
+            array('GOOGLE',    'Google'),
+            array('TWITTER',   'X (Twitter)'),
+            array('TIKTOK',    'TikTok'),
+            array('DISCORD',   'Discord'),
+            array('UBER',      'Uber'),
+            array('AMAZON',    'Amazon'),
+            array('OTHER',     'Any other service'),
+        );
+    }
+
+    private function seed_number_catalogue() {
+        $sort = 0;
+        foreach (self::number_countries() as $c) {
+            $this->upsert('number_countries', array('code' => $c[0]), array(
+                'public_id'   => windels_public_id(),
+                'name'        => $c[1],
+                'dial_prefix' => $c[2],
+                'flag_emoji'  => $c[3],
+                'is_active'   => 1,
+                'sorting'     => $sort++,
+            ));
+        }
+
+        $sort = 0;
+        foreach (self::number_services() as $s) {
+            $this->upsert('number_services', array('code' => $s[0]), array(
+                'public_id' => windels_public_id(),
+                'name'      => $s[1],
+                'is_active' => 1,
+                'sorting'   => $sort++,
             ));
         }
     }

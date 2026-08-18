@@ -1,0 +1,7 @@
+{
+  "whatsapp": {"Category": "activation", "Qty": 812, "Price": 21},
+  "telegram": {"Category": "activation", "Qty": 415, "Price": 25},
+  "facebook": {"Category": "activation", "Qty": 133, "Price": 18},
+  "sberbank": {"Category": "activation", "Qty": 9, "Price": 140},
+  "1day":     {"Category": "hosting",    "Qty": 4, "Price": 80}
+}

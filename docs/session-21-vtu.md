@@ -149,7 +149,7 @@ Phases C–G from the audit, unchanged:
 - **C** — cable/electricity/education are implemented in the service, but only
   airtime and data have had real provider integration exercised; meter
   verification is wired but unproven against a live vendor.
-- **D** — virtual numbers + OTP (new lifecycle: reservation, expiry, messages)
+- ~~**D** — virtual numbers + OTP (new lifecycle: reservation, expiry, messages)~~ — done, [session 25](session-25-numbers.md)
 - **E** — identity NIN/BVN (needs the §22 sensitive-data controls)
 - **F** — gift cards + marketplace
 - **G** — admin sections and analytics for every new domain (§25/§26)

@@ -19,6 +19,7 @@ class Demo_seeder extends Seeder {
 
         $provider_id   = $this->seed_provider();
         $this->seed_vtpass_provider();
+        $this->seed_fivesim_provider();
         $category_ids  = $this->seed_categories();
         $service_ids   = $this->seed_services($category_ids, $provider_id);
         $user_ids      = $this->seed_users();
@@ -99,6 +100,50 @@ class Demo_seeder extends Seeder {
             'sync_interval_minutes' => 720,
             'notes'                 => 'Live VTU vendor. Test the connection, sync the '
                                       .'catalogue and price the products before activating.',
+        ));
+    }
+
+    /**
+     * A 5sim virtual-number vendor, on the same terms as VTpass: only when
+     * its token is in the environment, and INACTIVE even then.
+     *
+     * The rate_to_base note matters. 5sim quotes roubles; this panel is
+     * denominated in naira. Without FIVESIM_RATE_TO_BASE the adapter reports
+     * no converted cost at all, which shows up as an unknown margin rather
+     * than a rouble figure masquerading as naira.
+     */
+    private function seed_fivesim_provider() {
+        $token = getenv('FIVESIM_API_KEY');
+        if (!$token) {
+            $this->out('5sim: no FIVESIM_API_KEY in env — skipping (MOCK_NUMBER stays the numbers provider)');
+            return null;
+        }
+
+        $this->ci->load->library('EncryptionService');
+        $enc = $this->ci->encryptionservice->encrypt($token);
+        $url = getenv('FIVESIM_BASE_URL') ?: 'https://5sim.net/v1';
+        $rate = getenv('FIVESIM_RATE_TO_BASE');
+
+        $config = array('maxRetries' => 2, 'backoffMs' => array(500, 1500));
+        if ($rate && is_numeric($rate) && (float)$rate > 0) {
+            $config['fivesim'] = array('rate_to_base' => (string)$rate);
+        }
+
+        return $this->upsert('providers', array('name'=>'5sim'), array(
+            'public_id'             => $this->pid(),
+            'api_url'               => rtrim($url, '/'),
+            'api_key_encrypted'     => $enc,
+            'api_type'              => 'FIVESIM',
+            'status'                => 'INACTIVE',
+            'currency'              => 'RUB',
+            'timeout_ms'            => 20000,
+            'retry_policy'          => json_encode($config),
+            'rate_multiplier'       => '1.00000000',
+            'markup'                => '0.00000000',
+            'sync_interval_minutes' => 60,
+            'notes'                 => 'Live virtual-number vendor, priced in RUB. Set '
+                                      .'FIVESIM_RATE_TO_BASE before syncing, or costs come '
+                                      .'back unconverted. Sync and price the products before activating.',
         ));
     }
 

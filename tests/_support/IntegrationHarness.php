@@ -250,6 +250,80 @@ class IntegrationHarness
         return $this;
     }
 
+    /**
+     * Virtual-number catalogue, plus a number-capable provider.
+     *
+     * Mirrors what an operator would have after seeding the reference data
+     * and pricing one synced product: countries and services from the core
+     * seed, and priced (country, service) rows on top. WHATSAPP is priced and
+     * in stock, NOSTOCK is priced but out of stock, and SLOW exists so the
+     * "no code ever arrives" path is reachable — see MockNumberAdapter.
+     */
+    public function seed_numbers()
+    {
+        $now = gmdate('Y-m-d H:i:s');
+
+        $this->db->insert('providers', array(
+            'public_id' => 'PROV0000000000000000000003', 'name' => 'Acme Numbers',
+            'api_url' => 'https://api.numbers.test', 'api_key_encrypted' => 'enc:test',
+            'api_type' => 'MOCK_NUMBER', 'status' => 'ACTIVE', 'currency' => 'NGN',
+            'created_at' => $now, 'updated_at' => $now,
+        ));
+        $provider_id = $this->db->insert_id();
+
+        $countries = array(array('NG', 'Nigeria', '+234'), array('GB', 'United Kingdom', '+44'));
+        $country_ids = array();
+        foreach ($countries as $i => $c) {
+            $this->db->insert('number_countries', array(
+                'public_id' => 'NCTY'.str_pad((string)($i + 1), 22, '0', STR_PAD_LEFT),
+                'code' => $c[0], 'name' => $c[1], 'dial_prefix' => $c[2],
+                'is_active' => 1, 'sorting' => $i,
+                'created_at' => $now, 'updated_at' => $now,
+            ));
+            $country_ids[$c[0]] = $this->db->insert_id();
+        }
+
+        $services = array(
+            array('WHATSAPP', 'WhatsApp'),
+            array('TELEGRAM', 'Telegram'),
+            array('NOSTOCK',  'Out of stock service'),
+            array('SLOW',     'Never receives a code'),
+        );
+        $service_ids = array();
+        foreach ($services as $i => $s) {
+            $this->db->insert('number_services', array(
+                'public_id' => 'NSVC'.str_pad((string)($i + 1), 22, '0', STR_PAD_LEFT),
+                'code' => $s[0], 'name' => $s[1], 'is_active' => 1, 'sorting' => $i,
+                'created_at' => $now, 'updated_at' => $now,
+            ));
+            $service_ids[$s[0]] = $this->db->insert_id();
+        }
+
+        $products = array(
+            // country, service, price, cost, stock, ttl
+            array('NG', 'WHATSAPP', '450.00000000', '250.00000000', 812, 15),
+            array('NG', 'TELEGRAM', '500.00000000', '300.00000000', 415, 15),
+            array('NG', 'NOSTOCK',  '400.00000000', '200.00000000', 0,   15),
+            array('NG', 'SLOW',     '350.00000000', '180.00000000', 99,  15),
+            array('GB', 'WHATSAPP', '900.00000000', '600.00000000', 40,  20),
+        );
+        foreach ($products as $i => $p) {
+            $this->db->insert('number_products', array(
+                'public_id' => 'NPRD'.str_pad((string)($i + 1), 22, '0', STR_PAD_LEFT),
+                'country_id' => $country_ids[$p[0]], 'service_id' => $service_ids[$p[1]],
+                'provider_id' => $provider_id,
+                'code' => $p[0].'-'.$p[1],
+                'provider_country' => strtolower($p[0]),
+                'provider_operator' => 'any',
+                'provider_product' => strtolower($p[1]),
+                'price' => $p[2], 'provider_cost' => $p[3], 'stock' => $p[4],
+                'ttl_minutes' => $p[5], 'is_active' => 1, 'sorting' => $i,
+                'created_at' => $now, 'updated_at' => $now,
+            ));
+        }
+        return $this;
+    }
+
     /* ----------------------------- factories ---------------------------- */
 
     /** A user with a wallet, created the way the app creates them. */

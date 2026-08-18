@@ -109,6 +109,76 @@ class CronWorkers {
         );
     }
 
+    /* ================= virtual number settlement (§10, §11) ================ */
+
+    /**
+     * Poll live virtual-number reservations for their OTP, and expire the ones
+     * whose deadline has passed.
+     *
+     * This is the worker the whole domain hinges on. A virtual number is the
+     * first thing this panel sells where doing nothing is the expensive
+     * option: the customer has already paid, the vendor is holding a number
+     * for a handful of minutes, and if nobody checks, the reservation dies
+     * unfulfilled with the charge still taken. So it must run often — and
+     * every outcome, including "the deadline passed", is settled through
+     * NumberService, which refunds via TransactionEngine.
+     *
+     * Expiry runs *after* polling on purpose: a code that arrived in the last
+     * few seconds before the deadline still counts, and checking first means
+     * the customer keeps a number they actually received a code on.
+     */
+    public function numbers_status($limit = 200) {
+        $this->need(array('Virtual_number_model', 'Service_transaction_model'),
+                    array('NumberService'));
+
+        $live = $this->ci->Virtual_number_model->awaiting_sms($limit);
+        $expired = $this->ci->Virtual_number_model->expired(null, $limit);
+        if (!$live && !$expired) {
+            return array('processed'=>0, 'failed'=>0, 'message'=>'no live number reservations');
+        }
+
+        $processed = 0; $failed = 0; $received = 0; $released = 0;
+        $handled = array();
+
+        foreach ($live as $number) {
+            $handled[(int)$number->id] = true;
+            try {
+                $res = $this->ci->numberservice->poll($number, 'CRON');
+            } catch (Exception $e) {
+                log_message('error', 'numbers_status poll: '.$e->getMessage());
+                $failed++;
+                continue;
+            }
+            $processed++;
+            if (empty($res['ok'])) { $failed++; continue; }
+            if (!empty($res['new_messages'])) $received++;
+            if (in_array($res['state'] ?? '', array('EXPIRED','CANCELLED','BANNED'), true)) $released++;
+        }
+
+        // Reservations the poll did not reach — no vendor reference, or the
+        // list was truncated by $limit — still have to be settled, or a
+        // customer stays charged for a number nobody will ever check again.
+        foreach ($expired as $number) {
+            if (isset($handled[(int)$number->id])) continue;
+            try {
+                $res = $this->ci->numberservice->expire($number, 'CRON');
+            } catch (Exception $e) {
+                log_message('error', 'numbers_status expire: '.$e->getMessage());
+                $failed++;
+                continue;
+            }
+            $processed++;
+            if (empty($res['ok'])) { $failed++; continue; }
+            $released++;
+        }
+
+        return array(
+            'processed' => $processed,
+            'failed'    => $failed,
+            'message'   => $received.' received a code, '.$released.' released of '.$processed.' checked',
+        );
+    }
+
     /* ===================== order status synchronisation ==================== */
 
     /**

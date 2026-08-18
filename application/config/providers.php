@@ -19,4 +19,7 @@ $config['provider_adapters'] = array(
     // VTU
     'STANDARD_VTU' => 'StandardVtuAdapter',
     'VTPASS'       => 'VtpassAdapter',
+    // Virtual numbers / OTP
+    'MOCK_NUMBER'  => 'MockNumberAdapter', // tests / APP_ENV=demo
+    'FIVESIM'      => 'FiveSimAdapter',
 );

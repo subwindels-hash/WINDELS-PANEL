@@ -37,9 +37,11 @@ class ProviderSyncService {
      */
     public static function family($provider) {
         $type = strtoupper(is_object($provider) ? ($provider->api_type ?? '') : (string)$provider);
-        if ($type !== 'MOCK'
-            && in_array($type, Provider_manager::supported_types(Provider_manager::FAMILY_VTU), true)) {
-            return Provider_manager::FAMILY_VTU;
+        if ($type === 'MOCK') return Provider_manager::FAMILY_SMM;
+
+        foreach (Provider_manager::families() as $family) {
+            if ($family === Provider_manager::FAMILY_SMM) continue;
+            if (in_array($type, Provider_manager::supported_types($family), true)) return $family;
         }
         return Provider_manager::FAMILY_SMM;
     }
@@ -73,14 +75,24 @@ class ProviderSyncService {
         return $this->ci->provider_manager->adapter($provider, Provider_manager::FAMILY_VTU);
     }
 
+    /** Build the virtual-number adapter through the same registry (§10, §14). */
+    public function number_adapter($provider) {
+        $this->ci->load->library('Provider_manager');
+        return $this->ci->provider_manager->adapter($provider, Provider_manager::FAMILY_NUMBER);
+    }
+
     /**
      * Live connectivity + auth check via the adapter's balance call.
      *
      * @return array{ok:bool,balance?:string,currency?:string,latency_ms?:int,error?:string,http_code?:int}
      */
     public function test_connection($provider) {
-        if (self::family($provider) === Provider_manager::FAMILY_VTU) {
+        $family = self::family($provider);
+        if ($family === Provider_manager::FAMILY_VTU) {
             return $this->test_vtu_connection($provider);
+        }
+        if ($family === Provider_manager::FAMILY_NUMBER) {
+            return $this->test_number_connection($provider);
         }
         $start = microtime(true);
         try {
@@ -165,13 +177,59 @@ class ProviderSyncService {
     }
 
     /**
+     * Connectivity + auth check for a virtual-number vendor.
+     *
+     * Identical contract to the other two families. Worth noting the currency:
+     * a number vendor may bill in its own currency (5sim quotes roubles), and
+     * the adapter says which — so the provider row records what it is really
+     * denominated in rather than being relabelled to the panel's base.
+     */
+    private function test_number_connection($provider) {
+        $start = microtime(true);
+        try {
+            $res = $this->number_adapter($provider)->balance();
+        } catch (Exception $e) {
+            $latency = (int)round((microtime(true) - $start) * 1000);
+            $this->ci->Provider_model->record_health($provider->id, 'OFFLINE', $latency, $e->getMessage());
+            return array('ok' => false, 'error' => $e->getMessage(), 'latency_ms' => $latency);
+        }
+        $latency = (int)round((microtime(true) - $start) * 1000);
+
+        if (empty($res['ok'])) {
+            $err = $res['error'] ?? 'Connection failed';
+            $this->ci->Provider_model->record_health($provider->id, 'OFFLINE', $latency, $err);
+            return array('ok' => false, 'error' => $err, 'latency_ms' => $latency);
+        }
+
+        $balance  = isset($res['balance']) ? (string)$res['balance'] : null;
+        $currency = $res['currency'] ?? ($provider->currency ?? windels_base_currency());
+
+        $this->ci->db->trans_start();
+        $this->ci->Provider_model->record_health($provider->id, 'ONLINE', $latency, null);
+        if ($balance !== null) {
+            $this->ci->Provider_model->update_provider($provider->id, array(
+                'balance'  => number_format((float)$balance, 8, '.', ''),
+                'currency' => $currency,
+            ));
+        }
+        $this->ci->db->trans_complete();
+
+        return array('ok' => true, 'balance' => $balance, 'currency' => $currency,
+                     'latency_ms' => $latency);
+    }
+
+    /**
      * Pull the provider's service list and upsert into provider_services.
      *
      * @return array{ok:bool,inserted?:int,updated?:int,total?:int,error?:string,latency_ms?:int}
      */
     public function sync_services($provider) {
-        if (self::family($provider) === Provider_manager::FAMILY_VTU) {
+        $family = self::family($provider);
+        if ($family === Provider_manager::FAMILY_VTU) {
             return $this->sync_vtu_catalogue($provider);
+        }
+        if ($family === Provider_manager::FAMILY_NUMBER) {
+            return $this->sync_number_catalogue($provider);
         }
         $start = microtime(true);
         try {
@@ -278,6 +336,89 @@ class ProviderSyncService {
         $latency = (int)round((microtime(true) - $start) * 1000);
         // Nothing at all came back: that is a failed sync, not an empty one.
         if ($inserted + $updated === 0 && $errors) {
+            $message = implode(' | ', array_slice($errors, 0, 5));
+            $this->ci->Provider_model->record_sync($provider->id, 'services', 'FAILED', $message, 0, $latency);
+            return array('ok' => false, 'error' => $message, 'latency_ms' => $latency);
+        }
+
+        $this->ci->Provider_model->record_sync(
+            $provider->id, 'services', 'SUCCESS',
+            $errors ? 'Skipped: '.implode(' | ', array_slice($errors, 0, 5)) : null,
+            $inserted + $updated, $latency
+        );
+
+        return array(
+            'ok'       => true,
+            'inserted' => $inserted,
+            'updated'  => $updated,
+            'total'    => $inserted + $updated,
+            'skipped'  => $skipped,
+            'latency_ms' => $latency,
+        );
+    }
+
+    /**
+     * Pull a number vendor's availability and pricing into number_products.
+     *
+     * Same two rules as the VTU sync, for the same reasons:
+     *
+     *   - the vendor owns cost and stock, never `price`. A number vendor's
+     *     stock moves minute to minute and its price moves with it; letting a
+     *     sync write our selling price would re-price the panel every hour.
+     *   - a (country, service) pair the panel does not carry is skipped, not
+     *     created. 5sim sells hundreds of services; the catalogue is an
+     *     operator decision.
+     *
+     * A vendor cost that could not be converted into the base currency is
+     * recorded as NULL rather than as a rouble figure sitting in a naira
+     * column — see FiveSimAdapter's rate_to_base note.
+     */
+    private function sync_number_catalogue($provider) {
+        $this->ci->load->model(array('Number_country_model', 'Number_service_model', 'Number_product_model'));
+        $start = microtime(true);
+
+        try {
+            $adapter = $this->number_adapter($provider);
+        } catch (Exception $e) {
+            $latency = (int)round((microtime(true) - $start) * 1000);
+            $this->ci->Provider_model->record_sync($provider->id, 'services', 'FAILED', $e->getMessage(), 0, $latency);
+            return array('ok' => false, 'error' => $e->getMessage(), 'latency_ms' => $latency);
+        }
+
+        // Index our services by code once, so an unknown vendor product is a
+        // cheap skip rather than a query each time.
+        $services = array();
+        foreach ($this->ci->Number_service_model->all() as $s) {
+            $services[strtoupper($s->code)] = $s;
+        }
+
+        $inserted = 0; $updated = 0; $skipped = 0; $errors = array();
+        foreach ($this->ci->Number_country_model->active() as $country) {
+            try {
+                $res = $adapter->products($country->code);
+            } catch (Exception $e) {
+                $skipped++;
+                $errors[] = $country->code.': '.$e->getMessage();
+                continue;
+            }
+            if (empty($res['ok']) || empty($res['products'])) {
+                $skipped++;
+                if (!empty($res['error'])) $errors[] = $country->code.': '.$res['error'];
+                continue;
+            }
+            foreach ($res['products'] as $i => $row) {
+                $code = strtoupper((string)($row['service'] ?? ''));
+                if ($code === '' || !isset($services[$code])) { $skipped++; continue; }
+
+                $outcome = $this->ci->Number_product_model->upsert_from_provider(
+                    $provider->id, (int)$country->id, (int)$services[$code]->id, $row, $i);
+                if ($outcome === 'inserted') $inserted++;
+                elseif ($outcome === 'updated') $updated++;
+            }
+        }
+
+        $latency = (int)round((microtime(true) - $start) * 1000);
+        if ($inserted === 0 && $updated === 0 && $errors) {
             $message = implode(' | ', array_slice($errors, 0, 5));
             $this->ci->Provider_model->record_sync($provider->id, 'services', 'FAILED', $message, 0, $latency);
             return array('ok' => false, 'error' => $message, 'latency_ms' => $latency);

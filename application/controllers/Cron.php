@@ -14,7 +14,7 @@ class Cron extends Cron_Controller {
 
     /** Jobs that can be invoked, in the order `index` lists them. */
     private static $jobs = array(
-        'dripfeed', 'order_status', 'vtu_status', 'subscriptions', 'provider_health',
+        'dripfeed', 'order_status', 'vtu_status', 'numbers_status', 'subscriptions', 'provider_health',
         'refill_status', 'payment_reconciliation', 'email_queue',
         'analytics', 'provider_sync', 'affiliate_payouts',
     );
@@ -45,6 +45,18 @@ class Cron extends Cron_Controller {
     public function vtu_status() {
         $this->execute('vtu_status', function () {
             return $this->cronworkers->vtu_status();
+        });
+    }
+
+    /**
+     * Settle virtual-number reservations: collect OTPs, expire the rest.
+     *
+     * Runs every minute rather than every two: a reservation lives for about
+     * fifteen, and the customer is watching the screen for their code.
+     */
+    public function numbers_status() {
+        $this->execute('numbers_status', function () {
+            return $this->cronworkers->numbers_status();
         });
     }
 

@@ -1,0 +1,12 @@
+{
+  "id": 90210,
+  "email": "ops@windels.local",
+  "vendor": "windels",
+  "default_forwarding_number": "",
+  "balance": 4210.55,
+  "rating": 96,
+  "default_country": {"name": "nigeria", "iso": "ng", "prefix": "+234"},
+  "default_operator": {"name": "any"},
+  "frozen_balance": 63,
+  "sms": true
+}

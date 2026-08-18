@@ -68,17 +68,46 @@ class Service_transaction_model extends MY_Model {
      */
     public function admin_search(array $filters, $limit = 25, $offset = 0){
         $this->admin_filters($filters);
+        $this->admin_projection($filters);
         return $this->db
-            ->select('service_transactions.*, users.username, users.email,
-                      providers.name AS provider_name,
-                      vtu_transactions.recipient, vtu_transactions.recipient_name,
-                      vtu_transactions.token, vtu_transactions.units', false)
-            ->join('users', 'users.id = service_transactions.user_id', 'left')
-            ->join('providers', 'providers.id = service_transactions.provider_id', 'left')
-            ->join('vtu_transactions', 'vtu_transactions.service_transaction_id = service_transactions.id', 'left')
             ->order_by('service_transactions.created_at', 'DESC')
             ->limit($limit, $offset)
             ->get()->result();
+    }
+
+    /**
+     * The columns and joins one admin queue needs.
+     *
+     * Each domain keeps its detail in its own table, so the projection is
+     * chosen by domain rather than joining every domain table on every query —
+     * a LEFT JOIN per domain would grow with the catalogue and drag the queue
+     * down for no benefit, and two domain tables both carrying `status` would
+     * make the result ambiguous. An unfiltered search gets the universal
+     * columns only, which is all a cross-domain view can honestly show.
+     */
+    private function admin_projection(array $filters){
+        $domain = strtoupper((string)($filters['domain'] ?? ''));
+
+        $columns = 'service_transactions.*, users.username, users.email,
+                    providers.name AS provider_name';
+        $this->db->join('users', 'users.id = service_transactions.user_id', 'left')
+                 ->join('providers', 'providers.id = service_transactions.provider_id', 'left');
+
+        if ($domain === 'VTU') {
+            $columns .= ', vtu_transactions.recipient, vtu_transactions.recipient_name,
+                          vtu_transactions.token, vtu_transactions.units';
+            $this->db->join('vtu_transactions',
+                'vtu_transactions.service_transaction_id = service_transactions.id', 'left');
+        } elseif ($domain === 'NUMBER') {
+            $columns .= ', virtual_numbers.msisdn, virtual_numbers.operator,
+                          virtual_numbers.status AS reservation_status,
+                          virtual_numbers.expires_at, virtual_numbers.sms_count,
+                          virtual_numbers.last_code';
+            $this->db->join('virtual_numbers',
+                'virtual_numbers.service_transaction_id = service_transactions.id', 'left');
+        }
+
+        $this->db->select($columns, false);
     }
 
     public function admin_count(array $filters){

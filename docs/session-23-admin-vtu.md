@@ -109,7 +109,7 @@ Unchanged from Session 21, minus item G-for-VTU:
 
 - **C** — cable/electricity/education work against the `MOCK` adapter only;
   meter verification is wired but never exercised against a live vendor.
-- **D** — virtual numbers + OTP
+- ~~**D** — virtual numbers + OTP~~ — done, [session 25](session-25-numbers.md)
 - **E** — identity NIN/BVN (needs the §22 sensitive-data controls)
 - **F** — gift cards + marketplace
 - **G** — admin sections for the domains above. This session establishes the
