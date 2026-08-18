@@ -16,6 +16,7 @@ $nav = $is_admin ? array(
     array('admin/payments',     'Payments',   'payments.view',   'credit-card'),
     array('admin/tickets',      'Tickets',    'tickets.view',    'message-square'),
     array('admin/affiliates',   'Affiliates', 'affiliates.view', 'gift'),
+    array('admin/blog',         'Content',    'blog.manage',     'list'),
     array('admin/staff',        'Staff',      'staff.manage',    'shield'),
     array('admin/settings',     'Settings',   'settings.manage', 'settings'),
 ) : array(

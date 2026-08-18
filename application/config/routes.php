@@ -195,9 +195,28 @@ $route['admin/tickets/(:any)'] = 'admin/tickets/detail/$1';
 $route['admin/affiliates'] = 'admin/affiliates/index';
 $route['admin/affiliates/payout'] = 'admin/affiliates/payout';
 $route['admin/affiliates/(:num)/rate'] = 'admin/affiliates/rate/$1';
-$route['admin/blog'] = 'admin/blog/index';
-$route['admin/faq'] = 'admin/faq/index';
-$route['admin/announcements'] = 'admin/announcements/index';
+// Content: blog, FAQ and announcements share one controller.
+// Action routes must precede the catch-all edit route in each block.
+$route['admin/blog'] = 'admin/content/domain/blog';
+$route['admin/blog/new'] = 'admin/content/create_form/blog';
+$route['admin/blog/create'] = 'admin/content/create/blog';
+$route['admin/blog/(:any)/update'] = 'admin/content/update/blog/$1';
+$route['admin/blog/(:any)/delete'] = 'admin/content/delete/blog/$1';
+$route['admin/blog/(:any)'] = 'admin/content/edit/blog/$1';
+$route['admin/faq'] = 'admin/content/domain/faq';
+$route['admin/faq/new'] = 'admin/content/create_form/faq';
+$route['admin/faq/create'] = 'admin/content/create/faq';
+$route['admin/faq/(:any)/update'] = 'admin/content/update/faq/$1';
+$route['admin/faq/(:any)/status'] = 'admin/content/status/faq/$1';
+$route['admin/faq/(:any)/delete'] = 'admin/content/delete/faq/$1';
+$route['admin/faq/(:any)'] = 'admin/content/edit/faq/$1';
+$route['admin/announcements'] = 'admin/content/domain/announcements';
+$route['admin/announcements/new'] = 'admin/content/create_form/announcements';
+$route['admin/announcements/create'] = 'admin/content/create/announcements';
+$route['admin/announcements/(:any)/update'] = 'admin/content/update/announcements/$1';
+$route['admin/announcements/(:any)/status'] = 'admin/content/status/announcements/$1';
+$route['admin/announcements/(:any)/delete'] = 'admin/content/delete/announcements/$1';
+$route['admin/announcements/(:any)'] = 'admin/content/edit/announcements/$1';
 $route['admin/staff'] = 'admin/staff/index';
 // Action routes must precede the catch-all below.
 $route['admin/staff/permissions'] = 'admin/staff/permissions';

@@ -36,6 +36,9 @@ class FakeDb
 
     private $pending_where = array();
     private $pending_or_where = array();
+    private $pending_groups = array();
+    private $current_group = array('and' => array(), 'or' => array());
+    private $group_depth = 0;
     private $pending_like = array();
     private $pending_from = null;
     private $pending_joins = array();
@@ -118,6 +121,14 @@ class FakeDb
 
     public function where($key, $value = null, $escape = null)
     {
+        if ($this->group_depth > 0) {
+            if (is_array($key)) {
+                foreach ($key as $k => $v) $this->current_group['and'][$k] = $v;
+            } else {
+                $this->current_group['and'][$key] = $value;
+            }
+            return $this;
+        }
         if (is_array($key)) {
             foreach ($key as $k => $v) $this->pending_where[$k] = $v;
         } else {
@@ -128,9 +139,14 @@ class FakeDb
 
     public function or_where($key, $value = null, $escape = null)
     {
-        // Modelled as an alternative set; matches() ORs these against the
-        // main predicate group.
-        $this->pending_or_where[$key] = $value;
+        // Inside group_start()/group_end() the alternatives belong to that
+        // group alone, and the group as a whole is AND-ed with everything
+        // outside it. Outside a group they are the old flat alternative set.
+        if ($this->group_depth > 0) {
+            $this->current_group['or'][$key] = $value;
+        } else {
+            $this->pending_or_where[$key] = $value;
+        }
         return $this;
     }
 
@@ -191,6 +207,7 @@ class FakeDb
         $where = $this->takeWhere();
         $or    = $this->takeOrWhere();
         $like  = $this->takeLike();
+        $groups = $this->takeGroups();
         $this->queries[] = array('op' => 'select', 'table' => $table, 'where' => $where);
         $matched = array();
         foreach ($this->rows[$table] as $row) {
@@ -207,7 +224,7 @@ class FakeDb
             // A join can fan one base row out into several, as SQL does.
             foreach ($this->applyJoins($this->hydrate($table, $row), $joins) as $full) {
                 $full = $this->applyAliases($full, $aliases);
-                if (!$this->matches($full, $where, $or, $like)) continue;
+                if (!$this->matches($full, $where, $or, $like, $groups)) continue;
                 // Projection is deferred when there are aggregates: SUM(amount)
                 // needs `amount` on the row, and the projected shape only carries
                 // the alias. Stripping first would sum a column that is no longer
@@ -282,6 +299,7 @@ class FakeDb
     {
         $this->assertTable($table, 'insert');
         $this->takeWhere();
+        $this->takeGroups();
 
         foreach ($data as $column => $_) {
             if (!isset($this->schema[$table]['columns'][$column])) {
@@ -323,6 +341,7 @@ class FakeDb
     {
         $this->assertTable($table, 'update');
         $where = $this->takeWhere();
+        $groups = $this->takeGroups();
         foreach ($data as $column => $_) {
             if (!isset($this->schema[$table]['columns'][$column])) {
                 throw new RuntimeException("FakeDb: unknown column {$table}.{$column} in update");
@@ -334,7 +353,7 @@ class FakeDb
         }
         $this->affected = 0;
         foreach ($this->rows[$table] as $i => $row) {
-            if ($this->matches($row, $where)) {
+            if ($this->matches($row, $where, array(), array(), $groups)) {
                 $this->rows[$table][$i] = array_merge($row, $data);
                 $this->affected++;
             }
@@ -553,10 +572,39 @@ class FakeDb
         throw new RuntimeException('FakeDb: unsupported raw query: '.trim($sql));
     }
 
-    public function group_start() { return $this; }
-    public function group_end()   { return $this; }
+    /**
+     * Real grouping, not a no-op.
+     *
+     * These used to be ignored, which made `WHERE a = 1 AND (b IS NULL OR
+     * b <= now)` behave as `a = 1 OR b IS NULL OR b <= now` — any or_where
+     * could rescue a row that had already failed the AND. Announcement_model
+     * ::visible() is exactly that shape, so a *hidden* announcement came back
+     * as visible and the harness disagreed with production in the one
+     * direction that matters.
+     *
+     * Each group becomes its own clause, AND-ed with everything outside it.
+     */
+    public function group_start()
+    {
+        if ($this->group_depth === 0) $this->current_group = array('and' => array(), 'or' => array());
+        $this->group_depth++;
+        return $this;
+    }
+
+    public function group_end()
+    {
+        if ($this->group_depth === 0) return $this;
+        $this->group_depth--;
+        if ($this->group_depth === 0 && ($this->current_group['and'] || $this->current_group['or'])) {
+            $this->pending_groups[] = $this->current_group;
+            $this->current_group = array('and' => array(), 'or' => array());
+        }
+        return $this;
+    }
     public function reset_query() {
         $this->pending_where = array(); $this->pending_or_where = array();
+        $this->pending_groups = array(); $this->group_depth = 0;
+        $this->current_group = array('and' => array(), 'or' => array());
         $this->pending_like = array();
         $this->pending_order = array(); $this->pending_limit = null;
         $this->pending_from = null; $this->pending_joins = array();
@@ -569,9 +617,10 @@ class FakeDb
     {
         $this->assertTable($table, 'delete');
         $where = $this->takeWhere();
+        $groups = $this->takeGroups();
         $kept = array(); $this->affected = 0;
         foreach ($this->rows[$table] as $row) {
-            if ($this->matches($row, $where)) { $this->affected++; continue; }
+            if ($this->matches($row, $where, array(), array(), $groups)) { $this->affected++; continue; }
             $kept[] = $row;
         }
         $this->rows[$table] = $kept;
@@ -620,6 +669,16 @@ class FakeDb
         return $w;
     }
 
+    /** Consume the pending parenthesised groups for one query. */
+    private function takeGroups()
+    {
+        $g = $this->pending_groups;
+        $this->pending_groups = array();
+        $this->current_group  = array('and' => array(), 'or' => array());
+        $this->group_depth    = 0;
+        return $g;
+    }
+
     private function takeLike()
     {
         $l = $this->pending_like;
@@ -639,16 +698,32 @@ class FakeDb
         $this->pending_order = array(); $this->pending_limit = null;
         $or = $this->takeOrWhere();
         $like = $this->takeLike();
+        $groups = $this->takeGroups();
         $n = 0;
-        foreach ($this->rows[$table] as $row) if ($this->matches($row, $where, $or, $like)) $n++;
+        foreach ($this->rows[$table] as $row) if ($this->matches($row, $where, $or, $like, $groups)) $n++;
         return $n;
     }
 
-    private function matches(array $row, array $where, array $or_where = array(), array $like = array())
+    private function matches(array $row, array $where, array $or_where = array(), array $like = array(),
+                             array $groups = array())
     {
         // The LIKE group is AND-ed with everything else, matching how the
         // codebase writes it: ... AND (a LIKE t OR b LIKE t).
         if ($like && !$this->matchesLike($row, $like)) return false;
+
+        // Each parenthesised group is its own clause, AND-ed with the rest.
+        foreach ($groups as $group) {
+            $ok = true;
+            foreach ($group['and'] as $k => $v) {
+                if (!$this->matchesOne($row, $k, $v)) { $ok = false; break; }
+            }
+            if (!$ok) {
+                foreach ($group['or'] as $k => $v) {
+                    if ($this->matchesOne($row, $k, $v)) { $ok = true; break; }
+                }
+            }
+            if (!$ok) return false;
+        }
 
         foreach ($where as $k => $v) {
             if (!$this->matchesOne($row, $k, $v)) {
