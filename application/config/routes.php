@@ -155,7 +155,14 @@ $route['admin/giftcards/(:any)/abandon'] = 'admin/giftcards/abandon/$1';
 $route['admin/giftcards/(:any)/refund'] = 'admin/giftcards/refund/$1';
 $route['admin/giftcards/(:any)/reveal/(:any)'] = 'admin/giftcards/reveal/$1/$2';
 $route['admin/giftcards/(:any)'] = 'admin/giftcards/detail/$1';
-$route['admin/services'] = 'admin/services/index';
+// Catalogue: pricing and shelf control for every product domain.
+// Action routes must precede the catch-all detail route below.
+$route['admin/catalogue'] = 'admin/catalogue/index';
+$route['admin/catalogue/(:any)/create'] = 'admin/catalogue/create/$1';
+$route['admin/catalogue/(:any)/(:any)/update'] = 'admin/catalogue/update/$1/$2';
+$route['admin/catalogue/(:any)/(:any)/status'] = 'admin/catalogue/status/$1/$2';
+$route['admin/catalogue/(:any)/(:any)'] = 'admin/catalogue/edit/$1/$2';
+$route['admin/catalogue/(:any)'] = 'admin/catalogue/domain/$1';
 $route['admin/categories'] = 'admin/categories/index';
 $route['admin/providers'] = 'admin/providers/index';
 $route['admin/providers/create'] = 'admin/providers/create';

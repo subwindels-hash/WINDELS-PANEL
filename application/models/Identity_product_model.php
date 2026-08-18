@@ -38,6 +38,48 @@ class Identity_product_model extends MY_Model {
         return $this->db->where('code',strtoupper($code))->get($this->table)->row();
     }
 
+    /**
+     * The admin catalogue grid: every row, priced or not, active or not.
+     *
+     * The three seeded checks ship unpriced and switched off, so an operator's
+     * first visit here is the only thing standing between a fresh install and
+     * an identity catalogue nobody can buy from.
+     *
+     * @param array $filters id_type|status|pricing|search
+     */
+    public function admin_search(array $filters, $limit = 25, $offset = 0){
+        $this->admin_filters($filters);
+        return $this->db->order_by('sorting','ASC')->order_by('name','ASC')
+                        ->limit($limit, $offset)->get()->result();
+    }
+
+    public function admin_count(array $filters){
+        $this->admin_filters($filters);
+        return (int)$this->db->count_all_results();
+    }
+
+    /** Shared WHERE builder so the grid and its count can never disagree. */
+    private function admin_filters(array $f){
+        $this->db->from($this->table);
+        if (!empty($f['id_type'])) $this->db->where('identity_products.id_type', $f['id_type']);
+        if (isset($f['status']) && $f['status'] !== '' && $f['status'] !== null) {
+            $this->db->where('identity_products.is_active', $f['status'] === 'active' ? 1 : 0);
+        }
+        if (!empty($f['pricing']) && $f['pricing'] === 'unpriced') {
+            $this->db->where('identity_products.price IS NULL', null, false);
+        }
+        if (!empty($f['pricing']) && $f['pricing'] === 'priced') {
+            $this->db->where('identity_products.price IS NOT NULL', null, false);
+        }
+        if (!empty($f['search'])) {
+            $term = trim((string)$f['search']);
+            $this->db->group_start()
+                ->like('identity_products.code', $term)
+                ->or_like('identity_products.name', $term)
+                ->group_end();
+        }
+    }
+
     public function create(array $data){
         if (empty($data['public_id'])) $data['public_id'] = windels_public_id();
         $now = $this->now_utc();

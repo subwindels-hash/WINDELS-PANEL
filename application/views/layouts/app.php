@@ -11,7 +11,7 @@ $nav = $is_admin ? array(
     array('admin/giftcards',    'Gift cards', 'giftcards.view',  'gift-card'),
     array('admin/analytics',    'Analytics',  'reports.view',    'chart'),
     array('admin/customers',    'Customers',  'users.view',      'users'),
-    array('admin/services',     'Services',   'services.manage', 'package'),
+    array('admin/catalogue',    'Catalogue',  'services.view',   'package'),
     array('admin/providers',    'Providers',  'providers.manage','server'),
     array('admin/payments',     'Payments',   'payments.view',   'credit-card'),
     array('admin/tickets',      'Tickets',    'tickets.view',    'message-square'),
@@ -103,8 +103,16 @@ $nav = $is_admin ? array(
     <main class="flex-1 p-4 md:p-6 pb-24 md:pb-6">
       <?php $flash_success = $this->session->flashdata('success'); ?>
       <?php $flash_error   = $this->session->flashdata('error'); ?>
+      <?php // A change that went through but that the operator should look at
+            // twice — selling below cost, a product hidden behind an inactive
+            // parent. Distinct from an error: refusing these would refuse
+            // legitimate decisions, and hiding them would let a typo ship.
+            $flash_warning = $this->session->flashdata('warning'); ?>
       <?php if ($flash_success): ?>
         <div class="alert alert-success"><?=htmlspecialchars($flash_success)?></div>
+      <?php endif; ?>
+      <?php if ($flash_warning): ?>
+        <div class="alert alert-warning"><?=htmlspecialchars($flash_warning)?></div>
       <?php endif; ?>
       <?php if ($flash_error): ?>
         <div class="alert alert-danger"><?=htmlspecialchars($flash_error)?></div>

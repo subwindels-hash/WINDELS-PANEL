@@ -38,6 +38,87 @@ class Number_product_model extends MY_Model {
                         ->get($this->table)->row();
     }
 
+    /**
+     * The admin catalogue grid: every row, priced or not, active or not.
+     *
+     * Unscoped by is_active on purpose — a sync imports rows inactive and
+     * unpriced, and those are exactly the rows this screen exists to work on.
+     * Reached only behind `services.view`.
+     *
+     * @param array $filters country_id|service_id|status|pricing|search
+     */
+    public function admin_search(array $filters, $limit = 25, $offset = 0){
+        $this->admin_filters($filters);
+        return $this->db
+            ->select('number_products.*, number_countries.name AS country_name,
+                      number_countries.code AS country_code,
+                      number_services.name AS service_name,
+                      number_services.code AS service_code', false)
+            ->join('number_countries', 'number_countries.id = number_products.country_id', 'left')
+            ->join('number_services', 'number_services.id = number_products.service_id', 'left')
+            ->order_by('number_products.sorting','ASC')
+            ->order_by('number_products.code','ASC')
+            ->limit($limit, $offset)
+            ->get()->result();
+    }
+
+    public function admin_count(array $filters){
+        $this->admin_filters($filters);
+        return (int)$this->db->count_all_results();
+    }
+
+    /** Shared WHERE builder so the grid and its count can never disagree. */
+    private function admin_filters(array $f){
+        $this->db->from($this->table);
+        if (!empty($f['country_id'])) $this->db->where('number_products.country_id', (int)$f['country_id']);
+        if (!empty($f['service_id'])) $this->db->where('number_products.service_id', (int)$f['service_id']);
+        if (isset($f['status']) && $f['status'] !== '' && $f['status'] !== null) {
+            $this->db->where('number_products.is_active', $f['status'] === 'active' ? 1 : 0);
+        }
+        if (!empty($f['pricing']) && $f['pricing'] === 'unpriced') {
+            $this->db->where('number_products.price IS NULL', null, false);
+        }
+        if (!empty($f['pricing']) && $f['pricing'] === 'priced') {
+            $this->db->where('number_products.price IS NOT NULL', null, false);
+        }
+        if (!empty($f['search'])) {
+            $term = trim((string)$f['search']);
+            $this->db->group_start()
+                ->like('number_products.code', $term)
+                ->or_like('number_products.provider_product', $term)
+                ->group_end();
+        }
+    }
+
+    /**
+     * Other active rows for the same (country, service), excluding one id.
+     *
+     * NumberService::reserve() resolves through find_for_pair(), which takes
+     * the first active row by sort order. A second active row for the same
+     * pair therefore decides the price silently; the catalogue screen refuses
+     * to create one.
+     */
+    public function other_active($country_id, $service_id, $exclude_id = null){
+        $this->db->where('country_id',$country_id)
+                 ->where('service_id',$service_id)
+                 ->where('is_active',1);
+        if ($exclude_id) $this->db->where('id !=', (int)$exclude_id);
+        return $this->db->order_by('sorting','ASC')->get($this->table)->result();
+    }
+
+    public function create(array $data){
+        if (empty($data['public_id'])) $data['public_id'] = windels_public_id();
+        $now = $this->now_utc();
+        $data += array('created_at'=>$now, 'updated_at'=>$now);
+        $this->db->insert($this->table, $data);
+        return (int)$this->db->insert_id();
+    }
+
+    public function update_fields($id, array $fields){
+        $fields['updated_at'] = $this->now_utc();
+        return $this->db->where('id',$id)->update($this->table, $fields);
+    }
+
     /** Catalogue rows sourced from one vendor, for the admin detail page. */
     public function paginated_for_provider($provider_id, $limit, $offset){
         return $this->db->where('provider_id',$provider_id)

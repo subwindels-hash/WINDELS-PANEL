@@ -250,6 +250,8 @@ class AdminPanelTest extends TestCase
             'Orders.php'   => array('status','cancel','refund'),
             'Payments.php' => array('approve','reject'),
             'Tickets.php'  => array('reply','assign','status','priority'),
+            // Catalogue changes a price, which is money by another name.
+            'Catalogue.php'=> array('create','update','status'),
         );
         foreach ($expected as $file => $actions) {
             $src = file_get_contents(self::$root.'/application/controllers/admin/'.$file);

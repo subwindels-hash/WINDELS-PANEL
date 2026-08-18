@@ -60,6 +60,54 @@ class Giftcard_product_model extends MY_Model {
                         ->get($this->table)->result();
     }
 
+    /**
+     * The admin catalogue grid: every row, priced or not, active or not.
+     *
+     * @param array $filters brand_id|denomination_type|status|pricing|search
+     */
+    public function admin_search(array $filters, $limit = 25, $offset = 0){
+        $this->admin_filters($filters);
+        return $this->db
+            ->select('giftcard_products.*, giftcard_brands.name AS brand_name,
+                      giftcard_brands.code AS brand_code,
+                      giftcard_brands.is_active AS brand_active', false)
+            ->join('giftcard_brands', 'giftcard_brands.id = giftcard_products.brand_id', 'left')
+            ->order_by('giftcard_products.sorting','ASC')
+            ->order_by('giftcard_products.name','ASC')
+            ->limit($limit, $offset)
+            ->get()->result();
+    }
+
+    public function admin_count(array $filters){
+        $this->admin_filters($filters);
+        return (int)$this->db->count_all_results();
+    }
+
+    /** Shared WHERE builder so the grid and its count can never disagree. */
+    private function admin_filters(array $f){
+        $this->db->from($this->table);
+        if (!empty($f['brand_id'])) $this->db->where('giftcard_products.brand_id', (int)$f['brand_id']);
+        if (!empty($f['denomination_type'])) {
+            $this->db->where('giftcard_products.denomination_type', $f['denomination_type']);
+        }
+        if (isset($f['status']) && $f['status'] !== '' && $f['status'] !== null) {
+            $this->db->where('giftcard_products.is_active', $f['status'] === 'active' ? 1 : 0);
+        }
+        if (!empty($f['pricing']) && $f['pricing'] === 'unpriced') {
+            $this->db->where('giftcard_products.price IS NULL', null, false);
+        }
+        if (!empty($f['pricing']) && $f['pricing'] === 'priced') {
+            $this->db->where('giftcard_products.price IS NOT NULL', null, false);
+        }
+        if (!empty($f['search'])) {
+            $term = trim((string)$f['search']);
+            $this->db->group_start()
+                ->like('giftcard_products.code', $term)
+                ->or_like('giftcard_products.name', $term)
+                ->group_end();
+        }
+    }
+
     /** Catalogue rows sourced from one vendor, for the admin detail page. */
     public function paginated_for_provider($provider_id, $limit, $offset){
         return $this->db->where('provider_id',$provider_id)

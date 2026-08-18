@@ -192,9 +192,15 @@ silent revenue bug — `AdminStats` had read only the `orders` table since sessi
 21, so every VTU, number, identity and gift card sale was reported as zero
 revenue on the admin landing page.
 
-**Remaining:** the marketplace half of F, and per-domain catalogue CRUD screens
-(prices for VTU, numbers, identity and gift cards are set directly in the
-database rather than through the admin UI).
+Per-domain catalogue CRUD landed in [session 29](session-29-catalogue.md):
+`admin/catalogue` prices and switches on products in all four domains behind
+`pricing.manage`. It closes the other half of the catalogue-sync rule — syncs
+import `is_active = 0, price = NULL` on purpose, and until this screen nothing
+could supply the price they refuse to invent, so a fresh install had no sellable
+product and every price change was hand-written SQL. It also removed a dead
+`admin/services` nav entry that had been a 404 for every operator.
+
+**Remaining:** the marketplace half of F.
 
 Phase A is the one that determines whether this stays coherent. If each domain is
 built without it, the result is six parallel half-copies of the order engine.
