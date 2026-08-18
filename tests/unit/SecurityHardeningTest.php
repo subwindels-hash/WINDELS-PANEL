@@ -423,6 +423,49 @@ class SecurityHardeningTest extends TestCase
     }
 
     /**
+     * A gift card code is the one payload in the panel that is *directly*
+     * spendable. Everything the identity rules protect is damaging because of
+     * what it reveals; a card number is damaging because of what it buys, so
+     * it must not reach a log line or the session store either.
+     */
+    public function testGiftCardCodesAreNeverLoggedOrSessioned()
+    {
+        foreach ($this->php_files() as $file) {
+            $src = file_get_contents($file);
+            if (preg_match_all('~(?:log_message|set_flashdata|set_userdata)\([^;]*;~s', $src, $m)) {
+                foreach ($m[0] as $call) {
+                    $this->assertDoesNotMatchRegularExpression(
+                        '~\$(?:\w+->)*(?:card_number|pin_code|pinCode|cardNumber|redeem_code)\b~i',
+                        $call,
+                        basename($file).' exposes a gift card code: '.substr(trim($call), 0, 90));
+                }
+            }
+        }
+    }
+
+    /**
+     * The same single-door rule the identity result has, for the same reason
+     * and with higher stakes: a controller or view decrypting a card directly
+     * would be an unlogged read of something a staff member can spend.
+     */
+    public function testOnlyTheAuditedServicePathDecryptsAGiftCardCode()
+    {
+        $callers = array();
+        foreach (array_merge($this->php_files(), $this->view_files()) as $file) {
+            if (basename($file) === 'GiftcardService.php') continue;
+            $src = file_get_contents($file);
+            if (strpos($src, 'card_number_encrypted') === false
+                && strpos($src, 'pin_encrypted') === false) continue;
+            if (preg_match('~encryptionservice->(?:open|decrypt)~i', $src)) {
+                $callers[] = basename($file);
+            }
+        }
+        $this->assertSame(array(), $callers,
+            'decrypting outside GiftcardService::reveal() bypasses the access log: '
+            .implode(', ', $callers));
+    }
+
+    /**
      * There must be exactly one route to a plaintext identity result, and it
      * is the one that audits the access. A controller or view calling the
      * decryptor directly would be a silent read.

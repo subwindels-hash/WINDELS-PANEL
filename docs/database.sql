@@ -1340,4 +1340,100 @@ CREATE TABLE IF NOT EXISTS identity_checks (
   INDEX idx_idchk_purge (purged_at, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ---------------------------------------------------------------------
+-- migration 014_giftcards
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS giftcard_brands (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  code VARCHAR(64) NOT NULL UNIQUE COMMENT 'our stable code: AMAZON, STEAM',
+  name VARCHAR(128) NOT NULL,
+  provider_brand_id VARCHAR(48) NULL COMMENT 'vendor brand id, advisory',
+  logo_url VARCHAR(512) NULL,
+  redeem_instructions TEXT NULL COMMENT 'how the customer spends the code',
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  sorting INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_gcbrand_active (is_active, sorting)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS giftcard_products (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  brand_id BIGINT UNSIGNED NOT NULL,
+  provider_id BIGINT UNSIGNED NULL,
+  code VARCHAR(96) NOT NULL COMMENT 'our stable code: AMAZON-US-25',
+  name VARCHAR(160) NOT NULL,
+  country_code CHAR(2) NOT NULL DEFAULT 'US',
+  provider_product_id VARCHAR(48) NULL COMMENT 'vendor productId',
+  denomination_type VARCHAR(8) NOT NULL DEFAULT 'FIXED' COMMENT 'FIXED|RANGE',
+  recipient_currency CHAR(3) NOT NULL COMMENT 'currency the card is denominated in — never defaulted, see below',
+  face_value DECIMAL(20,8) NULL COMMENT 'card denomination in recipient_currency',
+  min_face_value DECIMAL(20,8) NULL COMMENT 'RANGE products only',
+  max_face_value DECIMAL(20,8) NULL COMMENT 'RANGE products only',
+  price DECIMAL(20,8) NULL COMMENT 'customer price in base currency; NULL = not for sale',
+  provider_cost DECIMAL(20,8) NULL COMMENT 'vendor cost in base currency',
+  max_quantity INT NOT NULL DEFAULT 5 COMMENT 'cards per order',
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  sorting INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_gcprod_brand FOREIGN KEY (brand_id) REFERENCES giftcard_brands(id) ON DELETE CASCADE,
+  CONSTRAINT fk_gcprod_provider FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL,
+  UNIQUE KEY uq_gcprod_code (code),
+  INDEX idx_gcprod_active (is_active, sorting),
+  INDEX idx_gcprod_brand (brand_id, is_active),
+  INDEX idx_gcprod_provider (provider_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS giftcard_orders (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  service_transaction_id BIGINT UNSIGNED NOT NULL UNIQUE,
+  product_id BIGINT UNSIGNED NULL,
+  brand_id BIGINT UNSIGNED NULL,
+  quantity INT NOT NULL DEFAULT 1,
+  face_value DECIMAL(20,8) NULL COMMENT 'per-card denomination, frozen at purchase',
+  recipient_currency CHAR(3) NOT NULL COMMENT 'copied from the product at purchase',
+  recipient_email VARCHAR(190) NULL COMMENT 'vendor delivery copy; the panel is the source of truth',
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING|PLACED|DELIVERED|FAILED|CANCELLED',
+  provider_order_id VARCHAR(64) NULL COMMENT 'vendor transactionId, what code retrieval is keyed on',
+  placed_at DATETIME NULL,
+  delivered_at DATETIME NULL,
+  code_attempts INT NOT NULL DEFAULT 0 COMMENT 'code-retrieval tries; bounds the retry worker',
+  last_attempt_at DATETIME NULL,
+  failure_reason VARCHAR(255) NULL,
+  reveal_count INT NOT NULL DEFAULT 0 COMMENT 'how many times a code was opened',
+  last_revealed_at DATETIME NULL,
+  last_revealed_by BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_gcord_stx FOREIGN KEY (service_transaction_id) REFERENCES service_transactions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_gcord_product FOREIGN KEY (product_id) REFERENCES giftcard_products(id) ON DELETE SET NULL,
+  CONSTRAINT fk_gcord_brand FOREIGN KEY (brand_id) REFERENCES giftcard_brands(id) ON DELETE SET NULL,
+  CONSTRAINT fk_gcord_revealer FOREIGN KEY (last_revealed_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_gcord_status (status, last_attempt_at),
+  INDEX idx_gcord_placed (status, placed_at),
+  INDEX idx_gcord_provider_ref (provider_order_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS giftcard_codes (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  giftcard_order_id BIGINT UNSIGNED NOT NULL,
+  card_index INT NOT NULL DEFAULT 1 COMMENT '1..quantity, stable ordering for the customer',
+  card_number_encrypted TEXT NOT NULL COMMENT 'AES-256-GCM; never rendered without an audited reveal',
+  pin_encrypted TEXT NULL COMMENT 'AES-256-GCM; many brands have no PIN',
+  card_last4 VARCHAR(8) NULL COMMENT 'display only, so a customer can tell two cards apart',
+  redemption_url VARCHAR(512) NULL,
+  expires_on DATE NULL COMMENT 'vendor expiry, where one is given',
+  revealed_at DATETIME NULL COMMENT 'first time this specific card was opened',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_gccode_order FOREIGN KEY (giftcard_order_id) REFERENCES giftcard_orders(id) ON DELETE CASCADE,
+  UNIQUE KEY uq_gccode_slot (giftcard_order_id, card_index),
+  INDEX idx_gccode_order (giftcard_order_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;

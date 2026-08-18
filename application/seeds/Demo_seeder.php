@@ -21,6 +21,7 @@ class Demo_seeder extends Seeder {
         $this->seed_vtpass_provider();
         $this->seed_fivesim_provider();
         $this->seed_dojah_provider();
+        $this->seed_reloadly_provider();
         $category_ids  = $this->seed_categories();
         $service_ids   = $this->seed_services($category_ids, $provider_id);
         $user_ids      = $this->seed_users();
@@ -189,6 +190,54 @@ class Demo_seeder extends Seeder {
                                       .'sync — price the identity products by hand against your '
                                       .'per-lookup contract, then activate. Every lookup is billable, '
                                       .'including ones that find nobody.',
+        ));
+    }
+
+    /**
+     * A Reloadly gift card vendor, on the same env-gated, INACTIVE terms as
+     * the other live vendors.
+     *
+     * The default URL is the sandbox, and the adapter derives its OAuth
+     * audience from that URL — so a demo install cannot accidentally mint a
+     * production token and start spending real money on test clicks. The
+     * reverse mistake, sandbox credentials against the live host, is a flat
+     * 401, which is a much better afternoon.
+     *
+     * No catalogue is seeded with it: run the sync, then price the
+     * denominations against the rate you actually get, then activate.
+     */
+    private function seed_reloadly_provider() {
+        $client_id     = getenv('RELOADLY_CLIENT_ID');
+        $client_secret = getenv('RELOADLY_CLIENT_SECRET');
+        if (!$client_id || !$client_secret) {
+            $this->out('reloadly: no RELOADLY_* credentials in env — skipping (MOCK_GIFTCARD stays the gift card provider)');
+            return null;
+        }
+
+        $this->ci->load->library('EncryptionService');
+        $enc = $this->ci->encryptionservice->encrypt(json_encode(array(
+            'client_id' => $client_id, 'client_secret' => $client_secret,
+        )));
+        $url = getenv('RELOADLY_BASE_URL') ?: 'https://giftcards-sandbox.reloadly.com';
+
+        return $this->upsert('providers', array('name'=>'Reloadly'), array(
+            'public_id'             => $this->pid(),
+            'api_url'               => rtrim($url, '/'),
+            'api_key_encrypted'     => $enc,
+            'api_type'              => 'RELOADLY',
+            'status'                => 'INACTIVE',
+            'currency'              => 'NGN',
+            'timeout_ms'            => 30000,
+            'retry_policy'          => json_encode(array(
+                'maxRetries' => 2, 'backoffMs' => array(500, 1500),
+            )),
+            'rate_multiplier'       => '1.00000000',
+            'markup'                => '0.00000000',
+            'sync_interval_minutes' => 720,
+            'notes'                 => 'Live gift card vendor. Sync the catalogue, then price the '
+                                      .'denominations by hand — vendor cost moves with the FX rate, so '
+                                      .'a sync never sets your selling price. Cards are charged to your '
+                                      .'Reloadly wallet whether or not the code reaches the customer.',
         ));
     }
 

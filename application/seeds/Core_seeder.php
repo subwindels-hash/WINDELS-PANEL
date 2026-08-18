@@ -24,6 +24,7 @@ class Core_seeder extends Seeder {
         $this->seed_vtu_catalogue();
         $this->seed_number_catalogue();
         $this->seed_identity_catalogue();
+        $this->seed_giftcard_catalogue();
         $this->out('core seed complete');
     }
 
@@ -42,6 +43,11 @@ class Core_seeder extends Seeder {
             // seeing that a check happened and reading the person's details
             // are different levels of access (§22).
             'identity'   => array('identity.view','identity.manage','identity.refund','identity.reveal'),
+            // giftcards.reveal is separate from giftcards.view for a sharper
+            // reason than identity's: a gift card code is a bearer instrument,
+            // so reading one is closer to opening the till than to reading a
+            // record (§23).
+            'giftcards'  => array('giftcards.view','giftcards.manage','giftcards.refund','giftcards.reveal'),
             'payments'   => array('payments.view','payments.manage','wallets.adjust'),
             'support'    => array('tickets.view','tickets.reply','tickets.manage'),
             'content'    => array('blog.manage','faq.manage','announcements.manage','media.manage'),
@@ -61,6 +67,7 @@ class Core_seeder extends Seeder {
                 'vtu.view','vtu.manage','vtu.refund',
                 'numbers.view','numbers.manage','numbers.refund',
                 'identity.view','identity.manage','identity.refund','identity.reveal',
+                'giftcards.view','giftcards.manage','giftcards.refund','giftcards.reveal',
                 'payments.view','payments.manage','wallets.adjust',
                 'tickets.view','tickets.reply','tickets.manage',
                 'blog.manage','faq.manage','announcements.manage','media.manage',
@@ -76,6 +83,10 @@ class Core_seeder extends Seeder {
                 // is not needed to answer "did my check work?", and the
                 // narrower default is the one worth shipping.
                 'identity.view',
+                // Support can chase a stuck gift card order and see whether it
+                // was delivered, but not read the code. Answering "where is my
+                // card?" does not require holding something spendable.
+                'giftcards.view','giftcards.manage',
                 'payments.view','tickets.view','tickets.reply','affiliates.view',
             ),
             'CUSTOMER'    => array(),
@@ -315,6 +326,56 @@ class Core_seeder extends Seeder {
         }
     }
 
+    /**
+     * Gift card brands (§23).
+     *
+     * Brands only. Deliberately no `giftcard_products`, for the same reason
+     * there are no seeded `number_products`: a denomination needs a price, and
+     * the price depends on the FX rate and the discount a vendor gives you,
+     * which nobody knows until a vendor is connected and synced. Seeding a
+     * priced $25 Amazon card would either invent a margin or — because the
+     * naira/dollar rate moves — ship something sold well below cost.
+     *
+     * The brands are worth seeding because they are stable, they carry the
+     * redeem instructions, and they give the catalogue sync something to
+     * attach imported denominations to rather than inventing brand names from
+     * vendor product strings.
+     */
+    public static function giftcard_brands() {
+        return array(
+            // code, name, redeem instructions
+            array('AMAZON', 'Amazon',
+                  'Go to amazon.com/redeem and enter the claim code to add it to your Amazon balance.'),
+            array('APPLE', 'App Store & iTunes',
+                  'Go to apple.com/redeem, or open the App Store, tap your profile and choose Redeem Gift Card.'),
+            array('GOOGLE_PLAY', 'Google Play',
+                  'Open the Google Play Store, tap your profile, choose Payments & subscriptions, then Redeem code.'),
+            array('STEAM', 'Steam',
+                  'Open Steam, choose Games then Redeem a Steam Wallet Code, and enter the code.'),
+            array('NETFLIX', 'Netflix',
+                  'Go to netflix.com/redeem and enter the code to add it to your Netflix account.'),
+            array('SPOTIFY', 'Spotify',
+                  'Go to spotify.com/redeem and enter the code to add Premium time to your account.'),
+            array('XBOX', 'Xbox',
+                  'Sign in at redeem.microsoft.com and enter the 25-character code.'),
+            array('PLAYSTATION', 'PlayStation Store',
+                  'Sign in to PlayStation Store, choose Redeem Codes, and enter the 12-digit code.'),
+        );
+    }
+
+    private function seed_giftcard_catalogue() {
+        $sort = 0;
+        foreach (self::giftcard_brands() as $b) {
+            $this->upsert('giftcard_brands', array('code' => $b[0]), array(
+                'public_id'           => windels_public_id(),
+                'name'                => $b[1],
+                'redeem_instructions' => $b[2],
+                'is_active'           => 1,
+                'sorting'             => $sort++,
+            ));
+        }
+    }
+
     public static function default_settings() {
         return array(
             // general
@@ -350,6 +411,10 @@ class Core_seeder extends Seeder {
             // constant because the right number is a legal answer, not an
             // engineering one, and it differs by jurisdiction.
             array('identity_retention_days',30,'identity',0),
+            // gift cards (§23). The sender name printed on the vendor's
+            // receipt: it is what the recipient sees the card came from, so it
+            // is a branding decision rather than a constant.
+            array('giftcard_sender_name','WINDELS PANEL','giftcards',0),
         );
     }
 

@@ -371,6 +371,75 @@ class IntegrationHarness
         return $this;
     }
 
+    /** Brands and denominations, with a MOCK_GIFTCARD vendor behind them. */
+    public function seed_giftcards()
+    {
+        $now = gmdate('Y-m-d H:i:s');
+
+        $this->db->insert('providers', array(
+            'public_id' => 'PROV0000000000000000000005', 'name' => 'Acme Gift Cards',
+            'api_url' => 'https://api.giftcards.test', 'api_key_encrypted' => 'enc:test',
+            'api_type' => 'MOCK_GIFTCARD', 'status' => 'ACTIVE', 'currency' => 'NGN',
+            'created_at' => $now, 'updated_at' => $now,
+        ));
+        $provider_id = $this->db->insert_id();
+
+        $brands = array(
+            array('AMAZON', 'Amazon', 1),
+            array('STEAM',  'Steam',  1),
+            array('SWITCHED-OFF', 'Switched Off', 0),
+        );
+        $brand_ids = array();
+        foreach ($brands as $i => $b) {
+            $this->db->insert('giftcard_brands', array(
+                'public_id' => 'GCBR'.str_pad((string)($i + 1), 22, '0', STR_PAD_LEFT),
+                'code' => $b[0], 'name' => $b[1],
+                'redeem_instructions' => 'Redeem at '.$b[1].'.',
+                'is_active' => $b[2], 'sorting' => $i,
+                'created_at' => $now, 'updated_at' => $now,
+            ));
+            $brand_ids[$b[0]] = $this->db->insert_id();
+        }
+
+        $products = array(
+            // code, brand, name, vendor product id, type, face, price, cost, max qty, active
+            array('AMAZON-US-25', 'AMAZON', 'Amazon US $25', '11', 'FIXED',
+                  '25.00000000',  '42000.00000000', '38000.00000000', 5, 1),
+            array('AMAZON-US-50', 'AMAZON', 'Amazon US $50', '12', 'FIXED',
+                  '50.00000000',  '83000.00000000', '76000.00000000', 3, 1),
+            array('STEAM-US-20',  'STEAM',  'Steam US $20',  '13', 'FIXED',
+                  '20.00000000',  '34000.00000000', '30000.00000000', 5, 1),
+            // Out of stock at the mock vendor: its product id ends in 0.
+            array('STEAM-US-10',  'STEAM',  'Steam US $10',  '10', 'FIXED',
+                  '10.00000000',  '17000.00000000', '15000.00000000', 5, 1),
+            // Accepted but never delivered at the mock vendor: id ends in 7.
+            array('AMAZON-US-100','AMAZON', 'Amazon US $100','17', 'FIXED',
+                  '100.00000000', '166000.00000000','152000.00000000', 2, 1),
+            // Imported by a sync and not yet priced — must not be buyable.
+            array('AMAZON-GB-10', 'AMAZON', 'Amazon UK £10', '21', 'FIXED',
+                  '10.00000000',  null, null, 5, 1),
+            // Custom-amount card: no fixed denomination, so not sellable yet.
+            array('AMAZON-US-RANGE','AMAZON','Amazon US custom','31','RANGE',
+                  null, '50000.00000000', '46000.00000000', 1, 1),
+            // Switched off by an operator.
+            array('STEAM-US-5',   'STEAM',  'Steam US $5',   '14', 'FIXED',
+                  '5.00000000',   '9000.00000000',  '8000.00000000', 5, 0),
+        );
+        foreach ($products as $i => $p) {
+            $this->db->insert('giftcard_products', array(
+                'public_id' => 'GCPR'.str_pad((string)($i + 1), 22, '0', STR_PAD_LEFT),
+                'brand_id' => $brand_ids[$p[1]], 'provider_id' => $provider_id,
+                'code' => $p[0], 'name' => $p[2], 'country_code' => 'US',
+                'provider_product_id' => $p[3], 'denomination_type' => $p[4],
+                'recipient_currency' => 'USD', 'face_value' => $p[5],
+                'price' => $p[6], 'provider_cost' => $p[7],
+                'max_quantity' => $p[8], 'is_active' => $p[9], 'sorting' => $i,
+                'created_at' => $now, 'updated_at' => $now,
+            ));
+        }
+        return $this;
+    }
+
     /* ----------------------------- factories ---------------------------- */
 
     /** A user with a wallet, created the way the app creates them. */

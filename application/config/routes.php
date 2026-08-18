@@ -89,6 +89,14 @@ $route['dashboard/identity/history'] = 'dashboard/identity/history';
 $route['dashboard/identity/verify'] = 'dashboard/identity/verify';
 $route['dashboard/identity/(:any)/reveal'] = 'dashboard/identity/reveal/$1';
 $route['dashboard/identity/(:any)'] = 'dashboard/identity/detail/$1';
+
+// Gift cards (§23). Same rule again: fixed segments and two-segment actions
+// come before the catch-all, or /history routes into detail().
+$route['dashboard/giftcards'] = 'dashboard/giftcards/index';
+$route['dashboard/giftcards/history'] = 'dashboard/giftcards/history';
+$route['dashboard/giftcards/buy'] = 'dashboard/giftcards/buy';
+$route['dashboard/giftcards/(:any)/reveal/(:any)'] = 'dashboard/giftcards/reveal/$1/$2';
+$route['dashboard/giftcards/(:any)'] = 'dashboard/giftcards/detail/$1';
 $route['dashboard/services'] = 'dashboard/services/index';
 $route['dashboard/favorites'] = 'dashboard/services/favorites';
 $route['dashboard/favorites/add/(:any)'] = 'dashboard/favorites/add/$1';
@@ -137,6 +145,12 @@ $route['admin/identity/(:any)/reveal'] = 'admin/identity/reveal/$1';
 $route['admin/identity/(:any)/refund'] = 'admin/identity/refund/$1';
 $route['admin/identity/(:any)/purge'] = 'admin/identity/purge/$1';
 $route['admin/identity/(:any)'] = 'admin/identity/detail/$1';
+$route['admin/giftcards'] = 'admin/giftcards/index';
+$route['admin/giftcards/(:any)/collect'] = 'admin/giftcards/collect/$1';
+$route['admin/giftcards/(:any)/abandon'] = 'admin/giftcards/abandon/$1';
+$route['admin/giftcards/(:any)/refund'] = 'admin/giftcards/refund/$1';
+$route['admin/giftcards/(:any)/reveal/(:any)'] = 'admin/giftcards/reveal/$1/$2';
+$route['admin/giftcards/(:any)'] = 'admin/giftcards/detail/$1';
 $route['admin/services'] = 'admin/services/index';
 $route['admin/categories'] = 'admin/categories/index';
 $route['admin/providers'] = 'admin/providers/index';

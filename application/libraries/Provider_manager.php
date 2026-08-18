@@ -5,6 +5,7 @@ require_once __DIR__.'/ProviderAdapterInterface.php';
 require_once __DIR__.'/VtuProviderInterface.php';
 require_once __DIR__.'/NumberProviderInterface.php';
 require_once __DIR__.'/IdentityProviderInterface.php';
+require_once __DIR__.'/GiftcardProviderInterface.php';
 
 /**
  * Provider_manager — one registry over every provider family (§14).
@@ -23,6 +24,7 @@ class Provider_manager {
     const FAMILY_VTU    = 'VTU';
     const FAMILY_NUMBER = 'NUMBER';
     const FAMILY_IDENTITY = 'IDENTITY';
+    const FAMILY_GIFTCARD = 'GIFTCARD';
 
     /** family => [api_type => [class, file]] */
     private static $registry = array(
@@ -42,6 +44,10 @@ class Provider_manager {
         self::FAMILY_IDENTITY => array(
             'MOCK_IDENTITY' => array('MockIdentityAdapter', 'MockIdentityAdapter.php'),
             'DOJAH'         => array('DojahAdapter', 'DojahAdapter.php'),
+        ),
+        self::FAMILY_GIFTCARD => array(
+            'MOCK_GIFTCARD' => array('MockGiftcardAdapter', 'MockGiftcardAdapter.php'),
+            'RELOADLY'      => array('ReloadlyAdapter', 'ReloadlyAdapter.php'),
         ),
     );
 

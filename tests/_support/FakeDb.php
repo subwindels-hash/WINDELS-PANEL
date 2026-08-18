@@ -194,13 +194,19 @@ class FakeDb
         $this->queries[] = array('op' => 'select', 'table' => $table, 'where' => $where);
         $matched = array();
         foreach ($this->rows[$table] as $row) {
-            if (!$this->matches($row, $where, $or, $like)) continue;
             // A real SELECT * returns every column, nulls included. Returning
             // only the keys that were inserted would let production code that
             // reads a never-written nullable column pass here and warn in
             // production, so fill the shape out first.
+            //
+            // Joins are applied *before* the predicates, as SQL does. Matching
+            // the base row first would make a WHERE on a joined column — a
+            // perfectly ordinary query, e.g. "brands with a priced product" —
+            // silently match nothing, which is the kind of harness artefact
+            // that sends you looking for a bug in the model.
             $full = $this->applyJoins($this->hydrate($table, $row), $joins);
             $full = $this->applyAliases($full, $aliases);
+            if (!$this->matches($full, $where, $or, $like)) continue;
             if ($select && !$select_all) {
                 $projected = array();
                 foreach ($select as $column) {
@@ -630,12 +636,18 @@ class FakeDb
     {
         $key = trim($key);
 
-        // Bare SQL fragments used with escaping disabled.
-        if (preg_match('~^(\w+)\s+IS\s+NOT\s+NULL$~i', $key, $m)) {
-            return array_key_exists($m[1], $row) && $row[$m[1]] !== null && $row[$m[1]] !== '';
+        // Bare SQL fragments used with escaping disabled. The column may be
+        // qualified ("giftcard_products.price IS NOT NULL"), which it has to
+        // be as soon as the query joins — an unqualified name would be
+        // ambiguous in real SQL, so refusing to parse it here would push the
+        // application into writing queries MySQL rejects.
+        if (preg_match('~^([\w.]+)\s+IS\s+NOT\s+NULL$~i', $key, $m)) {
+            $col = $this->bareColumn($m[1]);
+            return array_key_exists($col, $row) && $row[$col] !== null && $row[$col] !== '';
         }
-        if (preg_match('~^(\w+)\s+IS\s+NULL$~i', $key, $m)) {
-            return !array_key_exists($m[1], $row) || $row[$m[1]] === null;
+        if (preg_match('~^([\w.]+)\s+IS\s+NULL$~i', $key, $m)) {
+            $col = $this->bareColumn($m[1]);
+            return !array_key_exists($col, $row) || $row[$col] === null;
         }
         // Anything else with parentheses/OR is a raw fragment this double
         // cannot evaluate; treat it as satisfied rather than silently
@@ -668,6 +680,13 @@ class FakeDb
         if ($op === '>')  return $cmp > 0;
         if ($op === '>=') return $cmp >= 0;
         return true;
+    }
+
+    /** "giftcard_products.price" → "price"; joins merge columns flat. */
+    private function bareColumn($name)
+    {
+        return strpos($name, '.') !== false
+            ? substr($name, strrpos($name, '.') + 1) : $name;
     }
 
     private function assertTable($table, $op)

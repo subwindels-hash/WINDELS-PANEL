@@ -199,6 +199,29 @@ class CronWorkers {
         return $this->ci->identityservice->purge_expired(null, $limit);
     }
 
+    /* ===================== gift card delivery (§23) ======================== */
+
+    /**
+     * Chase gift card orders the vendor accepted but has not issued codes for.
+     *
+     * This is the worker that closes the gap the domain is built around: a
+     * gift card order is accepted in one call and delivered in another, and
+     * between them the customer has paid for a code that does not exist yet.
+     * Doing nothing leaves them charged indefinitely, so this runs every two
+     * minutes — often enough that the usual case (a card issued seconds later,
+     * already collected inline by the purchase itself) is a no-op, and slow
+     * enough not to hammer a vendor that is genuinely still minting.
+     *
+     * The work lives in GiftcardService::settle_open_orders(), so the sweep,
+     * the purchase path and the admin's "check now" button apply identical
+     * rules — including the one that decides when an undelivered order stops
+     * being worth retrying and becomes a refund.
+     */
+    public function giftcard_codes($limit = 100) {
+        $this->need(array('Giftcard_order_model'), array('GiftcardService'));
+        return $this->ci->giftcardservice->settle_open_orders($limit);
+    }
+
     /* ===================== order status synchronisation ==================== */
 
     /**

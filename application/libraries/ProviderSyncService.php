@@ -87,6 +87,12 @@ class ProviderSyncService {
         return $this->ci->provider_manager->adapter($provider, Provider_manager::FAMILY_IDENTITY);
     }
 
+    /** Build the gift card adapter through the same registry (§14, §23). */
+    public function giftcard_adapter($provider) {
+        $this->ci->load->library('Provider_manager');
+        return $this->ci->provider_manager->adapter($provider, Provider_manager::FAMILY_GIFTCARD);
+    }
+
     /**
      * Live connectivity + auth check via the adapter's balance call.
      *
@@ -102,6 +108,9 @@ class ProviderSyncService {
         }
         if ($family === Provider_manager::FAMILY_IDENTITY) {
             return $this->test_identity_connection($provider);
+        }
+        if ($family === Provider_manager::FAMILY_GIFTCARD) {
+            return $this->test_giftcard_connection($provider);
         }
         $start = microtime(true);
         try {
@@ -272,6 +281,51 @@ class ProviderSyncService {
     }
 
     /**
+     * Connectivity check for a gift card vendor (§23).
+     *
+     * The balance call again, and here it earns its keep twice over: it proves
+     * the OAuth handshake (a gift card token is minted against its own
+     * audience, so a working airtime credential still fails this), and the
+     * float it returns is the number that decides whether the next order can
+     * be filled at all. A vendor wallet at zero is the commonest cause of a
+     * gift card outage, and it is invisible from our side until an order
+     * bounces.
+     */
+    private function test_giftcard_connection($provider) {
+        $start = microtime(true);
+        try {
+            $res = $this->giftcard_adapter($provider)->balance();
+        } catch (Exception $e) {
+            $latency = (int)round((microtime(true) - $start) * 1000);
+            $this->ci->Provider_model->record_health($provider->id, 'OFFLINE', $latency, $e->getMessage());
+            return array('ok' => false, 'error' => $e->getMessage(), 'latency_ms' => $latency);
+        }
+        $latency = (int)round((microtime(true) - $start) * 1000);
+
+        if (empty($res['ok'])) {
+            $err = $res['error'] ?? 'Connection failed';
+            $this->ci->Provider_model->record_health($provider->id, 'OFFLINE', $latency, $err);
+            return array('ok' => false, 'error' => $err, 'latency_ms' => $latency);
+        }
+
+        $balance  = isset($res['balance']) ? (string)$res['balance'] : null;
+        $currency = $res['currency'] ?? ($provider->currency ?? windels_base_currency());
+
+        $this->ci->db->trans_start();
+        $this->ci->Provider_model->record_health($provider->id, 'ONLINE', $latency, null);
+        if ($balance !== null) {
+            $this->ci->Provider_model->update_provider($provider->id, array(
+                'balance'  => number_format((float)$balance, 8, '.', ''),
+                'currency' => $currency,
+            ));
+        }
+        $this->ci->db->trans_complete();
+
+        return array('ok' => true, 'balance' => $balance, 'currency' => $currency,
+                     'latency_ms' => $latency);
+    }
+
+    /**
      * Pull the provider's service list and upsert into provider_services.
      *
      * @return array{ok:bool,inserted?:int,updated?:int,total?:int,error?:string,latency_ms?:int}
@@ -283,6 +337,9 @@ class ProviderSyncService {
         }
         if ($family === Provider_manager::FAMILY_NUMBER) {
             return $this->sync_number_catalogue($provider);
+        }
+        if ($family === Provider_manager::FAMILY_GIFTCARD) {
+            return $this->sync_giftcard_catalogue($provider);
         }
         if ($family === Provider_manager::FAMILY_IDENTITY) {
             // Identity vendors publish no catalogue to mirror: there are a
@@ -506,6 +563,108 @@ class ProviderSyncService {
     }
 
     /**
+     * Pull a gift card vendor's catalogue into giftcard_brands/products (§23).
+     *
+     * The same rule as every other sync — the vendor owns cost, we own price —
+     * with one addition that is specific to this domain: the catalogue is
+     * *large*. Reloadly lists thousands of products across 140 countries, and
+     * importing all of them would bury the operator's twenty real products in
+     * a list nobody can price. So the sync is scoped to the countries the
+     * panel has decided to sell (giftcard_countries in the config, defaulting
+     * to the ones the seed ships), and anything outside that is never fetched.
+     *
+     * A country the vendor rejects is skipped, not failed: one unsupported
+     * market must not abort the other five.
+     *
+     * @return array{ok:bool,inserted?:int,updated?:int,total?:int,skipped?:int,error?:string,latency_ms?:int}
+     */
+    private function sync_giftcard_catalogue($provider) {
+        $this->ci->load->model(array('Giftcard_brand_model', 'Giftcard_product_model'));
+        $start = microtime(true);
+
+        try {
+            $adapter = $this->giftcard_adapter($provider);
+        } catch (Exception $e) {
+            $latency = (int)round((microtime(true) - $start) * 1000);
+            $this->ci->Provider_model->record_sync($provider->id, 'services', 'FAILED', $e->getMessage(), 0, $latency);
+            return array('ok' => false, 'error' => $e->getMessage(), 'latency_ms' => $latency);
+        }
+
+        $inserted = 0; $updated = 0; $skipped = 0; $errors = array();
+        // Brands are resolved once per name, not once per denomination: a
+        // hundred Amazon products must not be a hundred brand upserts.
+        $brands = array();
+
+        foreach ($this->giftcard_countries() as $country) {
+            try {
+                $res = $adapter->products($country);
+            } catch (Exception $e) {
+                $skipped++;
+                $errors[] = $country.': '.$e->getMessage();
+                continue;
+            }
+            if (empty($res['ok']) || empty($res['products'])) {
+                $skipped++;
+                if (!empty($res['error'])) $errors[] = $country.': '.$res['error'];
+                continue;
+            }
+
+            foreach ($res['products'] as $i => $row) {
+                $name = trim((string)($row['brand_name'] ?? ''));
+                if ($name === '') { $skipped++; continue; }
+
+                if (!isset($brands[$name])) {
+                    $brands[$name] = $this->ci->Giftcard_brand_model->upsert_from_provider($row, count($brands));
+                }
+                if (!$brands[$name]) { $skipped++; continue; }
+
+                $outcome = $this->ci->Giftcard_product_model->upsert_from_provider(
+                    $provider->id, $brands[$name], $row, $i);
+                if ($outcome === 'inserted') $inserted++;
+                elseif ($outcome === 'updated') $updated++;
+                else $skipped++;
+            }
+        }
+
+        $latency = (int)round((microtime(true) - $start) * 1000);
+        if ($inserted === 0 && $updated === 0 && $errors) {
+            $message = implode(' | ', array_slice($errors, 0, 5));
+            $this->ci->Provider_model->record_sync($provider->id, 'services', 'FAILED', $message, 0, $latency);
+            return array('ok' => false, 'error' => $message, 'latency_ms' => $latency);
+        }
+
+        $this->ci->Provider_model->record_sync(
+            $provider->id, 'services', 'SUCCESS',
+            $errors ? 'Skipped: '.implode(' | ', array_slice($errors, 0, 5)) : null,
+            $inserted + $updated, $latency
+        );
+
+        return array(
+            'ok'       => true,
+            'inserted' => $inserted,
+            'updated'  => $updated,
+            'total'    => $inserted + $updated,
+            'skipped'  => $skipped,
+            'latency_ms' => $latency,
+        );
+    }
+
+    /** Which markets the gift card sync imports, from config. */
+    private function giftcard_countries() {
+        $configured = $this->ci->config->item('giftcard_countries');
+        if (is_string($configured) && trim($configured) !== '') {
+            $configured = array_map('trim', explode(',', $configured));
+        }
+        if (!is_array($configured) || !$configured) return array('US');
+        $out = array();
+        foreach ($configured as $c) {
+            $c = strtoupper(substr(trim((string)$c), 0, 2));
+            if ($c !== '' && !in_array($c, $out, true)) $out[] = $c;
+        }
+        return $out ?: array('US');
+    }
+
+    /**
      * Pull the current provider balance and update the row.
      */
     public function sync_balance($provider) {
@@ -656,7 +815,27 @@ class ProviderSyncService {
                 'app_id'  => trim((string)($input['app_id'] ?? '')),
             ));
         }
+        // Reloadly is OAuth2: the pair is exchanged for a bearer token rather
+        // than sent on each call. Both halves are secret and useless apart, so
+        // they travel in one blob for the same reason Dojah's do. The create
+        // form reuses the api_key field for the client id, which keeps one
+        // form working for every vendor — see validate().
+        if ($type === 'RELOADLY') {
+            return json_encode(array(
+                'client_id'     => trim((string)$input['api_key']),
+                'client_secret' => trim((string)($input['client_secret'] ?? '')),
+            ));
+        }
         return $input['api_key'];
+    }
+
+    /** Reloadly cannot mint a token without both halves of the pair. */
+    private function reloadly_credential_errors(array $input) {
+        $errors = array();
+        if (trim((string)($input['client_secret'] ?? '')) === '') {
+            $errors[] = 'Reloadly needs the client secret from your dashboard alongside the client id.';
+        }
+        return $errors;
     }
 
     /** Dojah returns 401 for every call if either half of the pair is missing. */
@@ -696,6 +875,9 @@ class ProviderSyncService {
         }
         if (isset($input['api_type']) && strtoupper($input['api_type']) === 'DOJAH') {
             foreach ($this->dojah_credential_errors($input) as $e) $errors[] = $e;
+        }
+        if (isset($input['api_type']) && strtoupper($input['api_type']) === 'RELOADLY') {
+            foreach ($this->reloadly_credential_errors($input) as $e) $errors[] = $e;
         }
         if (isset($input['timeout_ms']) && ((int)$input['timeout_ms'] < 1000 || (int)$input['timeout_ms'] > 60000)) {
             $errors[] = 'Timeout must be between 1000 and 60000 ms.';

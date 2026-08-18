@@ -1,0 +1,8 @@
+{
+    "timeStamp": "2026-02-28 10:33:18",
+    "message": "Full authentication is required to access this resource",
+    "path": "/orders",
+    "errorCode": "INVALID_TOKEN",
+    "infoLink": null,
+    "details": []
+}

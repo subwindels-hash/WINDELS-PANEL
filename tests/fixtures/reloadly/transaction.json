@@ -1,0 +1,32 @@
+[
+    {
+        "transactionId": 1,
+        "amount": 34536.21,
+        "discount": 1709.72,
+        "currencyCode": "NGN",
+        "fee": 1880,
+        "customIdentifier": "01JWINDELSTXPUBLICID000001",
+        "status": "SUCCESSFUL",
+        "product": {
+            "productId": 11,
+            "productName": "Amazon US",
+            "countryCode": "US",
+            "quantity": 1,
+            "unitPrice": 25,
+            "totalPrice": 25,
+            "currencyCode": "USD",
+            "brand": { "brandId": 2, "brandName": "Amazon" }
+        },
+        "totalFee": 2065.76,
+        "transactionCreatedTime": "2026-02-28 13:46:00",
+        "preOrdered": false,
+        "balanceInfo": {
+            "oldBalance": 60582.23641,
+            "newBalance": 26045.87891,
+            "cost": 34536.21,
+            "currencyCode": "NGN",
+            "currencyName": "Nigerian Naira",
+            "updatedAt": "2026-02-28 13:46:00"
+        }
+    }
+]

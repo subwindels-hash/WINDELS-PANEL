@@ -15,6 +15,7 @@ class Cron extends Cron_Controller {
     /** Jobs that can be invoked, in the order `index` lists them. */
     private static $jobs = array(
         'dripfeed', 'order_status', 'vtu_status', 'numbers_status', 'identity_purge',
+        'giftcard_codes',
         'subscriptions', 'provider_health',
         'refill_status', 'payment_reconciliation', 'email_queue',
         'analytics', 'provider_sync', 'affiliate_payouts',
@@ -71,6 +72,20 @@ class Cron extends Cron_Controller {
     public function identity_purge() {
         $this->execute('identity_purge', function () {
             return $this->cronworkers->identity_purge();
+        });
+    }
+
+    /**
+     * Collect gift card codes for orders the vendor has accepted (§23).
+     *
+     * Every two minutes. A gift card order is accepted in one call and
+     * delivered in another, and until the second one lands the customer has
+     * paid for nothing they can spend. The same sweep writes off orders the
+     * vendor never fulfilled, which refunds them.
+     */
+    public function giftcard_codes() {
+        $this->execute('giftcard_codes', function () {
+            return $this->cronworkers->giftcard_codes();
         });
     }
 

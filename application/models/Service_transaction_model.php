@@ -117,6 +117,23 @@ class Service_transaction_model extends MY_Model {
                           identity_checks.reveal_count, identity_checks.purged_at';
             $this->db->join('identity_checks',
                 'identity_checks.service_transaction_id = service_transactions.id', 'left');
+        } elseif ($domain === 'GIFTCARD') {
+            // Delivery state and denomination, and nothing that could become a
+            // code. giftcard_codes is not joined here at all: a queue of 25
+            // rows has no business carrying 25 encrypted bearer instruments
+            // through the app, and the only legitimate way to read one is
+            // GiftcardService::reveal(), which audits the access.
+            $columns .= ', giftcard_orders.status AS order_status,
+                          giftcard_orders.quantity, giftcard_orders.face_value,
+                          giftcard_orders.recipient_currency,
+                          giftcard_orders.provider_order_id, giftcard_orders.code_attempts,
+                          giftcard_orders.placed_at, giftcard_orders.delivered_at,
+                          giftcard_orders.reveal_count,
+                          giftcard_brands.name AS brand_name';
+            $this->db->join('giftcard_orders',
+                'giftcard_orders.service_transaction_id = service_transactions.id', 'left')
+                     ->join('giftcard_brands',
+                'giftcard_brands.id = giftcard_orders.brand_id', 'left');
         }
 
         $this->db->select($columns, false);

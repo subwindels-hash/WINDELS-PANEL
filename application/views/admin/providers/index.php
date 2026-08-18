@@ -110,6 +110,20 @@
       </label>
     </details>
     <details class="text-sm muted">
+      <summary>Reloadly client secret (RELOADLY only)</summary>
+      <p class="text-xs muted" style="margin-top:.5rem">
+        Reloadly is OAuth2, not an API key: put the <span class="mono">client id</span> in the
+        API key field above and the secret here. They are exchanged for a bearer token that
+        lasts about 60 days and is cached on the provider. Sandbox API URL:
+        <span class="mono">https://giftcards-sandbox.reloadly.com</span> · live:
+        <span class="mono">https://giftcards.reloadly.com</span> — the token audience follows
+        the URL, so sandbox credentials cannot reach the live wallet.
+      </p>
+      <label class="field" style="margin-top:.5rem"><span class="label">Client secret</span>
+        <input class="input" name="client_secret" autocomplete="off" placeholder="From the Reloadly dashboard">
+      </label>
+    </details>
+    <details class="text-sm muted">
       <summary>Advanced</summary>
       <div class="row" style="gap:.75rem;margin-top:.5rem">
         <label class="field" style="flex:1"><span class="label">Rate multiplier</span>
