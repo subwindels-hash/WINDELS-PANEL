@@ -13,7 +13,7 @@ $nav = $is_admin ? array(
     array('admin/customers',    'Customers',  'users.view',      'users'),
     array('admin/catalogue',    'Catalogue',  'services.view',   'package'),
     array('admin/refills',      'Operations', 'orders.refill',   'repeat'),
-    array('admin/providers',    'Providers',  'providers.manage','server'),
+    array('admin/providers',    'Providers',  'providers.view',  'server'),
     array('admin/payments',     'Payments',   'payments.view',   'credit-card'),
     array('admin/tickets',      'Tickets',    'tickets.view',    'message-square'),
     array('admin/affiliates',   'Affiliates', 'affiliates.view', 'gift'),

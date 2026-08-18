@@ -1,10 +1,15 @@
-<?php defined('BASEPATH') OR exit('No direct script access allowed'); ?>
+<?php defined('BASEPATH') OR exit('No direct script access allowed');
+$perms = $permissions ?? array();
+$has   = function ($k) use ($perms) { return in_array('*', $perms, true) || in_array($k, $perms, true); };
+?>
 <div class="row justify-between" style="margin-bottom:1rem;align-items:flex-start">
   <div>
     <h2 class="mb-0" style="font-size:1.4rem;font-weight:600">Providers</h2>
     <p class="muted text-sm">Upstream SMM panels. API keys are encrypted at rest and never displayed after creation.</p>
   </div>
-  <button class="btn btn-primary" onclick="document.getElementById('ws-new-provider').showModal()">+ Add provider</button>
+  <?php if ($has('providers.manage')): ?>
+    <button class="btn btn-primary" onclick="document.getElementById('ws-new-provider').showModal()">+ Add provider</button>
+  <?php endif; ?>
 </div>
 
 <div class="card">
@@ -45,6 +50,7 @@
 </div>
 
 <!-- Create provider dialog -->
+<?php if ($has('providers.manage')): ?>
 <dialog id="ws-new-provider" class="ws-dialog" onclick="if(event.target===this)this.close()">
   <form method="post" action="<?=site_url('admin/providers/create')?>" class="stack">
     <h3 class="card-title mb-0">Add provider</h3>
@@ -140,6 +146,7 @@
     </div>
   </form>
 </dialog>
+<?php endif; ?>
 
 <style>
 .ws-dialog{border:0;border-radius:1rem;padding:0;width:min(560px,92vw);box-shadow:0 30px 80px -20px rgba(0,0,0,.4)}

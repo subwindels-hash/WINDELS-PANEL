@@ -4,9 +4,17 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 /**
  * Admin/Providers — list, create, test and sync upstream providers.
  *
- * Covers both families: SMM panels and VTU vendors (VTpass). All actions
- * require `providers.manage`; API keys are encrypted at rest via
- * EncryptionService and never returned to the UI (Session 08, 24).
+ * Covers both families: SMM panels and VTU vendors (VTpass). API keys are
+ * encrypted at rest via EncryptionService and never returned to the UI
+ * (Session 08, 24).
+ *
+ * Permissions are granular as the role matrix always intended: reading the
+ * list needs `providers.view`, running a connection test or a catalogue sync
+ * needs `providers.sync`, and creating or editing a provider needs
+ * `providers.manage`. Until Session 30 every action gated on `providers.manage`
+ * alone, so the other two keys were seeded, granted to STAFF, and enforced
+ * nowhere — support could be told they could see the provider list and then
+ * meet a 403.
  */
 class Providers extends Admin_Controller {
 
@@ -14,7 +22,7 @@ class Providers extends Admin_Controller {
 
     public function __construct() {
         parent::__construct();
-        $this->require_perm('providers.manage');
+        $this->require_perm('providers.view');
         $this->load->model(array('Provider_model', 'Provider_service_model'));
         $this->load->library(array('ProviderSyncService', 'Provider_manager', 'form_validation'));
     }
@@ -55,6 +63,7 @@ class Providers extends Admin_Controller {
     }
 
     public function create() {
+        $this->require_perm('providers.manage');
         if ($this->input->method(true) !== 'POST') show_404();
 
         $result = $this->providersyncservice->create_provider($this->input->post());
@@ -151,8 +160,16 @@ class Providers extends Admin_Controller {
         redirect('admin/providers/detail/'.$public_id);
     }
 
-    private function guard_post() {
+    /**
+     * POST-only, plus the permission the action needs.
+     *
+     * Defaults to `providers.sync`: test/sync/sync-balance all reach out to a
+     * vendor but change no stored credential, which is the distinction the
+     * role matrix draws between STAFF and ADMIN here.
+     */
+    private function guard_post($perm = 'providers.sync') {
         if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm($perm);
     }
 
     /**

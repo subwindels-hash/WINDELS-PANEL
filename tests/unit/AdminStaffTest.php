@@ -303,6 +303,60 @@ class AdminStaffTest extends TestCase
         $this->assertIsArray($dead);
     }
 
+    /**
+     * The check that found the sixteen missing modules: a permission granted
+     * by the seeded role matrix but enforced by no code is a promise the panel
+     * does not keep, and — as with `admin/customers` — usually means a whole
+     * screen is absent.
+     *
+     * Three keys are known-dead and listed here rather than silently tolerated.
+     * The list may shrink; it must not grow without a deliberate edit.
+     */
+    public function testEverySeededPermissionIsEnforcedSomewhere()
+    {
+        require_once self::$root.'/application/libraries/Seeder.php';
+        require_once self::$root.'/application/seeds/Core_seeder.php';
+
+        $src = '';
+        foreach (array('controllers', 'libraries') as $dir) {
+            $rii = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator(self::$root.'/application/'.$dir));
+            foreach ($rii as $file) {
+                if ($file->isDir() || substr($file->getFilename(), -4) !== '.php') continue;
+                $src .= file_get_contents($file->getPathname());
+            }
+        }
+
+        // Enforced nowhere, and knowingly so:
+        $known_dead = array(
+            // No service editor exists yet; the catalogue screen covers the
+            // four product domains but not SMM services themselves.
+            'services.manage',
+            // Reseller API keys are issued from the customer dashboard; there
+            // is no admin-side API administration screen.
+            'api.manage',
+            // Deliberately not built. "Log in as this customer" is the single
+            // most abusable button in a panel that holds wallets: it would let
+            // staff spend someone else's balance with no way, after the fact,
+            // to tell their actions apart from the customer's own. Admin ->
+            // Customers answers the same support questions read-only.
+            'users.impersonate',
+        );
+
+        $dead = array();
+        foreach (Core_seeder::permission_catalog() as $keys) {
+            foreach ($keys as $key) {
+                if (strpos($src, "'".$key."'") !== false) continue;
+                $dead[] = $key;
+            }
+        }
+        sort($dead);
+        sort($known_dead);
+
+        $this->assertSame($known_dead, $dead,
+            'permissions granted but enforced nowhere: '.implode(', ', array_diff($dead, $known_dead)));
+    }
+
     /* ======================= controller guarantees ====================== */
 
     public function testTheStaffControllerIsGuardedAndAudited()

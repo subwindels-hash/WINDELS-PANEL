@@ -31,6 +31,7 @@ $p = $provider;
         <div><dt class="muted text-xs">Markup</dt><dd class="mono text-sm"><?=htmlspecialchars($p->markup)?></dd></div>
       </dl>
 
+      <?php if ($has('providers.sync')): ?>
       <div class="row mt-5" style="gap:.5rem;flex-wrap:wrap">
         <form method="post" action="<?=site_url('admin/providers/'.$p->public_id.'/test')?>">
           <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
@@ -45,6 +46,7 @@ $p = $provider;
           <button class="btn btn-primary" type="submit">⇅ Sync services</button>
         </form>
       </div>
+      <?php endif; ?>
       <?php if (!empty($p->last_error)): ?>
         <div class="alert alert-danger mt-4 mb-0"><?=htmlspecialchars($p->last_error)?></div>
       <?php endif; ?>

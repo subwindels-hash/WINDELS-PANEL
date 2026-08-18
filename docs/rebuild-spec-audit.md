@@ -200,7 +200,26 @@ could supply the price they refuse to invent, so a fresh install had no sellable
 product and every price change was hand-written SQL. It also removed a dead
 `admin/services` nav entry that had been a 404 for every operator.
 
-**Remaining:** the marketplace half of F.
+Sixteen missing admin modules landed in [session 30](session-30-admin-modules.md).
+An audit of `routes.php` against `controllers/admin/` found fifteen admin
+routes with no controller behind them — including `admin/customers` and
+`admin/settings`, both of which were **live entries in the sidebar that 404'd
+for every operator**. The same shape as the VTU gap reported in session 23:
+permissions seeded and granted, no UI behind them. Twenty-nine of the ~31
+seeded permission keys now gate real code, and a test fails if that regresses.
+
+**Remaining:**
+
+- The **marketplace half of F** — escrow, disputes, two-sided KYC.
+- **Withdrawals.** Deposits work through `PaymentService`; withdrawal exists
+  only as a label in `DashboardStats::transaction_label()`. No table, no
+  request flow, no approval queue.
+- Three permissions still gate nothing, by decision rather than omission:
+  `services.manage` (no SMM service editor; the catalogue screen covers the
+  four product domains only), `api.manage` (reseller keys are issued from the
+  customer dashboard), and `users.impersonate` — deliberately unbuilt, because
+  "log in as this customer" would let staff spend someone else's wallet with
+  nothing in the ledger to tell the two apart afterwards.
 
 Phase A is the one that determines whether this stays coherent. If each domain is
 built without it, the result is six parallel half-copies of the order engine.
