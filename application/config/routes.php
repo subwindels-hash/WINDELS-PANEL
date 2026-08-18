@@ -199,6 +199,9 @@ $route['admin/blog'] = 'admin/blog/index';
 $route['admin/faq'] = 'admin/faq/index';
 $route['admin/announcements'] = 'admin/announcements/index';
 $route['admin/staff'] = 'admin/staff/index';
+// Action routes must precede the catch-all below.
+$route['admin/staff/permissions'] = 'admin/staff/permissions';
+$route['admin/staff/permissions/(:any)'] = 'admin/staff/save_permissions/$1';
 $route['admin/audit-logs'] = 'admin/audit_logs/index';
 $route['admin/appearance'] = 'admin/appearances/index';
 $route['admin/appearance/homepage'] = 'admin/appearances/homepage';

@@ -204,21 +204,23 @@ class FakeDb
             // perfectly ordinary query, e.g. "brands with a priced product" —
             // silently match nothing, which is the kind of harness artefact
             // that sends you looking for a bug in the model.
-            $full = $this->applyJoins($this->hydrate($table, $row), $joins);
-            $full = $this->applyAliases($full, $aliases);
-            if (!$this->matches($full, $where, $or, $like)) continue;
-            // Projection is deferred when there are aggregates: SUM(amount)
-            // needs `amount` on the row, and the projected shape only carries
-            // the alias. Stripping first would sum a column that is no longer
-            // there and quietly report zero revenue.
-            if ($select && !$select_all && !$aggregates) {
-                $projected = array();
-                foreach ($select as $column) {
-                    if (array_key_exists($column, $full)) $projected[$column] = $full[$column];
+            // A join can fan one base row out into several, as SQL does.
+            foreach ($this->applyJoins($this->hydrate($table, $row), $joins) as $full) {
+                $full = $this->applyAliases($full, $aliases);
+                if (!$this->matches($full, $where, $or, $like)) continue;
+                // Projection is deferred when there are aggregates: SUM(amount)
+                // needs `amount` on the row, and the projected shape only carries
+                // the alias. Stripping first would sum a column that is no longer
+                // there and quietly report zero revenue.
+                if ($select && !$select_all && !$aggregates) {
+                    $projected = array();
+                    foreach ($select as $column) {
+                        if (array_key_exists($column, $full)) $projected[$column] = $full[$column];
+                    }
+                    $full = $projected;
                 }
-                $full = $projected;
+                $matched[] = (object)$full;
             }
-            $matched[] = (object)$full;
         }
 
         if ($group) {
@@ -438,15 +440,25 @@ class FakeDb
     }
 
     /**
-     * Merge joined columns onto the base row.
+     * Apply every join to one base row, returning **all** resulting rows.
      *
      * The ON clause is parsed for the simple `a.col = b.col` form the codebase
      * uses; the joined row's columns are merged in without clobbering the base
      * row, plus alias-prefixed copies so `services.name AS service_name` style
      * projections can be read as either.
+     *
+     * A join is one-to-many in general, so this fans out rather than picking
+     * a winner. It used to keep only the first match, which is right for the
+     * common `orders → users` shape and silently wrong for a many-to-many:
+     * the RBAC matrix (`permissions → role_permissions → roles`) returned the
+     * permissions of whichever role happened to own the first join row and an
+     * empty set for every other role. That looks exactly like a broken model,
+     * so the harness has to model the fan-out to stay trustworthy.
      */
     private function applyJoins(array $row, array $joins)
     {
+        $rows = array($row);
+
         foreach ($joins as $j) {
             if (!isset($this->rows[$j['table']])) continue;
             if (!preg_match('~([\w.]+)\s*=\s*([\w.]+)~', $j['on'], $m)) continue;
@@ -459,19 +471,36 @@ class FakeDb
             // Whichever side names the joined table supplies its key column.
             $joined_col = $lq ? $lcol : $rcol;
             $base_col   = $lq ? $rcol : $lcol;
-            if (!array_key_exists($base_col, $row)) continue;
 
-            foreach ($this->rows[$j['table']] as $cand) {
-                if (!array_key_exists($joined_col, $cand)) continue;
-                if ((string)$cand[$joined_col] !== (string)$row[$base_col]) continue;
-                foreach ($cand as $k => $v) {
-                    $row[$j['alias'].'.'.$k] = $v;
-                    if (!array_key_exists($k, $row)) $row[$k] = $v;
+            $next = array();
+            foreach ($rows as $current) {
+                if (!array_key_exists($base_col, $current)) { $next[] = $current; continue; }
+
+                $matches = array();
+                foreach ($this->rows[$j['table']] as $cand) {
+                    if (!array_key_exists($joined_col, $cand)) continue;
+                    if ((string)$cand[$joined_col] !== (string)$current[$base_col]) continue;
+                    $merged = $current;
+                    foreach ($cand as $k => $v) {
+                        $merged[$j['alias'].'.'.$k] = $v;
+                        if (!array_key_exists($k, $merged)) $merged[$k] = $v;
+                    }
+                    $matches[] = $merged;
                 }
-                break;
+
+                if ($matches) {
+                    foreach ($matches as $mrow) $next[] = $mrow;
+                } else {
+                    // No match: a LEFT join keeps the base row, and an INNER
+                    // join drops it. Everything in this app that relies on the
+                    // distinction spells out 'left'.
+                    if (strtolower((string)($j['type'] ?? '')) !== 'inner') $next[] = $current;
+                }
             }
+            $rows = $next;
         }
-        return $row;
+
+        return $rows;
     }
 
     /**
