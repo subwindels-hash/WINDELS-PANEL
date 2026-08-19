@@ -152,7 +152,7 @@ the production template. Notables:
 ## Database: migrations & seeds
 
 ```bash
-php index.php migrate            # to latest (currently 018)
+php index.php migrate            # to latest (currently 019)
 php index.php migrate status     # pending/applied list
 php index.php migrate fresh      # DANGER: drop everything and rebuild (dev only)
 php index.php seed core          # idempotent baseline (admin, RBAC, settings, payment methods)
