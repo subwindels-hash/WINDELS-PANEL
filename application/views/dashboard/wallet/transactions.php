@@ -10,6 +10,7 @@
 
   <div class="lg:col-span-3 card">
     <h2 class="card-title">Transactions</h2>
+    <p class="muted text-sm mb-4">Deposits, order charges, refunds, bonuses and adjustments — your wallet balance is spent here, inside the platform.</p>
     <?php if (empty($transactions)): ?>
       <p class="muted mt-3">No transactions yet.</p>
     <?php else: ?>
