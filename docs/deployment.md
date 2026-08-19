@@ -162,9 +162,30 @@ is genuinely HTTPS, so a misconfigured proxy shows up as failed logins rather
 than as silent downgrade. If TLS terminates upstream, forward
 `X-Forwarded-Proto`.
 
-`docker/nginx/nginx.conf` is an HTTP-only development config. A production
-server block additionally needs certificates, an HTTP→HTTPS redirect, and
-`fastcgi_param HTTPS on;`.
+`docker/nginx/nginx.conf` is an HTTP-only development config. For production
+use `docker/nginx/nginx.prod.conf` (wired by `docker-compose.production.yml`):
+TLS 1.2/1.3, HSTS, HTTP→HTTPS redirect, certificate material bind-mounted from
+`docker/nginx/certs/` (or terminate at an upstream load balancer and forward
+`X-Forwarded-Proto`).
+
+## Production compose
+
+`docker-compose.production.yml` is the shipped production stack. It differs
+from the development compose in that every credential is `${VAR:?}`-required
+(compose refuses to boot with empty secrets), MailHog and MinIO are absent
+(real SMTP and managed object storage instead), MySQL/Redis publish no host
+ports, Redis enforces `--requirepass`, JSON logs rotate, and `APP_ENV` /
+`CI_ENV` are pinned to `production` so `deploy check` applies its strictest
+rules before php-fpm starts. Boot order:
+
+```bash
+docker compose -f docker-compose.production.yml up -d
+docker compose -f docker-compose.production.yml exec app php index.php migrate
+docker compose -f docker-compose.production.yml exec app php index.php seed core
+curl -fsS https://<host>/health/ready    # must answer ready
+```
+
+Backups / PITR / restore rehearsal: **docs/backups.md**.
 
 ## Webhooks
 
@@ -189,3 +210,8 @@ non-zero.
 | `schema` | migrations table missing, or version ≠ code's expectation |
 | `debug` | `APP_DEBUG` on in production (warning) |
 | `demo_mode` | `DEMO_MODE` on in production (warning) |
+| `mock_providers` | an ACTIVE provider row uses an offline MOCK adapter (production failure) |
+| `db_connectivity` | MySQL does not answer `SELECT 1` |
+| `secure_cookies` | session cookies are not `HttpOnly`/`Secure`/`SameSite` |
+| `required_secrets` | `APP_KEY`/`ENCRYPTION_KEY`, `DB_NAME` or `DB_USER` missing |
+| `environment_consistency` | `CI_ENV` and `APP_ENV` disagree |

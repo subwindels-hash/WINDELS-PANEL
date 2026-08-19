@@ -1,4 +1,17 @@
-version: "3.9"
+# WINDELS PANEL — DEVELOPMENT stack.
+#
+# One command from a fresh clone:
+#   cp .env.example .env && docker compose up -d --build
+#
+# This file is for local work: weak in-file credentials (only usable inside
+# the private compose network), MailHog instead of real SMTP, MinIO instead
+# of real object storage, hot-mounted source code. Credentials here are
+# OVERRIDDEN by .env — never point this file at the internet.
+#
+# Production deployments MUST use docker-compose.production.yml instead
+# (required ${VAR:?} secrets, no MailHog/MinIO, TLS on nginx, log rotation).
+
+name: windels-panel
 
 services:
   app:
@@ -24,12 +37,20 @@ services:
       mysql:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     networks:
       - windels
+    healthcheck:
+      # PHP-FPM pool accepting FastCGI connections. Deeper checks app-side:
+      # GET /health/live and /health/ready are served through nginx below.
+      test: ["CMD-SHELL", "php -r 'exit(@fsockopen(\"127.0.0.1\", 9000) ? 0 : 1);'"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   # Workers. The app container serves web requests only; without this nothing
-  # runs the 10 cron jobs (drip-feed, order status, payouts, email queue...).
+  # runs the 15 cron jobs (drip-feed, order status, payouts, email queue...).
   cron:
     build:
       context: .
@@ -52,7 +73,7 @@ services:
       mysql:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     networks:
       - windels
 
@@ -69,6 +90,13 @@ services:
       - app
     networks:
       - windels
+    healthcheck:
+      # BusyBox wget ships with the alpine image; /health/live bypasses auth.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   mysql:
     image: mysql:8.0
@@ -76,17 +104,21 @@ services:
     restart: unless-stopped
     command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: windels_panel
-      MYSQL_USER: windels
-      MYSQL_PASSWORD: windels_secret
+      # Development defaults; .env overrides. Not for production (see the
+      # production compose file and .env.production.example).
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${DB_NAME:-windels_panel}
+      MYSQL_USER: ${DB_USER:-windels}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-windels_secret}
     ports:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "windels", "-pwindels_secret"]
+      # Ping with the dedicated app account, not root — a broken grant is a
+      # broken app, and "root works" would hide it.
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u $${MYSQL_USER} -p$${MYSQL_PASSWORD} --silent"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -102,9 +134,15 @@ services:
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
     networks:
       - windels
 
+  # Dev-only SMTP sink. Production has no MailHog — real SMTP_* credentials.
   mailhog:
     image: mailhog/mailhog:v1.0.1
     container_name: windels_mailhog
@@ -114,18 +152,24 @@ services:
     networks:
       - windels
 
+  # Dev-only S3-compatible storage. Production: a managed bucket (S3/R2).
   minio:
     image: minio/minio:RELEASE.2024-01-16T16-07-38Z
     container_name: windels_minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
       - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local 2>/dev/null || wget -q -O /dev/null http://127.0.0.1:9000/minio/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
     networks:
       - windels
 

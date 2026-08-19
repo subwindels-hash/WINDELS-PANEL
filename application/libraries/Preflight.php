@@ -94,7 +94,8 @@ class Preflight {
             array($this->check_required_secrets($is_prod)),
             array($this->check_environment_consistency()),
             array($this->check_schema_version()),
-            array($this->check_demo_mode($is_prod))
+            array($this->check_demo_mode($is_prod)),
+            array($this->check_mock_providers($is_prod))
         );
     }
 
@@ -338,6 +339,51 @@ class Preflight {
             return $this->result('demo_mode', self::WARN, 'DEMO_MODE is on in production');
         }
         return $this->result('demo_mode', self::OK, $demo ? 'on' : 'off');
+    }
+
+    /**
+     * Mock adapters (MOCK, MOCK_NUMBER, MOCK_IDENTITY, MOCK_GIFTCARD...) are
+     * offline doubles for development, testing and demo seeding. An ACTIVE
+     * provider row pointing at one in production would "fulfil" paid orders
+     * without paying any upstream — that is a deployment defect, so it fails
+     * this gate. Provider_manager additionally refuses to build mock
+     * adapters at runtime in production; this check catches the situation
+     * before traffic arrives.
+     */
+    private function check_mock_providers($is_prod) {
+        if (!$is_prod) {
+            return $this->result('mock_providers', self::OK, 'non-production environment');
+        }
+        if (!$this->ci || !isset($this->ci->db) || !is_object($this->ci->db)
+            || !method_exists($this->ci->db, 'query')) {
+            return $this->result('mock_providers', self::WARN,
+                'no database handle to inspect providers');
+        }
+        try {
+            if (method_exists($this->ci->db, 'table_exists')
+                && !$this->ci->db->table_exists('providers')) {
+                return $this->result('mock_providers', self::OK, 'no providers table yet');
+            }
+            $q = $this->ci->db->query(
+                "SELECT COUNT(*) AS n FROM providers
+                 WHERE api_type LIKE 'MOCK%' AND status = 'ACTIVE'"
+            );
+            $row = is_object($q) && method_exists($q, 'row') ? $q->row() : null;
+            $n = $row && isset($row->n) ? (int)$row->n : 0;
+        } catch (Exception $e) {
+            return $this->result('mock_providers', self::WARN,
+                'inspection failed: '.$e->getMessage());
+        } catch (Error $e) {
+            return $this->result('mock_providers', self::WARN,
+                'inspection failed: '.$e->getMessage());
+        }
+        if ($n > 0) {
+            return $this->result('mock_providers', self::FAIL,
+                $n.' active provider(s) use offline mock adapters',
+                'MOCK adapters are for development/testing/demo. Point them at real '
+                .'providers or disable them (Admin → Providers) before going live.');
+        }
+        return $this->result('mock_providers', self::OK, 'no active mock providers');
     }
 
     private function result($name, $status, $detail, $hint = null) {

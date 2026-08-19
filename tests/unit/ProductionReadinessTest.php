@@ -255,6 +255,50 @@ class ProductionReadinessTest extends TestCase
             $this->named($good->run('production'), 'secure_cookies')['status']);
     }
 
+    /**
+     * An ACTIVE provider row pointing at a MOCK adapter would "fulfil" paid
+     * orders without paying any upstream. Deploy must refuse that state in
+     * production (the runtime backstop is Provider_manager::assert_mock_allowed).
+     */
+    public function testPreflightFailsProductionWhenAMockProviderIsActive()
+    {
+        $counting = array(
+            'table_exists' => function ($table) { return true; },
+            'query' => function ($sql) {
+                if (strpos($sql, "MOCK%") !== false) {
+                    return new class { public function row() { return (object)array('n' => 2); } };
+                }
+                return true; // SELECT 1 connectivity probe
+            },
+        );
+        $check = $this->named($this->preflight_with($counting)->run('production'), 'mock_providers');
+        $this->assertSame(Preflight::FAIL, $check['status']);
+        $this->assertStringContainsString('2 active', $check['detail']);
+    }
+
+    public function testPreflightPassesProductionWithoutActiveMockProviders()
+    {
+        $counting = array(
+            'table_exists' => function ($table) { return true; },
+            'query' => function ($sql) {
+                if (strpos($sql, "MOCK%") !== false) {
+                    return new class { public function row() { return (object)array('n' => 0); } };
+                }
+                return true;
+            },
+        );
+        $this->assertSame(Preflight::OK,
+            $this->named($this->preflight_with($counting)->run('production'), 'mock_providers')['status']);
+    }
+
+    public function testPreflightAuditsMockProvidersOnlyInProduction()
+    {
+        // Outside production the check is a no-op — the demo seed ships an
+        // inactive mock provider and must not break a developer's deploy gate.
+        $check = $this->named($this->preflight()->run('development'), 'mock_providers');
+        $this->assertSame(Preflight::OK, $check['status']);
+    }
+
     public function testPreflightRequiresProductionSecrets()
     {
         putenv('APP_KEY'); putenv('ENCRYPTION_KEY');
@@ -425,8 +469,13 @@ class ProductionReadinessTest extends TestCase
                     }
                     // Schema-version check touchpoints: pretend the migrations
                     // table does not exist yet (a WARN/FAIL outcome either way),
-                    // so preflight runs independent of a real database.
-                    public function table_exists($table) { return false; }
+                    // so preflight runs independent of a real database — unless a
+                    // test supplies its own table_exists behaviour.
+                    public function table_exists($table) {
+                        return array_key_exists('table_exists', $this->behaviours)
+                            ? (bool) call_user_func($this->behaviours['table_exists'], $table)
+                            : false;
+                    }
                     public function get($table) {
                         return new class { public function row() { return null; } };
                     }

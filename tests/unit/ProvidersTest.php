@@ -203,6 +203,71 @@ class ProvidersTest extends TestCase
         $this->assertStringContainsString('find_provider_service', $src);
         $this->assertSame(1, preg_match('/INSERT INTO/i', $src));
     }
+
+    /* ------------- mock adapters are dev/test/demo only -------------- */
+
+    public function testMockAdapterIsRefusedInProduction()
+    {
+        $manager = $this->providerManager();
+        $provider = (object)array('api_type' => 'MOCK');
+        foreach (array('production', 'prod') as $env) {
+            putenv('CI_ENV='.$env);
+            try {
+                $manager->adapter($provider, 'SMM');
+                $this->fail('mock adapter constructed under CI_ENV='.$env);
+            } catch (RuntimeException $e) {
+                $this->assertStringContainsString('disabled in production', $e->getMessage());
+            } finally {
+                putenv('CI_ENV');
+            }
+        }
+    }
+
+    public function testMockAdapterGuardFallsBackToAppEnv()
+    {
+        putenv('CI_ENV'); putenv('APP_ENV=production');
+        try {
+            Provider_manager::assert_mock_allowed('MOCK');
+            $this->fail('APP_ENV=production must also block mock adapters');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('disabled in production', $e->getMessage());
+        } finally {
+            putenv('CI_ENV'); putenv('APP_ENV');
+        }
+    }
+
+    public function testCiEnvWinsOverAppEnvForTheMockGuard()
+    {
+        // A stray APP_ENV must never talk a production kernel into a mock.
+        putenv('CI_ENV=production'); putenv('APP_ENV=development');
+        try {
+            $this->expectException(RuntimeException::class);
+            Provider_manager::assert_mock_allowed('MOCK');
+        } finally {
+            putenv('CI_ENV'); putenv('APP_ENV');
+        }
+    }
+
+    public function testMockAdaptersRemainAvailableOutsideProduction()
+    {
+        $manager = $this->providerManager();
+        $provider = (object)array('api_type' => 'MOCK');
+        foreach (array('development', 'testing', 'demo') as $env) {
+            putenv('CI_ENV'); putenv('APP_ENV='.$env);
+            try {
+                $this->assertInstanceOf('MockProviderAdapter', $manager->adapter($provider, 'SMM'));
+            } finally {
+                putenv('CI_ENV'); putenv('APP_ENV');
+            }
+        }
+    }
+
+    private function providerManager()
+    {
+        require_once self::$root.'/application/libraries/Provider_manager.php';
+        $GLOBALS['__fake_ci'] = new ProvidersFakeCI();
+        return new Provider_manager();
+    }
 }
 
 /* -------------------------------- doubles ------------------------------- */

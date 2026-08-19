@@ -90,12 +90,21 @@ class Provider_manager {
         }
 
         list($class, $file) = self::$registry[$family][$type];
+
+        // MOCK adapters are offline doubles (MOCK, MOCK_NUMBER, ...) for
+        // development, testing and demo data. In production one of these
+        // behind an active provider would silently "fulfil" paid orders
+        // without calling any upstream, so refuse to build it at all.
+        if (strpos($type, 'MOCK') === 0) {
+            self::assert_mock_allowed($type);
+        }
+
         require_once __DIR__.'/'.$file;
 
-        // MOCK adapters are offline doubles (MOCK, MOCK_NUMBER, ...). Some
-        // predate this registry and take no constructor argument at all, so
-        // match what they declare rather than assuming the two-arg shape.
         if (strpos($type, 'MOCK') === 0) {
+            // Some predate this registry and take no constructor argument at
+            // all, so match what they declare rather than assuming the
+            // two-arg shape.
             $ref = new ReflectionClass($class);
             $ctor = $ref->getConstructor();
             return ($ctor && $ctor->getNumberOfParameters() > 0)
@@ -103,5 +112,28 @@ class Provider_manager {
                 : new $class();
         }
         return new $class($provider, $this->ci->securehttpclient);
+    }
+
+    /**
+     * Mock providers must only be usable outside production. Deploy-time the
+     * same rule is enforced by Preflight's mock_providers check; this is the
+     * runtime backstop for every code path that builds an adapter (orders,
+     * VTU purchases, numbers, identity, gift cards).
+     *
+     * CI_ENV wins over APP_ENV, matching Preflight::check_environment —
+     * a production kernel must not be talked into a mock by a stray env var.
+     *
+     * @throws RuntimeException in production
+     */
+    public static function assert_mock_allowed($type) {
+        $env = getenv('CI_ENV');
+        if ($env === false || trim($env) === '') $env = getenv('APP_ENV');
+        $env = strtolower(trim((string)$env));
+        if ($env === 'production' || $env === 'prod') {
+            throw new RuntimeException(
+                'Mock provider adapter "'.$type.'" is disabled in production. '
+                .'Reconfigure this provider against a real upstream or disable it.'
+            );
+        }
     }
 }
