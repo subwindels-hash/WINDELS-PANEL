@@ -1,7 +1,14 @@
 <?php
 defined('BASEPATH') OR exit('No direct script access allowed');
 
-/** Customer marketplace storefront, seller workspace and escrow actions. */
+/**
+ * Customer marketplace storefront and buyer-side escrow actions.
+ *
+ * Customers are BUYERS ONLY. There is deliberately no seller workspace, no
+ * application form and no fulfilment endpoint here: the platform — and only the
+ * platform, through admin/marketplace — sells. The service double-checks the
+ * role so a direct POST to a removed route still cannot mint a seller.
+ */
 class Marketplace extends Auth_Controller {
     const PER_PAGE = 24;
 
@@ -9,8 +16,8 @@ class Marketplace extends Auth_Controller {
         parent::__construct();
         $this->load->library(array('MarketplaceService', 'DashboardStats'));
         $this->load->model(array(
-            'Marketplace_seller_model', 'Marketplace_listing_model',
-            'Marketplace_order_model', 'Wallet_model', 'Setting_model'
+            'Marketplace_listing_model', 'Marketplace_order_model',
+            'Marketplace_category_model', 'Wallet_model', 'Setting_model'
         ));
     }
 
@@ -24,8 +31,9 @@ class Marketplace extends Auth_Controller {
         $this->view('index', 'Marketplace', array(
             'listings' => $this->Marketplace_listing_model->catalogue($filters, self::PER_PAGE, $offset),
             'total' => $this->Marketplace_listing_model->catalogue_count($filters),
+            'featured' => $this->Marketplace_listing_model->featured(6),
+            'categories' => $this->Marketplace_category_model->active(),
             'page' => $page, 'per_page' => self::PER_PAGE, 'filters' => $filters,
-            'seller' => $this->Marketplace_seller_model->find_for_user($this->current_user->id),
         ));
     }
 
@@ -45,6 +53,8 @@ class Marketplace extends Auth_Controller {
         $this->post_only();
         $res = $this->marketplaceservice->purchase($this->current_user, array(
             'listing' => $public_id,
+            // Quantity is the ONLY customer-chosen number; the price is looked
+            // up server-side inside purchase().
             'quantity' => (int)$this->input->post('quantity', true),
             'idempotency_key' => 'marketplace:'.$this->current_user->id.':'
                 .substr(sha1((string)$this->input->post('form_token', true)), 0, 32),
@@ -54,87 +64,19 @@ class Marketplace extends Auth_Controller {
             $this->session->set_flashdata('error', $res['error']);
             return redirect('dashboard/marketplace/'.$public_id);
         }
-        $this->session->set_flashdata('success', 'Payment secured. The seller can now fulfil your order.');
+        $this->session->set_flashdata('success', 'Payment secured. Your order is being fulfilled.');
         redirect('dashboard/marketplace/orders/'.$res['order']->public_id);
     }
 
-    public function seller() {
-        $seller = $this->Marketplace_seller_model->find_for_user($this->current_user->id);
-        $checks = $this->db
-            ->select('identity_checks.id, identity_checks.id_type, identity_checks.identifier_last4, identity_checks.created_at')
-            ->from('identity_checks')
-            ->join('service_transactions', 'service_transactions.id = identity_checks.service_transaction_id', 'inner')
-            ->where('service_transactions.user_id', $this->current_user->id)
-            ->where('identity_checks.status', 'VERIFIED')
-            ->order_by('identity_checks.created_at', 'DESC')->limit(20)->get()->result();
-        $identity_setting = $this->Setting_model->get('marketplace_require_verified_identity', true);
-        $require_identity = is_bool($identity_setting) ? $identity_setting
-            : in_array(strtolower((string)$identity_setting), array('1', 'true', 'yes', 'on'), true);
-        $this->view('seller', 'Seller workspace', array(
-            'seller' => $seller,
-            'checks' => $checks,
-            'require_identity' => $require_identity,
-            'listings' => $seller ? $this->Marketplace_listing_model->for_seller($seller->id, 50, 0) : array(),
-        ));
-    }
-
-    public function apply() {
-        $this->post_only();
-        $res = $this->marketplaceservice->apply_seller($this->current_user, array(
-            'display_name' => $this->input->post('display_name', true),
-            'bio' => $this->input->post('bio', true),
-            'identity_check_id' => $this->input->post('identity_check_id', true),
-        ));
-        $this->flash_result($res, 'Application submitted for review.');
-        redirect('dashboard/marketplace/seller');
-    }
-
-    public function save_listing($public_id = null) {
-        $this->post_only();
-        $res = $this->marketplaceservice->save_listing($this->current_user, array(
-            'title' => $this->input->post('title', true),
-            'category' => $this->input->post('category', true),
-            // XSS filtering is intentionally enabled; listings are rendered as
-            // text, never trusted HTML.
-            'description' => $this->input->post('description', true),
-            'price' => $this->input->post('price', true),
-            'stock' => $this->input->post('stock', true),
-            'delivery_days' => $this->input->post('delivery_days', true),
-        ), $public_id);
-        $this->flash_result($res, 'Listing saved and sent for review.');
-        redirect('dashboard/marketplace/seller');
-    }
-
-    public function listing_status($public_id) {
-        $this->post_only();
-        $res = $this->marketplaceservice->change_listing_status(
-            $this->current_user, $public_id, $this->input->post('status', true)
-        );
-        $this->flash_result($res, 'Listing status updated.');
-        redirect('dashboard/marketplace/seller');
-    }
-
     public function orders() {
-        $role = strtoupper((string)$this->input->get('as', true)) === 'SELLER' ? 'SELLER' : 'BUYER';
         $this->view('orders', 'Marketplace orders', array(
-            'role' => $role,
-            'orders' => $this->Marketplace_order_model->for_user($this->current_user->id, $role, 50, 0),
-            'seller' => $this->Marketplace_seller_model->find_for_user($this->current_user->id),
+            'orders' => $this->Marketplace_order_model->for_user($this->current_user->id, 50, 0),
         ));
     }
 
     public function order($public_id) {
         $order = $this->owned_order($public_id);
         $this->render_order($order, null);
-    }
-
-    public function deliver($public_id) {
-        $this->post_only();
-        $res = $this->marketplaceservice->deliver(
-            $this->current_user, $public_id, $this->input->post('delivery', false)
-        );
-        $this->flash_result($res, 'Delivery submitted securely.');
-        redirect('dashboard/marketplace/orders/'.$public_id);
     }
 
     public function reveal($public_id) {
@@ -153,7 +95,7 @@ class Marketplace extends Auth_Controller {
     public function accept($public_id) {
         $this->post_only();
         $res = $this->marketplaceservice->accept($this->current_user, $public_id);
-        $this->flash_result($res, 'Order completed and the seller has been paid.');
+        $this->flash_result($res, 'Order completed.');
         redirect('dashboard/marketplace/orders/'.$public_id);
     }
 
@@ -166,10 +108,12 @@ class Marketplace extends Auth_Controller {
         redirect('dashboard/marketplace/orders/'.$public_id);
     }
 
+    /* ------------------------------ helpers ----------------------------- */
+
+    /** Buyers only ever see orders they bought. */
     private function owned_order($public_id) {
         $order = $this->Marketplace_order_model->detail_public($public_id);
-        if (!$order || !in_array((int)$this->current_user->id,
-            array((int)$order->buyer_id, (int)$order->seller_id), true)) show_404();
+        if (!$order || (int)$order->buyer_id !== (int)$this->current_user->id) show_404();
         return $order;
     }
 
@@ -178,8 +122,7 @@ class Marketplace extends Auth_Controller {
             'order' => $order,
             'events' => $this->Marketplace_order_model->events($order->id),
             'plain' => $plain,
-            'is_buyer' => (int)$order->buyer_id === (int)$this->current_user->id,
-            'is_seller' => (int)$order->seller_id === (int)$this->current_user->id,
+            'is_buyer' => true,
         ));
     }
 

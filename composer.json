@@ -31,6 +31,8 @@
   "scripts": {
     "test": "phpunit",
     "test:offline": "php tools/phpunit_lite.php",
+    "analyse": "phpstan analyse --no-progress",
+    "preflight": "php index.php deploy check",
     "migrate": "php index.php migrate",
     "migrate:fresh": "php index.php migrate fresh",
     "seed": "php index.php seed core",

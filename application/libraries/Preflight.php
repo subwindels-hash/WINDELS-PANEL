@@ -89,8 +89,13 @@ class Preflight {
             array($this->check_debug_off($is_prod)),
             array($this->check_https($is_prod)),
             array($this->check_default_db_password($is_prod)),
+            array($this->check_db_connectivity($is_prod)),
+            array($this->check_secure_cookies($is_prod)),
+            array($this->check_required_secrets($is_prod)),
+            array($this->check_environment_consistency()),
             array($this->check_schema_version()),
-            array($this->check_demo_mode($is_prod))
+            array($this->check_demo_mode($is_prod)),
+            array($this->check_mock_providers($is_prod))
         );
     }
 
@@ -192,6 +197,114 @@ class Preflight {
         );
     }
 
+    /**
+     * The app is dead without its database, so prove one answers before the
+     * release goes live. In production an unreachable database is a FAIL; in
+     * development it's a warning (you may be about to start it).
+     */
+    private function check_db_connectivity($is_prod) {
+        if (!$this->ci || !isset($this->ci->db) || !is_object($this->ci->db)
+            || !method_exists($this->ci->db, 'query')) {
+            return $this->result('db_connectivity',
+                $is_prod ? self::FAIL : self::WARN,
+                'no database handle to probe',
+                $is_prod ? 'The deployment must be able to reach MySQL before serving traffic.' : null);
+        }
+        try {
+            $probe = @$this->ci->db->query('SELECT 1');
+            if ($probe === FALSE || $probe === null) {
+                return $this->result('db_connectivity',
+                    $is_prod ? self::FAIL : self::WARN,
+                    'SELECT 1 returned no result',
+                    'Check DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME.');
+            }
+        } catch (Exception $e) {
+            return $this->result('db_connectivity',
+                $is_prod ? self::FAIL : self::WARN,
+                'SELECT 1 failed: '.$e->getMessage(),
+                'Check DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME.');
+        } catch (Error $e) {
+            return $this->result('db_connectivity',
+                $is_prod ? self::FAIL : self::WARN,
+                'SELECT 1 failed: '.$e->getMessage(),
+                'Check DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME.');
+        }
+        return $this->result('db_connectivity', self::OK, 'SELECT 1 answered');
+    }
+
+    /**
+     * Session cookies are the keys to every account, so their flags are part
+     * of the release gate, not an afterthought.
+     */
+    private function check_secure_cookies($is_prod) {
+        if (!$this->ci || !isset($this->ci->config) || !is_object($this->ci->config)
+            || !method_exists($this->ci->config, 'item')) {
+            return $this->result('secure_cookies', self::WARN, 'no config to inspect');
+        }
+        $httponly = (bool)$this->ci->config->item('cookie_httponly');
+        $secure = (bool)$this->ci->config->item('cookie_secure');
+        $samesite = (string)($this->ci->config->item('cookie_samesite') ?: '');
+        $problems = array();
+        if (!$httponly) $problems[] = 'cookie_httponly is off (session readable from JavaScript)';
+        if (!$secure) $problems[] = 'cookie_secure is off (session can ride plain http)';
+        // 'None' requires Secure and invites CSRF; not acceptable here.
+        if ($samesite === '' || strtolower($samesite) === 'none') {
+            $problems[] = 'cookie_samesite must be Lax or Strict';
+        }
+        if ($problems === array()) {
+            return $this->result('secure_cookies', self::OK,
+                'httponly + '.($secure ? 'secure' : 'not-secure').' + samesite='.$samesite);
+        }
+        return $this->result('secure_cookies',
+            $is_prod ? self::FAIL : self::WARN,
+            implode('; ', $problems),
+            'Config lives in application/config/config.php ('.$samesite.'// '.$secure.').');
+    }
+
+    /**
+     * Secrets the platform cannot safely run without. ENCRYPTION_KEY has its
+     * own dedicated check above; this covers the signing key for sessions and
+     * signed tokens and the database credentials themselves.
+     */
+    private function check_required_secrets($is_prod) {
+        $missing = array();
+        $app_key = trim((string)getenv('APP_KEY'));
+        $enc_key = trim((string)getenv('ENCRYPTION_KEY'));
+        if ($app_key === '' && $enc_key === '') {
+            // SignedToken would fall back to a key published in the source
+            // tree, so every signed link in the wild would be forgeable.
+            $missing[] = 'APP_KEY (or ENCRYPTION_KEY as its fallback)';
+        }
+        foreach (array('DB_NAME', 'DB_USER') as $key) {
+            if (trim((string)getenv($key)) === '') $missing[] = $key;
+        }
+        if ($missing === array()) {
+            return $this->result('required_secrets', self::OK, 'all present');
+        }
+        return $this->result('required_secrets',
+            $is_prod ? self::FAIL : self::WARN,
+            'missing: '.implode(', ', $missing),
+            $is_prod ? 'Set them in the environment; never in the repository.' : null);
+    }
+
+    /**
+     * CI_ENV and APP_ENV both feed ENVIRONMENT detection (CI_ENV wins). A
+     * production deployment with the two disagreeing runs in whichever one
+     * the web server injected — usually not the one the operator wanted.
+     */
+    private function check_environment_consistency() {
+        $ci_env = getenv('CI_ENV');
+        $app_env = getenv('APP_ENV');
+        if ($ci_env !== false && $app_env !== false
+            && trim($ci_env) !== '' && trim($app_env) !== ''
+            && strtolower(trim($ci_env)) !== strtolower(trim($app_env))) {
+            return $this->result('environment_consistency', self::WARN,
+                'CI_ENV='.$ci_env.' disagrees with APP_ENV='.$app_env.' (CI_ENV wins)',
+                'Unset one or make them match so the boot environment is unambiguous.');
+        }
+        return $this->result('environment_consistency', self::OK, 'CI_ENV and APP_ENV agree');
+    }
+
     /** Migrations applied should match the version the code expects. */
     private function check_schema_version() {
         // Preflight runs precisely when the environment may be broken, so it
@@ -226,6 +339,51 @@ class Preflight {
             return $this->result('demo_mode', self::WARN, 'DEMO_MODE is on in production');
         }
         return $this->result('demo_mode', self::OK, $demo ? 'on' : 'off');
+    }
+
+    /**
+     * Mock adapters (MOCK, MOCK_NUMBER, MOCK_IDENTITY, MOCK_GIFTCARD...) are
+     * offline doubles for development, testing and demo seeding. An ACTIVE
+     * provider row pointing at one in production would "fulfil" paid orders
+     * without paying any upstream — that is a deployment defect, so it fails
+     * this gate. Provider_manager additionally refuses to build mock
+     * adapters at runtime in production; this check catches the situation
+     * before traffic arrives.
+     */
+    private function check_mock_providers($is_prod) {
+        if (!$is_prod) {
+            return $this->result('mock_providers', self::OK, 'non-production environment');
+        }
+        if (!$this->ci || !isset($this->ci->db) || !is_object($this->ci->db)
+            || !method_exists($this->ci->db, 'query')) {
+            return $this->result('mock_providers', self::WARN,
+                'no database handle to inspect providers');
+        }
+        try {
+            if (method_exists($this->ci->db, 'table_exists')
+                && !$this->ci->db->table_exists('providers')) {
+                return $this->result('mock_providers', self::OK, 'no providers table yet');
+            }
+            $q = $this->ci->db->query(
+                "SELECT COUNT(*) AS n FROM providers
+                 WHERE api_type LIKE 'MOCK%' AND status = 'ACTIVE'"
+            );
+            $row = is_object($q) && method_exists($q, 'row') ? $q->row() : null;
+            $n = $row && isset($row->n) ? (int)$row->n : 0;
+        } catch (Exception $e) {
+            return $this->result('mock_providers', self::WARN,
+                'inspection failed: '.$e->getMessage());
+        } catch (Error $e) {
+            return $this->result('mock_providers', self::WARN,
+                'inspection failed: '.$e->getMessage());
+        }
+        if ($n > 0) {
+            return $this->result('mock_providers', self::FAIL,
+                $n.' active provider(s) use offline mock adapters',
+                'MOCK adapters are for development/testing/demo. Point them at real '
+                .'providers or disable them (Admin → Providers) before going live.');
+        }
+        return $this->result('mock_providers', self::OK, 'no active mock providers');
     }
 
     private function result($name, $status, $detail, $hint = null) {

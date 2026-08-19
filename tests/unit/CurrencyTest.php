@@ -102,7 +102,10 @@ class CurrencyTest extends TestCase
                 }
             }
         }
-        $this->assertSame(7, $found, 'the seven defaulted currency columns are all naira');
+        // Six: wallets, wallet transactions, providers, orders, drip-feed
+        // subscriptions and service transactions. The seventh used to be the
+        // withdrawals table, which no longer exists.
+        $this->assertSame(6, $found, 'the six defaulted currency columns are all naira');
     }
 
     /* ----------------------- application source ------------------------- */

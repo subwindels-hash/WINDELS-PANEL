@@ -64,6 +64,9 @@ class ProviderSyncService {
     public function adapter($provider) {
         $type = strtoupper($provider->api_type ?? 'STANDARD_SMM');
         if ($type === 'MOCK') {
+            // Same production rule as Provider_manager: never let an offline
+            // double fulfil paid production traffic.
+            Provider_manager::assert_mock_allowed($type);
             return new MockProviderAdapter();
         }
         return new StandardSmmAdapter($provider, $this->ci->securehttpclient);

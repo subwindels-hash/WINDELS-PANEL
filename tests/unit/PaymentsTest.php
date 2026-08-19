@@ -164,6 +164,47 @@ class PaymentsTest extends TestCase
         $this->assertSame('Invalid signature', $res['error']);
     }
 
+    public function testWebhookProcessingFailureIsRetryableNotSwallowed()
+    {
+        $ci = $this->fresh();
+        $ci->webhook_sig = true;
+        $svc = new PaymentService();
+        // The event matches one of our transactions, so confirm() runs...
+        $ci->Payment_transaction_model->seed_idem('k-retry', $ci->tx);
+        $body = json_encode(array(
+            'id' => 'evt_retry', 'status' => 'success',
+            'metadata' => array('idempotency_key' => 'k-retry'),
+        ));
+        $sig = hash_hmac('sha256', $body, 'test-webhook-secret');
+
+        // ...but the ledger momentarily fails. The event must NOT be marked
+        // processed and the answer must say retryable, so the gateway (and
+        // the controller's 503) keeps a failed credit from being lost.
+        $ci->ledger_should_fail = true;
+        $first = $svc->record_webhook('stripe', $body, array('x-signature' => $sig));
+        $this->assertFalse($first['ok']);
+        $this->assertTrue(!empty($first['retryable']), 'transient failure must be flagged retryable');
+        $this->assertSame(0, $ci->ledger_credits, 'a failed credit must not move money');
+
+        // The gateway retries the SAME event id: it reprocesses rather than
+        // returning as a duplicate, and credits exactly once.
+        $ci->ledger_should_fail = false;
+        $second = $svc->record_webhook('stripe', $body, array('x-signature' => $sig));
+        $this->assertTrue($second['ok'], json_encode($second));
+        $this->assertSame(1, $ci->ledger_credits);
+
+        // And a third delivery is now a true duplicate — no double credit.
+        $third = $svc->record_webhook('stripe', $body, array('x-signature' => $sig));
+        $this->assertTrue(!empty($third['already_seen']));
+        $this->assertSame(1, $ci->ledger_credits);
+
+        // The controller maps the retryable flag to 503, not the old
+        // swallowed 200.
+        $wh = file_get_contents(self::$root.'/application/controllers/Webhooks.php');
+        $this->assertStringContainsString("respond(503", $wh);
+        $this->assertStringContainsString("'retryable'", $wh);
+    }
+
     /* ---------------------------- source ---------------------------- */
 
     public function testWalletControllerPostsToPaymentService()
@@ -199,6 +240,7 @@ class PaymentsTest extends TestCase
 class PayFakeCI {
     public $user, $method, $wallet, $tx, $db, $load, $input, $auth, $request_id='test';
     public $inserts=array(), $ledger_credits=0, $webhook_sig=null;
+    public $ledger_should_fail=false, $webhook_processed=false;
     public function __construct() {
         // Register before constructing anything that calls get_instance()
         // inside its own constructor (the real libraries below do).
@@ -248,7 +290,14 @@ class PayFakeDb {
         if ($t==='payment_transactions') { $this->ci->tx = (object)array_merge((array)$this->ci->tx,$d); }
         return true;
     }
-    public function update($t,$d){ return true; }
+    public function update($t,$d){
+        // Mirror the real row: once the webhook is flagged processed, a repeat
+        // delivery is a genuine duplicate (see PayFakeWhModel::record_once).
+        if ($t==='payment_webhooks' && !empty($d['processed'])) {
+            $this->ci->webhook_processed = true;
+        }
+        return true;
+    }
     public function get($t=null){
         $w = $this->wheres; $this->wheres = array();
         if ($t==='payment_methods') {
@@ -288,7 +337,12 @@ class PayFakeTxModel {
 class PayFakeWhModel {
     private $ci; private $seen=array(); function __construct($ci){$this->ci=$ci;}
     function record_once($gw,$eid,$payload,$sig,$type){
-        if ($eid && isset($this->seen[$gw.':'.$eid])) return false;
+        if ($eid && isset($this->seen[$gw.':'.$eid])) {
+            // Mirror the real model: a stored-but-unprocessed event was a
+            // transient failure and must reprocess on the gateway's retry;
+            // a processed one is a genuine duplicate.
+            return $this->ci->webhook_processed ? false : 7;
+        }
         if ($eid) $this->seen[$gw.':'.$eid]=1;
         $this->ci->inserts['payment_webhooks']=($this->ci->inserts['payment_webhooks']??0)+1;
         return 7;
@@ -308,6 +362,9 @@ class PayFakeSettings {
 class PayFakeLedger {
     private $ci; function __construct($ci){$this->ci=$ci;}
     function credit($wid,$amt,$type,$rt,$rid,$idem,$meta=null){
+        if ($this->ci->ledger_should_fail) {
+            return array('ok'=>false,'error'=>'simulated ledger outage');
+        }
         $this->ci->ledger_credits++;
         return array('ok'=>true,'public_id'=>'WT','balance_after'=>bcadd($this->ci->wallet->balance,$amt,8));
     }

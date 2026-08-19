@@ -99,6 +99,28 @@ class FakeDb
                     $this->schema[$table]['unique'][] = array($name);
                 }
             }
+            return;
+        }
+
+        // ALTER TABLE — used by migrations that evolve an existing table.
+        // Only column-level ADD/MODIFY change the shape FakeDb cares about;
+        // constraint and index additions are intentionally ignored.
+        if (preg_match('/ALTER TABLE (\w+)\s+(.*)$/is', trim($sql), $m)) {
+            $table = $m[1];
+            if (!isset($this->schema[$table])) return;
+            foreach ($this->splitDefinitions(trim($m[2])) as $part) {
+                $part = trim($part);
+                if ($part === '') continue;
+                if (preg_match('/^(?:ADD\s+(?:COLUMN\s+)?|MODIFY\s+(?:COLUMN\s+)?)(\w+)\s+([A-Z]+(?:\([^)]*\))?(?:\s+UNSIGNED)?)(.*)$/is', $part, $c)) {
+                    if (in_array(strtoupper($c[1]), array('PRIMARY','FOREIGN','CONSTRAINT','UNIQUE','KEY','INDEX','FULLTEXT','CHECK'), true)) continue;
+                    $this->schema[$table]['columns'][$c[1]] = array(
+                        'type'     => strtoupper($c[2]),
+                        'nullable' => stripos($part, 'NOT NULL') === false,
+                        'default'  => (stripos($part, 'DEFAULT') !== false || stripos($part, 'AUTO_INCREMENT') !== false),
+                        'auto'     => stripos($part, 'AUTO_INCREMENT') !== false,
+                    );
+                }
+            }
         }
     }
 

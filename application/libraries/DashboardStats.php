@@ -102,7 +102,6 @@ class DashboardStats {
             'REFUND'         => 'Refund',
             'REFERRAL_BONUS' => 'Referral bonus',
             'ADJUSTMENT'     => 'Adjustment',
-            'WITHDRAWAL'     => 'Withdrawal',
         );
         $type = $tx->type ?? '';
         return $map[$type] ?? ucwords(strtolower(str_replace('_', ' ', $type)));

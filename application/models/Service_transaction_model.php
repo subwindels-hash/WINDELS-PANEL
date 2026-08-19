@@ -157,7 +157,6 @@ class Service_transaction_model extends MY_Model {
             $columns .= ', marketplace_orders.public_id AS marketplace_order_id,
                           marketplace_orders.status AS order_status,
                           marketplace_orders.quantity, marketplace_orders.gross_amount,
-                          marketplace_orders.fee_amount, marketplace_orders.seller_amount,
                           marketplace_orders.delivered_at, marketplace_orders.release_due_at,
                           marketplace_orders.disputed_at, marketplace_orders.released_at,
                           marketplace_listings.title AS listing_title';

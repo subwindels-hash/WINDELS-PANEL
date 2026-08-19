@@ -266,7 +266,7 @@ class MassOrderTest extends TestCase
         $this->assertStringContainsString('mass_order_batches', $sql);
         $this->assertStringContainsString('UNIQUE KEY uq_mass_order_batch_token (user_id, token_hash)', $sql);
         $this->assertStringContainsString('result_json MEDIUMTEXT', $sql);
-        $this->assertStringContainsString("\$config['migration_version'] = 17;", file_get_contents($root.'/application/config/migration.php'));
+        $this->assertStringContainsString("\$config['migration_version'] = 19;", file_get_contents($root.'/application/config/migration.php'));
         $this->assertStringContainsString('CREATE TABLE IF NOT EXISTS mass_order_batches', file_get_contents($root.'/docs/database.sql'));
     }
 

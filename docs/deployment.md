@@ -3,13 +3,22 @@
 Operational runbook for WINDELS PANEL. Everything here is CLI-only by design —
 there are no web-triggered migrations, seeds or cron endpoints (§66).
 
+> WINDELS-PANEL is a traditional PHP MVC application built on CodeIgniter 3.x
+> with MySQL/MariaDB, served through PHP-FPM and Nginx. Redis provides
+> supplementary caching/background processing where enabled. Node.js/npm is
+> used only for optional frontend asset compilation (Tailwind CSS) and is not
+> part of the application's backend architecture or runtime.
+
 ## Requirements
 
 - PHP 8.1+ with `mysqli`, `mbstring`, `curl`, `openssl`, `bcmath`, `json`
   (plus `redis`, `gd`, `intl`, `zip` for the full feature set)
+- Composer (application dependencies)
+- PHP-FPM behind Nginx (see `docker/nginx.conf` for the reference config)
 - MySQL 8.0 or MariaDB 10.6+
 - Redis (optional — sessions and cache fall back to files/database)
-- A web server that routes everything to `index.php`
+- Node.js/npm only if you want to rebuild the Tailwind CSS bundle locally; the
+  committed `assets/css/design-system.css` keeps the panel usable without it
 
 ## First deploy
 
@@ -21,7 +30,7 @@ cp .env.example .env
 $EDITOR .env                       # see "Required settings" below
 
 php index.php deploy storage       # create runtime directories
-php index.php migrate              # apply the 9 migrations
+php index.php migrate              # apply the 19 migrations (001–019; 018 retires legacy withdrawal tables, 019 legacy marketplace vendors)
 php index.php seed core            # roles, permissions, settings
 php index.php deploy check         # verify before serving traffic
 ```
@@ -153,9 +162,30 @@ is genuinely HTTPS, so a misconfigured proxy shows up as failed logins rather
 than as silent downgrade. If TLS terminates upstream, forward
 `X-Forwarded-Proto`.
 
-`docker/nginx/nginx.conf` is an HTTP-only development config. A production
-server block additionally needs certificates, an HTTP→HTTPS redirect, and
-`fastcgi_param HTTPS on;`.
+`docker/nginx/nginx.conf` is an HTTP-only development config. For production
+use `docker/nginx/nginx.prod.conf` (wired by `docker-compose.production.yml`):
+TLS 1.2/1.3, HSTS, HTTP→HTTPS redirect, certificate material bind-mounted from
+`docker/nginx/certs/` (or terminate at an upstream load balancer and forward
+`X-Forwarded-Proto`).
+
+## Production compose
+
+`docker-compose.production.yml` is the shipped production stack. It differs
+from the development compose in that every credential is `${VAR:?}`-required
+(compose refuses to boot with empty secrets), MailHog and MinIO are absent
+(real SMTP and managed object storage instead), MySQL/Redis publish no host
+ports, Redis enforces `--requirepass`, JSON logs rotate, and `APP_ENV` /
+`CI_ENV` are pinned to `production` so `deploy check` applies its strictest
+rules before php-fpm starts. Boot order:
+
+```bash
+docker compose -f docker-compose.production.yml up -d
+docker compose -f docker-compose.production.yml exec app php index.php migrate
+docker compose -f docker-compose.production.yml exec app php index.php seed core
+curl -fsS https://<host>/health/ready    # must answer ready
+```
+
+Backups / PITR / restore rehearsal: **docs/backups.md**.
 
 ## Webhooks
 
@@ -180,3 +210,8 @@ non-zero.
 | `schema` | migrations table missing, or version ≠ code's expectation |
 | `debug` | `APP_DEBUG` on in production (warning) |
 | `demo_mode` | `DEMO_MODE` on in production (warning) |
+| `mock_providers` | an ACTIVE provider row uses an offline MOCK adapter (production failure) |
+| `db_connectivity` | MySQL does not answer `SELECT 1` |
+| `secure_cookies` | session cookies are not `HttpOnly`/`Secure`/`SameSite` |
+| `required_secrets` | `APP_KEY`/`ENCRYPTION_KEY`, `DB_NAME` or `DB_USER` missing |
+| `environment_consistency` | `CI_ENV` and `APP_ENV` disagree |

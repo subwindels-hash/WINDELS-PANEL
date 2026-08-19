@@ -7,6 +7,7 @@ $t = $totals;
     <div class="mt-1 text-3xl font-bold tracking-tight" style="font-family:var(--font-display)">
       <?=windels_money($wallet->balance ?? '0', $wallet->currency ?? windels_base_currency())?>
     </div>
+    <p class="text-xs muted mt-1">WINDELS Wallet Balance — use your available balance to pay for services, orders, and other supported purchases within the platform.</p>
     <div class="row mt-3">
       <a href="<?=site_url('dashboard/add-funds')?>" class="btn btn-primary btn-sm">Add funds</a>
       <a href="<?=site_url('dashboard/transactions')?>" class="btn btn-ghost btn-sm">History</a>

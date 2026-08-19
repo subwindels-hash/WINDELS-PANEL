@@ -15,7 +15,12 @@ if (file_exists(__DIR__ . '/vendor/autoload.php')) {
  * APPLICATION ENVIRONMENT
  *---------------------------------------------------------------
  */
-define('ENVIRONMENT', isset($_SERVER['CI_ENV']) ? $_SERVER['CI_ENV'] : (getenv('APP_ENV') ?: 'development'));
+// An empty Cgi/FastCGI CI_ENV (nginx forwards `$CI_ENV` even when unset) must
+// not win over the environment — an empty ENVIRONMENT is a 503 wall in production.
+define('ENVIRONMENT',
+    !empty($_SERVER['CI_ENV'])  ? $_SERVER['CI_ENV'] :
+   (!empty($_SERVER['APP_ENV']) ? $_SERVER['APP_ENV'] :
+    (getenv('CI_ENV') ?: (getenv('APP_ENV') ?: 'development'))));
 
 /*
  *---------------------------------------------------------------

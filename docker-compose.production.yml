@@ -1,0 +1,188 @@
+# WINDELS PANEL — PRODUCTION stack.
+#
+#   docker compose -f docker-compose.production.yml up -d
+#
+# Differences from the development stack (docker-compose.yml):
+#   * every credential is REQUIRED via ${VAR:?} — the compose CLI refuses to
+#     boot with unset or empty secrets; there are no baked-in defaults
+#   * no MailHog and no MinIO (production uses real SMTP and managed object
+#     storage); only nginx publishes ports, and MySQL/Redis stay bound to the
+#     internal network
+#   * TLS terminated at nginx (see docker/nginx/nginx.prod.conf; cert +
+#     key in docker/nginx/certs/ or a mounted volume from your ACME setup)
+#   * JSON log rotation on every service
+#   * APP_ENV=production is set explicitly so the deploy preflight applies its
+#     strictest rules before php-fpm is allowed to start
+#
+# You will typically still replace mysql/redis with managed services; if you
+# do, delete the service blocks and point DB_HOST / REDIS_HOST at them.
+
+name: windels-panel-prod
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/php.Dockerfile
+    image: windels-panel:php
+    container_name: windels_app
+    restart: unless-stopped
+    working_dir: /var/www/html
+    environment:
+      APP_ENV: production
+      CI_ENV: production
+    # The deploy gate is the contract: no storage dirs, no preflight pass →
+    # no php-fpm. Preflight fails on placeholder keys, missing secrets,
+    # unreachable MySQL, unapplied migrations, insecure cookies or an active
+    # MOCK provider.
+    command: >
+      sh -c "php index.php deploy storage &&
+             php index.php deploy check &&
+             php-fpm"
+    volumes:
+      - ./:/var/www/html
+      - app_storage:/var/www/html/storage/logs
+    env_file:
+      - .env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - windels
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'exit(@fsockopen(\"127.0.0.1\", 9000) ? 0 : 1);'"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  cron:
+    build:
+      context: .
+      dockerfile: docker/php.Dockerfile
+    image: windels-panel:php
+    container_name: windels_cron
+    restart: unless-stopped
+    working_dir: /var/www/html
+    environment:
+      APP_ENV: production
+      CI_ENV: production
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "php index.php deploy storage &&
+       crontab /var/www/html/cron/crontab.example &&
+       touch /var/www/html/storage/logs/cron.log &&
+       (crond -f -l 8 2>/dev/null || cron -f)"
+    volumes:
+      - ./:/var/www/html
+      - app_storage:/var/www/html/storage/logs
+    env_file:
+      - .env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - windels
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: windels_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./:/var/www/html
+      - ./docker/nginx/nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      # TLS material: mount certificate + key here (certbot, acme.sh, or a
+      # bind-mounted secret), or replace with an external load balancer.
+      - ./docker/nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - windels
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  mysql:
+    image: mysql:8.0
+    container_name: windels_mysql
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --binlog_expire_logs_seconds=604800
+    environment:
+      # Required — compose refuses to start when any of these is unset/empty.
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env (16+ random chars)}
+      MYSQL_DATABASE: ${DB_NAME:?set DB_NAME in .env}
+      MYSQL_USER: ${DB_USER:?set DB_USER in .env}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env (use a generated secret)}
+    # No `ports:` — MySQL is reachable only on the private compose network.
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u $${MYSQL_USER} -p$${MYSQL_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - windels
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    container_name: windels_redis
+    restart: unless-stopped
+    # No `ports:` — internal only.
+    command: >
+      sh -c 'exec redis-server --appendonly yes --requirepass "$${REDIS_PASSWORD}"'
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env (use a generated secret)}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    networks:
+      - windels
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  mysql_data:
+  redis_data:
+  app_storage:
+
+networks:
+  windels:
+    driver: bridge

@@ -68,6 +68,9 @@
       <div><dt class="muted text-xs">When</dt><dd class="text-sm"><?=$current_user->last_login_at ? date('M j, Y H:i', strtotime($current_user->last_login_at)).' UTC' : '—'?></dd></div>
       <div><dt class="muted text-xs">IP</dt><dd class="mono text-sm"><?=htmlspecialchars($current_user->last_login_ip ?: '—')?></dd></div>
     </dl>
-    <a class="btn btn-secondary btn-block btn-sm mt-4" href="<?=site_url('logout')?>">Log out everywhere</a>
+    <form method="post" action="<?=site_url('logout')?>" class="mt-4">
+      <input type="hidden" name="<?=$this->security->get_csrf_token_name()?>" value="<?=$this->security->get_csrf_hash()?>">
+      <button class="btn btn-secondary btn-block btn-sm" type="submit">Log out everywhere</button>
+    </form>
   </aside>
 </div>
