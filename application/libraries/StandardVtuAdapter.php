@@ -1,6 +1,10 @@
 <?php
 defined('BASEPATH') OR exit('No direct script access allowed');
 
+// Instantiated with `new` below; CI3 does not autoload plain library
+// classes, so require the dependency explicitly.
+require_once __DIR__.'/SecureHttpClient.php';
+
 require_once __DIR__.'/VtuProviderInterface.php';
 
 /**

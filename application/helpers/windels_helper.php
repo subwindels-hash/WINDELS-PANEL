@@ -1,5 +1,16 @@
 <?php
-defined('BASEPATH') OR exit('No direct script access allowed');
+/*
+ * Loaded two ways: by CI3's helper autoloader (BASEPATH defined) and by
+ * composer's autoload "files" BEFORE index.php defines BASEPATH. A plain
+ * `defined('BASEPATH') OR exit` here therefore killed every request the
+ * moment a real composer vendor/ was present. Only block the case the guard
+ * exists for: this file being executed directly as the main script.
+ */
+if (!defined('BASEPATH')
+    && isset($_SERVER['SCRIPT_FILENAME'])
+    && realpath($_SERVER['SCRIPT_FILENAME']) === __FILE__) {
+    exit('No direct script access allowed');
+}
 
 if (!function_exists('windels_public_id')) {
     function windels_public_id(){

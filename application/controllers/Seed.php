@@ -21,7 +21,10 @@ class Seed extends Cron_Controller {
     public function __construct() {
         parent::__construct();
         $this->load->database();
-        $this->load->library('Seeder');
+        // Seeder is an abstract base class: it must be *defined*, never
+        // instantiated. $this->load->library('Seeder') would do the latter and
+        // fatal ("Cannot instantiate abstract class Seeder") on every PHP.
+        require_once APPPATH.'libraries/Seeder.php';
     }
 
     public function index() { $this->run('core'); }
