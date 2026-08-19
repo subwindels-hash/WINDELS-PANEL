@@ -30,7 +30,7 @@ cp .env.example .env
 $EDITOR .env                       # see "Required settings" below
 
 php index.php deploy storage       # create runtime directories
-php index.php migrate              # apply the 18 migrations (001–018; 018 retires legacy withdrawal tables)
+php index.php migrate              # apply the 19 migrations (001–019; 018 retires legacy withdrawal tables, 019 legacy marketplace vendors)
 php index.php seed core            # roles, permissions, settings
 php index.php deploy check         # verify before serving traffic
 ```
