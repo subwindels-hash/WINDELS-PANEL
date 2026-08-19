@@ -98,8 +98,10 @@ jobs:
       - name: Auth integrity — hashed passwords, no enumeration, real RBAC
         run: |
           # Passwords must be hashed through AuthService::hash_password / password_hash.
-          if grep -RnE "insert\('users'|->insert\(.*users" application/ --include="*.php" | grep -v "seeds/" | grep -v "migrations/"; then
-            echo "direct user insert outside seeder" && exit 1
+          # AuthService::register() is the single sanctioned insert site (it wraps the
+          # hash_password() call); any OTHER insert outside seeders fails the build.
+          if grep -RnE "insert\('users'|->insert\(.*users" application/ --include="*.php" | grep -v "seeds/" | grep -v "migrations/" | grep -v "libraries/AuthService.php"; then
+            echo "direct user insert outside AuthService/seeder" && exit 1
           fi
           # Anti-enumeration: unknown-account logins must run password_verify against a dummy hash.
           grep -q "DUMMY_BCRYPT" application/libraries/AuthService.php

@@ -314,8 +314,8 @@ $route['api/docs/json'] = 'api_v1/docs_json';
 // Webhooks
 $route['webhook/(:any)'] = 'webhooks/index/$1';
 
-// Installer (no license step per §81)
-$route['install'] = 'install/index';
+// No web installer: provisioning is CLI-only (preflight / migrate / seed),
+// so /install intentionally falls through to 404.
 
 /*
  * CLI-only controllers — deliberately NOT routed on the web (§66):

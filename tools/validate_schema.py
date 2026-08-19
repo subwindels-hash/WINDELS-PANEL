@@ -155,7 +155,8 @@ def check_column(table: str, col: str, dtype: str, cdef) -> None:
         err(f"{table}.{col} uses TIMESTAMP — use DATETIME (UTC) instead")
 
     tokens = set(col.split("_"))
-    is_money = bool(tokens & MONEY_TOKENS) and not col.endswith("_id") and not col.endswith("_at")
+    # _id = foreign key, _at = timestamp, _by = actor reference (e.g. paid_by → users.id)
+    is_money = bool(tokens & MONEY_TOKENS) and not col.endswith("_id") and not col.endswith("_at") and not col.endswith("_by")
     if is_money and (table, col) not in MONEY_EXEMPT and not col.endswith("_percent"):
         if not re.search(r"DECIMAL\(20,\s*8\)", dtype):
             err(f"{table}.{col} looks monetary but is {dtype or '?'} — expected DECIMAL(20,8)")
