@@ -162,3 +162,8 @@ APPENDIX — EXACT BLOCKED ITEMS DISCOVERED DURING CONTINUED AUDIT (2026-08-19 t
    - Webhooks: index/all_headers/respond — signature verification + idempotency + retry taxonomy (401/503/200) + PaymentService
 
 0 tests deleted. 0 skips added. 0 security checks weakened. 0 architecture rebuilt.
+
+=== PAYMENT GATEWAY STATUS UPDATE (turn 3 direct check) ===
+PAYSTACK / STRIPE / FLUTTERWAVE / RAZORPAY / PAYPAL / COINPAYMENTS: NOT FULLY BUILT
+Evidence: config references exist (enabled FALSE); adapter PHP files MISSING in libraries/; PaymentService: 'Only manual has a real adapter today'; ManualGateway.php is only real adapter.
+VTpass / 5sim (FiveSim) / Dojah / Reloadly: FULLY BUILT — adapter files present (29/24/14/24 funcs), mock adapters, Provider_manager integrated.
