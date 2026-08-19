@@ -1,6 +1,11 @@
 <?php
 defined('BASEPATH') OR exit('No direct script access allowed');
 
+/**
+ * Listings are platform-owned: there is no seller join anywhere in this
+ * model, on purpose. The storefront shelf is created, priced and fulfilled
+ * by staff from the admin panel.
+ */
 class Marketplace_listing_model extends MY_Model {
     protected $table = 'marketplace_listings';
 
@@ -16,24 +21,13 @@ class Marketplace_listing_model extends MY_Model {
     public function find_public($public_id, $active_only = false) {
         $this->db->where('public_id', $public_id);
         if ($active_only) $this->db->where('status', 'ACTIVE');
-        $listing = $this->db->get($this->table)->row();
-        if (!$listing) return null;
-
-        $seller = $this->db->where('id', (int)$listing->seller_id)
-            ->get('marketplace_sellers')->row();
-        if (!$seller || ($active_only && $seller->status !== 'APPROVED')) return null;
-        // Match the projection used by catalogue/detail without pulling the
-        // encrypted or identity-bearing parts of either row into a list.
-        $listing->seller_name = $seller->display_name;
-        $listing->seller_user_id = $seller->user_id;
-        $listing->seller_status = $seller->status;
-        return $listing;
+        return $this->db->get($this->table)->row();
     }
 
     public function catalogue(array $filters = array(), $limit = 24, $offset = 0) {
         $this->catalogue_filters($filters);
         return $this->db
-            ->select('marketplace_listings.*, marketplace_sellers.display_name AS seller_name', false)
+            ->select('marketplace_listings.*', false)
             ->order_by('marketplace_listings.created_at', 'DESC')
             ->limit($limit, $offset)->get()->result();
     }
@@ -46,37 +40,25 @@ class Marketplace_listing_model extends MY_Model {
     /** Featured shelf picks for the storefront header. */
     public function featured($limit = 6) {
         return $this->db
-            ->select('marketplace_listings.*, marketplace_sellers.display_name AS seller_name', false)
-            ->from($this->table)
-            ->join('marketplace_sellers', 'marketplace_sellers.id = marketplace_listings.seller_id', 'inner')
-            ->where('marketplace_listings.status', 'ACTIVE')
-            ->where('marketplace_listings.is_featured', 1)
-            ->where('marketplace_sellers.status', 'APPROVED')
-            ->order_by('marketplace_listings.created_at', 'DESC')
-            ->limit((int)$limit)->get()->result();
+            ->where('status', 'ACTIVE')
+            ->where('is_featured', 1)
+            ->order_by('created_at', 'DESC')
+            ->limit((int)$limit)->get($this->table)->result();
     }
 
     private function catalogue_filters(array $filters) {
         $this->db->from($this->table)
-            ->where('marketplace_listings.status', 'ACTIVE')
-            ->where('marketplace_sellers.status', 'APPROVED')
-            ->join('marketplace_sellers', 'marketplace_sellers.id = marketplace_listings.seller_id', 'inner');
+            ->where('status', 'ACTIVE');
         if (!empty($filters['category'])) {
-            $this->db->where('marketplace_listings.category', $filters['category']);
+            $this->db->where('category', $filters['category']);
         }
         if (!empty($filters['search'])) {
             $term = trim($filters['search']);
             $this->db->group_start()
-                ->like('marketplace_listings.title', $term)
-                ->or_like('marketplace_listings.description', $term)
+                ->like('title', $term)
+                ->or_like('description', $term)
                 ->group_end();
         }
-    }
-
-    public function for_seller($seller_id, $limit = 50, $offset = 0) {
-        return $this->db->where('seller_id', (int)$seller_id)
-            ->order_by('created_at', 'DESC')->limit($limit, $offset)
-            ->get($this->table)->result();
     }
 
     public function update_fields($id, array $fields) {
@@ -116,9 +98,7 @@ class Marketplace_listing_model extends MY_Model {
     public function admin_search(array $filters = array(), $limit = 25, $offset = 0) {
         $this->admin_filters($filters);
         return $this->db
-            ->select('marketplace_listings.*, marketplace_sellers.display_name AS seller_name, users.username AS seller_username', false)
-            ->join('marketplace_sellers', 'marketplace_sellers.id = marketplace_listings.seller_id', 'left')
-            ->join('users', 'users.id = marketplace_sellers.user_id', 'left')
+            ->select('marketplace_listings.*', false)
             ->order_by('marketplace_listings.created_at', 'DESC')
             ->limit($limit, $offset)->get()->result();
     }
@@ -131,13 +111,13 @@ class Marketplace_listing_model extends MY_Model {
     private function admin_filters(array $filters) {
         $this->db->from($this->table);
         if (!empty($filters['status'])) {
-            $this->db->where('marketplace_listings.status', strtoupper($filters['status']));
+            $this->db->where('status', strtoupper($filters['status']));
         }
         if (!empty($filters['search'])) {
             $term = trim($filters['search']);
             $this->db->group_start()
-                ->like('marketplace_listings.title', $term)
-                ->or_like('marketplace_listings.public_id', $term)
+                ->like('title', $term)
+                ->or_like('public_id', $term)
                 ->group_end();
         }
     }

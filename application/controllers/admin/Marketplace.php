@@ -2,13 +2,12 @@
 defined('BASEPATH') OR exit('No direct script access allowed');
 
 /**
- * Admin marketplace — the platform IS the seller.
+ * Admin marketplace — the platform IS the seller, and there are no vendors.
  *
  * Staff with marketplace.manage post, price, promote, feature, categorise,
  * publish/unpublish and fulfil the storefront's listings from here.
  * Escrow reveal and resolution remain separate, sharper permissions.
- * Every mutation in this controller is permission-gated and POST-only;
- * the service additionally refuses to mint sellers for non-staff.
+ * Every mutation in this controller is permission-gated and POST-only.
  */
 class Marketplace extends Admin_Controller {
     const PER_PAGE = 25;
@@ -18,14 +17,14 @@ class Marketplace extends Admin_Controller {
         $this->require_perm('marketplace.view');
         $this->load->library(array('MarketplaceService', 'DashboardStats', 'MediaService'));
         $this->load->model(array(
-            'Marketplace_seller_model', 'Marketplace_listing_model',
+            'Marketplace_listing_model',
             'Marketplace_order_model', 'Marketplace_category_model', 'Audit_log_model'
         ));
     }
 
     public function index() {
         $tab = strtolower((string)$this->input->get('tab', true));
-        if (!in_array($tab, array('orders', 'sellers', 'listings', 'analytics'), true)) $tab = 'orders';
+        if (!in_array($tab, array('orders', 'listings', 'analytics'), true)) $tab = 'orders';
         $page = max(1, (int)$this->input->get('page'));
         $filters = array(
             'status' => strtoupper((string)$this->input->get('status', true)),
@@ -33,10 +32,7 @@ class Marketplace extends Admin_Controller {
         );
         $offset = ($page - 1) * self::PER_PAGE;
         $rows = array(); $total = 0; $analytics = null;
-        if ($tab === 'sellers') {
-            $rows = $this->Marketplace_seller_model->admin_search($filters, self::PER_PAGE, $offset);
-            $total = $this->Marketplace_seller_model->admin_count($filters);
-        } elseif ($tab === 'listings') {
+        if ($tab === 'listings') {
             $rows = $this->Marketplace_listing_model->admin_search($filters, self::PER_PAGE, $offset);
             $total = $this->Marketplace_listing_model->admin_count($filters);
         } elseif ($tab === 'analytics') {
@@ -88,7 +84,6 @@ class Marketplace extends Admin_Controller {
             $image = $up['media']->storage_key;
         }
 
-        $seller = $this->ensure_platform_seller();
         $res = $this->marketplaceservice->save_listing($this->current_user, array(
             'title' => $this->input->post('title', true),
             'category' => $this->input->post('category', true),
@@ -220,7 +215,7 @@ class Marketplace extends Admin_Controller {
         $reason = $this->input->post('reason', true);
         if ($resolution === 'RELEASE') {
             $res = $this->marketplaceservice->release($order, 'ADMIN', $this->current_user->id);
-            $success = 'Escrow released to the seller.';
+            $success = 'Sale completed; escrow closed in the platform favour.';
         } elseif ($resolution === 'REFUND') {
             $res = $this->marketplaceservice->refund($order, $this->current_user->id, $reason);
             $success = 'Buyer refunded from escrow.';
@@ -230,17 +225,6 @@ class Marketplace extends Admin_Controller {
         }
         $this->flash_result($res, $success);
         redirect('admin/marketplace/orders/'.$public_id);
-    }
-
-    public function moderate_seller($public_id) {
-        $this->post_only();
-        $this->require_perm('marketplace.moderate_sellers');
-        $res = $this->marketplaceservice->moderate_seller(
-            $public_id, $this->input->post('status', true), $this->current_user->id,
-            $this->input->post('note', true)
-        );
-        $this->flash_result($res, 'Seller status updated.');
-        redirect('admin/marketplace?tab=sellers');
     }
 
     public function moderate_listing($public_id) {
@@ -255,22 +239,6 @@ class Marketplace extends Admin_Controller {
     }
 
     /* ------------------------------ helpers ----------------------------- */
-
-    /** Staff acting as the platform seller get the profile on first use. */
-    private function ensure_platform_seller() {
-        $seller = $this->Marketplace_seller_model->find_for_user($this->current_user->id);
-        if ($seller) return $seller;
-        $res = $this->marketplaceservice->apply_seller($this->current_user, array(
-            'display_name' => substr((string)($this->setting('site_name') ?: 'WINDELS PANEL'), 0, 80),
-            'bio' => 'Official platform storefront.',
-        ));
-        return !empty($res['ok']) ? $res['seller'] : null;
-    }
-
-    private function setting($key) {
-        $this->load->model('Setting_model');
-        return $this->Setting_model->get($key);
-    }
 
     private function audit($action, $resource_id, $before, $after) {
         $this->Audit_log_model->record(

@@ -146,6 +146,16 @@ jobs:
           fi
           echo "ok"
 
+      - name: Marketplace stays single-seller (no vendors)
+        run: |
+          # The platform is the sole seller — migration 019 retired the vendor
+          # concept, and reintroducing it fails the build. The 019 migration is
+          # the only allowed reference to the vendor table/permissions.
+          if grep -rniE "apply_seller|moderate_seller|marketplace_sellers|MARKETPLACE_PAYOUT|seller_amount" application/ --include="*.php" | grep -v "migrations/019_remove_marketplace_vendors.php"; then
+            echo "marketplace vendor functionality reintroduced" && exit 1
+          fi
+          echo "ok"
+
       - name: Mock providers can never serve production traffic
         run: |
           # Deploy-time guard (Preflight) + runtime guard (Provider_manager).

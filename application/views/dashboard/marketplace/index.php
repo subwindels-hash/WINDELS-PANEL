@@ -69,7 +69,7 @@ $price_badges = function ($item) use ($effective) {
     <div class="row justify-between"><span class="badge badge-default"><?=htmlspecialchars($item->category)?></span><span class="text-xs muted"><?=($item->stock === null ? 'Available' : (int)$item->stock.' left')?></span></div>
     <h3 class="font-semibold mt-3"><?=htmlspecialchars($item->title)?></h3>
     <p class="text-sm muted" style="flex:1"><?=htmlspecialchars(mb_strimwidth($item->description, 0, 150, '…'))?></p>
-    <p class="text-xs muted">Sold by <?=htmlspecialchars($item->seller_name)?> · <?=($item->product_type === 'PHYSICAL' ? 'ships' : 'delivery').' within'?><?=' '.(int)$item->delivery_days?> day(s)</p>
+    <p class="text-xs muted">Official listing · <?=($item->product_type === 'PHYSICAL' ? 'ships' : 'delivery').' within'?><?=' '.(int)$item->delivery_days?> day(s)</p>
     <div class="row justify-between mt-3"><span><?=$price_badges($item)?></span><a class="btn btn-primary btn-sm" href="<?=site_url('dashboard/marketplace/'.$item->public_id)?>">View</a></div>
   </article>
 <?php endforeach; ?>

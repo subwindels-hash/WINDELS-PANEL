@@ -70,10 +70,10 @@ class SettingsService {
             'giftcard_sender_name' => array('text', 'giftcards', 'Gift card sender name',
                 'The “from” name the recipient sees on a delivered card.', 'WINDELS PANEL'),
 
-            'marketplace_fee_percent' => array('percent', 'marketplace', 'Marketplace fee',
-                'Percentage of each Marketplace purchase retained by the platform (0–50%). The value is frozen on purchase.', '10.00000000'),
+            // There is NO marketplace fee setting: with the platform as sole
+            // seller the gross is the revenue — nothing is split or paid out.
             'marketplace_auto_release_hours' => array('int', 'marketplace', 'Escrow auto-release (hours)',
-                'Hours after fulfilment before an undisputed order pays its seller automatically (1–720).', 72),
+                'Hours after fulfilment before an undisputed order completes automatically (1–720).', 72),
         );
     }
 
@@ -179,10 +179,6 @@ class SettingsService {
         if (bccomp((string)$merged['min_deposit'], (string)$merged['max_deposit'], 8) > 0) {
             return array('ok' => false, 'changed' => array(),
                 'error' => 'The minimum deposit cannot be larger than the maximum.');
-        }
-        if (bccomp((string)$merged['marketplace_fee_percent'], '50', 4) > 0) {
-            return array('ok' => false, 'changed' => array(),
-                'error' => 'The Marketplace fee cannot be greater than 50%.');
         }
         if ((int)$merged['marketplace_auto_release_hours'] < 1
             || (int)$merged['marketplace_auto_release_hours'] > 720) {

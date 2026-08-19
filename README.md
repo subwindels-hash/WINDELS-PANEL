@@ -164,7 +164,8 @@ Migrations run in strict order, are safe to re-run, and cover (in order):
 identity/RBAC, wallet/ledger, catalogue/services, providers, orders,
 advanced orders (mass/drip-feed/subscriptions), payments, support/content,
 affiliates, VTU, virtual numbers, identity/KYC, gift cards, marketplace
-catalogue and escrow, and the marketplace/`018` withdrawal cleanup.
+catalogue and escrow, and the `018`/`019` withdrawal + marketplace-vendor
+removal retrofits.
 
 `docs/database.sql` is the canonical exported schema; regenerate with
 `composer schema:export` — CI fails if it drifts (`composer schema:check`).
@@ -390,7 +391,8 @@ withdrawals/cash-outs · VTU (airtime/data/cable/electricity/education with
 receipts) · virtual numbers + OTP · identity verification (BVN/NIN) · gift
 cards (purchase → paid → delivered → reveal; reveal authorization and audit)
 · marketplace storefront (browse/search/buy, secure delivery, reveal,
-disputes — the platform is the only seller) · referrals (tracking +
+disputes — the platform is the only seller; there is NO vendor/seller
+system) · referrals (tracking +
 commission accounting) · tickets (create/reply/close/reopen + notifications)
 · API keys · account security.
 
@@ -398,8 +400,8 @@ Admin: dashboard/analytics, orders & operations (refills/cancellations),
 services + catalogue, pricing/price groups, providers + sync/health
 (authentication/balance/timeout/retry handling per adapter), payments, gift
 cards inventory/collections, VTU, numbers, identity reviews, marketplace
-operations (create/price/promote/feature/categorise/publish listings, fulfil
-escrow orders, resolve disputes, moderate), users/wallets (manual
+operations (create/price/promote/feature/categorise/publish platform-owned
+listings, fulfil escrow orders, resolve disputes, moderate listings), users/wallets (manual
 credit/debit is ledgered), staff & RBAC, affiliates, content/blog/media,
 settings, system (audit log, blacklist, flags), impersonation.
 

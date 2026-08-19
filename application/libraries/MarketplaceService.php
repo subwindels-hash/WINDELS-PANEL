@@ -2,19 +2,24 @@
 defined('BASEPATH') OR exit('No direct script access allowed');
 
 /**
- * MarketplaceService — moderated peer-to-peer digital goods with escrow.
+ * MarketplaceService — platform-operated digital goods with buyer escrow.
+ *
+ * THE PLATFORM IS THE SOLE SELLER. There is no vendor/seller entity, no
+ * seller application, no seller moderation, no payout rail and no fee split:
+ * staff create, price, publish and fulfil listings from the admin panel, and
+ * buyers pay the platform itself.
  *
  * The buyer is charged by TransactionEngine and the universal transaction
  * remains PROCESSING until the buyer accepts delivery, an administrator
- * resolves a dispute for the seller, or the bounded auto-release worker runs.
- * Refunds also go through TransactionEngine. Seller payouts are the only other
- * money movement and always go through LedgerService with an idempotency key.
+ * resolves a dispute, or the bounded auto-release worker runs. Refunds also
+ * go through TransactionEngine; releasing escrow moves no money — the full
+ * charge was platform revenue from the moment of purchase — it settles the
+ * transaction, stamps the order COMPLETED and records the audit trail.
  *
  * Fulfilment is encrypted before it reaches the model. The only plaintext read
  * is reveal(), which verifies ownership and emits an audit record.
  */
 class MarketplaceService {
-    const DEFAULT_FEE_PERCENT = '10.00000000';
     const DEFAULT_AUTO_RELEASE_HOURS = 72;
     const MAX_QUANTITY = 100;
 
@@ -23,8 +28,8 @@ class MarketplaceService {
     public function __construct() {
         $this->ci =& get_instance();
         $this->ci->load->model(array(
-            'Marketplace_seller_model', 'Marketplace_listing_model',
-            'Marketplace_order_model', 'Marketplace_category_model',
+            'Marketplace_listing_model', 'Marketplace_order_model',
+            'Marketplace_category_model',
             'Service_transaction_model',
             'Wallet_model', 'Audit_log_model', 'Setting_model',
         ));
@@ -33,69 +38,15 @@ class MarketplaceService {
         ));
     }
 
-    /**
-     * Onboard the platform's selling account. This is NOT a customer feature:
-     * the marketplace is platform-operated, so only staff may hold a seller
-     * profile, and that profile is trusted immediately — moderation gates are
-     * for outsiders, and there are no outsiders anymore.
-     *
-     * @return array{ok:bool, seller?:object, error?:string, code?:string}
-     */
-    public function apply_seller($user, array $input) {
-        $user_id = $this->user_id($user);
-        if (!$user_id) return $this->err('Sign in before applying', 'NO_USER');
-        if (!$this->is_staff($user)) {
-            return $this->err('Only platform staff can sell on the marketplace', 'CUSTOMERS_CANNOT_SELL');
-        }
-        if ($this->ci->Marketplace_seller_model->find_for_user($user_id)) {
-            return $this->err('You already have a seller application', 'EXISTS');
-        }
-
-        $name = trim((string)($input['display_name'] ?? ''));
-        $bio = trim((string)($input['bio'] ?? ''));
-        if (mb_strlen($name) < 3 || mb_strlen($name) > 80) {
-            return $this->err('Seller name must be between 3 and 80 characters', 'BAD_NAME');
-        }
-        if (mb_strlen($bio) > 500) return $this->err('Bio is too long', 'BAD_BIO');
-
-        $id = $this->ci->Marketplace_seller_model->create(array(
-            'public_id' => windels_public_id(),
-            'user_id' => $user_id,
-            'identity_check_id' => null,
-            'display_name' => $name,
-            'bio' => $bio !== '' ? $bio : null,
-            'status' => 'APPROVED',
-            'approved_at' => gmdate('Y-m-d H:i:s'),
-            'approved_by' => $user_id,
-            'created_at' => gmdate('Y-m-d H:i:s'),
-            'updated_at' => gmdate('Y-m-d H:i:s'),
-        ));
-        $seller = $this->ci->Marketplace_seller_model->find_id($id);
-        $this->audit($user_id, 'marketplace.seller.apply', 'marketplace_seller', $seller->public_id, null,
-            array('status' => 'APPROVED', 'source' => 'STAFF'));
-        return array('ok' => true, 'seller' => $seller);
-    }
-
-    /** Staff roles may hold the platform's seller profile; customers never may. */
-    private function is_staff($user) {
-        $role = is_object($user) ? strtoupper((string)($user->role ?? '')) : '';
-        return in_array($role, array('SUPER_ADMIN', 'ADMIN'), true);
-    }
-
-    /** Create a listing for review, or update one owned by the seller. */
+    /** Create a listing straight to the shelf, or update an existing one. */
     public function save_listing($user, array $input, $public_id = null) {
         $user_id = $this->user_id($user);
-        $seller = $this->ci->Marketplace_seller_model->find_for_user($user_id);
-        if (!$seller || $seller->status !== 'APPROVED') {
-            return $this->err('Your seller account is not approved', 'SELLER_NOT_APPROVED');
-        }
+        if (!$user_id) return $this->err('Sign in before managing listings', 'NO_USER');
 
         $listing = null;
         if ($public_id) {
             $listing = $this->ci->Marketplace_listing_model->find_public($public_id, false);
-            if (!$listing || (int)$listing->seller_id !== (int)$seller->id) {
-                return $this->err('Listing not found', 'NOT_FOUND');
-            }
+            if (!$listing) return $this->err('Listing not found', 'NOT_FOUND');
             if ($listing->status === 'ARCHIVED') {
                 return $this->err('Archived listings cannot be edited', 'ARCHIVED');
             }
@@ -163,7 +114,6 @@ class MarketplaceService {
             $action = 'marketplace.listing.update';
         } else {
             $fields['public_id'] = windels_public_id();
-            $fields['seller_id'] = $seller->id;
             $fields['created_at'] = gmdate('Y-m-d H:i:s');
             $id = $this->ci->Marketplace_listing_model->create($fields);
             $before = null;
@@ -175,37 +125,11 @@ class MarketplaceService {
         return array('ok' => true, 'listing' => $saved);
     }
 
-    /** Pause or archive one of the current seller's listings. */
-    public function change_listing_status($user, $public_id, $status) {
-        $status = strtoupper((string)$status);
-        if (!in_array($status, array('ACTIVE', 'PAUSED', 'ARCHIVED'), true)) {
-            return $this->err('Unsupported listing status', 'BAD_STATUS');
-        }
-        $seller = $this->ci->Marketplace_seller_model->find_for_user($this->user_id($user));
-        $listing = $this->ci->Marketplace_listing_model->find_public($public_id, false);
-        if (!$seller || !$listing || (int)$listing->seller_id !== (int)$seller->id) {
-            return $this->err('Listing not found', 'NOT_FOUND');
-        }
-        if (!in_array($listing->status, array('ACTIVE', 'PAUSED'), true)) {
-            return $this->err('That listing cannot be changed now', 'BAD_STATE');
-        }
-        if ($status === 'ACTIVE' && $listing->status !== 'PAUSED') {
-            return $this->err('Only a paused listing can be re-published', 'BAD_STATE');
-        }
-        $this->ci->Marketplace_listing_model->update_fields($listing->id, array('status' => $status));
-        $this->audit($seller->user_id, 'marketplace.listing.status', 'marketplace_listing', $public_id,
-            array('status' => $listing->status), array('status' => $status));
-        return array('ok' => true, 'listing' => $this->ci->Marketplace_listing_model->find_id($listing->id));
-    }
-
     /** Charge a buyer and open escrow. The transaction stays PROCESSING. */
     public function purchase($user, array $input) {
         $buyer_id = $this->user_id($user);
         $listing = $this->ci->Marketplace_listing_model->find_public((string)($input['listing'] ?? ''), true);
         if (!$listing) return $this->err('That listing is not available', 'NO_LISTING');
-        if ((int)$listing->seller_user_id === $buyer_id) {
-            return $this->err('You cannot buy your own listing', 'SELF_PURCHASE');
-        }
         $quantity = (int)($input['quantity'] ?? 1);
         if ($quantity < 1 || $quantity > self::MAX_QUANTITY) {
             return $this->err('Choose a valid quantity', 'BAD_QUANTITY');
@@ -215,12 +139,10 @@ class MarketplaceService {
         }
 
         // The customer pays the server's price — never a submitted one — and a
-        // live promotion undercuts the list price.
+        // live promotion undercuts the list price. Selling is platform-side,
+        // so the gross IS the revenue: no supplier cost, fee or payout split.
         $unit_price = $this->effective_price($listing);
         $gross = $this->money(bcmul($unit_price, (string)$quantity, 8));
-        $fee_percent = $this->fee_percent();
-        $fee = $this->money(bcdiv(bcmul($gross, $fee_percent, 8), '100', 8));
-        $seller_amount = $this->money(bcsub($gross, $fee, 8));
         $order_model = $this->ci->Marketplace_order_model;
         $listing_model = $this->ci->Marketplace_listing_model;
         $order_id = null;
@@ -229,8 +151,7 @@ class MarketplaceService {
             'service_domain' => 'MARKETPLACE',
             'service_type' => 'PURCHASE',
             'service_id' => $listing->id,
-            // Seller payout is the direct cost of this marketplace sale.
-            'provider_cost' => $seller_amount,
+            'provider_cost' => null,
             'amount' => $gross,
             'idempotency_key' => $input['idempotency_key'] ?? null,
             'source' => $input['source'] ?? 'WEB',
@@ -238,22 +159,17 @@ class MarketplaceService {
                 'listing' => $listing->public_id,
                 'title' => $listing->title,
                 'quantity' => $quantity,
-                'seller' => $listing->seller_name,
             ),
-            'detail' => function ($transaction_id) use ($listing, $buyer_id, $quantity, $gross, $fee,
-                                                         $seller_amount, $order_model, &$order_id,
-                                                         $unit_price) {
+            'detail' => function ($transaction_id) use ($listing, $buyer_id, $quantity, $gross,
+                                                         $order_model, &$order_id, $unit_price) {
                 $order_id = $order_model->create(array(
                     'public_id' => windels_public_id(),
                     'service_transaction_id' => $transaction_id,
                     'listing_id' => $listing->id,
                     'buyer_id' => $buyer_id,
-                    'seller_id' => $listing->seller_user_id,
                     'quantity' => $quantity,
                     'unit_price' => $unit_price,
                     'gross_amount' => $gross,
-                    'fee_amount' => $fee,
-                    'seller_amount' => $seller_amount,
                     'status' => 'PENDING',
                     'created_at' => gmdate('Y-m-d H:i:s'),
                     'updated_at' => gmdate('Y-m-d H:i:s'),
@@ -304,17 +220,16 @@ class MarketplaceService {
     }
 
     /**
-     * Seller encrypts and submits fulfilment. $as_admin is for the admin
-     * console only: it bypasses the own-order check because any operator with
-     * marketplace.manage fulfils on the platform's behalf. The web controller
-     * must gate that flag behind the permission — it is never inferred here.
+     * Staff encrypt and submit fulfilment. $as_admin is raised only by the
+     * admin console, behind require_perm('marketplace.manage'): fulfilment is
+     * exclusively a staff action now that the platform is the sole seller —
+     * without the flag nobody can deliver, not even the buyer.
      */
     public function deliver($user, $public_id, $delivery, $as_admin = false) {
-        $seller_id = $this->user_id($user);
+        $actor_id = $this->user_id($user);
+        if (!$as_admin) return $this->err('Order not found', 'NOT_FOUND');
         $order = $this->ci->Marketplace_order_model->find_public($public_id);
-        if (!$order || (!$as_admin && (int)$order->seller_id !== $seller_id)) {
-            return $this->err('Order not found', 'NOT_FOUND');
-        }
+        if (!$order) return $this->err('Order not found', 'NOT_FOUND');
         if ($order->status !== 'PAID') return $this->err('This order cannot be delivered now', 'BAD_STATE');
         $delivery = trim((string)$delivery);
         if (mb_strlen($delivery) < 3 || mb_strlen($delivery) > 20000) {
@@ -330,8 +245,8 @@ class MarketplaceService {
             'release_due_at' => $due,
         ))) return $this->err('This order changed before delivery was saved', 'CONFLICT');
 
-        $this->ci->Marketplace_order_model->record_event($order->id, $seller_id, 'DELIVERED', 'PAID', 'DELIVERED');
-        $this->audit($seller_id, 'marketplace.order.deliver', 'marketplace_order', $public_id,
+        $this->ci->Marketplace_order_model->record_event($order->id, $actor_id, 'DELIVERED', 'PAID', 'DELIVERED');
+        $this->audit($actor_id, 'marketplace.order.deliver', 'marketplace_order', $public_id,
             array('status' => 'PAID'), array('status' => 'DELIVERED', 'release_due_at' => $due));
         return array('ok' => true, 'order' => $this->ci->Marketplace_order_model->find_id($order->id));
     }
@@ -341,7 +256,7 @@ class MarketplaceService {
         $actor_id = $this->user_id($user);
         $order = $this->ci->Marketplace_order_model->find_public($public_id);
         if (!$order) return $this->err('Order not found', 'NOT_FOUND');
-        if (!$admin && !in_array($actor_id, array((int)$order->buyer_id, (int)$order->seller_id), true)) {
+        if (!$admin && (int)$order->buyer_id !== $actor_id) {
             return $this->err('Order not found', 'NOT_FOUND');
         }
         if (!$order->delivery_encrypted) return $this->err('This order has not been delivered', 'NOT_DELIVERED');
@@ -382,7 +297,13 @@ class MarketplaceService {
         return array('ok' => true, 'order' => $this->ci->Marketplace_order_model->find_id($order->id));
     }
 
-    /** Release escrow. Admin may release a disputed order; cron/buyer may not. */
+    /**
+     * Close escrow in the platform's favour. Releasing moves NO money — the
+     * buyer's charge was platform revenue at purchase time; this settles the
+     * service transaction and stamps the order COMPLETED. The compare-and-set
+     * claim below means a release and a refund can never both win for one
+     * order, and re-running a finished release is an idempotent duplicate.
+     */
     public function release($order, $source = 'CRON', $actor_id = null) {
         if (!$order) return $this->err('Order not found', 'NOT_FOUND');
         $source = strtoupper((string)$source);
@@ -394,15 +315,14 @@ class MarketplaceService {
             return $this->err('This order cannot be released', 'BAD_STATE');
         }
 
-        $wallet = $this->ci->Wallet_model->for_user($order->seller_id);
-        if (!$wallet) return $this->err('Seller wallet not found', 'NO_WALLET');
         if (!$this->ci->db->trans_begin()) return $this->err('Escrow transaction could not start', 'DB_ERROR');
 
         $from = $order->status;
         $now = gmdate('Y-m-d H:i:s');
         try {
-            // Claim the escrow row before moving money. Both release and refund
-            // use this compare-and-set, so exactly one resolution can win.
+            // Claim the escrow row before settling the transaction. Both
+            // release and refund use this compare-and-set, so exactly one
+            // resolution can win.
             if (!$this->ci->Marketplace_order_model->transition($order->id, $from, 'COMPLETED', array(
                 'released_at' => $now,
                 'release_due_at' => null,
@@ -416,26 +336,6 @@ class MarketplaceService {
                 }
                 return $this->err('Order release conflicted', 'CONFLICT');
             }
-
-            $payout = $this->ci->ledgerservice->credit(
-                $wallet->id, $order->seller_amount, 'MARKETPLACE_PAYOUT',
-                'MARKETPLACE_ORDER', $order->id,
-                'marketplace:'.$order->id.':payout',
-                array('order' => $order->public_id, 'gross' => $order->gross_amount,
-                      'fee' => $order->fee_amount, 'source' => $source)
-            );
-            if (empty($payout['ok'])) {
-                $this->ci->db->trans_rollback();
-                return $this->err('Seller payout could not be completed', 'PAYOUT_FAILED');
-            }
-            $payout_id = $this->wallet_transaction_id($payout);
-            if (!$payout_id) {
-                $this->ci->db->trans_rollback();
-                return $this->err('Seller payout could not be traced', 'PAYOUT_FAILED');
-            }
-            $this->ci->Marketplace_order_model->update_fields($order->id, array(
-                'payout_wallet_transaction_id' => $payout_id,
-            ));
 
             $tx = $this->ci->Service_transaction_model->find_by_id($order->service_transaction_id);
             if (!$tx) {
@@ -480,7 +380,7 @@ class MarketplaceService {
         if (!in_array($order->status, array('PAID', 'DELIVERED', 'DISPUTED'), true)) {
             return $this->err('This order cannot be refunded', 'BAD_STATE');
         }
-        if ($order->released_at || $order->payout_wallet_transaction_id) {
+        if ($order->released_at) {
             return $this->err('Released escrow cannot be refunded', 'ALREADY_RELEASED');
         }
         $reason = trim((string)$reason);
@@ -490,8 +390,8 @@ class MarketplaceService {
         $from = $order->status;
         $now = gmdate('Y-m-d H:i:s');
         try {
-            // Claim the same escrow row release uses before refunding. A payout
-            // and refund can therefore never both commit for one order.
+            // Claim the same escrow row release uses before refunding. A
+            // release and refund can therefore never both commit for one order.
             if (!$this->ci->Marketplace_order_model->transition($order->id, $from, 'REFUNDED', array(
                 'release_due_at' => null,
                 'resolved_at' => $now,
@@ -534,30 +434,6 @@ class MarketplaceService {
             'order' => $this->ci->Marketplace_order_model->find_id($order->id));
     }
 
-    public function moderate_seller($public_id, $status, $actor_id, $note = null) {
-        $status = strtoupper((string)$status);
-        if (!in_array($status, array('APPROVED', 'SUSPENDED', 'REJECTED'), true)) {
-            return $this->err('Unsupported seller status', 'BAD_STATUS');
-        }
-        $seller = $this->ci->Marketplace_seller_model->find_public($public_id);
-        if (!$seller) return $this->err('Seller not found', 'NOT_FOUND');
-        $fields = array(
-            'status' => $status,
-            'admin_note' => $note ? mb_substr(trim($note), 0, 500) : null,
-            'approved_at' => $status === 'APPROVED' ? gmdate('Y-m-d H:i:s') : null,
-            'approved_by' => $status === 'APPROVED' ? $actor_id : null,
-        );
-        $this->ci->Marketplace_seller_model->update_fields($seller->id, $fields);
-        if ($status !== 'APPROVED') {
-            // A suspended seller cannot leave stock purchasable.
-            $this->ci->db->where('seller_id', $seller->id)->where('status', 'ACTIVE')
-                ->update('marketplace_listings', array('status' => 'PAUSED', 'updated_at' => gmdate('Y-m-d H:i:s')));
-        }
-        $this->audit($actor_id, 'marketplace.seller.moderate', 'marketplace_seller', $public_id,
-            array('status' => $seller->status), array('status' => $status));
-        return array('ok' => true, 'seller' => $this->ci->Marketplace_seller_model->find_id($seller->id));
-    }
-
     public function moderate_listing($public_id, $status, $actor_id, $note = null) {
         $status = strtoupper((string)$status);
         if (!in_array($status, array('ACTIVE', 'REJECTED', 'PAUSED', 'ARCHIVED'), true)) {
@@ -565,9 +441,6 @@ class MarketplaceService {
         }
         $listing = $this->ci->Marketplace_listing_model->find_public($public_id, false);
         if (!$listing) return $this->err('Listing not found', 'NOT_FOUND');
-        if ($status === 'ACTIVE' && $listing->seller_status !== 'APPROVED') {
-            return $this->err('Approve the seller before activating a listing', 'SELLER_NOT_APPROVED');
-        }
         $fields = array(
             'status' => $status,
             'moderation_note' => $note ? mb_substr(trim($note), 0, 500) : null,
@@ -596,31 +469,8 @@ class MarketplaceService {
         return $list;
     }
 
-    private function fee_percent() {
-        $fee = $this->money($this->ci->Setting_model->get('marketplace_fee_percent', self::DEFAULT_FEE_PERCENT));
-        if (bccomp($fee, '0', 8) < 0) return '0.00000000';
-        if (bccomp($fee, '50', 8) > 0) return '50.00000000';
-        return $fee;
-    }
-
-    private function setting_bool($key, $default) {
-        $value = $this->ci->Setting_model->get($key, $default);
-        if (is_bool($value)) return $value;
-        return in_array(strtolower((string)$value), array('1', 'true', 'yes', 'on'), true);
-    }
-
     private function user_id($user) {
         return is_object($user) ? (int)$user->id : (int)$user;
-    }
-
-    private function wallet_transaction_id(array $result) {
-        if (!empty($result['tx']) && isset($result['tx']->id)) return (int)$result['tx']->id;
-        if (!empty($result['public_id'])) {
-            $row = $this->ci->db->where('public_id', $result['public_id'])
-                ->get('wallet_transactions')->row();
-            return $row ? (int)$row->id : null;
-        }
-        return null;
     }
 
     private function audit($actor_id, $action, $resource, $resource_id, $before = null, $after = null) {

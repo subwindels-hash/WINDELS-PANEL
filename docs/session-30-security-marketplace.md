@@ -1,5 +1,10 @@
 # Session 30 — Security hardening, withdrawal removal, admin-controlled marketplace
 
+> **Superseded (Session 31):** this session's "staff-only seller profile"
+> compromise is gone. The marketplace is now strictly single-seller — there is
+> no vendor/seller entity at all. See `docs/session-31-no-vendors.md` and
+> migration `019_remove_marketplace_vendors`.
+
 This session delivers the required update:
 
 > **Final architecture:** Admin → creates/manages/sells products. Customer →

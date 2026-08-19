@@ -5,7 +5,7 @@
 </div>
 <div class="card">
 <?php if (empty($orders)): ?><p class="muted">No marketplace purchases yet.</p>
-<?php else: ?><div class="overflow-x-auto"><table class="table"><thead><tr><th>Order</th><th>Listing</th><th>Seller</th><th>Qty</th><th class="text-right">Amount</th><th>Status</th><th>Created</th></tr></thead><tbody>
-<?php foreach ($orders as $order): ?><tr><td><a class="mono text-xs" href="<?=site_url('dashboard/marketplace/orders/'.$order->public_id)?>"><?=htmlspecialchars($order->public_id)?></a></td><td><?=htmlspecialchars((string)$order->listing_title)?></td><td><?=htmlspecialchars((string)$order->counterparty_name)?></td><td><?=(int)$order->quantity?></td><td class="text-right mono"><?=windels_money($order->gross_amount)?></td><td><span class="badge badge-default"><?=htmlspecialchars($order->status)?></span></td><td class="text-xs muted"><?=htmlspecialchars($order->created_at)?></td></tr><?php endforeach; ?>
+<?php else: ?><div class="overflow-x-auto"><table class="table"><thead><tr><th>Order</th><th>Listing</th><th>Qty</th><th class="text-right">Amount</th><th>Status</th><th>Created</th></tr></thead><tbody>
+<?php foreach ($orders as $order): ?><tr><td><a class="mono text-xs" href="<?=site_url('dashboard/marketplace/orders/'.$order->public_id)?>"><?=htmlspecialchars($order->public_id)?></a></td><td><?=htmlspecialchars((string)$order->listing_title)?></td><td><?=(int)$order->quantity?></td><td class="text-right mono"><?=windels_money($order->gross_amount)?></td><td><span class="badge badge-default"><?=htmlspecialchars($order->status)?></span></td><td class="text-xs muted"><?=htmlspecialchars($order->created_at)?></td></tr><?php endforeach; ?>
 </tbody></table></div><?php endif; ?>
 </div>

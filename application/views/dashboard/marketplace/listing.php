@@ -10,7 +10,7 @@ $effective_price = $on_sale ? $listing->promo_price : $listing->price;
     <span class="badge badge-default"><?=$listing->product_type === 'PHYSICAL' ? 'Physical product' : 'Digital product'?></span>
     <?php if ((int)$listing->is_featured === 1): ?><span class="badge badge-warning">Featured</span><?php endif; ?>
     <h2 class="mt-3" style="font-size:1.5rem;font-weight:650"><?=htmlspecialchars($listing->title)?></h2>
-    <p class="text-sm muted">Official listing by <strong><?=htmlspecialchars($listing->seller_name)?></strong></p>
+    <p class="text-sm muted">An official platform listing.</p>
     <div style="white-space:pre-wrap;line-height:1.7"><?=htmlspecialchars($listing->description)?></div>
   </div>
   <aside class="card" style="height:max-content">
@@ -20,9 +20,7 @@ $effective_price = $on_sale ? $listing->promo_price : $listing->price;
     </p>
     <p class="text-sm muted"><?=($listing->product_type === 'PHYSICAL' ? 'Ships' : 'Digital delivery')?> within <?=(int)$listing->delivery_days?> day(s). <?=($listing->stock === null ? 'Unlimited availability.' : number_format((int)$listing->stock).' currently available.')?></p>
     <p class="text-sm muted">Wallet balance: <strong><?=windels_money($wallet->balance)?></strong></p>
-    <?php if ((int)$listing->seller_user_id === (int)$current_user->id): ?>
-      <div class="alert alert-warning">This listing is owned by your account and cannot be purchased from it.</div>
-    <?php elseif ($listing->stock !== null && (int)$listing->stock < 1): ?>
+    <?php if ($listing->stock !== null && (int)$listing->stock < 1): ?>
       <div class="alert alert-warning">This listing is sold out.</div>
     <?php else: ?>
     <form method="post" action="<?=site_url('dashboard/marketplace/'.$listing->public_id.'/buy')?>">

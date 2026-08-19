@@ -186,7 +186,6 @@ $route['admin/marketplace/listings/(:any)/edit'] = 'admin/marketplace/listing_fo
 $route['admin/marketplace/listings/(:any)/save'] = 'admin/marketplace/save_listing/$1';
 $route['admin/marketplace/listings/(:any)/status'] = 'admin/marketplace/listing_status/$1';
 $route['admin/marketplace/listings/(:any)/moderate'] = 'admin/marketplace/moderate_listing/$1';
-$route['admin/marketplace/sellers/(:any)/moderate'] = 'admin/marketplace/moderate_seller/$1';
 $route['admin/marketplace/orders/(:any)/deliver'] = 'admin/marketplace/deliver/$1';
 $route['admin/marketplace/orders/(:any)/reveal'] = 'admin/marketplace/reveal/$1';
 $route['admin/marketplace/orders/(:any)/resolve'] = 'admin/marketplace/resolve/$1';

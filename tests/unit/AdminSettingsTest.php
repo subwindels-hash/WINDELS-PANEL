@@ -161,9 +161,13 @@ class AdminSettingsTest extends TestCase
     {
         $app = $this->app();
 
-        $fee = $app->settingsservice->save(array('marketplace_fee_percent' => '50.0001'));
-        $this->assertFalse($fee['ok']);
-        $this->assertStringContainsString('50%', $fee['error']);
+        // There is no marketplace fee setting anymore: with the platform as
+        // sole seller the gross IS the revenue, so a fee split would be
+        // bookkeeping fiction. Submitting it changes nothing — the key is not
+        // part of the managed schema.
+        $fee = $app->settingsservice->save(array('marketplace_fee_percent' => '10'));
+        $this->assertTrue($fee['ok']);
+        $this->assertNotContains('marketplace_fee_percent', $fee['changed']);
 
         foreach (array('0', '721') as $hours) {
             $res = $app->settingsservice->save(array('marketplace_auto_release_hours' => $hours));
@@ -171,7 +175,6 @@ class AdminSettingsTest extends TestCase
         }
 
         $valid = $app->settingsservice->save(array(
-            'marketplace_fee_percent' => '50',
             'marketplace_auto_release_hours' => '720',
         ));
         $this->assertTrue($valid['ok'], $valid['error'] ?? '');

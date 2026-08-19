@@ -49,11 +49,12 @@ class Core_seeder extends Seeder {
             // so reading one is closer to opening the till than to reading a
             // record (§23).
             'giftcards'  => array('giftcards.view','giftcards.manage','giftcards.refund','giftcards.reveal'),
-            // The platform is the only seller: marketplace.manage covers
-            // posting, pricing, featuring, categorising and fulfilling the
-            // platform's own listings. Fulfilment reveal and escrow
-            // resolution stay separate, sharper grants.
-            'marketplace'=> array('marketplace.view','marketplace.manage','marketplace.moderate_sellers',
+            // The platform is the only seller — there are no vendors at all:
+            // marketplace.manage covers posting, pricing, featuring,
+            // categorising and fulfilling the platform's own listings.
+            // Fulfilment reveal and escrow resolution stay separate, sharper
+            // grants.
+            'marketplace'=> array('marketplace.view','marketplace.manage',
                                   'marketplace.moderate_listings','marketplace.resolve','marketplace.reveal'),
             'payments'   => array('payments.view','payments.manage','wallets.adjust'),
             'support'    => array('tickets.view','tickets.reply','tickets.manage'),
@@ -78,7 +79,7 @@ class Core_seeder extends Seeder {
                 'numbers.view','numbers.manage','numbers.refund',
                 'identity.view','identity.manage','identity.refund','identity.reveal',
                 'giftcards.view','giftcards.manage','giftcards.refund','giftcards.reveal',
-                'marketplace.view','marketplace.manage','marketplace.moderate_sellers','marketplace.moderate_listings',
+                'marketplace.view','marketplace.manage','marketplace.moderate_listings',
                 'marketplace.resolve','marketplace.reveal',
                 'payments.view','payments.manage','wallets.adjust',
                 'tickets.view','tickets.reply','tickets.manage',
@@ -100,7 +101,7 @@ class Core_seeder extends Seeder {
                 // card?" does not require holding something spendable.
                 'giftcards.view','giftcards.manage',
                 // Staff may work the Marketplace catalogue queue, but cannot
-                // reveal fulfilment, approve seller identities, or move escrow.
+                // reveal fulfilment or move escrow.
                 'marketplace.view','marketplace.moderate_listings',
                 'payments.view','tickets.view','tickets.reply','affiliates.view',
             ),
@@ -432,7 +433,6 @@ class Core_seeder extends Seeder {
             array('giftcard_sender_name','WINDELS PANEL','giftcards',0),
             // Marketplace policy is snapshotted onto each order at purchase,
             // so later policy edits never rewrite an existing escrow split.
-            array('marketplace_fee_percent','10.00000000','marketplace',0),
             array('marketplace_auto_release_hours',72,'marketplace',0),
         );
     }

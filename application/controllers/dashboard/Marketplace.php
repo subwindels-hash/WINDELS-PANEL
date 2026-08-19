@@ -70,7 +70,7 @@ class Marketplace extends Auth_Controller {
 
     public function orders() {
         $this->view('orders', 'Marketplace orders', array(
-            'orders' => $this->Marketplace_order_model->for_user($this->current_user->id, 'BUYER', 50, 0),
+            'orders' => $this->Marketplace_order_model->for_user($this->current_user->id, 50, 0),
         ));
     }
 

@@ -143,8 +143,10 @@ purchase→status→receipt→failure reversal; numbers reserve/purchase/OTP/
 release/expiry with cross-customer isolation asserted; Dojah KYC verify/
 fail/retry/refund/admin-review with redacted logging (`identity-redacted`);
 gift card browse→purchase→delivery→reveal (authorization + duplicate-reveal
-guards) with code/PIN never in views/logs/API; marketplace admin-seller flow,
-buyer purchase, escrow release, disputes, and cross-account isolation. Live
+guards) with code/PIN never in views/logs/API; marketplace single-seller flow
+(the platform is the sole seller — the vendor concept, seller applications,
+payout rails and fee splits were removed entirely in migration 019), buyer
+purchase, escrow completion, disputes, and cross-account isolation. Live
 gateway/vendor runs: **BLOCKED BY EXTERNAL CREDENTIALS / PRODUCTION ACCESS**.
 
 ## 15. Cron & background jobs
