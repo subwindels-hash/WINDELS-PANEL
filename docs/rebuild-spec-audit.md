@@ -26,10 +26,10 @@ service domains that do not exist yet.
 `lucide`) — it is a frontend asset pipeline, explicitly allowed by §2, not a Node
 backend. Views render from `assets/css/design-system.css` without a build step.
 
-`docs/checkpoint-01/` contains superseded Node-era planning artifacts
-(`02-prisma-schema.md`). They are already marked superseded by
-`docs/checkpoint-01-php/` and referenced by no code. **Recommend deleting** them
-to remove ambiguity about the intended stack.
+`docs/checkpoint-01/` contained superseded Node-era planning artifacts
+(`02-prisma-schema.md`). They were marked superseded by
+`docs/checkpoint-01-php/` and referenced by no code — **deleted** to remove
+ambiguity about the intended stack (PHP/CodeIgniter 3 + MySQL only).
 
 ## 2. Prohibitions (§5, §12, §32) — already satisfied
 
