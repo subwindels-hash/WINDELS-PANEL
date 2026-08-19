@@ -16,10 +16,16 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *      leaving a stale lock behind.
  *
  * Locking uses an exclusive flock() on a file in the lock directory: it works
- * on a single host with no Redis, and the OS releases the handle even if the
- * process is killed, so a crash cannot wedge a job permanently. §66 calls for
- * Redis SET NX in a multi-host deployment; swap redis_lock() in when the
- * infrastructure is there — the interface here does not change.
+ * on a single host with no Redis, and the kernel releases the lock when the
+ * holding process dies, so a crash cannot wedge a job permanently. The
+ * guarantee is the kernel's, not PHP's — it holds on every supported runtime
+ * (native CLI/PHP-FPM on Linux). It is intentionally NOT weakened for the
+ * PHP-WASM/emscripten build used by the offline test harness: that emulation
+ * aliases flock() state between same-file handles inside one process, so
+ * mutual exclusion cannot be demonstrated there (the dedicated test says so,
+ * as a visible platform skip); cron never runs on that runtime in production.
+ * §66 calls for Redis SET NX in a multi-host deployment; swap redis_lock() in
+ * when the infrastructure is there — the interface here does not change.
  */
 class JobRunner {
 

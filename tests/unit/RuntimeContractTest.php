@@ -249,4 +249,32 @@ class RuntimeContractTest extends TestCase
             .' readiness probe reports a healthy instance as unready.'
         );
     }
+
+    /**
+     * Session 32 removed the last scaffold: views/dashboard/placeholder.php
+     * survived the era when dashboard screens were stubbed ("ships fully in
+     * Session N") but no controller routed to it any more — dead weight a
+     * future regression could silently revive. Every routed screen renders a
+     * real view now, and DashboardTest proves routes resolve to real methods;
+     * this pins the scaffold itself as gone and unreachable.
+     */
+    public function testNoScaffoldPlaceholderViewRemains()
+    {
+        $this->assertFileDoesNotExist(
+            self::$root.'/application/views/dashboard/placeholder.php',
+            'the "screen is scaffolded" placeholder view must stay deleted'
+        );
+        $it = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator(self::$root.'/application/controllers')
+        );
+        foreach ($it as $f) {
+            if (!$f->isFile() || substr($f->getFilename(), -4) !== '.php') continue;
+            $src = file_get_contents($f->getPathname());
+            $this->assertSame(
+                0,
+                preg_match("/->view\\(\\s*['\"](?:dashboard\\/)?placeholder['\"]/", $src),
+                $f->getFilename().' renders the removed scaffold placeholder view'
+            );
+        }
+    }
 }

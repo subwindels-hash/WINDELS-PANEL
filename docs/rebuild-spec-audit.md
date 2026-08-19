@@ -115,16 +115,16 @@ Consequences for the build plan:
 Three points where the spec collides with a committed decision in this
 repository. None should be resolved unilaterally.
 
-### 6.1 Migration count is test-locked at 9
+### 6.1 Migration count is test-locked at 9 — **RESOLVED**
 
-`tests/unit/SchemaTest.php:74` asserts **exactly 9 migrations** ("Checkpoint 01
+`tests/unit/SchemaTest.php:74` asserted **exactly 9 migrations** ("Checkpoint 01
 specifies exactly 9 migrations"). Sixteen new tables cannot land without either
 adding migrations 010+ (and amending that assertion) or editing existing
 migrations (unsafe — they have run in real deployments).
 
-**Recommendation:** add new migrations 010+ and relax the assertion to "sequential
-from 001, matching `migration_version`", keeping the ordering guarantee that
-gives the test its value.
+**Resolved exactly as recommended:** new tables landed as migrations 010+
+(current chain target: **019**), and SchemaTest enforces "sequential from 001,
+file count matching `migration_version`", keeping the ordering guarantee.
 
 ### 6.2 Base currency is USD; the spec shows ₦ — **RESOLVED (session 22)**
 
@@ -139,7 +139,7 @@ defaults and relabels existing rows; `currencies` is rebased so NGN sits at 1.0;
 `'USD'` fallbacks scattered through libraries, controllers, models and views were
 replaced with calls to it.
 
-### 6.3 Session numbering has diverged
+### 6.3 Session numbering has diverged — **RESOLVED**
 
 The spec's §35 lists 30 sessions with different content than the 20-session
 roadmap this repo has been following (`docs/checkpoint-01-php/03-module-dependency-map.md:180`).
@@ -147,8 +147,9 @@ Sessions 01–20 are complete under the **old** numbering. Under the new numberi
 completed work maps to roughly: 01–11, 14–15, 21–30 — while 12, 13, 16–20 (the
 VTU, numbers, OTP, identity, gift card, marketplace domains) are untouched.
 
-**Recommendation:** keep the completed work as-is and renumber forward, tracking
-new sessions by module name rather than number to avoid ambiguity.
+**Resolved as recommended:** sessions 21 forward are module-named
+(`session-21-vtu` … `session-32-certification-polish`), and the old 20-session
+numbering was left untouched in place.
 
 ## 7. Proposed build order
 
@@ -208,26 +209,49 @@ for every operator**. The same shape as the VTU gap reported in session 23:
 permissions seeded and granted, no UI behind them. Twenty-nine of the ~31
 seeded permission keys now gate real code, and a test fails if that regresses.
 
-**Remaining:**
+**Remaining — updated 2026-08-19 (this list was stale; the record is now current):**
 
-- The **marketplace half of F** — escrow, disputes, two-sided KYC.
-- **Withdrawals.** Deposits work through `PaymentService`; withdrawal exists
-  only as a label in `DashboardStats::transaction_label()`. No table, no
-  request flow, no approval queue.
-- Three permissions still gate nothing, by decision rather than omission:
-  `services.manage` (no SMM service editor; the catalogue screen covers the
-  four product domains only), `api.manage` (reseller keys are issued from the
-  customer dashboard), and `users.impersonate` — deliberately unbuilt, because
-  "log in as this customer" would let staff spend someone else's wallet with
-  nothing in the ledger to tell the two apart afterwards.
+Every item this section previously listed is closed, in one of two ways:
 
-Phase A is the one that determines whether this stays coherent. If each domain is
-built without it, the result is six parallel half-copies of the order engine.
+- **Decided out of the product, and excised:** the **marketplace half of F**
+  shipped in single-seller form (buyer escrow end to end; the platform is the
+  only seller — no vendor entity at any layer, enforced by migration 019 and
+  a CI reintroduction guard; [session 31](session-31-no-vendors.md)), and
+  **withdrawals** were removed at every level for the same product decision —
+  deposits and in-platform spend only (migration 018, CI guard,
+  [session 30](session-30-security-marketplace.md)). Nobody may "finish" these
+  two items: they are contractual removals, not gaps.
+- **Built:** all three permissions the previous revision listed as gating
+  nothing now gate real code — `services.manage` backs the SMM service
+  editor (`admin/services` + `SmmServiceAdminService`), `api.manage` backs the
+  reseller-API admin console (`admin/api-keys`), and `users.impersonate` backs
+  the 30-minute audited read-only support lens
+  ([customer-impersonation.md](customer-impersonation.md)).
 
-## 8. Recommended immediate next step
+What is genuinely open, with no code work implied unless noted:
 
-Phase A, starting with the universal transaction engine (§18/§19) and the
-provider registry (§14) — the two pieces every later domain depends on.
+- **Live-vendor smoke tests** for VTpass / 5sim / Dojah / Reloadly are
+  **BLOCKED BY EXTERNAL CREDENTIALS** — adapters are contract-tested against
+  captured fixtures; only a funded vendor account can prove the last mile.
+  (Owner action, not a code defect.)
+- **`currencies` placeholder rates.** The table is seeded with static
+  illustrative rates, no live refresh and no display conversion — session 22
+  deferred both deliberately; money is accounted in the single base currency
+  everywhere, so nothing is mis-priced. A rate-refresh job belongs to any
+  future multi-currency display work.
+- **Demo-seed service rates** still read as small dollar-scaled numbers; purely
+  cosmetic on a seeded demo catalogue (session 22 follow-up).
+- **Multi-host cron locks.** `JobRunner` uses kernel `flock()` per host, per
+  the docblock contract; Redis `SET NX` is the documented upgrade when cron
+  ever runs on more than one host.
 
-Blocking questions, from §6 above: the migration-count assertion, the base
-currency, and confirmation that phase order is acceptable.
+## 8. Recommended immediate next step — superseded
+
+This section told the next session to start with Phase A. Every phase has
+since landed (see §7 progress notes and the session docs through
+[session 31](session-31-no-vendors.md)), the production-certification run is
+recorded in [final-certification-2026-08-19.md](final-certification-2026-08-19.md),
+and the housekeeping thereafter in
+[session-32-certification-polish.md](session-32-certification-polish.md).
+New work should originate from the open list directly above, not from the
+historical phase table.

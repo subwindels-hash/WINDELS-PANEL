@@ -435,7 +435,7 @@ index.php             front controller (.env boot + ENVIRONMENT detection)
 |---|---|
 | `docs/deployment.md` | operations runbook: preflight reference, runtime directories, upgrade flow |
 | `docs/backups.md` | backup & disaster-recovery plan + restore rehearsal |
-| `docs/database.sql` | canonical exported schema (18 migrations) |
+| `docs/database.sql` | canonical exported schema (19 migrations) |
 | `docs/certification-audit-2026-08-19.md` | certification audit of the platform |
 | `docs/final-certification-2026-08-19.md` | final production-certification report (this release) |
 | `docs/customer-impersonation.md` | support-impersonation security model |
