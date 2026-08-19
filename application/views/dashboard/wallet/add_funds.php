@@ -11,6 +11,7 @@ $suggested = min($max, max($min, 5000));
     <div class="card">
       <h2 class="card-title">Add funds to your wallet</h2>
       <p class="muted">Wallet balance is held in <strong><?=html_escape($cur)?></strong> and used to pay for orders. Deposits between <?=windels_money($min, $cur)?> and <?=windels_money($max, $cur)?>.</p>
+      <p class="muted text-sm mt-2">Your WINDELS wallet is a platform spending balance: it pays for services, orders and other supported purchases inside WINDELS PANEL. Wallet funds are for spending within the platform and stay inside it.</p>
 
       <?=form_open('dashboard/wallet/deposit', array('class'=>'mt-4 stack'))?>
         <label class="field">

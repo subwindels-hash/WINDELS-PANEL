@@ -1572,4 +1572,8 @@ ADD COLUMN image VARCHAR(255) NULL COMMENT 'uploaded shelf image (MediaService s
 ADD COLUMN is_featured TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'featured shelf placement',
 ADD COLUMN product_type VARCHAR(16) NOT NULL DEFAULT 'DIGITAL' COMMENT 'DIGITAL|PHYSICAL';
 
+-- ---------------------------------------------------------------------
+-- migration 018_remove_withdrawals
+-- ---------------------------------------------------------------------
+
 SET FOREIGN_KEY_CHECKS = 1;

@@ -35,7 +35,52 @@ The feature is excised at every level — not hidden:
 - **UI/notifications**: both nav entries and the WITHDRAWAL label maps removed.
 - **Tests**: `WithdrawalTest.php` deleted; new `WithdrawalRemovalTest.php` guards the removal and proves the wallet/purchase plumbing is intact.
 
-`grep -rli withdraw application/` → **0 matches**.
+`grep -rli withdraw application/` → **0 matches** (the only exception is the
+intentional retrofit `018_remove_withdrawals.php`, which exists precisely to
+erase the feature from upgraded databases).
+
+### Upgrade path for existing installations (migration 018)
+
+Deleting `016_withdrawals.php` covers fresh installs but not databases that
+already ran it. `018_remove_withdrawals.php` closes that gap (migration
+chain target is now 18):
+
+- Drops `withdrawal_events` then `withdrawal_requests` with `IF EXISTS`
+  (child first — both tables only ever pointed INTO users +
+  wallet_transactions, so wallet, ledger and every other financial table are
+  structurally untouched);
+- Deletes the three RBAC keys (`withdrawals.view/process/reveal`) from
+  `permissions` and `role_permissions`;
+- Deletes the five `withdrawal_*` rows from `settings`;
+- Keeps historical `wallet_transactions` (type WITHDRAWAL), ledger entries,
+  audit logs and notifications intact — the audited record of money that
+  already moved;
+- Keeps `statements()` empty so the generated fresh-install dump carries no
+  drop-retrofit SQL, and has no `down()` — the feature is removed, not
+  versioned.
+
+Fresh installs run 001–018 with the migration as a harmless no-op; installs at
+the old v17 upgrade through 018 only; installs at v≤15 pull in 016 (mass
+orders), 017 (marketplace catalogue) and 018. Rehearsed for both shapes in
+`WithdrawalRemovalTest::testMigration018ActuallyRunsAgainstARealDatabaseShape`.
+
+### UX wording
+
+The wallet is presented as a platform spending balance: the dashboard wallet
+card and the transactions page carry the "pay for services, orders and other
+supported purchases within the platform / the balance spends here; it does
+not cash out" wording, and the add-funds page explains the balance is for
+spending inside the platform.
+
+### CI reintroduction guard
+
+`WithdrawalRemovalTest` IS the guard, running with the standard suite in CI:
+it fails the build if any withdrawal route, controller, service, model, view,
+permission, setting, API endpoint, asset reference or dedicated migration
+reappears, while explicitly tolerating the sanctioned 018 retrofit and
+historical docs/audit data. Old URLs have no route and no controller, so CI3
+serves its normal 404 for them.
+
 
 ## 3. Marketplace is admin-controlled (the platform is the only seller)
 

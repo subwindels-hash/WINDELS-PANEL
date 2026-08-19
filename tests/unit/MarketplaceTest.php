@@ -573,7 +573,7 @@ class MarketplaceTest extends TestCase
         if (!class_exists('CI_Migration')) eval('class CI_Migration {}');
         require_once self::$root.'/application/migrations/015_marketplace.php';
         $config = file_get_contents(self::$root.'/application/config/migration.php');
-        $this->assertStringContainsString("\$config['migration_version'] = 17;", $config);
+        $this->assertStringContainsString("\$config['migration_version'] = 18;", $config);
         $schema = file_get_contents(self::$root.'/docs/database.sql');
         $this->assertStringContainsString('-- migration 015_marketplace', $schema);
         foreach (Migration_Marketplace::tables() as $table) {

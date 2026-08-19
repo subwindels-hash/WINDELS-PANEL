@@ -2,13 +2,15 @@
 use PHPUnit\Framework\TestCase;
 
 /**
- * Withdrawal removal gates (Session 30.x).
+ * Withdrawal removal gates (Session 30).
  *
  * The withdrawals feature is gone at every level — routes, controllers,
  * services, models, views, migrations dedicated exclusively to it, settings,
- * permissions, navigation and wallet ledger plumbing — while the wallet
- * itself and every supported purchase flow remain intact. These gates make
- * sure the feature cannot quietly re-materialise.
+ * permissions, navigation, assets and the reseller API — while the wallet
+ * itself and every supported purchase flow remain intact. Migration 018 is
+ * the upgrade path for databases created while the feature existed. These
+ * gates make sure the feature cannot quietly re-materialise, so CI is the
+ * reintroduction guard the workorder demands.
  */
 class WithdrawalRemovalTest extends TestCase
 {
@@ -19,7 +21,11 @@ class WithdrawalRemovalTest extends TestCase
         self::$root = dirname(dirname(__DIR__));
         if (!defined('BASEPATH')) define('BASEPATH', self::$root.'/system/');
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
+        if (!class_exists('CI_Migration')) eval('class CI_Migration { public $db; }');
+        require_once self::$root.'/application/migrations/018_remove_withdrawals.php';
     }
+
+    /* -------------------------- routes / URLs ---------------------------- */
 
     public function testNoWithdrawalRoutesSurvive()
     {
@@ -30,6 +36,29 @@ class WithdrawalRemovalTest extends TestCase
         $this->assertStringContainsString('dashboard/wallet/deposit', $routes);
         $this->assertStringContainsString('dashboard/transactions', $routes);
     }
+
+    public function testLegacyWithdrawalUrlsHaveNoRouteAndTherefore404()
+    {
+        // CI3 falls through to show_404 for anything with no custom route and
+        // no controller. The workorder's legacy URLs — plus historical
+        // variants — must have neither, and must never be redirected to some
+        // other financial action.
+        $routes = file_get_contents(self::$root.'/application/config/routes.php');
+        foreach (array(
+            'dashboard/withdrawals',
+            'dashboard/withdrawals/create',
+            'dashboard/withdrawals/(:any)',
+            'dashboard/withdrawals/(:any)/cancel',
+            'admin/withdrawals',
+        ) as $url) {
+            $this->assertStringNotContainsString("'".$url."'", $routes,
+                'legacy withdrawal URL must stay unrouted (404 not redirect): '.$url);
+        }
+        $this->assertFileDoesNotExist(self::$root.'/application/controllers/dashboard/Withdrawals.php');
+        $this->assertFileDoesNotExist(self::$root.'/application/controllers/admin/Withdrawals.php');
+    }
+
+    /* ------------------------- source excision --------------------------- */
 
     public function testNoWithdrawalSourceFilesSurvive()
     {
@@ -57,45 +86,22 @@ class WithdrawalRemovalTest extends TestCase
         $names = array();
         foreach (glob(self::$root.'/application/migrations/*.php') as $file) {
             $names[] = basename($file);
+            if (basename($file) === '018_remove_withdrawals.php') continue; // the sanctioned retrofit
             $this->assertStringNotContainsStringIgnoringCase(
                 'withdrawal', strtolower(basename($file)),
                 'migration dedicated to withdrawals must stay deleted: '.basename($file));
         }
         sort($names);
-        // Renumbered sequence stays gap-free after removing 016_withdrawals.
+        // Renumbered sequence stays gap-free; 018 is the upgrade retrofit.
         $this->assertContains('016_mass_orders.php', $names);
         $this->assertContains('017_marketplace_catalogue.php', $names);
+        $this->assertContains('018_remove_withdrawals.php', $names);
     }
 
     public function testApplicationCodeHasNoWithdrawalReferences()
     {
-        foreach (array(
-            'application/libraries/LedgerService.php',
-            'application/libraries/SettingsService.php',
-            'application/libraries/DashboardStats.php',
-            'application/seeds/Core_seeder.php',
-            'application/views/layouts/app.php',
-        ) as $path) {
-            $code = file_get_contents(self::$root.'/'.$path);
-            $this->assertStringNotContainsStringIgnoringCase('withdrawal', $code,
-                $path.' must not reference withdrawals');
-        }
-
-        // Specifically: no ledger counter-account or settings keys.
-        $ledger = file_get_contents(self::$root.'/application/libraries/LedgerService.php');
-        $this->assertStringNotContainsString('reserve_withdrawal', $ledger);
-        $this->assertStringNotContainsString('refund_withdrawal', $ledger);
-        $this->assertStringNotContainsString('withdrawal_payable', $ledger);
-
-        $seed = file_get_contents(self::$root.'/application/seeds/Core_seeder.php');
-        $this->assertStringNotContainsString('withdrawals.', $seed);
-        $this->assertStringNotContainsString("'withdrawals'", $seed);
-    }
-
-    public function testNoWithdrawalNavOrPermissionWiringSurvivesAnywhere()
-    {
-        // Repo-wide sweep over executable app code (docs may carry the
-        // historical record).
+        // The intentional exception is migration 018, whose entire purpose is
+        // to erase the feature's rows from upgraded databases.
         $clean = array(
             'application/controllers', 'application/core', 'application/libraries',
             'application/models', 'application/seeds', 'application/views',
@@ -116,10 +122,118 @@ class WithdrawalRemovalTest extends TestCase
         $this->assertSame(array(), $offenders, 'withdrawal references must not survive in app code');
     }
 
+    public function testLedgerSettingsSeedsAndLayoutAreClean()
+    {
+        $ledger = file_get_contents(self::$root.'/application/libraries/LedgerService.php');
+        $this->assertStringNotContainsString('reserve_withdrawal', $ledger);
+        $this->assertStringNotContainsString('refund_withdrawal', $ledger);
+        $this->assertStringNotContainsString('withdrawal_payable', $ledger);
+
+        $seed = file_get_contents(self::$root.'/application/seeds/Core_seeder.php');
+        $this->assertStringNotContainsString('withdrawals.', $seed);
+        $this->assertStringNotContainsString("'withdrawals'", $seed);
+
+        $layout = file_get_contents(self::$root.'/application/views/layouts/app.php');
+        $this->assertStringNotContainsStringIgnoringCase('withdrawal', $layout);
+
+        $stats = file_get_contents(self::$root.'/application/libraries/DashboardStats.php');
+        $this->assertStringNotContainsString('WITHDRAWAL', $stats);
+    }
+
+    public function testResellerApiHasNoWithdrawalEndpointOrScope()
+    {
+        $api = file_get_contents(self::$root.'/application/controllers/Api_v1.php');
+        $this->assertStringNotContainsStringIgnoringCase('withdrawal', $api,
+            'Api_v1 must not expose withdrawal endpoints or scopes');
+        $docs = glob(self::$root.'/application/views/api/*.php') ?: array();
+        foreach ($docs as $file) {
+            $this->assertStringNotContainsStringIgnoringCase('withdrawal',
+                file_get_contents($file), basename($file).' must not document withdrawals');
+        }
+    }
+
+    public function testNoAssetOrUploadReferencesWithdrawals()
+    {
+        foreach (array('assets/js', 'assets/css') as $dir) {
+            if (!is_dir(self::$root.'/'.$dir)) continue;
+            $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(self::$root.'/'.$dir));
+            foreach ($it as $file) {
+                $this->assertStringNotContainsStringIgnoringCase(
+                    'withdraw', file_get_contents((string)$file),
+                    (string)$file.' contains a withdrawal reference');
+            }
+        }
+    }
+
+    /* -------------- upgrade path for existing installations -------------- */
+
+    public function testMigration018IsTheSafeUpgradeForExistingDatabases()
+    {
+        // Drops the historical feature tables, child first, idempotently.
+        $this->assertSame(array('withdrawal_events', 'withdrawal_requests'),
+            Migration_Remove_withdrawals::dropped_tables());
+        // …while tables() keeps the "tables this migration creates" contract.
+        $this->assertSame(array(), Migration_Remove_withdrawals::tables());
+        $file = self::$root.'/application/migrations/018_remove_withdrawals.php';
+        $src = file_get_contents($file);
+        $this->assertStringContainsString('DROP TABLE IF EXISTS', $src);
+        // Child-first order is asserted behaviourally by
+        // testMigration018ActuallyRunsAgainstARealDatabaseShape below.
+
+        // Feature rows removed from RBAC and settings on upgraded databases.
+        foreach (array('withdrawals.view', 'withdrawals.process', 'withdrawals.reveal') as $perm) {
+            $this->assertStringContainsString($perm, $src);
+        }
+        foreach (array('withdrawal_min_amount', 'withdrawal_max_amount',
+                       'withdrawal_fee_fixed', 'withdrawal_fee_percent',
+                       'withdrawal_require_verified_identity') as $setting) {
+            $this->assertStringContainsString($setting, $src);
+        }
+        $this->assertStringContainsString('DELETE rp FROM role_permissions rp', $src);
+        $this->assertStringContainsString('DELETE FROM permissions', $src);
+        $this->assertStringContainsString('DELETE FROM settings', $src);
+
+        // No statements() output — the generated fresh-install dump must not
+        // carry drop-retrofit SQL.
+        $this->assertSame(array(), Migration_Remove_withdrawals::statements());
+
+        // The migration chain target accounts for the retrofit.
+        $config = file_get_contents(self::$root.'/application/config/migration.php');
+        $this->assertStringContainsString("\$config['migration_version'] = 18;", $config);
+        $this->assertSame(18, count(glob(self::$root.'/application/migrations/*.php')),
+            'sequential migration count must match migration_version');
+    }
+
+    public function testMigration018ActuallyRunsAgainstARealDatabaseShape()
+    {
+        // Rehearse BOTH shapes the upgrade matrix promises:
+        //  (a) existing database WITH the feature's tables and seeded rows
+        //  (b) fresh install where none of them exist
+        foreach (array(true, false) as $with_history) {
+            $mig = new Migration_Remove_withdrawals();
+            $db = new Migration018FakeDb($with_history);
+            $mig->db = $db;
+            $mig->up(); // must not throw in either shape
+            $this->assertSame(array('withdrawal_events', 'withdrawal_requests'),
+                $db->dropped,
+                'drops are issued in child-first order in both install shapes');
+            $this->assertSame(array(), $db->rows('role_permissions'),
+                'withdrawal grants removed');
+            $this->assertSame($with_history ? 0 : 1, count($db->rows('permissions')),
+                'feature permissions removed, everything else kept');
+            $this->assertSame($with_history ? 0 : 1, count($db->rows('settings')),
+                'feature settings removed, everything else kept');
+            // Wallet, ledger and audit rows are never touched.
+            $this->assertSame(1, count($db->rows('wallet_transactions')),
+                'historical wallet rows are preserved');
+            $this->assertSame(1, count($db->rows('audit_logs')));
+        }
+    }
+
+    /* ------------------ the wallet must be fully intact ------------------- */
+
     public function testTheWalletItselfAndItsPurchaseFlowsAreUntouched()
     {
-        // The wallet stays: controller, model, ledger money movement and the
-        // routes customers use to view it.
         $this->assertFileExists(self::$root.'/application/controllers/dashboard/Wallet.php');
         $this->assertFileExists(self::$root.'/application/models/Wallet_model.php');
 
@@ -133,5 +247,59 @@ class WithdrawalRemovalTest extends TestCase
         $layout = file_get_contents(self::$root.'/application/views/layouts/app.php');
         $this->assertStringContainsString('dashboard/add-funds', $layout,
             'wallet navigation must remain for customers');
+    }
+}
+
+/**
+ * Minimal stub DB driving migration 018's up() in both install shapes.
+ * Implements exactly the query patterns the migration issues and enforces
+ * that nothing unexpected (read: wallet/ledger/audit data) is queried at all.
+ */
+class Migration018FakeDb {
+    public $dropped = array();
+    private $store = array();
+    private static $perm_keys = array('withdrawals.view', 'withdrawals.process', 'withdrawals.reveal');
+    private static $setting_keys = array('withdrawal_min_amount', 'withdrawal_max_amount',
+        'withdrawal_fee_fixed', 'withdrawal_fee_percent', 'withdrawal_require_verified_identity');
+
+    public function __construct($with_history) {
+        $this->store = array(
+            'permissions' => $with_history
+                ? array_map(function ($k) { return array('perm_key' => $k); }, self::$perm_keys)
+                : array(array('perm_key' => 'orders.view')),
+            'role_permissions' => $with_history ? array(array('permission_id' => 9)) : array(),
+            'settings' => $with_history
+                ? array_map(function ($k) { return array('setting_key' => $k); }, self::$setting_keys)
+                : array(array('setting_key' => 'site_name')),
+            'wallet_transactions' => array(array('type' => 'WITHDRAWAL', 'amount' => '100.00000000')),
+            'audit_logs' => array(array('action' => 'withdrawal.requested')),
+        );
+    }
+
+    public function query($sql) {
+        if (preg_match('/DROP TABLE IF EXISTS (\w+)/i', $sql, $m)) {
+            $this->dropped[] = $m[1];
+            unset($this->store[$m[1]]);
+            return true;
+        }
+        if (stripos($sql, 'DELETE rp FROM role_permissions') === 0) {
+            $this->store['role_permissions'] = array();
+            return true;
+        }
+        if (preg_match('/DELETE FROM (\w+) WHERE (\w+) IN \((.*)\)/i', $sql, $m)) {
+            $table = $m[1]; $keycol = $m[2];
+            preg_match_all("/'([^']+)'/", $m[3], $mm);
+            $kill = $mm[1];
+            $this->store[$table] = array_values(array_filter($this->store[$table],
+                function ($row) use ($keycol, $kill) {
+                    return !in_array($row[$keycol], $kill, true);
+                }));
+            return true;
+        }
+        throw new RuntimeException('Migration018FakeDb: unexpected SQL: '.$sql);
+    }
+
+    public function rows($table) {
+        return isset($this->store[$table]) ? $this->store[$table] : array();
     }
 }

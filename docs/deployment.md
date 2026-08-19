@@ -3,13 +3,22 @@
 Operational runbook for WINDELS PANEL. Everything here is CLI-only by design —
 there are no web-triggered migrations, seeds or cron endpoints (§66).
 
+> WINDELS-PANEL is a traditional PHP MVC application built on CodeIgniter 3.x
+> with MySQL/MariaDB, served through PHP-FPM and Nginx. Redis provides
+> supplementary caching/background processing where enabled. Node.js/npm is
+> used only for optional frontend asset compilation (Tailwind CSS) and is not
+> part of the application's backend architecture or runtime.
+
 ## Requirements
 
 - PHP 8.1+ with `mysqli`, `mbstring`, `curl`, `openssl`, `bcmath`, `json`
   (plus `redis`, `gd`, `intl`, `zip` for the full feature set)
+- Composer (application dependencies)
+- PHP-FPM behind Nginx (see `docker/nginx.conf` for the reference config)
 - MySQL 8.0 or MariaDB 10.6+
 - Redis (optional — sessions and cache fall back to files/database)
-- A web server that routes everything to `index.php`
+- Node.js/npm only if you want to rebuild the Tailwind CSS bundle locally; the
+  committed `assets/css/design-system.css` keeps the panel usable without it
 
 ## First deploy
 
@@ -21,7 +30,7 @@ cp .env.example .env
 $EDITOR .env                       # see "Required settings" below
 
 php index.php deploy storage       # create runtime directories
-php index.php migrate              # apply the 9 migrations
+php index.php migrate              # apply the 18 migrations (001–018; 018 retires legacy withdrawal tables)
 php index.php seed core            # roles, permissions, settings
 php index.php deploy check         # verify before serving traffic
 ```

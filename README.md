@@ -8,6 +8,17 @@ API, and a full admin back office.
 **Stack:** PHP ≥ 7.4 / CodeIgniter 3.1.13 · MySQL 8 (or MariaDB) · Redis 7 ·
 Tailwind CSS (PHP-rendered views — no JS framework) · Docker Compose.
 
+> **WINDELS-PANEL is a traditional PHP MVC enterprise reseller and commerce
+> platform built on CodeIgniter 3.x, using MySQL/MariaDB as its primary
+> database. Redis is used for supporting caching or background-processing
+> functionality where required. The application is served through PHP-FPM and
+> Nginx. Node.js/npm is used only for optional frontend asset compilation
+> (Tailwind CSS) and is not part of the application's backend architecture.**
+
+**The wallet is a platform spending balance.** WINDELS-PANEL does not support
+customer wallet withdrawals: customers add funds and spend that balance on
+services and supported products within the WINDELS-PANEL ecosystem.
+
 ---
 
 ## Table of contents
