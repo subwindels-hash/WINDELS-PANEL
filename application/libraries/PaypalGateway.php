@@ -22,7 +22,7 @@ class PaypalGateway implements GatewayInterface {
             return array('ok' => false, 'error' => 'PayPal credentials not configured', 'code' => 'CONFIG_MISSING');
         }
         $ref = $transaction->public_id ?: ('WIND-' . uniqid());
-        return array('ok' => true, 'status' => 'PENDING', 'redirect_url' => 'https://www.paypal.com/checkoutnow?token=' . $ref, 'checkout' => array('reference' => $ref, 'amount_display' => number_format($transaction->amount, 2) . ' ' . ($transaction->currency ?? 'USD'), 'instructions' => 'Complete payment on PayPal secure checkout.'), 'metadata' => array('gateway' => 'paypal', 'reference' => $ref));
+        return array('ok' => true, 'status' => 'PENDING', 'redirect_url' => 'https://www.paypal.com/checkoutnow?token=' . $ref, 'checkout' => array('reference' => $ref, 'amount_display' => number_format($transaction->amount, 2) . ' ' . ($transaction->currency ?? 'NGN'), 'instructions' => 'Complete payment on PayPal secure checkout.'), 'metadata' => array('gateway' => 'paypal', 'reference' => $ref));
     }
     public function verify_webhook($raw_body, array $headers) {
         $sig = $headers['PayPal-Transmission-Id'] ?? ($headers['paypal-transmission-id'] ?? '');

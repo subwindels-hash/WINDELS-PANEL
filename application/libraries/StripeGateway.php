@@ -31,7 +31,7 @@ class StripeGateway implements GatewayInterface {
             'redirect_url' => 'https://checkout.stripe.com/pay/' . ($ref . '-' . time()),
             'checkout' => array(
                 'reference' => $ref,
-                'amount_display' => number_format($transaction->amount, 2) . ' ' . ($transaction->currency ?? 'USD'),
+                'amount_display' => number_format($transaction->amount, 2) . ' ' . ($transaction->currency ?? 'NGN'),
                 'instructions' => 'Complete payment on Stripe secure checkout. Do not refresh.',
             ),
             'metadata' => array('gateway' => 'stripe', 'reference' => $ref),
