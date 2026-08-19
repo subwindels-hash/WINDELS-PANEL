@@ -253,8 +253,21 @@ referrals) run through `tests/_support/IntegrationHarness.php`.
 
 ## CI/CD
 
-The pipeline lives at **`.github/workflows/ci.yml`** and runs on every push
-and pull request. Stages, in order:
+The complete pipeline ships in **`ci.yml.workflow-ready`** (two jobs,
+31 steps, summarised below). One maintainer action activates it:
+
+```bash
+mkdir -p .github/workflows && git mv ci.yml.workflow-ready .github/workflows/ci.yml
+git commit -m "Enable CI" && git push
+```
+
+> GitHub requires the `workflows` permission on the token that writes
+> `.github/workflows/**`; the automation token that produced this repository
+> snapshot intentionally lacks it, so activation is a deliberate one-time
+> maintainer step (a standard repo push works). Once moved, the workflow runs
+> on every push and pull request.
+
+Stages, in order:
 
 1. **Dependency installation** — `composer install`, `composer validate`, `npm ci`
 2. **Code quality** — `php -l` over every file; Tailwind asset build
@@ -272,6 +285,12 @@ and pull request. Stages, in order:
    no RBAC stubs
 9. **Deployment safety** — production preflight must FAIL without
    `ENCRYPTION_KEY` (the guard is a negative test)
+
+…and a second **`docker`** job that builds every image, boots the full stack,
+runs the one-off migrate/seed, proves `deploy check` exits 0, polls
+`/health/ready` to green, asserts every health-checked container is healthy,
+runs `cron status`, proves the production compose refuses to render without
+secrets, and tears down.
 
 ## Security model
 
@@ -400,7 +419,7 @@ cron/crontab.example  15 scheduled jobs (installed by the cron container)
 docker/               php.Dockerfile, nginx + nginx.prod conf, nginx/certs, mysql init
 docker-compose.yml            development stack (MailHog, MinIO, dev creds)
 docker-compose.production.yml production stack (required secrets, TLS, no dev services)
-.github/workflows/ci.yml      the CI pipeline (push/PR)
+ci.yml.workflow-ready  the CI pipeline (one `git mv` activates it — see CI/CD)
 docs/                 database.sql (canonical schema), deployment, backups,
                       impersonation, certification reports, session logs
 tests/                unit suite, FakeDb, IntegrationHarness, provider fixtures

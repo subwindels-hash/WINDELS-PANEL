@@ -15,43 +15,54 @@ jobs:
           MYSQL_USER: windels
           MYSQL_PASSWORD: windels_secret
         ports: ["3306:3306"]
-        options: --health-cmd="mysqladmin ping -h localhost -u windels -pwindels_secret" --health-interval=10s --health-retries=10
+        options: --health-cmd="mysqladmin ping -h localhost -u windels -p$MYSQL_PASSWORD" --health-interval=10s --health-retries=10
       redis:
         image: redis:7-alpine
         ports: ["6379:6379"]
     steps:
       - uses: actions/checkout@v4
-      - uses: shivammathur/setup-php@v2
+
+      - name: PHP toolchain
+        uses: shivammathur/setup-php@v2
         with:
           php-version: '8.1'
           extensions: pdo_mysql, mysqli, curl, mbstring, zip, bcmath, redis, gd, intl
           coverage: none
+
+      - name: Node toolchain (asset build only)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # --- 1. Dependency installation -------------------------------------
       - run: composer install --no-interaction --prefer-dist
-      - run: vendor/bin/phpunit --testdox
+      - run: composer validate --no-check-publish
+      - run: npm ci
 
-      - name: Deployment preflight (production rules)
-        env:
-          CI_ENV: production
-          APP_URL: https://ci.example.com
+      # --- 2. Code quality -------------------------------------------------
+      - name: PHP syntax sweep (every file)
         run: |
-          unset ENCRYPTION_KEY
-          # A production preflight with no ENCRYPTION_KEY must fail. If this
-          # step succeeds, the guard that protects provider keys and MFA
-          # secrets has regressed.
-          if php index.php deploy check; then
-            echo "preflight passed without ENCRYPTION_KEY — guard has regressed"
-            exit 1
-          fi
-          echo "preflight correctly rejected an unsafe production config"
+          find application tests tools -name '*.php' -print0 | xargs -0 -n1 -P4 php -l > /dev/null
+          echo "all PHP files parse"
 
-      - name: Schema dump is in sync with migrations
-        run: php tools/export_schema.php --check
+      - name: Frontend asset build
+        run: npm run build:css
+
+      # --- 3. Static analysis ----------------------------------------------
+      - name: PHPStan (non-blocking until baseline is curated)
+        continue-on-error: true
+        run: vendor/bin/phpstan analyse --no-progress
 
       - name: Lint schema (parser + house rules)
         run: |
           pip install --quiet sqlglot
           python3 tools/validate_schema.py
 
+      # --- 4. Database/schema validation -----------------------------------
+      - name: Schema dump is in sync with migrations
+        run: php tools/export_schema.php --check
+
+      # --- 5/6. Migration + seeder validation against real MySQL -----------
       - name: Migrate + seed against MySQL
         env:
           APP_ENV: testing
@@ -68,6 +79,7 @@ jobs:
           php index.php seed demo
           php index.php seed core   # idempotency: re-running must be a no-op
           php index.php seed demo
+          php index.php migrate     # re-run: no-op, schema uncorrupted
 
       - name: Demo seed must refuse to run in production
         env:
@@ -81,18 +93,66 @@ jobs:
             echo "demo seed ran under APP_ENV=production" && exit 1
           fi
           echo "correctly refused"
+
+      # --- 7. Test suite ----------------------------------------------------
+      - run: vendor/bin/phpunit --testdox
+
+      # --- 9. Deployment safety checks -------------------------------------
+      - name: Deployment preflight (production rules)
+        env:
+          CI_ENV: production
+          APP_URL: https://ci.example.com
+        run: |
+          unset ENCRYPTION_KEY
+          # A production preflight with no ENCRYPTION_KEY must fail. If this
+          # step succeeds, the guard that protects provider keys and MFA
+          # secrets has regressed.
+          if php index.php deploy check; then
+            echo "preflight passed without ENCRYPTION_KEY — guard has regressed"
+            exit 1
+          fi
+          echo "preflight correctly rejected an unsafe production config"
+
+      - name: Preflight reports every guard it enforces
+        run: |
+          for check in encryption_key db_connectivity secure_cookies required_secrets environment_consistency schema demo_mode mock_providers; do
+            grep -q "check_${check}\|'${check}'" application/libraries/Preflight.php \
+              || { echo "preflight check '${check}' missing" && exit 1; }
+          done
+          echo "preflight covers every deployment guard"
+
+      # --- 8. Security checks -----------------------------------------------
       - name: Verify no license artifacts
         run: |
           ! grep -R "PURCHASE_CODE\|LICENSE_SERVER\|Envato" application/ --include="*.php" || (echo "License artifact found" && exit 1)
           ! grep -R "CURLOPT_SSL_VERIFYPEER.*false" application/ --include="*.php" -i || (echo "Insecure TLS found" && exit 1)
           # match real table/column definitions, not the comments documenting their absence
-          ! grep -RniE "(CREATE TABLE[^(]*|^\\s*)(license_keys?|purchase_codes?|domain_locks?)\\s+(VARCHAR|CHAR|TEXT|INT|BIGINT|\\()" docs/database.sql || (echo "License artifact in schema" && exit 1)
+          ! grep -RniE "(CREATE TABLE[^(]*|^\s*)(license_keys?|purchase_codes?|domain_locks?)\s+(VARCHAR|CHAR|TEXT|INT|BIGINT|\()" docs/database.sql || (echo "License artifact in schema" && exit 1)
 
       - name: Ledger integrity — no direct balance mutation outside LedgerService
         run: |
           if grep -RnE "update\('wallets'" application/ --include="*.php" | grep -v "libraries/LedgerService.php" | grep -v "seeds/"; then
             echo "wallets table mutated outside LedgerService" && exit 1
           fi
+          echo "ok"
+
+      - name: Withdrawals stay removed
+        run: |
+          # Customer cash-out was removed (migration 018). Any reintroduction
+          # of routes/controllers/services fails the build; the migration that
+          # performs the historical cleanup is the only allowed reference.
+          if grep -rniE "withdraw" application/ --include="*.php" | grep -v "migrations/018_remove_withdrawals.php"; then
+            echo "withdrawal functionality reintroduced" && exit 1
+          fi
+          echo "ok"
+
+      - name: Mock providers can never serve production traffic
+        run: |
+          # Deploy-time guard (Preflight) + runtime guard (Provider_manager).
+          grep -q "assert_mock_allowed" application/libraries/Provider_manager.php \
+            || { echo "Provider_manager production mock guard missing" && exit 1; }
+          grep -q "check_mock_providers" application/libraries/Preflight.php \
+            || { echo "preflight mock_providers check missing" && exit 1; }
           echo "ok"
 
       - name: Auth integrity — hashed passwords, no enumeration, real RBAC
@@ -112,3 +172,67 @@ jobs:
             echo "Session 03 RBAC stub still present" && exit 1
           fi
           echo "ok"
+
+  # §1 — the full container stack, built and booted for real. The development
+  # compose ships MailHog/MinIO/dev credentials on purpose; the production
+  # file is verified separately (interpolation must fail loudly when secrets
+  # are missing, exactly as designed).
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build all images
+        run: |
+          cp .env.example .env
+          sed -i 's/^ENCRYPTION_KEY=.*/ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/' .env
+          docker compose build
+
+      - name: Boot the stack and verify every container
+        run: |
+          docker compose up -d mysql redis
+          # One-off run for first-boot tasks: bypasses the web container's
+          # deploy gate, which correctly refuses to serve an unmigrated DB.
+          docker compose run --rm app php index.php deploy storage
+          docker compose run --rm app php index.php migrate
+          docker compose run --rm app php index.php migrate status
+          docker compose run --rm app php index.php seed core
+          docker compose up -d
+          docker compose ps
+
+      - name: Deployment gate passes on a clean boot
+        run: docker compose exec -T app php index.php deploy check
+
+      - name: Application answers health probes
+        run: |
+          for i in $(seq 1 40); do
+            code=$(curl -s -o /tmp/ready.json -w '%{http_code}' http://localhost:8080/health/ready || true)
+            [ "$code" = "200" ] && cat /tmp/ready.json && exit 0
+            sleep 5
+          done
+          docker compose logs app nginx mysql
+          echo "readiness never succeeded" && exit 1
+
+      - name: All containers are healthy
+        run: |
+          docker compose ps --format '{{.Name}} {{.Status}}'
+          if docker compose ps | grep -qiE 'unhealthy|restarting'; then
+            echo "a container is not healthy" && docker compose logs && exit 1
+          fi
+          echo "every health-checked container is healthy (cron/mailhog carry no probe by design)"
+
+      - name: Cron container runs the job schedule
+        run: |
+          docker compose exec -T app php index.php cron status
+
+      - name: Production compose refuses boot without secrets
+        run: |
+          cp .env.production.example .env
+          if docker compose -f docker-compose.production.yml config > /dev/null 2>&1; then
+            echo "production compose rendered without required secrets" && exit 1
+          fi
+          echo "production compose correctly demands secrets"
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
