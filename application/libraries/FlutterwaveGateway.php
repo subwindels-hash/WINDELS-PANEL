@@ -5,7 +5,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * FlutterwaveGateway — adapter for Flutterwave (hosted checkout / payments v3).
  *
  * Implemented: initiate(), verify_webhook() (signature check via secret),
- * parse_event(). CODE COMPLETE — INFRASTRUCTURE VALIDATION PENDING.
+ * parse_event(). SCAFFOLD — NOT wired into PaymentService and UNTESTED against the live API.
  */
 class FlutterwaveGateway implements GatewayInterface {
     private $method;

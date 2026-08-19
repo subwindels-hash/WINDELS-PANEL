@@ -85,7 +85,7 @@ git clone <repo-url> WINDELS-PANEL && cd WINDELS-PANEL
 cp .env.example .env        # fill at minimum: APP_URL, ENCRYPTION_KEY, DB_*
                             # generate the key: php -r "echo bin2hex(random_bytes(32)),PHP_EOL;"
 
-composer install            # PHP dependencies
+composer install            # PHP dependencies (also links system/ -> vendor/codeigniter/framework/system)
 npm install                 # asset build dependencies (frontend only)
 npm run build:css           # compile Tailwind → assets/css/tailwind.css
 
@@ -118,7 +118,7 @@ deployment is unsafe. The separate `cron` container installs
 Prerequisites: PHP 8.1+, Composer, Node 18+, MySQL 8, Redis 7 running locally.
 
 ```bash
-composer install
+composer install              # also links system/ -> vendor/codeigniter/framework/system
 npm ci && npm run build:css
 cp .env.example .env          # point DB_HOST/REDIS_HOST at localhost services
 php index.php deploy storage  # create storage/ + cache dirs
@@ -255,7 +255,7 @@ referrals) run through `tests/_support/IntegrationHarness.php`.
 ## CI/CD
 
 The complete pipeline ships in **`ci.yml.workflow-ready`** (two jobs,
-31 steps, summarised below). One maintainer action activates it:
+~31 steps, summarised below). One maintainer action activates it:
 
 ```bash
 mkdir -p .github/workflows && git mv ci.yml.workflow-ready .github/workflows/ci.yml
@@ -263,10 +263,10 @@ git commit -m "Enable CI" && git push
 ```
 
 > GitHub requires the `workflows` permission on the token that writes
-> `.github/workflows/**`; the automation token that produced this repository
-> snapshot intentionally lacks it, so activation is a deliberate one-time
-> maintainer step (a standard repo push works). Once moved, the workflow runs
-> on every push and pull request.
+> `.github/workflows/**`; automation tokens without it are refused at push
+> time, so activation is a deliberate one-time maintainer step (a standard
+> repo push works). Once moved, the workflow runs on every push and pull
+> request.
 
 Stages, in order:
 

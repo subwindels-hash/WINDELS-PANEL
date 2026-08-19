@@ -13,6 +13,12 @@
 $root = dirname(__DIR__);
 define('BASEPATH', $root . '/system/');
 
+// CLI-only tool, but be explicit: $argv is absent when register_argc_argv is
+// off (or under odd SAPIs) and the --check test below must not fatal there.
+if (!isset($argv)) {
+    $argv = isset($_SERVER['argv']) && is_array($_SERVER['argv']) ? $_SERVER['argv'] : array();
+}
+
 // Minimal stand-in so migration files can be loaded outside CodeIgniter.
 if (!class_exists('CI_Migration')) {
     class CI_Migration

@@ -1,8 +1,8 @@
 # WINDELS PANEL — CI pipeline (two jobs, ~31 steps)
 #
-# Activation (one-time maintainer step — the automation token that produced
-# this repository snapshot lacks the `workflows` permission, so it is not
-# placed under .github/workflows automatically):
+# Activation (one-time maintainer step — GitHub refuses to let an automation
+# token without the `workflows` permission create or update files under
+# .github/workflows, so a maintainer must land this move):
 #
 #   mkdir -p .github/workflows && git mv ci.yml.workflow-ready .github/workflows/ci.yml
 #   git commit -m "Enable CI" && git push
@@ -115,7 +115,11 @@ jobs:
         run: vendor/bin/phpstan analyse --no-progress
 
       - name: Schema linter (validate_schema.py)
-        run: python3 tools/validate_schema.py docs/database.sql
+        run: |
+          # sqlglot is not preinstalled on GitHub runners; without it the
+          # linter exits 1 and this step would fail before parsing anything.
+          python3 -m pip install --quiet sqlglot
+          python3 tools/validate_schema.py docs/database.sql
 
       # Stage 4 — schema validation (database.sql must match migrations)
       - name: Schema sync check
@@ -174,7 +178,7 @@ jobs:
           set -euo pipefail
           # No license / purchase-code artifacts anywhere in the tree.
           if grep -RI --exclude-dir=vendor --exclude-dir=node_modules \
-              --exclude=ci.yml.workflow-ready -E 'purchase_?code|envato' \
+              -E 'purchase_?code|envato' \
               application tools tests cron index.php 2>/dev/null; then
             echo "license / purchase-code artifact found (see above)" >&2
             exit 1
@@ -215,16 +219,47 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # A fresh clone has no .env; compose requires one (env_file). This is the
+      # documented first-boot step, with a real (non-placeholder) key.
+      - name: Create dev .env
+        run: |
+          cp .env.example .env
+          key=$(openssl rand -hex 32)
+          sed -i "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${key}|" .env
+
+      # Both compose files bind-mount the checkout over /var/www/html, so the
+      # HOST needs vendor/ and the system/ link (composer's post-install hook
+      # creates it) — exactly the README first-boot flow.
+      - name: Set up PHP for host composer install
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          tools: composer:v2
+          coverage: none
+
+      - name: Install host dependencies (vendor + system link)
+        run: |
+          composer install --no-dev --no-interaction --prefer-dist --no-progress
+          test -e system/core/CodeIgniter.php
+
       - name: Build development images
         run: docker compose build
 
-      - name: Boot full stack
-        run: docker compose up -d
+      - name: Boot datastores
+        run: docker compose up -d --wait mysql redis
 
-      - name: Run migrations + core seed
+      # The web container's deploy gate refuses to serve an unmigrated
+      # database (by design — see README "First boot with Docker"), so
+      # storage/migrate/seed run as one-off containers BEFORE the full stack
+      # starts; `exec` into the gated app container would deadlock instead.
+      - name: Storage + migrations + core seed (one-off containers)
         run: |
-          docker compose exec -T app php index.php migrate
-          docker compose exec -T app php index.php seed core
+          docker compose run --rm app php index.php deploy storage
+          docker compose run --rm app php index.php migrate
+          docker compose run --rm app php index.php seed core
+
+      - name: Boot full stack
+        run: docker compose up -d --wait --wait-timeout 300
 
       - name: Prove deploy check exits 0
         run: docker compose exec -T app php index.php deploy check
@@ -232,21 +267,28 @@ jobs:
       - name: Poll /health/ready to green
         run: |
           set -e
+          # nginx publishes 8080:80 in the development compose.
           for i in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1/health/ready >/dev/null 2>&1; then
+            if curl -fsS http://127.0.0.1:8080/health/ready >/dev/null 2>&1; then
               echo "health/ready is green"
               exit 0
             fi
             sleep 5
           done
           echo "health/ready never went green" >&2
+          docker compose ps
+          docker compose logs --tail=100 app nginx
           exit 1
 
       - name: Assert all health-checked containers healthy
         run: |
           set -e
-          docker compose ps --format json | grep -q '"Health".*"healthy"' || \
-            docker compose ps | grep -E '\(healthy\)' >/dev/null
+          docker compose ps
+          if docker compose ps | grep -E 'unhealthy|Restarting'; then
+            echo "unhealthy or restarting container found (see above)" >&2
+            exit 1
+          fi
+          docker compose ps | grep -E '\(healthy\)' >/dev/null
 
       - name: Cron status
         run: docker compose exec -T app php index.php cron status
@@ -254,9 +296,10 @@ jobs:
       - name: Production compose refuses to render without secrets
         run: |
           set -e
-          # The production compose requires every secret via ${VAR:?}; without
-          # them `config` must fail rather than silently render weak defaults.
-          if docker compose -f docker-compose.production.yml config >/dev/null 2>&1; then
+          # The production compose requires every secret via ${VAR:?}; with no
+          # environment at all (--env-file /dev/null keeps the dev .env out of
+          # interpolation) `config` must fail rather than render weak defaults.
+          if docker compose --env-file /dev/null -f docker-compose.production.yml config >/dev/null 2>&1; then
             echo "production compose rendered without secrets — expected to refuse" >&2
             exit 1
           fi

@@ -26,10 +26,19 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
+# Dependency layer (cached until composer.json/lock change). --no-scripts
+# because the post-install hook (tools/link_system.php) is not in this layer;
+# the system/ link is created explicitly below. A failed install must fail the
+# build — never ship an image with half a vendor tree.
 COPY composer.json composer.lock* ./
-RUN composer install --no-dev --no-interaction --prefer-dist --no-progress || true
+RUN composer install --no-dev --no-interaction --prefer-dist --no-progress --no-scripts
 
 COPY . .
+
+# CodeIgniter 3.1.13 ships system/ inside the composer package; the front
+# controller expects it at the app root (it is gitignored, so neither the
+# build context nor a fresh clone carries it).
+RUN ln -sfn vendor/codeigniter/framework/system system
 
 # storage/ is gitignored, so the build context may not carry these. CI3 drops
 # log lines silently when storage/logs is absent, and sessions break without

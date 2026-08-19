@@ -1,0 +1,22 @@
+# Never bake these into the image.
+.git
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Host-side artifacts — the image installs/creates its own.
+vendor
+system
+node_modules
+
+# Runtime state.
+storage/logs
+storage/cache
+application/cache
+assets/uploads
+
+# Not needed at runtime.
+.github
+docs
+tests

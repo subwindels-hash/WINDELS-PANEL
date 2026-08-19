@@ -267,8 +267,8 @@ class TransactionEngine {
 
             $wants_refund = !array_key_exists('refund', $opts) || $opts['refund'];
             $refund_amount = null;
+            $already = $this->money(isset($tx->refunded_amount) ? $tx->refunded_amount : '0');
             if ($wants_refund && in_array($new_status, self::$refunding_states, true)) {
-                $already = $this->money(isset($tx->refunded_amount) ? $tx->refunded_amount : '0');
                 $charged = $this->money($tx->amount);
                 $target  = isset($opts['amount']) ? $this->money($opts['amount']) : $charged;
                 // Never refund more than was charged, in total.

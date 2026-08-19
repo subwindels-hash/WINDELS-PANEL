@@ -58,6 +58,7 @@ class AuthService {
         }
 
         $referred_by = null;
+        $ref = null;
         if (!empty($data['referred_by_code'])) {
             $ref = $this->ci->User_model->find_by_referral_code(trim($data['referred_by_code']));
             if ($ref && $ref->status === 'ACTIVE') {

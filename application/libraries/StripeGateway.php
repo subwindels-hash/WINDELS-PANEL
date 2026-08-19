@@ -6,8 +6,8 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *
  * Implemented: initiate() (redirect / checkout payload), verify_webhook()
  * (Stripe-Signature HMAC-SHA256), parse_event() (normalized). Requires
- * STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET env/config. CODE COMPLETE —
- * INFRASTRUCTURE VALIDATION PENDING.
+ * STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET env/config. SCAFFOLD — NOT wired into PaymentService and UNTESTED against the live API.
+ * Do not enable in production until integrated and verified with real sandbox credentials.
  */
 class StripeGateway implements GatewayInterface {
     private $method;
