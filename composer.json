@@ -29,6 +29,12 @@
     ]
   },
   "scripts": {
+    "post-install-cmd": [
+      "@php tools/link_system.php"
+    ],
+    "post-update-cmd": [
+      "@php tools/link_system.php"
+    ],
     "test": "phpunit",
     "test:offline": "php tools/phpunit_lite.php",
     "analyse": "phpstan analyse --no-progress",

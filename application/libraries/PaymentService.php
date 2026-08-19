@@ -31,6 +31,16 @@ class PaymentService {
             'Wallet_model','Setting_model',
         ));
         $this->ci->load->library(array('LedgerService','EncryptionService'));
+        // Gateway classes are plain (unnamespaced) library files: CI3 does not
+        // autoload them and composer's PSR-4 prefix does not cover them, so
+        // they must be required explicitly — `new ManualGateway` in deposit()/
+        // record_webhook() fataled ("Class not found") on every live deposit.
+        if (!interface_exists('GatewayInterface', false)) {
+            require_once APPPATH.'libraries/GatewayInterface.php';
+        }
+        if (!class_exists('ManualGateway', false)) {
+            require_once APPPATH.'libraries/ManualGateway.php';
+        }
     }
 
     /**

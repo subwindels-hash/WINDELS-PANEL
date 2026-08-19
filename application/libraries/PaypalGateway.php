@@ -6,7 +6,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *
  * Implemented: initiate(), verify_webhook() (signature via transmission id + cert
  * simplified to HMAC validation with secret), parse_event().
- * CODE COMPLETE — INFRASTRUCTURE VALIDATION PENDING.
+ * SCAFFOLD — NOT wired into PaymentService and UNTESTED against the live API.
  */
 class PaypalGateway implements GatewayInterface {
     private $method;

@@ -5,7 +5,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * RazorpayGateway — adapter for Razorpay (orders / payments / webhook HMAC-SHA256).
  *
  * Implemented: initiate(), verify_webhook(), parse_event().
- * CODE COMPLETE — INFRASTRUCTURE VALIDATION PENDING.
+ * SCAFFOLD — NOT wired into PaymentService and UNTESTED against the live API.
  */
 class RazorpayGateway implements GatewayInterface {
     private $method;

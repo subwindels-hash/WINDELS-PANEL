@@ -5,7 +5,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * CoinpaymentsGateway — adapter for CoinPayments (IPN / payment gateway).
  *
  * Implemented: initiate(), verify_webhook() (IPN HMAC via merchant_id + secret),
- * parse_event(). CODE COMPLETE — INFRASTRUCTURE VALIDATION PENDING.
+ * parse_event(). SCAFFOLD — NOT wired into PaymentService and UNTESTED against the live API.
  */
 class CoinpaymentsGateway implements GatewayInterface {
     private $method;

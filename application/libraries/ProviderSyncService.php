@@ -5,6 +5,10 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 // registry, including from static context, so the class must be present even
 // when CI has not loaded the library yet.
 require_once __DIR__.'/Provider_manager.php';
+// Instantiated directly in adapter(); plain library classes are not
+// autoloaded by CI3, so an unrequired `new` fatals at the first real sync.
+require_once __DIR__.'/MockProviderAdapter.php';
+require_once __DIR__.'/StandardSmmAdapter.php';
 
 /**
  * ProviderSyncService — adapter factory, connection test, service sync and
