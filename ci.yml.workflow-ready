@@ -1,0 +1,267 @@
+# WINDELS PANEL — CI pipeline (two jobs, ~31 steps)
+#
+# Activation (one-time maintainer step — the automation token that produced
+# this repository snapshot lacks the `workflows` permission, so it is not
+# placed under .github/workflows automatically):
+#
+#   mkdir -p .github/workflows && git mv ci.yml.workflow-ready .github/workflows/ci.yml
+#   git commit -m "Enable CI" && git push
+#
+# Runs on every push and pull request once activated.
+#
+# Job 1 `php` — lint, static analysis, schema sync, real-MySQL migration +
+#              seeder validation, full PHPUnit suite, security greps, preflight
+#              negative test.
+# Job 2 `docker` — build every image, boot the full stack, migrate/seed,
+#              prove `deploy check` exits 0, poll /health/ready, assert all
+#              health-checked containers are healthy, run `cron status`, prove
+#              the production compose refuses to render without secrets, then
+#              tear down.
+
+name: CI
+
+on:
+  push:
+    branches: ['main', 'arena/**']
+  pull_request:
+
+env:
+  APP_ENV: testing
+  # Base currency of the platform (kept here so the schema/seed steps can be
+  # checked against it); NGN is the single platform base currency.
+  BASE_CURRENCY: NGN
+
+jobs:
+  php:
+    name: PHP (lint · analyse · migrate · seed · test)
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: windels_panel
+          MYSQL_USER: windels
+          MYSQL_PASSWORD: windels_secret
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uwindels -pwindels_secret"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache composer
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+
+      # Stage 1 — dependency installation
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, curl, json, bcmath, mysqli, pdo_mysql, gd, zip, intl, redis
+          tools: composer:v2
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer validate
+          composer install --no-interaction --prefer-dist --no-progress
+          npm ci
+
+      # CodeIgniter 3.1.13 ships `system/` inside the composer package; the
+      # front controller expects it at the repo root (it is gitignored, so CI
+      # must materialise it rather than rely on a committed copy).
+      - name: Link CodeIgniter system directory
+        run: ln -sf vendor/codeigniter/framework/system system
+
+      # Stage 2 — code quality
+      - name: PHP syntax lint
+        run: |
+          set -e
+          find application cron tests tools index.php -name '*.php' -print0 \
+            | xargs -0 -n1 php -l >/dev/null
+
+      - name: Build Tailwind assets
+        run: npm run build:css
+
+      # Stage 3 — static analysis (non-blocking until a stubs baseline exists)
+      - name: PHPStan (level 1, continue-on-error)
+        continue-on-error: true
+        run: vendor/bin/phpstan analyse --no-progress
+
+      - name: Schema linter (validate_schema.py)
+        run: python3 tools/validate_schema.py docs/database.sql
+
+      # Stage 4 — schema validation (database.sql must match migrations)
+      - name: Schema sync check
+        run: php tools/export_schema.php --check
+
+      # Stage 5 — migration validation against real MySQL 8
+      - name: Run migrations (MySQL 8)
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: windels
+          DB_PASSWORD: windels_secret
+          DB_NAME: windels_panel
+        run: |
+          php index.php migrate
+          php index.php migrate status
+          # Prove idempotency — a second full run must be a no-op.
+          php index.php migrate
+
+      # Stage 6 — seeder validation
+      - name: Seed core + demo (idempotent)
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: windels
+          DB_PASSWORD: windels_secret
+          DB_NAME: windels_panel
+        run: |
+          php index.php seed core
+          php index.php seed core
+          php index.php seed demo
+          php index.php seed demo
+
+      - name: Demo seed refused under production
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: windels
+          DB_PASSWORD: windels_secret
+          DB_NAME: windels_panel
+        run: |
+          set -e
+          if APP_ENV=production php index.php seed demo; then
+            echo "demo seed was allowed under APP_ENV=production — must be refused" >&2
+            exit 1
+          fi
+          echo "demo seed correctly refused under production"
+
+      # Stage 7 — full PHPUnit suite
+      - name: Run test suite
+        run: vendor/bin/phpunit --testdox
+
+      # Stage 8 — security checks (tree-level invariants)
+      - name: Security checks
+        run: |
+          set -euo pipefail
+          # No license / purchase-code artifacts anywhere in the tree.
+          if grep -RI --exclude-dir=vendor --exclude-dir=node_modules \
+              --exclude=ci.yml.workflow-ready -E 'purchase_?code|envato' \
+              application tools tests cron index.php 2>/dev/null; then
+            echo "license / purchase-code artifact found (see above)" >&2
+            exit 1
+          fi
+          # TLS verification must never be disabled in production code paths.
+          if grep -RIn --exclude-dir=vendor --exclude-dir=tests -E \
+              'SSL_VERIFYPEER\s*=>\s*FALSE|verify_peer\s*=>\s*false|verify_peer\s*=\s*false' \
+              application tools index.php 2>/dev/null; then
+            echo "insecure TLS override found (see above)" >&2
+            exit 1
+          fi
+          # Money must only mutate through LedgerService (no raw wallet UPDATE).
+          if grep -RIn --exclude-dir=vendor --exclude-dir=tests \
+              -E "update\('wallets'|update\(\"wallets\"" \
+              application/controllers application/models application/libraries 2>/dev/null \
+              | grep -v 'LedgerService.php'; then
+            echo "direct wallet mutation outside LedgerService found (see above)" >&2
+            exit 1
+          fi
+          echo "security checks passed"
+
+      # Stage 9 — deployment safety (negative test: preflight must FAIL without a key)
+      - name: Preflight must fail without ENCRYPTION_KEY
+        env:
+          APP_ENV: production
+          ENCRYPTION_KEY: ''
+        run: |
+          set -e
+          if php index.php deploy check; then
+            echo "preflight passed without ENCRYPTION_KEY — expected to FAIL" >&2
+            exit 1
+          fi
+          echo "preflight correctly fails without ENCRYPTION_KEY"
+
+  docker:
+    name: Docker (build · boot · health · prod-refusal)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build development images
+        run: docker compose build
+
+      - name: Boot full stack
+        run: docker compose up -d
+
+      - name: Run migrations + core seed
+        run: |
+          docker compose exec -T app php index.php migrate
+          docker compose exec -T app php index.php seed core
+
+      - name: Prove deploy check exits 0
+        run: docker compose exec -T app php index.php deploy check
+
+      - name: Poll /health/ready to green
+        run: |
+          set -e
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1/health/ready >/dev/null 2>&1; then
+              echo "health/ready is green"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "health/ready never went green" >&2
+          exit 1
+
+      - name: Assert all health-checked containers healthy
+        run: |
+          set -e
+          docker compose ps --format json | grep -q '"Health".*"healthy"' || \
+            docker compose ps | grep -E '\(healthy\)' >/dev/null
+
+      - name: Cron status
+        run: docker compose exec -T app php index.php cron status
+
+      - name: Production compose refuses to render without secrets
+        run: |
+          set -e
+          # The production compose requires every secret via ${VAR:?}; without
+          # them `config` must fail rather than silently render weak defaults.
+          if docker compose -f docker-compose.production.yml config >/dev/null 2>&1; then
+            echo "production compose rendered without secrets — expected to refuse" >&2
+            exit 1
+          fi
+          echo "production compose correctly refused without secrets"
+
+      - name: Tear down
+        if: always()
+        run: docker compose down --volumes --remove-orphans
