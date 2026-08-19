@@ -27,7 +27,8 @@ class ProductionReadinessTest extends TestCase
     protected function tearDown(): void
     {
         foreach (array('ENCRYPTION_KEY', 'HTTP_ALLOW_PRIVATE_HOSTS', 'APP_DEBUG',
-                       'MAIL_LOG', 'DEMO_MODE', 'APP_URL', 'DB_PASSWORD') as $k) {
+                       'MAIL_LOG', 'DEMO_MODE', 'APP_URL', 'DB_PASSWORD',
+                       'APP_KEY', 'CI_ENV', 'DB_NAME', 'DB_USER') as $k) {
             putenv($k);
         }
     }
@@ -218,6 +219,67 @@ class ProductionReadinessTest extends TestCase
         $this->assertSame(Preflight::WARN, $this->named($report, 'demo_mode')['status']);
     }
 
+    /* ------------ preflight: the checks added with the 30.x hardening ---- */
+
+    public function testPreflightFailsProductionWhenTheDatabaseDoesNotAnswer()
+    {
+        // No DB handle at all: a production release must refuse to fly.
+        $this->assertSame(Preflight::FAIL,
+            $this->named($this->preflight()->run('production'), 'db_connectivity')['status']);
+        // A handle that errors is the same story.
+        $pre = $this->preflight_with(array(
+            'query' => function () { throw new Exception('gone away'); },
+        ));
+        $this->assertSame(Preflight::FAIL,
+            $this->named($pre->run('production'), 'db_connectivity')['status']);
+        // One that answers SELECT 1 is all we ask.
+        $fine = $this->preflight_with(array('query' => function () { return true; }));
+        $check = $this->named($fine->run('production'), 'db_connectivity');
+        $this->assertSame(Preflight::OK, $check['status']);
+        $this->assertSame('SELECT 1 answered', $check['detail']);
+    }
+
+    public function testPreflightFailsProductionOnInsecureSessionCookies()
+    {
+        $pre = $this->preflight_with(array(), array(
+            'cookie_httponly' => false, 'cookie_secure' => false, 'cookie_samesite' => 'None',
+        ));
+        $check = $this->named($pre->run('production'), 'secure_cookies');
+        $this->assertSame(Preflight::FAIL, $check['status']);
+        $this->assertStringContainsString('cookie_httponly', $check['detail']);
+
+        $good = $this->preflight_with(array(), array(
+            'cookie_httponly' => true, 'cookie_secure' => true, 'cookie_samesite' => 'Lax',
+        ));
+        $this->assertSame(Preflight::OK,
+            $this->named($good->run('production'), 'secure_cookies')['status']);
+    }
+
+    public function testPreflightRequiresProductionSecrets()
+    {
+        putenv('APP_KEY'); putenv('ENCRYPTION_KEY');
+        putenv('DB_NAME'); putenv('DB_USER');
+        $check = $this->named($this->preflight()->run('production'), 'required_secrets');
+        $this->assertSame(Preflight::FAIL, $check['status']);
+        $this->assertStringContainsString('APP_KEY', $check['detail']);
+        $this->assertStringContainsString('DB_NAME', $check['detail']);
+
+        putenv('APP_KEY=A'.str_repeat('b', 31));
+        putenv('DB_NAME=windels'); putenv('DB_USER=windels');
+        $this->assertSame(Preflight::OK,
+            $this->named($this->preflight()->run('production'), 'required_secrets')['status']);
+    }
+
+    public function testPreflightFlagsEnvironmentDisagreement()
+    {
+        putenv('CI_ENV=production'); putenv('APP_ENV=development');
+        $this->assertSame(Preflight::WARN,
+            $this->named($this->preflight()->run('production'), 'environment_consistency')['status']);
+        putenv('CI_ENV=production'); putenv('APP_ENV=production');
+        $this->assertSame(Preflight::OK,
+            $this->named($this->preflight()->run('production'), 'environment_consistency')['status']);
+    }
+
     public function testPreflightChecksTheRuntimeDirectories()
     {
         $report = $this->preflight()->run('production');
@@ -341,6 +403,47 @@ class ProductionReadinessTest extends TestCase
     private function preflight()
     {
         return new Preflight(array('root' => self::$root));
+    }
+
+    /**
+     * A preflight wired to a fake CI carrying only the members a check uses:
+     * $db behaviours (method name => closure) and config items (key => value).
+     */
+    private function preflight_with(array $db = array(), array $config = array())
+    {
+        $pre = new Preflight(array('root' => self::$root));
+        $fake = new class($db, $config) {
+            public $db, $config;
+            public function __construct(array $db, array $config) {
+                $behaviours = $db;
+                $this->db = new class($behaviours) {
+                    private $behaviours;
+                    public function __construct(array $behaviours) { $this->behaviours = $behaviours; }
+                    public function query() {
+                        $a = func_get_args();
+                        return call_user_func_array($this->behaviours['query'], $a);
+                    }
+                    // Schema-version check touchpoints: pretend the migrations
+                    // table does not exist yet (a WARN/FAIL outcome either way),
+                    // so preflight runs independent of a real database.
+                    public function table_exists($table) { return false; }
+                    public function get($table) {
+                        return new class { public function row() { return null; } };
+                    }
+                };
+                $items = $config;
+                $this->config = new class($items) {
+                    private $items;
+                    public function __construct(array $items) { $this->items = $items; }
+                    public function item($key) { return $this->items[$key] ?? null; }
+                };
+            }
+        };
+        // Preflight caches get_instance() in a private property; swap it.
+        $ref = new ReflectionProperty(Preflight::class, 'ci');
+        $ref->setAccessible(true);
+        $ref->setValue($pre, $fake);
+        return $pre;
     }
 
     private function named(array $report, $name)

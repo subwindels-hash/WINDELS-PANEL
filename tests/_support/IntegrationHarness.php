@@ -151,6 +151,30 @@ class IntegrationHarness
      * The smallest coherent world: a price group, a role with permissions, a
      * currency, a provider, a category and one service.
      */
+
+    /**
+     * The managed DIGITAL_GOODS category, once per harness. Seed helpers
+     * compose (seed_minimal + seed_giftcards), so each one ASKS for the
+     * category instead of inserting it — otherwise the second seed trips the
+     * UNIQUE(public_id) constraint, which is the correct behaviour for FakeDb
+     * to enforce.
+     */
+    private $category_seeded = false;
+
+    private function ensure_marketplace_category($now)
+    {
+        if ($this->category_seeded || !$this->db->table_exists('marketplace_categories')) {
+            return;
+        }
+        $this->db->insert('marketplace_categories', array(
+            'public_id' => 'MPC00000000000000000000001',
+            'name' => 'Digital goods', 'slug' => 'DIGITAL_GOODS',
+            'status' => 'ACTIVE', 'sort_order' => 0,
+            'created_at' => $now, 'updated_at' => $now,
+        ));
+        $this->category_seeded = true;
+    }
+
     public function seed_minimal()
     {
         $now = gmdate('Y-m-d H:i:s');
@@ -166,6 +190,7 @@ class IntegrationHarness
             'exchange_rate' => '1.00000000', 'is_base' => 1, 'is_active' => 1,
             'updated_at' => $now,
         ));
+        $this->ensure_marketplace_category($now);
         $this->db->insert('providers', array(
             'public_id' => 'PROV0000000000000000000001', 'name' => 'Acme SMM',
             'api_url' => 'https://api.acme.test/v2', 'api_key_encrypted' => 'enc:test',
@@ -201,6 +226,7 @@ class IntegrationHarness
     {
         $now = gmdate('Y-m-d H:i:s');
 
+        $this->ensure_marketplace_category($now);
         $this->db->insert('providers', array(
             'public_id' => 'PROV0000000000000000000002', 'name' => 'Acme VTU',
             'api_url' => 'https://api.vtu.test', 'api_key_encrypted' => 'enc:test',
@@ -263,6 +289,7 @@ class IntegrationHarness
     {
         $now = gmdate('Y-m-d H:i:s');
 
+        $this->ensure_marketplace_category($now);
         $this->db->insert('providers', array(
             'public_id' => 'PROV0000000000000000000003', 'name' => 'Acme Numbers',
             'api_url' => 'https://api.numbers.test', 'api_key_encrypted' => 'enc:test',
@@ -337,6 +364,7 @@ class IntegrationHarness
     {
         $now = gmdate('Y-m-d H:i:s');
 
+        $this->ensure_marketplace_category($now);
         $this->db->insert('providers', array(
             'public_id' => 'PROV0000000000000000000004', 'name' => 'Acme Identity',
             'api_url' => 'https://api.identity.test', 'api_key_encrypted' => 'enc:test',
@@ -376,6 +404,7 @@ class IntegrationHarness
     {
         $now = gmdate('Y-m-d H:i:s');
 
+        $this->ensure_marketplace_category($now);
         $this->db->insert('providers', array(
             'public_id' => 'PROV0000000000000000000005', 'name' => 'Acme Gift Cards',
             'api_url' => 'https://api.giftcards.test', 'api_key_encrypted' => 'enc:test',

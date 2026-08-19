@@ -120,7 +120,16 @@ class Auth extends MY_Controller {
         redirect($this->default_landing());
     }
 
+    /**
+     * Logout. The session belongs to server-side state, so it must never be
+     * mutated by a GET request a third party can prime (logout CSRF). POST
+     * only; CI's csrf_protection validates the hidden token on every POST.
+     * GET requests are redirected to the dashboard instead of logged out.
+     */
     public function logout() {
+        if ($this->input->method(true) !== 'POST') {
+            redirect($this->auth->check() ? $this->default_landing() : 'login');
+        }
         $this->auth->logout();
         $this->session->set_flashdata('success', 'You have been logged out.');
         redirect('login');

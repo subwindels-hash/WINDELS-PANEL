@@ -43,6 +43,19 @@ class Marketplace_listing_model extends MY_Model {
         return (int)$this->db->count_all_results();
     }
 
+    /** Featured shelf picks for the storefront header. */
+    public function featured($limit = 6) {
+        return $this->db
+            ->select('marketplace_listings.*, marketplace_sellers.display_name AS seller_name', false)
+            ->from($this->table)
+            ->join('marketplace_sellers', 'marketplace_sellers.id = marketplace_listings.seller_id', 'inner')
+            ->where('marketplace_listings.status', 'ACTIVE')
+            ->where('marketplace_listings.is_featured', 1)
+            ->where('marketplace_sellers.status', 'APPROVED')
+            ->order_by('marketplace_listings.created_at', 'DESC')
+            ->limit((int)$limit)->get()->result();
+    }
+
     private function catalogue_filters(array $filters) {
         $this->db->from($this->table)
             ->where('marketplace_listings.status', 'ACTIVE')

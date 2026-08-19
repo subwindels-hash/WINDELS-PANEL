@@ -105,15 +105,10 @@ $route['dashboard/giftcards/buy'] = 'dashboard/giftcards/buy';
 $route['dashboard/giftcards/(:any)/reveal/(:any)'] = 'dashboard/giftcards/reveal/$1/$2';
 $route['dashboard/giftcards/(:any)'] = 'dashboard/giftcards/detail/$1';
 
-// Marketplace: named seller/order actions must precede the listing catch-all.
+// Marketplace: customers browse and buy only. Selling is staff-side
+// (admin/marketplace). Named order actions precede the listing catch-all.
 $route['dashboard/marketplace'] = 'dashboard/marketplace/index';
-$route['dashboard/marketplace/seller'] = 'dashboard/marketplace/seller';
-$route['dashboard/marketplace/seller/apply'] = 'dashboard/marketplace/apply';
-$route['dashboard/marketplace/seller/listings'] = 'dashboard/marketplace/save_listing';
-$route['dashboard/marketplace/seller/listings/(:any)/status'] = 'dashboard/marketplace/listing_status/$1';
-$route['dashboard/marketplace/seller/listings/(:any)'] = 'dashboard/marketplace/save_listing/$1';
 $route['dashboard/marketplace/orders'] = 'dashboard/marketplace/orders';
-$route['dashboard/marketplace/orders/(:any)/deliver'] = 'dashboard/marketplace/deliver/$1';
 $route['dashboard/marketplace/orders/(:any)/reveal'] = 'dashboard/marketplace/reveal/$1';
 $route['dashboard/marketplace/orders/(:any)/accept'] = 'dashboard/marketplace/accept/$1';
 $route['dashboard/marketplace/orders/(:any)/dispute'] = 'dashboard/marketplace/dispute/$1';
@@ -129,10 +124,7 @@ $route['dashboard/wallet/deposit'] = 'dashboard/wallet/deposit';
 $route['dashboard/wallet/deposits'] = 'dashboard/wallet/deposits';
 $route['dashboard/wallet/deposits/(:any)'] = 'dashboard/wallet/deposits/$1';
 $route['dashboard/transactions'] = 'dashboard/wallet/transactions';
-$route['dashboard/withdrawals'] = 'dashboard/withdrawals/index';
-$route['dashboard/withdrawals/create'] = 'dashboard/withdrawals/create';
-$route['dashboard/withdrawals/(:any)/cancel'] = 'dashboard/withdrawals/cancel/$1';
-$route['dashboard/withdrawals/(:any)'] = 'dashboard/withdrawals/detail/$1';
+
 $route['dashboard/tickets'] = 'dashboard/tickets/index';
 $route['dashboard/tickets/create'] = 'dashboard/tickets/create';
 $route['dashboard/tickets/(:any)/reply'] = 'dashboard/tickets/reply/$1';
@@ -180,9 +172,22 @@ $route['admin/giftcards/(:any)/refund'] = 'admin/giftcards/refund/$1';
 $route['admin/giftcards/(:any)/reveal/(:any)'] = 'admin/giftcards/reveal/$1/$2';
 $route['admin/giftcards/(:any)'] = 'admin/giftcards/detail/$1';
 
+// Marketplace: the platform is the only seller. Staff post and manage listings
+// here, fulfil orders, resolve disputes and moderate; customers can only buy.
+// Static/named actions precede the (:any) wildcards.
 $route['admin/marketplace'] = 'admin/marketplace/index';
-$route['admin/marketplace/sellers/(:any)/moderate'] = 'admin/marketplace/moderate_seller/$1';
+$route['admin/marketplace/categories'] = 'admin/marketplace/categories';
+$route['admin/marketplace/categories/save'] = 'admin/marketplace/save_category';
+$route['admin/marketplace/categories/(:any)/save'] = 'admin/marketplace/save_category/$1';
+$route['admin/marketplace/categories/(:any)/status'] = 'admin/marketplace/category_status/$1';
+$route['admin/marketplace/listings/new'] = 'admin/marketplace/listing_form';
+$route['admin/marketplace/listings/save'] = 'admin/marketplace/save_listing';
+$route['admin/marketplace/listings/(:any)/edit'] = 'admin/marketplace/listing_form/$1';
+$route['admin/marketplace/listings/(:any)/save'] = 'admin/marketplace/save_listing/$1';
+$route['admin/marketplace/listings/(:any)/status'] = 'admin/marketplace/listing_status/$1';
 $route['admin/marketplace/listings/(:any)/moderate'] = 'admin/marketplace/moderate_listing/$1';
+$route['admin/marketplace/sellers/(:any)/moderate'] = 'admin/marketplace/moderate_seller/$1';
+$route['admin/marketplace/orders/(:any)/deliver'] = 'admin/marketplace/deliver/$1';
 $route['admin/marketplace/orders/(:any)/reveal'] = 'admin/marketplace/reveal/$1';
 $route['admin/marketplace/orders/(:any)/resolve'] = 'admin/marketplace/resolve/$1';
 $route['admin/marketplace/orders/(:any)'] = 'admin/marketplace/order/$1';
@@ -232,12 +237,6 @@ $route['admin/payments'] = 'admin/payments/index';
 $route['admin/payments/(:any)/approve'] = 'admin/payments/approve/$1';
 $route['admin/payments/(:any)/reject'] = 'admin/payments/reject/$1';
 $route['admin/payments/(:any)'] = 'admin/payments/detail/$1';
-$route['admin/withdrawals'] = 'admin/withdrawals/index';
-$route['admin/withdrawals/(:any)/approve'] = 'admin/withdrawals/approve/$1';
-$route['admin/withdrawals/(:any)/reject'] = 'admin/withdrawals/reject/$1';
-$route['admin/withdrawals/(:any)/paid'] = 'admin/withdrawals/paid/$1';
-$route['admin/withdrawals/(:any)/reveal'] = 'admin/withdrawals/reveal/$1';
-$route['admin/withdrawals/(:any)'] = 'admin/withdrawals/detail/$1';
 // Order operations: four queues over the existing engines, one controller.
 // Action routes must precede each catch-all.
 $route['admin/refills'] = 'admin/operations/refills';

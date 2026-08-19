@@ -17,5 +17,8 @@
 <?=form_close()?>
 
 <p class="mt-6 text-center text-sm text-slate-500">
-  <a href="<?=site_url('logout')?>" class="text-indigo-600 hover:text-indigo-700">Cancel and log out</a>
+  <form method="post" action="<?=site_url('logout')?>" class="inline-block m-0">
+    <input type="hidden" name="<?=$this->security->get_csrf_token_name()?>" value="<?=$this->security->get_csrf_hash()?>">
+    <button type="submit" class="text-indigo-600 hover:text-indigo-700 bg-transparent border-0 p-0 cursor-pointer">Cancel and log out</button>
+  </form>
 </p>

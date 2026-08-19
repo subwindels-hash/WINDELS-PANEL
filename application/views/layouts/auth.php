@@ -16,7 +16,10 @@
     <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
       <a href="<?=site_url()?>" class="font-bold text-lg tracking-tight">WINDELS PANEL</a>
       <?php if (!empty($current_user)): ?>
-        <a href="<?=site_url('logout')?>" class="text-sm text-slate-600 hover:text-slate-900">Log out</a>
+        <form method="post" action="<?=site_url('logout')?>" class="m-0">
+          <input type="hidden" name="<?=$this->security->get_csrf_token_name()?>" value="<?=$this->security->get_csrf_hash()?>">
+          <button type="submit" class="text-sm text-slate-600 hover:text-slate-900 bg-transparent border-0 p-0 cursor-pointer">Log out</button>
+        </form>
       <?php else: ?>
         <a href="<?=site_url()?>" class="text-sm text-slate-600 hover:text-slate-900">← Back to site</a>
       <?php endif; ?>

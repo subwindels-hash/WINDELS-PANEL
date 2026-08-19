@@ -154,6 +154,12 @@ namespace {
 
     $root = dirname(__DIR__);
     $filter = isset($argv[1]) ? $argv[1] : null;
+    // Optional Class::methodSubset[,otherSubset] filtering — handy when a
+    // single test or a small group needs to run in isolation.
+    $class_filter = $filter; $method_filter = null;
+    if ($filter !== null && strpos($filter, '::') !== false) {
+        list($class_filter, $method_filter) = explode('::', $filter, 2);
+    }
 
     /** PHPUnit's setUp()/tearDown() are protected; call them the way PHPUnit does. */
     function invoke_protected($instance, $method) {
@@ -177,7 +183,7 @@ namespace {
 
     foreach ($classes as $class) {
         if (!is_subclass_of($class, TestCase::class)) continue;
-        if ($filter !== null && stripos($class, $filter) === false) continue;
+        if ($class_filter !== null && stripos($class, $class_filter) === false) continue;
 
         echo $class."\n";
         try {
@@ -193,6 +199,13 @@ namespace {
         sort($methods);
         foreach ($methods as $method) {
             if (strpos($method, 'test') !== 0) continue;
+            if ($method_filter !== null) {
+                $hit = false;
+                foreach (explode(',', $method_filter) as $mf) {
+                    if ($mf !== '' && stripos($method, trim($mf)) !== false) { $hit = true; break; }
+                }
+                if (!$hit) continue;
+            }
             $instance = new $class();
             try {
                 invoke_protected($instance, 'setUp');

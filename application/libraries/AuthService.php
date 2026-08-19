@@ -219,7 +219,12 @@ class AuthService {
         if (!$method) {
             return array('ok' => false, 'error' => 'MFA_NOT_CONFIGURED');
         }
-        $secret = $this->ci->encryptionservice->decrypt($method->secret);
+        // Authenticated decryption only: a corrupted/tampered secret must
+        // fail closed, never silently degrade into being used as a TOTP seed.
+        $secret = $this->ci->encryptionservice->open($method->secret);
+        if ($secret === null) {
+            return array('ok' => false, 'error' => 'MFA_SECRET_UNREADABLE');
+        }
 
         if (Totp::verify($secret, $code)) {
             $this->complete_login($user, $ip, $user_agent);
@@ -506,7 +511,12 @@ class AuthService {
         if (!$method) {
             return array('ok' => false, 'error' => 'MFA_NOT_STARTED');
         }
-        $secret = $this->ci->encryptionservice->decrypt($method->secret);
+        // Authenticated decryption only (see verify_mfa): corrupt enrolment
+        // secrets must fail closed instead of becoming the TOTP seed.
+        $secret = $this->ci->encryptionservice->open($method->secret);
+        if ($secret === null) {
+            return array('ok' => false, 'error' => 'MFA_SECRET_UNREADABLE');
+        }
         if (!Totp::verify($secret, $code)) {
             return array('ok' => false, 'error' => 'MFA_INVALID_CODE');
         }
@@ -523,7 +533,11 @@ class AuthService {
             return array('ok' => false, 'error' => 'MFA_NOT_ENABLED');
         }
         if ($code !== null) {
-            $secret = $this->ci->encryptionservice->decrypt($method->secret);
+            // Authenticated decryption only (see verify_mfa).
+            $secret = $this->ci->encryptionservice->open($method->secret);
+            if ($secret === null) {
+                return array('ok' => false, 'error' => 'MFA_SECRET_UNREADABLE');
+            }
             if (!Totp::verify($secret, $code) && !is_array(Totp::consume_recovery_code($method->recovery_codes, $code))) {
                 return array('ok' => false, 'error' => 'MFA_INVALID_CODE');
             }

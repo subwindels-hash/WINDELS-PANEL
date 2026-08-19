@@ -25,6 +25,7 @@ class Core_seeder extends Seeder {
         $this->seed_number_catalogue();
         $this->seed_identity_catalogue();
         $this->seed_giftcard_catalogue();
+        $this->seed_marketplace_categories();
         $this->out('core seed complete');
     }
 
@@ -48,14 +49,13 @@ class Core_seeder extends Seeder {
             // so reading one is closer to opening the till than to reading a
             // record (§23).
             'giftcards'  => array('giftcards.view','giftcards.manage','giftcards.refund','giftcards.reveal'),
-            // Fulfilment reveal and escrow resolution are kept distinct from
-            // ordinary queue access and catalogue moderation.
-            'marketplace'=> array('marketplace.view','marketplace.moderate_sellers',
+            // The platform is the only seller: marketplace.manage covers
+            // posting, pricing, featuring, categorising and fulfilling the
+            // platform's own listings. Fulfilment reveal and escrow
+            // resolution stay separate, sharper grants.
+            'marketplace'=> array('marketplace.view','marketplace.manage','marketplace.moderate_sellers',
                                   'marketplace.moderate_listings','marketplace.resolve','marketplace.reveal'),
             'payments'   => array('payments.view','payments.manage','wallets.adjust'),
-            // Processing and opening payout instructions are independent from
-            // viewing the masked withdrawal queue.
-            'withdrawals'=> array('withdrawals.view','withdrawals.process','withdrawals.reveal'),
             'support'    => array('tickets.view','tickets.reply','tickets.manage'),
             'content'    => array('blog.manage','faq.manage','announcements.manage','media.manage'),
             'affiliates' => array('affiliates.view','affiliates.manage'),
@@ -78,10 +78,9 @@ class Core_seeder extends Seeder {
                 'numbers.view','numbers.manage','numbers.refund',
                 'identity.view','identity.manage','identity.refund','identity.reveal',
                 'giftcards.view','giftcards.manage','giftcards.refund','giftcards.reveal',
-                'marketplace.view','marketplace.moderate_sellers','marketplace.moderate_listings',
+                'marketplace.view','marketplace.manage','marketplace.moderate_sellers','marketplace.moderate_listings',
                 'marketplace.resolve','marketplace.reveal',
                 'payments.view','payments.manage','wallets.adjust',
-                'withdrawals.view','withdrawals.process','withdrawals.reveal',
                 'tickets.view','tickets.reply','tickets.manage',
                 'blog.manage','faq.manage','announcements.manage','media.manage',
                 'affiliates.view','affiliates.manage',
@@ -103,7 +102,7 @@ class Core_seeder extends Seeder {
                 // Staff may work the Marketplace catalogue queue, but cannot
                 // reveal fulfilment, approve seller identities, or move escrow.
                 'marketplace.view','marketplace.moderate_listings',
-                'payments.view','withdrawals.view','tickets.view','tickets.reply','affiliates.view',
+                'payments.view','tickets.view','tickets.reply','affiliates.view',
             ),
             'CUSTOMER'    => array(),
         );
@@ -411,13 +410,6 @@ class Core_seeder extends Seeder {
             // orders
             array('min_deposit','500.00000000','payments',1),
             array('max_deposit','5000000.00000000','payments',1),
-            // Identity verification defaults off: new installations may not
-            // have a KYC provider yet. Operators can enable the policy.
-            array('withdrawal_min_amount','1000.00000000','withdrawals',0),
-            array('withdrawal_max_amount','1000000.00000000','withdrawals',0),
-            array('withdrawal_fee_fixed','0.00000000','withdrawals',0),
-            array('withdrawal_fee_percent','1.0000','withdrawals',0),
-            array('withdrawal_require_verified_identity',FALSE,'withdrawals',0),
             array('order_auto_submit',TRUE,'orders',0),
             array('partial_refund_enabled',TRUE,'orders',0),
             // security
@@ -442,7 +434,6 @@ class Core_seeder extends Seeder {
             // so later policy edits never rewrite an existing escrow split.
             array('marketplace_fee_percent','10.00000000','marketplace',0),
             array('marketplace_auto_release_hours',72,'marketplace',0),
-            array('marketplace_require_verified_identity',TRUE,'marketplace',0),
         );
     }
 
@@ -453,6 +444,27 @@ class Core_seeder extends Seeder {
                 'setting_value' => json_encode(array('value'=>$value)),
                 'category'      => $category,
                 'is_public'     => $public,
+            ));
+        }
+    }
+
+    /** Default shelves for the platform storefront; staff manage them in admin. */
+    private function seed_marketplace_categories() {
+        $defaults = array(
+            array('Digital goods',   'DIGITAL_GOODS', 0),
+            array('Gaming',          'GAMING',        1),
+            array('Accounts',        'ACCOUNTS',      2),
+            array('Software & keys', 'SOFTWARE_KEYS', 3),
+        );
+        foreach ($defaults as $d) {
+            list($name, $slug, $sort) = $d;
+            $this->insert_once('marketplace_categories', array('slug'=>$slug), array(
+                'public_id'  => windels_public_id(),
+                'name'       => $name,
+                'status'     => 'ACTIVE',
+                'sort_order' => $sort,
+                'created_at' => gmdate('Y-m-d H:i:s'),
+                'updated_at' => gmdate('Y-m-d H:i:s'),
             ));
         }
     }

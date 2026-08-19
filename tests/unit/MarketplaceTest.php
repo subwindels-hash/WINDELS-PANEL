@@ -315,20 +315,157 @@ class MarketplaceTest extends TestCase
         $this->assertSame('CANCELLED', end($events)->event_type);
     }
 
-    public function testSellerCanApplyWithoutIdentityWhenPolicyIsDisabled()
+    public function testOnlyStaffCanHoldThePlatformSellerProfile()
     {
         list($app, $buyer) = $this->app();
-        $app->Setting_model->set('marketplace_require_verified_identity', false, 'marketplace');
-        $res = $app->marketplaceservice->apply_seller($buyer, array(
+        // A customer calling the service directly — bypassing every route —
+        // still cannot mint a seller profile.
+        $customer = $app->marketplaceservice->apply_seller($buyer, array(
             'display_name' => 'Independent Store',
-            'bio' => 'A reviewed seller application without mandatory identity.',
+            'bio' => 'A customer attempt to become a seller.',
         ));
+        $this->assertFalse($customer['ok']);
+        $this->assertSame('CUSTOMERS_CANNOT_SELL', $customer['code']);
+        // Only the fixture seller exists; nothing was created.
+        $this->assertCount(1, $app->rows('marketplace_sellers'));
 
+        // Staff are auto-approved as the platform's own storefront, stamped
+        // with their own id and no identity requirement.
+        $staff = $app->register('storefront_ops', 'storefront-ops@x.test', 'Str0ng!pass1', 'ADMIN');
+        $res = $app->marketplaceservice->apply_seller($staff, array(
+            'display_name' => 'WINDELS Store',
+            'bio' => 'Official platform storefront.',
+        ));
         $this->assertTrue($res['ok'], $res['error'] ?? '');
-        $this->assertSame('PENDING', $res['seller']->status);
+        $this->assertSame('APPROVED', $res['seller']->status);
+        $this->assertSame((int)$staff->id, (int)$res['seller']->approved_by);
         $this->assertNull($res['seller']->identity_check_id);
-        $view = file_get_contents(self::$root.'/application/views/dashboard/marketplace/seller.php');
-        $this->assertStringContainsString("empty(\$require_identity)", $view);
+
+        // Source-level: the customer dashboard exposes no seller surface at
+        // all — no application, no listing editor, no fulfilment endpoint.
+        $controller = file_get_contents(self::$root.'/application/controllers/dashboard/Marketplace.php');
+        foreach (array('apply', 'save_listing', 'listing_status', 'function deliver', 'seller(') as $needle) {
+            $this->assertStringNotContainsString($needle, $controller,
+                'customer dashboard controller must not expose seller surface: '.$needle);
+        }
+        $routes = file_get_contents(self::$root.'/application/config/routes.php');
+        foreach (array('dashboard/marketplace/apply', 'dashboard/marketplace/seller',
+                       'dashboard/marketplace/listings', 'dashboard/marketplace/save_listing',
+                       'dashboard/marketplace/deliver') as $needle) {
+            $this->assertStringNotContainsString($needle, $routes,
+                'customer seller route must not exist: '.$needle);
+        }
+        $this->assertFileDoesNotExist(self::$root.'/application/views/dashboard/marketplace/seller.php');
+    }
+
+    public function testStaffListingsPublishImmediatelyWithManagedCategoriesAndPromos()
+    {
+        list($app) = $this->app();
+        $staff = $app->register('catalogue_admin', 'catalogue-admin@x.test', 'Str0ng!pass1', 'ADMIN');
+        $apply = $app->marketplaceservice->apply_seller($staff, array(
+            'display_name' => 'WINDELS Store',
+            'bio' => 'Official platform storefront.',
+        ));
+        $this->assertTrue($apply['ok'], $apply['error'] ?? '');
+
+        // A staff save goes straight to the shelf, stamped with the operator.
+        $res = $app->marketplaceservice->save_listing($staff, array(
+            'title' => 'Netflix Premium 12 months',
+            'category' => 'DIGITAL_GOODS',
+            'description' => 'Official 12-month premium subscription, delivered securely.',
+            'price' => '5000',
+            'promo_price' => '4000',
+            'stock' => '10',
+            'delivery_days' => 1,
+            'product_type' => 'DIGITAL',
+            'is_featured' => true,
+        ));
+        $this->assertTrue($res['ok'], $res['error'] ?? '');
+        $this->assertSame('ACTIVE', $res['listing']->status);
+        $this->assertSame((int)$staff->id, (int)$res['listing']->approved_by);
+        $this->assertSame('4000.00000000', $res['listing']->promo_price);
+        $this->assertSame(1, (int)$res['listing']->is_featured);
+
+        $base = array(
+            'title' => 'Another premium product',
+            'category' => 'DIGITAL_GOODS',
+            'description' => 'A long enough description to pass the validation floor.',
+            'price' => '1000',
+        );
+        // Customers cannot create listings even through the service directly.
+        $buyer = $app->register('listing_intruder', 'listing-intruder@x.test');
+        $this->assertFalse($app->marketplaceservice->save_listing($buyer, $base)['ok']);
+
+        // Categories are managed rows: inventing one fails.
+        $bad_category = $app->marketplaceservice->save_listing($staff, array_merge($base, array(
+            'category' => 'NOT_A_CATEGORY',
+        )));
+        $this->assertFalse($bad_category['ok']);
+        $this->assertSame('BAD_CATEGORY', $bad_category['code']);
+
+        // A promo must genuinely undercut the list price.
+        $promo_too_high = $app->marketplaceservice->save_listing($staff, array_merge($base, array(
+            'promo_price' => '1000',
+        )));
+        $this->assertFalse($promo_too_high['ok']);
+        $this->assertSame('BAD_PROMO', $promo_too_high['code']);
+        $promo_free = $app->marketplaceservice->save_listing($staff, array_merge($base, array(
+            'promo_price' => '0',
+        )));
+        $this->assertFalse($promo_free['ok']);
+        $this->assertSame('BAD_PROMO', $promo_free['code']);
+    }
+
+    public function testPurchaseChargesThePromoPriceOnlyWhenItUndercuts()
+    {
+        list($app, $buyer) = $this->app();
+        // Live promotion: buyers are charged the promo price, server-side.
+        $listing = $app->Marketplace_listing_model->find_public('MPL00000000000000000000001');
+        $app->Marketplace_listing_model->update_fields($listing->id, array('promo_price' => '750.00000000'));
+        $res = $this->purchase($app, $buyer);
+        $this->assertTrue($res['ok'], $res['error'] ?? '');
+        $this->assertSame('750.00000000', $res['order']->unit_price);
+        $this->assertSame('1500.00000000', $res['order']->gross_amount);
+        $this->assertSame('8500.00000000', $app->balance($buyer));
+
+        // A promo that is NOT below list price can never raise the charge.
+        $app->Marketplace_listing_model->update_fields($listing->id, array('promo_price' => '1200.00000000'));
+        $res2 = $this->purchase($app, $buyer, array('idempotency_key' => 'promo-above-list'));
+        $this->assertTrue($res2['ok'], $res2['error'] ?? '');
+        $this->assertSame('1000.00000000', $res2['order']->unit_price);
+        $this->assertSame('2000.00000000', $res2['order']->gross_amount);
+        $this->assertSame('6500.00000000', $app->balance($buyer));
+    }
+
+    public function testAdminFulfilsOnThePlatformsBehalfButPrivilegeIsNeverInferred()
+    {
+        list($app, $buyer, $seller, $admin) = $this->app();
+        $bought = $this->purchase($app, $buyer, array('quantity' => 1));
+
+        // The operator flag is explicit and never inferred: without it, even
+        // an admin hits the own-order guard.
+        $this->assertFalse($app->marketplaceservice
+            ->deliver($admin, $bought['order']->public_id, 'admin payload', false)['ok']);
+
+        $res = $app->marketplaceservice->deliver(
+            $admin, $bought['order']->public_id, 'Operator-delivered secret payload', true
+        );
+        $this->assertTrue($res['ok'], $res['error'] ?? '');
+        $this->assertSame('DELIVERED', $res['order']->status);
+
+        // The flag is the privilege, so the ONLY caller that may pass true is
+        // the permission-gated admin controller. Pin that down at the source:
+        // every as_admin=true call site sits behind require_perm.
+        $admin_controller = file_get_contents(self::$root.'/application/controllers/admin/Marketplace.php');
+        $this->assertStringContainsString("require_perm('marketplace.manage');", $admin_controller);
+        $deliver_body = substr($admin_controller, strpos($admin_controller, 'public function deliver('));
+        $this->assertLessThan(strpos($deliver_body, ', true)'),
+            strpos($deliver_body, "require_perm"),
+            'the as_admin flag must be raised only after require_perm()');
+        $this->assertStringContainsString('public function deliver(', $admin_controller);
+        $dashboard = file_get_contents(self::$root.'/application/controllers/dashboard/Marketplace.php');
+        $this->assertStringNotContainsString('deliver(', $dashboard,
+            'the customer dashboard must not fulfil anything at all');
     }
 
     public function testOrderQueuesExcludeEncryptedFulfilmentProjection()
@@ -370,6 +507,7 @@ class MarketplaceTest extends TestCase
 
     public function testMigrationProtectsEscrowAndFulfilmentShape()
     {
+        if (!class_exists('CI_Migration')) eval('class CI_Migration {}');
         require_once self::$root.'/application/migrations/015_marketplace.php';
         $this->assertSame(array(
             'marketplace_sellers', 'marketplace_listings',
@@ -386,8 +524,9 @@ class MarketplaceTest extends TestCase
     public function testSecuritySensitiveMutationsArePermissionedPostOnlyAndAudited()
     {
         $admin = file_get_contents(self::$root.'/application/controllers/admin/Marketplace.php');
-        foreach (array("require_perm('marketplace.view')", "require_perm('marketplace.resolve')",
-                       "require_perm('marketplace.reveal')", "require_perm('marketplace.moderate_sellers')",
+        foreach (array("require_perm('marketplace.view')", "require_perm('marketplace.manage')",
+                       "require_perm('marketplace.resolve')", "require_perm('marketplace.reveal')",
+                       "require_perm('marketplace.moderate_sellers')",
                        "require_perm('marketplace.moderate_listings')") as $gate) {
             $this->assertStringContainsString($gate, $admin);
         }
@@ -414,10 +553,13 @@ class MarketplaceTest extends TestCase
 
         $seed = file_get_contents(self::$root.'/application/seeds/Core_seeder.php');
         foreach (array('marketplace.view', 'marketplace.resolve', 'marketplace.reveal',
-                       'marketplace_fee_percent', 'marketplace_auto_release_hours',
-                       'marketplace_require_verified_identity') as $needle) {
+                       'marketplace.manage', 'seed_marketplace_categories',
+                       'marketplace_fee_percent', 'marketplace_auto_release_hours') as $needle) {
             $this->assertStringContainsString($needle, $seed);
         }
+        // Customers cannot opt out of identity checks to become sellers —
+        // they cannot become sellers at all, so the setting is gone.
+        $this->assertStringNotContainsString('marketplace_require_verified_identity', $seed);
         $cron = file_get_contents(self::$root.'/application/controllers/Cron.php');
         $workers = file_get_contents(self::$root.'/application/libraries/CronWorkers.php');
         $crontab = file_get_contents(self::$root.'/cron/crontab.example');
@@ -428,6 +570,8 @@ class MarketplaceTest extends TestCase
 
     public function testMigrationAndGeneratedSchemaAreCurrent()
     {
+        if (!class_exists('CI_Migration')) eval('class CI_Migration {}');
+        require_once self::$root.'/application/migrations/015_marketplace.php';
         $config = file_get_contents(self::$root.'/application/config/migration.php');
         $this->assertStringContainsString("\$config['migration_version'] = 17;", $config);
         $schema = file_get_contents(self::$root.'/docs/database.sql');

@@ -1,19 +1,27 @@
-<?php defined('BASEPATH') OR exit('No direct script access allowed'); ?>
+<?php defined('BASEPATH') OR exit('No direct script access allowed');
+$on_sale = $listing->promo_price !== null && (float)$listing->promo_price > 0 && bccomp($listing->promo_price, $listing->price, 8) < 0;
+$effective_price = $on_sale ? $listing->promo_price : $listing->price;
+?>
 <div class="row mb-4" style="gap:.5rem"><a class="btn btn-ghost btn-sm" href="<?=site_url('dashboard/marketplace')?>">← Marketplace</a></div>
 <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:1rem">
   <div class="card">
+    <?php if (!empty($listing->image)): ?><img alt="<?=htmlspecialchars($listing->title)?>" src="<?=base_url($listing->image)?>" style="width:100%;max-height:18rem;object-fit:cover;border-radius:.5rem" class="mb-4"><?php endif; ?>
     <span class="badge badge-default"><?=htmlspecialchars($listing->category)?></span>
+    <span class="badge badge-default"><?=$listing->product_type === 'PHYSICAL' ? 'Physical product' : 'Digital product'?></span>
+    <?php if ((int)$listing->is_featured === 1): ?><span class="badge badge-warning">Featured</span><?php endif; ?>
     <h2 class="mt-3" style="font-size:1.5rem;font-weight:650"><?=htmlspecialchars($listing->title)?></h2>
-    <p class="text-sm muted">Approved seller: <strong><?=htmlspecialchars($listing->seller_name)?></strong></p>
+    <p class="text-sm muted">Official listing by <strong><?=htmlspecialchars($listing->seller_name)?></strong></p>
     <div style="white-space:pre-wrap;line-height:1.7"><?=htmlspecialchars($listing->description)?></div>
   </div>
   <aside class="card" style="height:max-content">
     <h3 class="card-title">Order</h3>
-    <p style="font-size:1.5rem;font-weight:700"><?=windels_money($listing->price)?><span class="text-sm muted"> each</span></p>
-    <p class="text-sm muted">Delivery within <?=(int)$listing->delivery_days?> day(s). <?=($listing->stock === null ? 'Unlimited availability.' : number_format((int)$listing->stock).' currently available.')?></p>
+    <p style="font-size:1.5rem;font-weight:700"><?=windels_money($effective_price)?><span class="text-sm muted"> each</span>
+      <?php if ($on_sale): ?><br><span class="text-sm muted" style="text-decoration:line-through;font-weight:400"><?=windels_money($listing->price)?></span> <span class="badge badge-warning">Promo</span><?php endif; ?>
+    </p>
+    <p class="text-sm muted"><?=($listing->product_type === 'PHYSICAL' ? 'Ships' : 'Digital delivery')?> within <?=(int)$listing->delivery_days?> day(s). <?=($listing->stock === null ? 'Unlimited availability.' : number_format((int)$listing->stock).' currently available.')?></p>
     <p class="text-sm muted">Wallet balance: <strong><?=windels_money($wallet->balance)?></strong></p>
     <?php if ((int)$listing->seller_user_id === (int)$current_user->id): ?>
-      <div class="alert alert-warning">This is your listing. Sellers cannot buy their own goods.</div>
+      <div class="alert alert-warning">This listing is owned by your account and cannot be purchased from it.</div>
     <?php elseif ($listing->stock !== null && (int)$listing->stock < 1): ?>
       <div class="alert alert-warning">This listing is sold out.</div>
     <?php else: ?>
@@ -26,6 +34,6 @@
     </form>
     <?php endif; ?>
     <hr class="my-4">
-    <p class="text-xs muted">Your payment remains secured while the seller fulfils the order. You may accept delivery or open a dispute before automatic release.</p>
+    <p class="text-xs muted">The final price is always the server-side catalogue price. Your payment remains secured until you accept delivery or the escrow window closes.</p>
   </aside>
 </div>

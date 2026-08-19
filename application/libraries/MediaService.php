@@ -48,7 +48,7 @@ class MediaService {
     );
 
     /** What each file may be attached to. */
-    const PURPOSES = array('branding', 'blog', 'service', 'avatar', 'ticket');
+    const PURPOSES = array('branding', 'blog', 'service', 'avatar', 'ticket', 'marketplace');
 
     /** Where uploads land, relative to the document root. */
     const DIR = 'assets/uploads';

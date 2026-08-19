@@ -512,6 +512,172 @@ class SecurityHardeningTest extends TestCase
         $this->assertStringNotContainsString('sha1(', $src);
     }
 
+    /* ---------- login lifecycle: logout is a state change, not a link ---- */
+
+    public function testLogoutIsPostOnlyAndCsrfProtected()
+    {
+        $auth = file_get_contents(self::$root.'/application/controllers/Auth.php');
+        $logout = preg_replace('/.*public function logout\(\)/s', '', $auth);
+        $logout = substr($logout, 0, strpos($logout, "\n    }\n"));
+        $this->assertStringContainsString("\$this->input->method(true) !== 'POST'", $logout,
+            'logout must refuse GET so a third party cannot prime a logout CSRF');
+        // csrf_protection=TRUE in config.php means every POST carries the
+        // token; assert every rendered logout control actually submits one.
+        foreach (array(
+            'application/views/layouts/app.php',
+            'application/views/layouts/auth.php',
+            'application/views/partials/public_nav.php',
+            'application/views/auth/mfa.php',
+            'application/views/dashboard/account/security.php',
+        ) as $view) {
+            $src = file_get_contents(self::$root.'/'.$view);
+            $this->assertStringNotContainsString("href=\"<?=site_url('logout')?>\"", $src,
+                $view.' must not link to logout with a plain anchor');
+            if (strpos($src, "site_url('logout')") !== false) {
+                $this->assertMatchesRegularExpression(
+                    '~<form method="post" action="<\?=site_url\(\'logout\'\)\?>"~', $src,
+                    $view.' must post the logout');
+                $this->assertStringContainsString('get_csrf_hash()', $src,
+                    $view.' must embed the CSRF token near the logout form');
+            }
+        }
+        // And nowhere in ANY rendered view does a GET logout remain.
+        foreach ($this->view_files() as $file) {
+            $src = file_get_contents($file);
+            $this->assertDoesNotMatchRegularExpression(
+                '~<a\s[^>]*href="<\?=site_url\(\'logout\'\)\?>"~', $src,
+                basename($file).' still exposes a GET logout link');
+        }
+    }
+
+    public function testSessionsAreRegeneratedOnEveryPrivilegeTransition()
+    {
+        $auth = file_get_contents(self::$root.'/application/libraries/AuthService.php');
+        // complete_login (post-authentication) and change_password.
+        $this->assertGreaterThanOrEqual(2, substr_count($auth, 'sess_regenerate(true)'),
+            'login and password change must both regenerate the session id');
+        // Impersonation is a privilege change in BOTH directions.
+        $imp = file_get_contents(self::$root.'/application/libraries/ImpersonationService.php');
+        $this->assertGreaterThanOrEqual(2, substr_count($imp, 'sess_regenerate(true)'),
+            'impersonation enter and exit must both regenerate the session id');
+    }
+
+    /* ---------- encrypted secrets: fail closed, never plaintext fallback -- */
+
+    public function testMfaSecretsUseAuthenticatedDecryptionOnly()
+    {
+        $src = file_get_contents(self::$root.'/application/libraries/AuthService.php');
+        $this->assertStringNotContainsString('->decrypt(', $src,
+            'a tampered TOTP secret must fail closed, never become the seed');
+        $this->assertGreaterThanOrEqual(3, substr_count($src, '->open($method->secret)'),
+            'verify_mfa, confirm_mfa and disable_mfa all open() the secret');
+        $this->assertStringContainsString('MFA_SECRET_UNREADABLE', $src);
+    }
+
+    public function testDecryptPlaintextFallbackIsConfinedToLegacyProviderKeys()
+    {
+        // decrypt() returns its input on failure BY DESIGN for provider API
+        // keys that predate mandatory encryption. Nothing else may use it.
+        $allowed = array(
+            'application/libraries/DojahAdapter.php',
+            'application/libraries/FiveSimAdapter.php',
+            'application/libraries/ReloadlyAdapter.php',
+            'application/libraries/StandardSmmAdapter.php',
+            'application/libraries/StandardVtuAdapter.php',
+            'application/libraries/VtpassAdapter.php',
+            'application/libraries/EncryptionService.php', // its own definition
+        );
+        foreach ($this->php_files() as $file) {
+            $rel = str_replace(self::$root.'/', '', $file);
+            if (in_array($rel, $allowed, true)) continue;
+            $src = file_get_contents($file);
+            $this->assertStringNotContainsString('->decrypt(', $src,
+                $rel.' must use open() (authenticated, fail-closed) instead');
+        }
+        // Identity results and gift-card codes are on the audited open() path.
+        foreach (array('application/libraries/IdentityService.php',
+                       'application/libraries/GiftcardService.php') as $svc) {
+            $this->assertStringContainsString('->open(',
+                file_get_contents(self::$root.'/'.$svc));
+        }
+    }
+
+    /* ---------- IDOR: customer controllers only read what they own ------- */
+
+    public function testCustomerControllersScopeEveryRecordToTheCurrentUser()
+    {
+        // One accessor/ownership guard per customer record surface; the
+        // audit verified each controller binds lookups to current_user->id.
+        $expect = array(
+            'Orders'      => array('find_public_for_user($public_id, $this->current_user->id)'),
+            'Wallet'      => array('find_public_for_user($public_id, $this->current_user->id)'),
+            'Giftcards'   => array('$this->current_user->id', 'function owned('),
+            'Identity'    => array('$this->current_user->id', 'function owned('),
+            'Numbers'     => array('$this->current_user->id', 'function owned('),
+            'Tickets'     => array('find_public_for_user($public_id, $this->current_user->id)'),
+            'Marketplace' => array('(int)$order->buyer_id !== (int)$this->current_user->id'),
+        );
+        foreach ($expect as $controller => $needles) {
+            $src = file_get_contents(self::$root.'/application/controllers/dashboard/'.$controller.'.php');
+            foreach ($needles as $needle) {
+                $this->assertStringContainsString($needle, $src,
+                    'dashboard/'.$controller.'.php must scope reads to the current user: '.$needle);
+            }
+        }
+        // Direct numeric ids must never be taken from user input for these
+        // resources: every lookup ends at *_for_user or a public-id + owner
+        // check. Assert no controller reads a record by post('id').
+        foreach (array('Orders', 'Wallet', 'Giftcards', 'Identity', 'Numbers',
+                       'Tickets', 'Marketplace') as $controller) {
+            $src = file_get_contents(self::$root.'/application/controllers/dashboard/'.$controller.'.php');
+            $this->assertStringNotContainsString("post('id'", $src,
+                $controller.' must not bind records by a submitted numeric id');
+        }
+    }
+
+    /* ---------- mass assignment: sensitive columns never from POST ------- */
+
+    public function testSensitiveUserColumnsCannotBeMassAssigned()
+    {
+        // Registration builds the users row from an explicit field list and
+        // hard-codes role=CUSTOMER — nothing the POST carries may influence
+        // role, balance, status or any is_admin-style flag.
+        $auth = file_get_contents(self::$root.'/application/libraries/AuthService.php');
+        $insert = substr($auth, strpos($auth, "insert('users', array("), 1200);
+        $this->assertStringContainsString("'role'              => 'CUSTOMER',", $insert);
+        $this->assertStringNotContainsString("'role' => \$", $insert);
+        $this->assertStringNotContainsString("post('role'", $auth);
+        $this->assertStringNotContainsString("post('balance'", $auth);
+        $this->assertStringNotContainsString("post('is_admin'", $auth);
+
+        // Profile self-service writes an explicit five-field allowlist only.
+        $account = file_get_contents(self::$root.'/application/controllers/dashboard/Account.php');
+        $data = substr($account, strpos($account, "\$data = array("), 600);
+        foreach (array('role', 'balance', 'status', 'is_admin', 'mfa_enabled') as $forbidden) {
+            $this->assertDoesNotMatchRegularExpression(
+                '~["\']'.$forbidden.'["\']\s*=>~', $data,
+                'profile update must never write '.$forbidden);
+        }
+
+        // Role changes exist EXACTLY once, behind the escalation guard.
+        $svc = file_get_contents(self::$root.'/application/libraries/UserAdminService.php');
+        $this->assertStringContainsString("Only a super admin can grant the super admin role.", $svc);
+        $this->assertStringContainsString('is_last_super_admin', $svc);
+        $users = file_get_contents(self::$root.'/application/controllers/admin/Users.php');
+        $this->assertStringContainsString("guard(\$public_id, 'staff.manage')", $users);
+
+        // Wallet balances: nobody writes wallets.balance directly outside the
+        // ledger — the audited credit/debit paths are the only writers.
+        foreach ($this->php_files() as $file) {
+            $rel = str_replace(self::$root.'/', '', $file);
+            if (strpos($rel, 'application/libraries/LedgerService.php') === 0) continue;
+            $src = file_get_contents($file);
+            $this->assertDoesNotMatchRegularExpression(
+                "~update\\('wallets'\\s*,\\s*array\\([^)]*'balance'~s", $src,
+                $rel.' writes wallets.balance outside the ledger');
+        }
+    }
+
     /* ------------------------------ helpers ------------------------------ */
 
     private function limiter(&$db)

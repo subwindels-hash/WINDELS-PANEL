@@ -7,6 +7,10 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * Each request is signature-verified and stored idempotently on
  * (gateway_type, event_id) before any side effect. Successful payment events
  * credit the wallet exactly once via PaymentService.
+ *
+ * Retry taxonomy: invalid signatures fail hard (401), duplicates stay
+ * idempotent (200), and transient internal processing failures answer 503 so
+ * the gateway retries — the stored event stays unprocessed until it lands.
  */
 class Webhooks extends MY_Controller {
 
@@ -37,8 +41,16 @@ class Webhooks extends MY_Controller {
         if (!empty($result['ok'])) {
             return $this->respond(200, array('ok'=>true));
         }
-        // Return 200 even on non-fatal errors so the gateway doesn't retry a
-        // malformed/replayed event forever; fatal signature failures use 401.
+        // Retry taxonomy:
+        //  - retryable transient processing failures get 503 so the gateway
+        //    retries; the webhook row stays unprocessed until it succeeds.
+        //  - invalid signatures are a hard 401.
+        //  - malformed/unknown events return 200 so the gateway doesn't retry
+        //    a permanently undeliverable event forever.
+        if (!empty($result['retryable'])) {
+            return $this->respond(503, array('ok'=>false,'retry'=>true,
+                'error'=>$result['error'] ?? 'temporary processing failure'));
+        }
         $code = ($result['error'] ?? '') === 'Invalid signature' ? 401 : 200;
         return $this->respond($code, array('ok'=>false,'error'=>$result['error'] ?? 'error'));
     }

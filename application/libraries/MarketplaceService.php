@@ -24,7 +24,8 @@ class MarketplaceService {
         $this->ci =& get_instance();
         $this->ci->load->model(array(
             'Marketplace_seller_model', 'Marketplace_listing_model',
-            'Marketplace_order_model', 'Service_transaction_model',
+            'Marketplace_order_model', 'Marketplace_category_model',
+            'Service_transaction_model',
             'Wallet_model', 'Audit_log_model', 'Setting_model',
         ));
         $this->ci->load->library(array(
@@ -32,10 +33,20 @@ class MarketplaceService {
         ));
     }
 
-    /** Apply once to sell. A verified identity check is required by default. */
+    /**
+     * Onboard the platform's selling account. This is NOT a customer feature:
+     * the marketplace is platform-operated, so only staff may hold a seller
+     * profile, and that profile is trusted immediately — moderation gates are
+     * for outsiders, and there are no outsiders anymore.
+     *
+     * @return array{ok:bool, seller?:object, error?:string, code?:string}
+     */
     public function apply_seller($user, array $input) {
         $user_id = $this->user_id($user);
         if (!$user_id) return $this->err('Sign in before applying', 'NO_USER');
+        if (!$this->is_staff($user)) {
+            return $this->err('Only platform staff can sell on the marketplace', 'CUSTOMERS_CANNOT_SELL');
+        }
         if ($this->ci->Marketplace_seller_model->find_for_user($user_id)) {
             return $this->err('You already have a seller application', 'EXISTS');
         }
@@ -47,29 +58,28 @@ class MarketplaceService {
         }
         if (mb_strlen($bio) > 500) return $this->err('Bio is too long', 'BAD_BIO');
 
-        $identity_id = !empty($input['identity_check_id']) ? (int)$input['identity_check_id'] : null;
-        if ($this->setting_bool('marketplace_require_verified_identity', true)) {
-            if (!$identity_id || !$this->verified_identity_belongs_to($identity_id, $user_id)) {
-                return $this->err('A successful identity check is required to become a seller', 'IDENTITY_REQUIRED');
-            }
-        } elseif ($identity_id && !$this->verified_identity_belongs_to($identity_id, $user_id)) {
-            return $this->err('That identity check is not available', 'BAD_IDENTITY');
-        }
-
         $id = $this->ci->Marketplace_seller_model->create(array(
             'public_id' => windels_public_id(),
             'user_id' => $user_id,
-            'identity_check_id' => $identity_id,
+            'identity_check_id' => null,
             'display_name' => $name,
             'bio' => $bio !== '' ? $bio : null,
-            'status' => 'PENDING',
+            'status' => 'APPROVED',
+            'approved_at' => gmdate('Y-m-d H:i:s'),
+            'approved_by' => $user_id,
             'created_at' => gmdate('Y-m-d H:i:s'),
             'updated_at' => gmdate('Y-m-d H:i:s'),
         ));
         $seller = $this->ci->Marketplace_seller_model->find_id($id);
         $this->audit($user_id, 'marketplace.seller.apply', 'marketplace_seller', $seller->public_id, null,
-            array('status' => 'PENDING'));
+            array('status' => 'APPROVED', 'source' => 'STAFF'));
         return array('ok' => true, 'seller' => $seller);
+    }
+
+    /** Staff roles may hold the platform's seller profile; customers never may. */
+    private function is_staff($user) {
+        $role = is_object($user) ? strtoupper((string)($user->role ?? '')) : '';
+        return in_array($role, array('SUPER_ADMIN', 'ADMIN'), true);
     }
 
     /** Create a listing for review, or update one owned by the seller. */
@@ -92,11 +102,15 @@ class MarketplaceService {
         }
 
         $title = trim((string)($input['title'] ?? ''));
-        $category = strtoupper(trim((string)($input['category'] ?? 'DIGITAL_GOODS')));
+        $category = strtoupper(trim((string)($input['category'] ?? '')));
         $description = trim((string)($input['description'] ?? ''));
         $price = $this->money($input['price'] ?? 0);
+        $promo_price = ($input['promo_price'] ?? '') === '' ? null : $this->money($input['promo_price']);
         $delivery_days = (int)($input['delivery_days'] ?? 1);
         $stock = ($input['stock'] ?? '') === '' ? null : (int)$input['stock'];
+        $product_type = strtoupper(trim((string)($input['product_type'] ?? 'DIGITAL')));
+        $is_featured = !empty($input['is_featured']) ? 1 : 0;
+        $image = ($input['image'] ?? '') !== '' ? trim((string)$input['image']) : null;
 
         if (mb_strlen($title) < 5 || mb_strlen($title) > 120) {
             return $this->err('Title must be between 5 and 120 characters', 'BAD_TITLE');
@@ -104,29 +118,44 @@ class MarketplaceService {
         if (mb_strlen($description) < 20 || mb_strlen($description) > 10000) {
             return $this->err('Description must be between 20 and 10,000 characters', 'BAD_DESCRIPTION');
         }
-        if (!preg_match('/^[A-Z0-9_-]{2,64}$/', $category)) {
+        // Categories are managed rows (admin/marketplace/categories), not a
+        // pattern the poster invents.
+        if (!$this->ci->Marketplace_category_model->find_active($category)) {
             return $this->err('Choose a valid category', 'BAD_CATEGORY');
         }
         if (bccomp($price, '0', 8) <= 0) return $this->err('Price must be greater than zero', 'BAD_PRICE');
+        if ($promo_price !== null
+            && (bccomp($promo_price, '0', 8) <= 0 || bccomp($promo_price, $price, 8) >= 0)) {
+            return $this->err('The promotional price must be greater than zero and lower than the list price', 'BAD_PROMO');
+        }
         if ($delivery_days < 1 || $delivery_days > 30) {
             return $this->err('Delivery time must be between 1 and 30 days', 'BAD_DELIVERY');
         }
         if ($stock !== null && $stock < 0) return $this->err('Stock cannot be negative', 'BAD_STOCK');
+        if (!in_array($product_type, array('DIGITAL', 'PHYSICAL'), true)) {
+            return $this->err('Choose a valid product type', 'BAD_TYPE');
+        }
 
         $fields = array(
             'title' => $title,
             'category' => $category,
             'description' => $description,
             'price' => $price,
+            'promo_price' => $promo_price,
             'stock' => $stock,
             'delivery_days' => $delivery_days,
-            // Every material edit returns to moderation.
-            'status' => 'PENDING',
-            'moderation_note' => null,
-            'approved_at' => null,
-            'approved_by' => null,
-            'updated_at' => gmdate('Y-m-d H:i:s'),
+            'product_type' => $product_type,
+            'is_featured' => $is_featured,
         );
+        if ($image !== null) $fields['image'] = $image;
+        // Staff listings are trusted: they go straight to the shelf instead of
+        // an approval queue, with the acting operator stamped as approver.
+        if (!$listing) {
+            $fields['status'] = 'ACTIVE';
+            $fields['approved_at'] = gmdate('Y-m-d H:i:s');
+            $fields['approved_by'] = $user_id;
+        }
+        $fields['updated_at'] = gmdate('Y-m-d H:i:s');
         if ($listing) {
             $before = array('status' => $listing->status, 'price' => $listing->price);
             $this->ci->Marketplace_listing_model->update_fields($listing->id, $fields);
@@ -142,14 +171,14 @@ class MarketplaceService {
         }
         $saved = $this->ci->Marketplace_listing_model->find_id($id);
         $this->audit($user_id, $action, 'marketplace_listing', $saved->public_id, $before,
-            array('status' => 'PENDING', 'price' => $saved->price));
+            array('status' => $saved->status, 'price' => $saved->price));
         return array('ok' => true, 'listing' => $saved);
     }
 
     /** Pause or archive one of the current seller's listings. */
     public function change_listing_status($user, $public_id, $status) {
         $status = strtoupper((string)$status);
-        if (!in_array($status, array('PAUSED', 'ARCHIVED'), true)) {
+        if (!in_array($status, array('ACTIVE', 'PAUSED', 'ARCHIVED'), true)) {
             return $this->err('Unsupported listing status', 'BAD_STATUS');
         }
         $seller = $this->ci->Marketplace_seller_model->find_for_user($this->user_id($user));
@@ -159,6 +188,9 @@ class MarketplaceService {
         }
         if (!in_array($listing->status, array('ACTIVE', 'PAUSED'), true)) {
             return $this->err('That listing cannot be changed now', 'BAD_STATE');
+        }
+        if ($status === 'ACTIVE' && $listing->status !== 'PAUSED') {
+            return $this->err('Only a paused listing can be re-published', 'BAD_STATE');
         }
         $this->ci->Marketplace_listing_model->update_fields($listing->id, array('status' => $status));
         $this->audit($seller->user_id, 'marketplace.listing.status', 'marketplace_listing', $public_id,
@@ -182,7 +214,10 @@ class MarketplaceService {
             return $this->err('There is not enough stock', 'OUT_OF_STOCK');
         }
 
-        $gross = $this->money(bcmul($this->money($listing->price), (string)$quantity, 8));
+        // The customer pays the server's price — never a submitted one — and a
+        // live promotion undercuts the list price.
+        $unit_price = $this->effective_price($listing);
+        $gross = $this->money(bcmul($unit_price, (string)$quantity, 8));
         $fee_percent = $this->fee_percent();
         $fee = $this->money(bcdiv(bcmul($gross, $fee_percent, 8), '100', 8));
         $seller_amount = $this->money(bcsub($gross, $fee, 8));
@@ -206,7 +241,8 @@ class MarketplaceService {
                 'seller' => $listing->seller_name,
             ),
             'detail' => function ($transaction_id) use ($listing, $buyer_id, $quantity, $gross, $fee,
-                                                         $seller_amount, $order_model, &$order_id) {
+                                                         $seller_amount, $order_model, &$order_id,
+                                                         $unit_price) {
                 $order_id = $order_model->create(array(
                     'public_id' => windels_public_id(),
                     'service_transaction_id' => $transaction_id,
@@ -214,7 +250,7 @@ class MarketplaceService {
                     'buyer_id' => $buyer_id,
                     'seller_id' => $listing->seller_user_id,
                     'quantity' => $quantity,
-                    'unit_price' => $listing->price,
+                    'unit_price' => $unit_price,
                     'gross_amount' => $gross,
                     'fee_amount' => $fee,
                     'seller_amount' => $seller_amount,
@@ -267,11 +303,16 @@ class MarketplaceService {
         return $result;
     }
 
-    /** Seller encrypts and submits fulfilment. */
-    public function deliver($user, $public_id, $delivery) {
+    /**
+     * Seller encrypts and submits fulfilment. $as_admin is for the admin
+     * console only: it bypasses the own-order check because any operator with
+     * marketplace.manage fulfils on the platform's behalf. The web controller
+     * must gate that flag behind the permission — it is never inferred here.
+     */
+    public function deliver($user, $public_id, $delivery, $as_admin = false) {
         $seller_id = $this->user_id($user);
         $order = $this->ci->Marketplace_order_model->find_public($public_id);
-        if (!$order || (int)$order->seller_id !== $seller_id) {
+        if (!$order || (!$as_admin && (int)$order->seller_id !== $seller_id)) {
             return $this->err('Order not found', 'NOT_FOUND');
         }
         if ($order->status !== 'PAID') return $this->err('This order cannot be delivered now', 'BAD_STATE');
@@ -539,15 +580,20 @@ class MarketplaceService {
         return array('ok' => true, 'listing' => $this->ci->Marketplace_listing_model->find_id($listing->id));
     }
 
-    private function verified_identity_belongs_to($check_id, $user_id) {
-        return (bool)$this->ci->db
-            ->select('identity_checks.id')
-            ->from('identity_checks')
-            ->join('service_transactions', 'service_transactions.id = identity_checks.service_transaction_id', 'inner')
-            ->where('identity_checks.id', (int)$check_id)
-            ->where('identity_checks.status', 'VERIFIED')
-            ->where('service_transactions.user_id', (int)$user_id)
-            ->get()->row();
+    /**
+     * The shelf price right now: a valid promotion wins over the list price.
+     * Zero/blank or "promo >= list" rows fall back to the list price, which is
+     * also what save_listing validates against, so this total's branch can
+     * never price above list.
+     */
+    private function effective_price($listing) {
+        $list = $this->money($listing->price);
+        $promo = isset($listing->promo_price) && $listing->promo_price !== null
+            ? $this->money($listing->promo_price) : null;
+        if ($promo !== null && bccomp($promo, '0', 8) > 0 && bccomp($promo, $list, 8) < 0) {
+            return $promo;
+        }
+        return $list;
     }
 
     private function fee_percent() {

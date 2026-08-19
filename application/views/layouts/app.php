@@ -18,7 +18,6 @@ $nav = $is_admin ? array(
     array('admin/providers',    'Providers',  'providers.view',  'server'),
     array('admin/api-keys',     'Reseller API','api.manage',     'key'),
     array('admin/payments',     'Payments',   'payments.view',   'credit-card'),
-    array('admin/withdrawals',  'Withdrawals','withdrawals.view','wallet'),
     array('admin/tickets',      'Tickets',    'tickets.view',    'message-square'),
     array('admin/affiliates',   'Affiliates', 'affiliates.view', 'gift'),
     array('admin/blog',         'Content',    'blog.manage',     'list'),
@@ -43,7 +42,6 @@ $nav = $is_admin ? array(
     array('dashboard/subscriptions','Subscriptions', null, 'repeat'),
     array('dashboard/add-funds', 'Add Funds',  null, 'wallet'),
     array('dashboard/transactions','Transactions', null, 'list'),
-    array('dashboard/withdrawals','Withdrawals', null, 'wallet'),
     array('dashboard/tickets',   'Support',    null, 'message-square'),
     array('dashboard/referrals', 'Referrals',  null, 'gift'),
     array('dashboard/api',       'API',        null, 'key'),
@@ -156,9 +154,12 @@ try {
           <div class="font-medium text-slate-800 truncate text-sm"><?=htmlspecialchars($current_user->username ?? '')?></div>
           <div class="text-xs text-slate-500 truncate"><?=htmlspecialchars($current_user->email ?? '')?></div>
         </div>
-        <a href="<?=site_url('logout')?>" title="Log out" class="text-slate-400 hover:text-slate-700">
-          <?php $this->load->view('partials/icon', array('name'=>'logout','class'=>'w-[18px] h-[18px]')); ?>
-        </a>
+        <form method="post" action="<?=site_url('logout')?>" class="m-0">
+          <input type="hidden" name="<?=$this->security->get_csrf_token_name()?>" value="<?=$this->security->get_csrf_hash()?>">
+          <button type="submit" title="Log out" class="text-slate-400 hover:text-slate-700 bg-transparent border-0 p-0 cursor-pointer">
+            <?php $this->load->view('partials/icon', array('name'=>'logout','class'=>'w-[18px] h-[18px]')); ?>
+          </button>
+        </form>
       </div>
     </div>
   </aside>

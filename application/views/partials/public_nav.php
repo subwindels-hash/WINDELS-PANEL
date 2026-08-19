@@ -16,7 +16,10 @@ $is_staff = $cu && in_array($cu->role, array('SUPER_ADMIN','ADMIN','STAFF'), tru
       <a href="<?=site_url('dashboard')?>" class="px-4 py-2 text-sm">Dashboard</a>
     <?php endif; ?>
     <a href="<?=site_url('dashboard/favorites')?>" class="px-3 py-2 text-sm" title="Favorites" aria-label="Favorites">★</a>
-    <a href="<?=site_url('logout')?>" class="px-4 py-2 bg-black text-white rounded-lg text-sm">Log out</a>
+    <form method="post" action="<?=site_url('logout')?>" class="m-0 inline-block">
+      <input type="hidden" name="<?=$this->security->get_csrf_token_name()?>" value="<?=$this->security->get_csrf_hash()?>">
+      <button type="submit" class="px-4 py-2 bg-black text-white rounded-lg text-sm border-0 cursor-pointer">Log out</button>
+    </form>
   <?php else: ?>
     <a href="<?=site_url('login')?>" class="px-4 py-2 text-sm">Login</a>
     <a href="<?=site_url('register')?>" class="px-4 py-2 bg-black text-white rounded-lg text-sm">Start Ordering</a>

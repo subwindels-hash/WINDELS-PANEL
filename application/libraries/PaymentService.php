@@ -219,6 +219,18 @@ class PaymentService {
         }
 
         $res = $this->confirm($tx, 'WEBHOOK', $event['provider_tx_id'] ?? null);
+        if (empty($res['ok'])) {
+            // Transient processing failure (e.g. the ledger write rolled
+            // back). Leave the row UNPROCESSED so the gateway's retry — and
+            // the reconciliation sweep over unprocessed() — re-runs it, and
+            // flag it retryable so the controller answers 503 (which real
+            // gateways retry) instead of a swallowed 200.
+            $this->ci->db->where('id', $id)->update('payment_webhooks', array(
+                'payment_transaction_id' => $tx->id,
+                'error' => substr('retryable: '.($res['error'] ?? 'confirmation failed'), 0, 250),
+            ));
+            return array('ok'=>false,'retryable'=>true,'error'=>$res['error'] ?? 'Payment processing failed');
+        }
         $this->ci->db->where('id', $id)->update('payment_webhooks', array(
             'payment_transaction_id' => $tx->id,
             'processed' => 1,

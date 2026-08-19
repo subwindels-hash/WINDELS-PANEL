@@ -19,19 +19,6 @@ class LedgerService {
         return $this->credit($wallet_id, $amount, 'REFUND', $reference_type, $reference_id, $idempotency_key);
     }
 
-    /** Reserve customer funds for a withdrawal without classifying them as revenue. */
-    public function reserve_withdrawal($wallet_id, $amount, $reference_id, $idempotency_key, $metadata=null){
-        return $this->move($wallet_id, $amount, 'DEBIT', 'WITHDRAWAL', 'WITHDRAWAL',
-            $reference_id, $idempotency_key, $metadata, array(), 'withdrawal_payable');
-    }
-
-    /** Return a rejected/cancelled withdrawal reservation to the same wallet. */
-    public function refund_withdrawal($wallet_id, $amount, $reference_id, $idempotency_key){
-        return $this->move($wallet_id, $amount, 'CREDIT', 'REFUND', 'WITHDRAWAL',
-            $reference_id, $idempotency_key, array('reason' => 'withdrawal_released'),
-            array(), 'withdrawal_payable');
-    }
-
     /**
      * A manual balance correction made by a member of staff.
      *

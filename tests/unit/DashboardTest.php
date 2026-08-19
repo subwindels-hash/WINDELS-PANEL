@@ -109,7 +109,7 @@ class DashboardTest extends TestCase
 
     public function testTransactionLabelsAreHumanReadable()
     {
-        foreach (array('DEPOSIT','ORDER_CHARGE','REFUND','REFERRAL_BONUS','ADJUSTMENT','WITHDRAWAL') as $t) {
+        foreach (array('DEPOSIT','ORDER_CHARGE','REFUND','REFERRAL_BONUS','ADJUSTMENT','MARKETPLACE_PAYOUT','MARKETPLACE_REFUND') as $t) {
             $obj = (object)array('type' => $t);
             $label = DashboardStats::transaction_label($obj);
             $this->assertNotEmpty($label);

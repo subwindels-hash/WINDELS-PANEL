@@ -195,16 +195,20 @@ See `.env.example` for the annotated list. Notables:
 ## Module map
 
 Customer panel: services catalogue, new/mass orders, drip-feed, subscriptions,
-wallet (deposits via payment gateways), VTU (airtime/data/cable/electricity/
+wallet (deposits via payment gateways; the balance pays for purchases — there
+are no customer withdrawals/cash-outs), VTU (airtime/data/cable/electricity/
 education), virtual numbers, identity verification (BVN/NIN), gift cards,
-marketplace (buy + sell with delivery/reveal/disputes), withdrawals, referrals,
-tickets, notifications, API keys, account security (MFA, sessions).
+marketplace storefront (browse/search/buy with secure delivery, reveal,
+disputes — the platform is the only seller), referrals, tickets, notifications,
+API keys, account security (MFA, sessions).
 
 Admin: dashboard/analytics, orders & operations (refills/cancellations),
 services + catalogue management, pricing/price groups, providers + sync/health,
-payments, withdrawals, giftcards, VTU, numbers, identity reviews, marketplace
-moderation, users/wallets, staff & RBAC, affiliates, content/blog/media,
-settings, system (audit, blacklist, flags, categories), impersonation.
+payments, giftcards, VTU, numbers, identity reviews, marketplace operations
+(create/price/promote/feature/categorise/publish listings, fulfil and resolve
+escrow orders, moderate seller profiles), users/wallets, staff & RBAC,
+affiliates, content/blog/media, settings, system (audit, blacklist, flags,
+categories), impersonation.
 
 Public: homepage themes (aurora/nexus/pulse), services/pricing pages, blog,
 FAQ/legal pages, styleguide at `/design-system`.
