@@ -40,6 +40,12 @@ ok()   { PASS=$((PASS+1)); printf '  \033[32mok\033[0m   %s\n' "$1"; }
 bad()  { FAIL=$((FAIL+1)); printf '  \033[31mFAIL\033[0m %s\n' "$1"; }
 check(){ if eval "$2" >/dev/null 2>&1; then ok "$1"; else bad "$1"; fi; }
 
+if ! command -v "${PHP_BIN}" >/dev/null 2>&1; then
+  echo "This harness needs a PHP binary to boot the application's configuration." >&2
+  echo "Install PHP, or point PHP_BIN at one: PHP_BIN=/usr/local/bin/php bash $0" >&2
+  exit 2
+fi
+
 echo
 echo "Fresh-deployment simulation"
 echo
