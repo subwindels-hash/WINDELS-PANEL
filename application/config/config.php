@@ -79,8 +79,15 @@ $config['global_xss_filtering'] = FALSE;
 $config['csrf_protection'] = TRUE;
 $config['csrf_token_name'] = 'csrf_windels';
 $config['csrf_cookie_name'] = 'csrf_cookie_windels';
-$config['csrf_expire'] = 7200;
-$config['csrf_regenerate'] = TRUE;
+$config['csrf_expire'] = Env::get_int('CSRF_EXPIRE', 7200);
+// Rotating the token on every POST breaks any page that posts twice without
+// re-rendering — an AJAX reply box, a support/chat widget, a second tab, the
+// Back button. The first post succeeds and retires the token; the second is
+// rejected, and the caller reports its own generic "something went wrong".
+// A stable per-session token is still a token the attacker's origin cannot
+// read, so this defaults off and stays available for deployments that want
+// per-request rotation and control every client that posts.
+$config['csrf_regenerate'] = Env::get_bool('CSRF_REGENERATE', FALSE);
 // CI3 anchors these as #^<pattern>$#i. Keep them tight: 'health.*' would also
 // exempt any future route merely starting with "health". Webhooks and the API
 // are exempt because they authenticate by HMAC signature and API key

@@ -41,7 +41,159 @@ class Home extends Public_Controller {
     }
     public function blog(){ $this->load->view('layouts/public', array('content_view'=>'public/blog_list','data'=>array('title'=>'Blog'))); }
     public function blog_detail($slug){ $this->load->view('layouts/public', array('content_view'=>'public/blog_detail','data'=>array('title'=>$slug))); }
-    public function contact(){ $this->load->view('layouts/public', array('content_view'=>'public/contact','data'=>array('title'=>'Contact'))); }
+    /**
+     * Contact page.
+     *
+     * This used to render a heading and nothing else — there was no form, so
+     * "the contact form is broken" was literally true: there was nothing to
+     * submit. It now posts to contact_submit() below.
+     */
+    public function contact($data = array()){
+        $this->load->view('layouts/public', array(
+            'content_view' => 'public/contact',
+            'data' => array_merge(array(
+                'title'           => 'Contact',
+                'meta_description'=> 'Contact the WINDELS PANEL support team.',
+                'support_email'   => $this->support_email(),
+            ), $data),
+        ));
+    }
+
+    /**
+     * Handle a contact submission.
+     *
+     * Two destinations, deliberately: a signed-in customer gets a real support
+     * ticket (threaded, visible in their dashboard, answerable by staff),
+     * while a visitor's message is queued as email to the support address.
+     * Inventing a ticket for someone with no account would create a
+     * conversation they could never read a reply to.
+     *
+     * Throttled per IP through the same table the login screen uses, with a
+     * honeypot field for the bots that do not read it.
+     */
+    public function contact_submit(){
+        if ($this->input->method(true) !== 'POST') { redirect('contact'); return; }
+
+        $this->load->library('RateLimiter');
+        $ip     = $this->input->ip_address();
+        $bucket = RateLimiter::scope('contact');
+
+        $form = array(
+            'name'    => trim((string)$this->input->post('name')),
+            'email'   => trim((string)$this->input->post('email')),
+            'subject' => trim((string)$this->input->post('subject')),
+            'message' => trim((string)$this->input->post('message')),
+        );
+
+        if ($this->ratelimiter->too_many_failures($ip, $bucket, 5, 3600)) {
+            $retry = $this->ratelimiter->retry_after($ip, $bucket, 3600, 5);
+            $this->contact(array(
+                'error' => 'Too many messages from this network. Try again in '
+                           .max(1, (int)ceil($retry / 60)).' minute(s).',
+                'form'  => $form,
+            ));
+            return;
+        }
+
+        // Honeypot: a field no human sees and every naive bot fills in. Answer
+        // with the success page so the bot has nothing to learn.
+        if (trim((string)$this->input->post('website')) !== '') {
+            log_message('info', 'contact: honeypot triggered from '.$ip);
+            $this->contact(array('success' => $this->thanks_message()));
+            return;
+        }
+
+        $error = $this->validate_contact($form);
+        if ($error !== null) {
+            $this->ratelimiter->record($bucket, $ip, false, 'CONTACT_INVALID', $this->input->user_agent());
+            $this->contact(array('error' => $error, 'form' => $form));
+            return;
+        }
+
+        $user = $this->current_user();
+        if ($user) {
+            $this->load->library('TicketService');
+            $res = $this->ticketservice->open($user, array(
+                'subject'    => $form['subject'],
+                'message'    => $form['message'],
+                'department' => 'general',
+                'priority'   => 'MEDIUM',
+            ));
+            if (empty($res['ok'])) {
+                $this->ratelimiter->record($bucket, $ip, false, 'CONTACT_FAILED', $this->input->user_agent());
+                $this->contact(array(
+                    'error' => $res['error'] ?? 'Your message could not be sent. Please try again.',
+                    'form'  => $form,
+                ));
+                return;
+            }
+            $this->ratelimiter->record($bucket, $ip, true, 'CONTACT_TICKET', $this->input->user_agent());
+            $this->session->set_flashdata('success', 'Thanks — we opened a ticket for your message.');
+            redirect('dashboard/tickets/'.$res['ticket']->public_id);
+            return;
+        }
+
+        $this->load->library('MailService');
+        $support = $this->support_email();
+        $queued = $this->mailservice->enqueue_raw(
+            $support,
+            '[Contact] '.$form['subject'],
+            '<p><strong>From:</strong> '.html_escape($form['name']).' &lt;'.html_escape($form['email']).'&gt;</p>'
+            .'<p><strong>IP:</strong> '.html_escape($ip).'</p>'
+            .'<hr><p>'.nl2br(html_escape($form['message'])).'</p>',
+            $form['name'].' <'.$form['email'].'>'."\n\n".$form['message'],
+            'Support',
+            'contact.message'
+        );
+
+        if (!$queued) {
+            $this->ratelimiter->record($bucket, $ip, false, 'CONTACT_QUEUE_FAILED', $this->input->user_agent());
+            $this->contact(array(
+                'error' => 'Your message could not be sent right now. Please email '.$support.' directly.',
+                'form'  => $form,
+            ));
+            return;
+        }
+
+        $this->ratelimiter->record($bucket, $ip, true, 'CONTACT_EMAIL', $this->input->user_agent());
+        $this->contact(array('success' => $this->thanks_message()));
+    }
+
+    /** @return string|null the first problem with the submission, or NULL */
+    private function validate_contact(array $form) {
+        if ($form['name'] === '' || mb_strlen($form['name']) > 100) {
+            return 'Please tell us your name (100 characters or fewer).';
+        }
+        if (!filter_var($form['email'], FILTER_VALIDATE_EMAIL)) {
+            return 'That email address does not look valid — we need it to reply.';
+        }
+        if ($form['subject'] === '' || mb_strlen($form['subject']) > 150) {
+            return 'Please give the message a subject (150 characters or fewer).';
+        }
+        if (mb_strlen($form['message']) < 10) {
+            return 'Please write a little more so we can actually help.';
+        }
+        if (mb_strlen($form['message']) > 5000) {
+            return 'That message is longer than 5,000 characters — please trim it.';
+        }
+        return null;
+    }
+
+    private function thanks_message() {
+        return 'Thanks — your message is on its way to our support team. '
+              .'We reply to the address you gave us, usually within one business day.';
+    }
+
+    /** Support address from settings, falling back to config/.env. */
+    private function support_email() {
+        try {
+            $this->load->model('Setting_model');
+            $value = $this->Setting_model->get('support_email');
+            if ($value) return $value;
+        } catch (Exception $e) { /* settings unavailable — fall through */ }
+        $cfg = $this->config->item('windels');
+        return $cfg['support_email'] ?? 'support@windels.local';
+    }
     public function terms(){ $this->load->view('layouts/public', array('content_view'=>'public/terms','data'=>array('title'=>'Terms'))); }
     public function privacy(){ $this->load->view('layouts/public', array('content_view'=>'public/privacy','data'=>array('title'=>'Privacy'))); }
     public function refund_policy(){ $this->load->view('layouts/public', array('content_view'=>'public/refund_policy','data'=>array('title'=>'Refund Policy'))); }

@@ -300,8 +300,26 @@ class SecurityHardeningTest extends TestCase
         $src = file_get_contents(self::$root.'/application/config/config.php');
         $this->assertMatchesRegularExpression(
             "~csrf_protection'\]\s*=\s*TRUE~i", $src);
+
+        // Rotation used to be pinned on here. It is now off by default and
+        // switchable with VP_CSRF_REGENERATE, because a token that is retired
+        // by the first POST breaks every page that posts twice from one
+        // render — an AJAX reply box, a support widget, a second tab, the Back
+        // button — and the failure surfaces to the customer as an unexplained
+        // error on their second message. The token is still per-session,
+        // cookie-bound and unreadable cross-origin, which is what actually
+        // stops the attack; MY_Security keeps the verification itself in the
+        // framework and merely lets a non-form client present the token in a
+        // header.
         $this->assertMatchesRegularExpression(
-            "~csrf_regenerate'\]\s*=\s*TRUE~i", $src);
+            "~csrf_regenerate'\]\s*=\s*Env::get_bool\('CSRF_REGENERATE', FALSE\)~i", $src,
+            'rotation must stay configurable rather than silently re-pinned on');
+
+        $security = file_get_contents(self::$root.'/application/core/MY_Security.php');
+        $this->assertStringContainsString('parent::csrf_verify()', $security,
+            'the token comparison must remain the framework\'s');
+        $this->assertStringNotContainsString('Access-Control-Allow-Origin', $security,
+            'a CSRF token readable cross-origin is not a CSRF token');
 
         preg_match("~csrf_exclude_uris'\]\s*=\s*array\(([^)]*)\)~", $src, $m);
         $this->assertNotEmpty($m);

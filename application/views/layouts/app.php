@@ -82,6 +82,12 @@ try {
 <?php if (!empty($brand['brand_favicon_url'])): ?>
 <link rel="icon" href="<?=htmlspecialchars($brand['brand_favicon_url'])?>">
 <?php endif; ?>
+<?php // CSRF token for JavaScript: assets/js/app.js reads these and attaches the
+      // token to every same-origin fetch/XHR, so a page that posts more than
+      // once (reply box, chat widget, retry) never sends a retired token. ?>
+<meta name="csrf-name" content="<?=htmlspecialchars($this->security->get_csrf_token_name())?>">
+<meta name="csrf-token" content="<?=htmlspecialchars($this->security->get_csrf_hash())?>">
+<meta name="csrf-endpoint" content="<?=htmlspecialchars(site_url('csrf'))?>">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap">
 <link rel="stylesheet" href="<?=base_url('assets/css/tailwind.css')?>">
 <link rel="stylesheet" href="<?=base_url('assets/css/design-system.css')?>">
