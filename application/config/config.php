@@ -5,8 +5,17 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 // directly. Both are no-ops if the helper is already loaded.
 require_once APPPATH.'helpers/windels_helper.php';
 
-/* Base URL — set APP_URL in .env */
-$config['base_url'] = getenv('APP_URL') ?: 'http://localhost:8080/';
+// Every server-specific value below comes from .env through Env, which also
+// understands the portable VP_* spellings used by the cPanel deployment guide.
+// Requiring it here (rather than trusting index.php) keeps config parsing
+// working for tests and CLI tools that boot CodeIgniter directly.
+require_once APPPATH.'core/Env.php';
+Env::bootstrap(rtrim(realpath(APPPATH.'..'), DIRECTORY_SEPARATOR));
+$windels_paths = Env::writable_paths();
+
+/* Base URL — VP_BASE_URL (or APP_URL). Auto-detected from the request when
+   unset, so a freshly uploaded panel still links to itself correctly. */
+$config['base_url'] = rtrim((string) Env::get('APP_URL', ''), '/').'/';
 $config['index_page'] = '';
 $config['uri_protocol'] = 'REQUEST_URI';
 $config['url_suffix'] = '';
@@ -23,22 +32,28 @@ $config['function_trigger'] = 'm';
 $config['directory_trigger'] = 'd';
 
 $config['log_threshold'] = env_bool('APP_DEBUG') ? 2 : 1;
-$config['log_path'] = APPPATH . '../storage/logs/';
+$config['log_path'] = $windels_paths['logs'].'/';
 $config['log_file_extension'] = '';
 $config['log_file_permissions'] = 0644;
 $config['log_date_format'] = 'Y-m-d H:i:s';
 $config['error_views_path'] = '';
-$config['cache_path'] = APPPATH . 'cache/';
+$config['cache_path'] = $windels_paths['ci_cache'].'/';
 $config['cache_query_string'] = FALSE;
 // No placeholder fallback: EncryptionService::resolve_key() refuses to boot
 // production with an unset or example key, and supplies a clearly-labelled
 // development key otherwise.
 require_once APPPATH.'libraries/EncryptionService.php';
 $config['encryption_key'] = EncryptionService::resolve_key();
-$config['sess_driver'] = getenv('SESS_DRIVER') ?: 'files';
-$config['sess_cookie_name'] = getenv('SESS_COOKIE_NAME') ?: 'windels_session';
-$config['sess_expiration'] = 7200;
-$config['sess_save_path'] = getenv('SESS_SAVE_PATH') ?: APPPATH . '../storage/cache/sessions/';
+// Sessions default to files on disk: shared hosting has no Redis, and a
+// session driver that cannot connect is a login screen that never logs anyone
+// in. Set VP_SESSION_DRIVER=redis (or database) where the infrastructure is
+// actually there.
+$config['sess_driver'] = Env::get('SESS_DRIVER', 'files');
+$config['sess_cookie_name'] = Env::get('SESS_COOKIE_NAME', 'windels_session');
+$config['sess_expiration'] = Env::get_int('SESS_EXPIRATION', 7200);
+$config['sess_save_path'] = $config['sess_driver'] === 'files'
+    ? Env::get('SESS_SAVE_PATH', $windels_paths['sessions'].'/')
+    : Env::get('SESS_SAVE_PATH', 'ci_sessions');
 $config['sess_match_ip'] = FALSE;
 $config['sess_time_to_update'] = 300;
 $config['sess_regenerate_destroy'] = FALSE;
@@ -46,7 +61,14 @@ $config['sess_regenerate_destroy'] = FALSE;
 $config['cookie_prefix'] = '';
 $config['cookie_domain'] = '';
 $config['cookie_path'] = '/';
-$config['cookie_secure'] = (env_str('APP_ENV') === 'production');
+// Secure cookies in production, and also on any deployment whose own base URL
+// is https — a panel can be served over TLS long before anyone remembers to
+// set CI_ENV, and the cookie flag should follow the transport that is actually
+// in use rather than a label. (A production panel still on plain http gets
+// Secure cookies and therefore no working login: that is deliberate, and the
+// fix is the free AutoSSL certificate in cPanel -> SSL/TLS Status.)
+$config['cookie_secure'] = (env_str('APP_ENV') === 'production')
+    || (stripos((string) Env::get('APP_URL', ''), 'https://') === 0);
 $config['cookie_httponly'] = TRUE;
 $config['cookie_samesite'] = 'Lax';
 

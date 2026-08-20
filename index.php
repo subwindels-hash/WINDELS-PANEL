@@ -1,13 +1,25 @@
 <?php
 /**
  * WINDELS PANEL — Front Controller (CodeIgniter 3.x)
- * Loads .env via vlucas/phpdotenv if available, then boots CI.
+ *
+ * Boot order matters and is deliberate:
+ *
+ *   1. `.env` is read by application/core/Env.php — a dependency-free parser,
+ *      so a cPanel deployment that never ran `composer install` still gets its
+ *      database credentials, base URL and secrets. It also creates the runtime
+ *      directories, which is what removes the old `php index.php deploy
+ *      storage` step from a fresh install.
+ *   2. composer's autoloader, *if* a vendor/ directory happens to be present.
+ *      Nothing in the request path requires it: phpdotenv is replaced by the
+ *      loader above, and predis/ramsey/aws are optional feature dependencies
+ *      guarded by class_exists() at their call sites.
+ *   3. CodeIgniter.
  */
+require_once __DIR__ . '/application/core/Env.php';
+Env::bootstrap(__DIR__);
+
 if (file_exists(__DIR__ . '/vendor/autoload.php')) {
     require __DIR__ . '/vendor/autoload.php';
-    if (class_exists(\Dotenv\Dotenv::class) && file_exists(__DIR__ . '/.env')) {
-        \Dotenv\Dotenv::createImmutable(__DIR__)->safeLoad();
-    }
 }
 
 /*
@@ -17,10 +29,24 @@ if (file_exists(__DIR__ . '/vendor/autoload.php')) {
  */
 // An empty Cgi/FastCGI CI_ENV (nginx forwards `$CI_ENV` even when unset) must
 // not win over the environment — an empty ENVIRONMENT is a 503 wall in production.
+//
+// The fallback is `production`, not `development`: an uploaded panel whose
+// .env has not been filled in yet must not answer the internet with full error
+// output and query dumps. Local work sets CI_ENV=development explicitly, which
+// .env.example does for you.
 define('ENVIRONMENT',
     !empty($_SERVER['CI_ENV'])  ? $_SERVER['CI_ENV'] :
    (!empty($_SERVER['APP_ENV']) ? $_SERVER['APP_ENV'] :
-    (getenv('CI_ENV') ?: (getenv('APP_ENV') ?: 'development'))));
+    (getenv('CI_ENV') ?: (getenv('APP_ENV') ?: 'production'))));
+
+// Configuration problems (an unset encryption key, an unreadable .env) are
+// thrown while the config files are being parsed — before CodeIgniter has an
+// error handler of its own, which used to make them a blank white page. Turn
+// them into a page that names the file to fix; CI3 replaces this handler with
+// its own as soon as it boots.
+set_exception_handler(function ($e) {
+    Env::render_boot_error($e, ENVIRONMENT);
+});
 
 /*
  *---------------------------------------------------------------

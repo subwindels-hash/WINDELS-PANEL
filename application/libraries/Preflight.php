@@ -26,11 +26,17 @@ class Preflight {
     const OK   = 'OK';
 
     /** Directories the app writes to at runtime, relative to the project root. */
+    /**
+     * Kept for callers/tests that reference the historical list; the live
+     * check reads Env::writable_report() so it cannot drift from the paths the
+     * application configures.
+     */
     const WRITABLE_PATHS = array(
         'storage/logs',
         'storage/cache',
         'storage/cache/sessions',
         'application/cache',
+        'assets/uploads',
     );
 
     /** PHP extensions without which the app cannot function. */
@@ -137,19 +143,27 @@ class Preflight {
         return $out;
     }
 
+    /**
+     * Runtime directories, resolved through Env so this agrees with what the
+     * application actually writes to (including a deployment that relocated
+     * them with VP_STORAGE_PATH / VP_UPLOAD_PATH) rather than a second list
+     * that can drift. Env creates them on boot; a FAIL here means the account
+     * would not let it.
+     */
     private function check_writable_paths() {
+        require_once APPPATH.'core/Env.php';
         $out = array();
-        foreach (self::WRITABLE_PATHS as $rel) {
-            $path = $this->root.'/'.$rel;
-            if (!is_dir($path)) {
-                $out[] = $this->result('writable:'.$rel, self::FAIL, 'missing',
-                    'Create it: mkdir -p '.$rel);
+        foreach (Env::writable_report() as $name => $info) {
+            if (!$info['exists']) {
+                $out[] = $this->result('writable:'.$name, self::FAIL, 'missing: '.$info['path'],
+                    'cPanel: File Manager -> +Folder. Shell: mkdir -p '.$info['path']);
                 continue;
             }
-            $out[] = is_writable($path)
-                ? $this->result('writable:'.$rel, self::OK, 'writable')
-                : $this->result('writable:'.$rel, self::FAIL, 'not writable',
-                    'chown the directory to the PHP-FPM user.');
+            $out[] = $info['writable']
+                ? $this->result('writable:'.$name, self::OK, 'writable')
+                : $this->result('writable:'.$name, self::FAIL, 'not writable: '.$info['path'],
+                    'cPanel: File Manager -> select the folder -> Permissions -> 755 (or 775). '
+                    .'Shell: chown it to the PHP-FPM user.');
         }
         return $out;
     }

@@ -1,10 +1,37 @@
 .env
 /vendor/
 /system/
-/application/cache/*
-/storage/logs/*
-/storage/cache/*
 /node_modules/
 /assets/css/tailwind.css
+
+# Runtime directories ship in the repo (and therefore in the deployment
+# package) so a cPanel upload never has to create them by hand — only their
+# contents are ignored. The .htaccess/index.html guards inside each one are
+# part of the deployment: they are what keeps logs, caches and sessions
+# unreadable over HTTP on hosts where the whole tree sits under public_html.
+/application/cache/*
+!/application/cache/.htaccess
+!/application/cache/index.html
+/storage/logs/*
+!/storage/logs/.htaccess
+!/storage/logs/index.html
+/storage/cache/*
+!/storage/cache/.htaccess
+!/storage/cache/index.html
+!/storage/cache/sessions/
+/storage/cache/sessions/*
+!/storage/cache/sessions/.htaccess
+!/storage/cache/sessions/index.html
+!/storage/cache/ratelimit/
+/storage/cache/ratelimit/*
+!/storage/cache/ratelimit/.htaccess
+!/storage/cache/ratelimit/index.html
 /assets/uploads/*
 !/assets/uploads/.gitignore
+!/assets/uploads/.htaccess
+!/assets/uploads/index.html
+
+# Staging directory of tools/build_deployment_package.sh. The zip it produces
+# (application-deployment.zip) IS committed: an operator with no terminal has
+# to be able to download a ready package straight from the repository.
+/build/

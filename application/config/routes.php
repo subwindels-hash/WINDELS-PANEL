@@ -5,6 +5,12 @@ $route['default_controller'] = 'home';
 $route['404_override'] = '';
 $route['translate_uri_dashes'] = FALSE;
 
+// First-run setup / deployment self-check. 404 unless VP_SETUP_TOKEN is set in
+// .env and the request presents it, so these two lines add no attack surface
+// to a deployment that never uses them.
+$route['setup'] = 'setup/index';
+$route['setup/admin'] = 'setup/admin';
+
 // Health
 $route['health'] = 'health/index';
 $route['health/live'] = 'health/live';

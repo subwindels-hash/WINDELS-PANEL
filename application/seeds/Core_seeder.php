@@ -463,8 +463,8 @@ class Core_seeder extends Seeder {
                 'name'       => $name,
                 'status'     => 'ACTIVE',
                 'sort_order' => $sort,
-                'created_at' => gmdate('Y-m-d H:i:s'),
-                'updated_at' => gmdate('Y-m-d H:i:s'),
+                'created_at' => $this->now(),
+                'updated_at' => $this->now(),
             ));
         }
     }

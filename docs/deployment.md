@@ -1,7 +1,20 @@
 # Deployment
 
-Operational runbook for WINDELS PANEL. Everything here is CLI-only by design —
-there are no web-triggered migrations, seeds or cron endpoints (§66).
+Operational runbook for the **container / self-managed server** deployment,
+where a terminal exists and CI drives releases.
+
+> **Deploying on shared hosting (cPanel)? Read
+> [cpanel-deployment.md](cpanel-deployment.md) instead.** That path needs no
+> terminal at all: upload the package, create the database, import
+> `database/production.sql` through phpMyAdmin, edit `.env`, open the domain.
+> The commands on this page are conveniences for maintainers, not requirements
+> for an install.
+
+Everything here is CLI-only by design — there are no web-triggered migrations,
+seeds or cron endpoints (§66). The one browser-facing exception is `/setup`,
+which is 404 unless `VP_SETUP_TOKEN` is set in `.env`: it reports deployment
+checks and sets the first administrator's credentials, and it never migrates or
+seeds anything.
 
 > WINDELS-PANEL is a traditional PHP MVC application built on CodeIgniter 3.x
 > with MySQL/MariaDB, served through PHP-FPM and Nginx. Redis provides
@@ -29,11 +42,46 @@ composer install --no-dev --optimize-autoloader
 cp .env.example .env
 $EDITOR .env                       # see "Required settings" below
 
-php index.php deploy storage       # create runtime directories
 php index.php migrate              # apply the 19 migrations (001–019; 018 retires legacy withdrawal tables, 019 legacy marketplace vendors)
 php index.php seed core            # roles, permissions, settings
 php index.php deploy check         # verify before serving traffic
 ```
+
+`deploy storage` is no longer a step: the runtime directories ship in the tree
+and `Env::ensure_writable_paths()` recreates any that are missing on the first
+request. The command still exists for hosts where the web user may not create
+directories.
+
+Alternatively — and this is what shared hosting does — skip `migrate`/`seed`
+entirely and import the one complete database file:
+
+```bash
+mysql -u user -p dbname < database/production.sql   # or phpMyAdmin → Import
+```
+
+It contains the schema, the migration bookkeeping (so a later `migrate` applies
+only what came afterwards), all core seed data and a first administrator.
+Regenerate it after any migration or seeder change:
+
+```bash
+php tools/build_production_sql.php          # writes database/production.sql
+php tools/build_production_sql.php --check  # CI: fails when it is stale
+python3 tools/validate_production_sql.py    # completeness + consistency
+```
+
+## Building the cPanel package
+
+```bash
+bash tools/build_deployment_package.sh      # -> application-deployment.zip
+bash tools/verify_deployment_package.sh     # extracts it into a scratch
+                                            # "account" and proves .env alone
+                                            # boots the configuration
+```
+
+The zip carries CodeIgniter, the compiled CSS, the pre-created writable
+directories and `database/production.sql`, so the destination host needs
+neither Composer nor npm. CI publishes it as a release artifact
+(`deployment-package.yml.workflow-ready`).
 
 `deploy check` exits non-zero if anything is unsafe, so it can gate a release:
 
