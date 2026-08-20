@@ -162,7 +162,15 @@ class SupportContentTest extends TestCase
         );
         foreach ($views as $v) {
             $html = file_get_contents($v);
-            $this->assertStringContainsString('csrf_token_name', $html, basename($v));
+            // Either spelling protects the post: form_open() emits the hidden
+            // CSRF field itself, which is why the reply/close/reopen forms in
+            // detail.php no longer hand-roll it (a hand-rolled <form> is how
+            // one of them ended up mis-nested with its neighbour).
+            $this->assertTrue(
+                strpos($html, 'csrf_token_name') !== false || strpos($html, 'form_open(') !== false,
+                basename($v).' posts must carry a CSRF token');
+            $this->assertStringNotContainsString('<form method="post"', $html,
+                basename($v).': hand-rolled form tags miss the token form_open() adds');
         }
     }
 

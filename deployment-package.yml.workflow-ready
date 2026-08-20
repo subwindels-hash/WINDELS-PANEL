@@ -1,0 +1,78 @@
+# WINDELS PANEL — deployment package build
+#
+# Produces `application-deployment.zip`: the terminal-free cPanel package
+# (index.php, .htaccess, .env.example, application/, system/, assets/,
+# storage/, cron/, database/production.sql). Attach it to a release and an
+# operator's whole deployment is: download, upload through File Manager,
+# extract, create the database, import the SQL, edit .env.
+#
+# Activation (one-time maintainer step — an automation token without the
+# `workflows` permission cannot create files under .github/workflows):
+#
+#   mkdir -p .github/workflows
+#   git mv deployment-package.yml.workflow-ready .github/workflows/deployment-package.yml
+#   git commit -m "Enable the deployment package workflow" && git push
+#
+# Runs on demand and on every tag. The artifact is what the deployment guide
+# tells operators to download, so nobody ever has to run the build themselves.
+
+name: Deployment package
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  package:
+    name: Build application-deployment.zip
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, curl, json, bcmath, mysqli, gd, zip
+          coverage: none
+
+      - name: Install PHP dependencies
+        # --no-dev because the package must contain production dependencies
+        # only, and the post-install hook links system/ from the framework
+        # package so the zip carries CodeIgniter with it.
+        run: composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+
+      - name: Build the Tailwind bundle
+        # Done here so the package ships compiled CSS and the destination host
+        # never needs Node.
+        run: |
+          npm ci
+          npm run build:css
+
+      - name: Database file is current with the migrations and the core seed
+        run: |
+          php tools/build_production_sql.php --check
+          python3 -m pip install --quiet sqlglot
+          python3 tools/validate_production_sql.py
+
+      - name: Build the package
+        run: bash tools/build_deployment_package.sh
+
+      - name: Verify a fresh deployment of the package
+        run: bash tools/verify_deployment_package.sh
+
+      - name: Upload the artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: application-deployment
+          path: application-deployment.zip
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: application-deployment.zip

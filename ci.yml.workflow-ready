@@ -168,6 +168,74 @@ jobs:
           fi
           echo "demo seed correctly refused under production"
 
+      # Stage 6b — the cPanel deployment path: one importable database, no
+      # migrate/seed/installer command anywhere. This is the artefact an
+      # operator with no terminal actually installs, so it is verified the way
+      # they will use it: import it into an empty database, then assert the
+      # panel's own expectations against the result.
+      - name: production.sql is current with the migrations and the core seed
+        run: |
+          php tools/build_production_sql.php --check
+          python3 tools/validate_production_sql.py
+
+      - name: Import production.sql into an empty database (what phpMyAdmin does)
+        env:
+          MYSQL_PWD: windels_secret
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -uwindels -e "DROP DATABASE IF EXISTS windels_import; CREATE DATABASE windels_import CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+          mysql -h 127.0.0.1 -P 3306 -uwindels windels_import < database/production.sql
+
+      - name: A freshly imported database needs no migration and no seed
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: windels
+          DB_PASSWORD: windels_secret
+          DB_NAME: windels_import
+          MYSQL_PWD: windels_secret
+        run: |
+          set -e
+          # Migrations: already recorded, so this must be a no-op rather than a
+          # replay that collides with existing tables.
+          php index.php migrate | tee /tmp/migrate.out
+          grep -qi "already\|nothing\|up to date\|current" /tmp/migrate.out || {
+            echo "an imported database should have nothing to migrate" >&2; exit 1; }
+
+          # Core seed: idempotent, so re-running it must insert nothing. If it
+          # does, production.sql is missing seed data an operator would never
+          # get without a terminal.
+          before=$(mysql -h 127.0.0.1 -uwindels -N -B windels_import -e "SELECT (SELECT COUNT(*) FROM roles)+(SELECT COUNT(*) FROM permissions)+(SELECT COUNT(*) FROM settings)+(SELECT COUNT(*) FROM feature_flags)+(SELECT COUNT(*) FROM payment_methods)+(SELECT COUNT(*) FROM email_templates)+(SELECT COUNT(*) FROM currencies)+(SELECT COUNT(*) FROM vtu_products);")
+          php index.php seed core
+          after=$(mysql -h 127.0.0.1 -uwindels -N -B windels_import -e "SELECT (SELECT COUNT(*) FROM roles)+(SELECT COUNT(*) FROM permissions)+(SELECT COUNT(*) FROM settings)+(SELECT COUNT(*) FROM feature_flags)+(SELECT COUNT(*) FROM payment_methods)+(SELECT COUNT(*) FROM email_templates)+(SELECT COUNT(*) FROM currencies)+(SELECT COUNT(*) FROM vtu_products);")
+          [ "$before" = "$after" ] || {
+            echo "core seed inserted rows into an imported database ($before -> $after): production.sql is incomplete" >&2; exit 1; }
+
+      - name: The seeded administrator can authenticate
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: windels
+          DB_PASSWORD: windels_secret
+          DB_NAME: windels_import
+        run: |
+          php -r '
+            $sql = file_get_contents("database/production.sql");
+            preg_match("/--\s+password:\s+(\S+)/", $sql, $pw);
+            $db = new mysqli("127.0.0.1", "windels", "windels_secret", "windels_import", 3306);
+            $row = $db->query("SELECT password_hash, status, role FROM users WHERE role = \"SUPER_ADMIN\" LIMIT 1")->fetch_assoc();
+            if (!$row) { fwrite(STDERR, "no administrator in the imported database\n"); exit(1); }
+            if ($row["status"] !== "ACTIVE") { fwrite(STDERR, "administrator is not ACTIVE\n"); exit(1); }
+            if (!password_verify($pw[1], $row["password_hash"])) {
+              fwrite(STDERR, "the documented password does not verify against the seeded hash\n"); exit(1);
+            }
+            $grants = $db->query("SELECT COUNT(*) c FROM role_permissions rp JOIN roles r ON r.id = rp.role_id WHERE r.name = \"SUPER_ADMIN\"")->fetch_assoc();
+            if ((int)$grants["c"] === 0) { fwrite(STDERR, "SUPER_ADMIN has no permissions\n"); exit(1); }
+            echo "administrator authenticates, ", $grants["c"], " permissions granted\n";
+          '
+
+      - name: Deployment package builds and deploys with no terminal
+        run: bash tools/verify_deployment_package.sh
+
       # Stage 7 — full PHPUnit suite
       - name: Run test suite
         run: vendor/bin/phpunit --testdox

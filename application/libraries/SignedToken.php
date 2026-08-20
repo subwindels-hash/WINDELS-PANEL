@@ -26,7 +26,15 @@ class SignedToken {
 
     public function __construct($key = null) {
         if ($key === null || $key === '') {
-            $key = getenv('APP_KEY') ?: getenv('ENCRYPTION_KEY') ?: 'change-me-app-key-in-env';
+            // Env when the app is booted (it resolves VP_AUTH_SECRET), plain
+            // getenv() when this class is unit-tested on its own.
+            if (!class_exists('Env', false) && defined('APPPATH') && file_exists(APPPATH.'core/Env.php')) {
+                require_once APPPATH.'core/Env.php';
+            }
+            $key = class_exists('Env', false)
+                ? (Env::get('AUTH_SECRET') ?: (Env::get('APP_KEY') ?: Env::get('ENCRYPTION_KEY')))
+                : (getenv('APP_KEY') ?: getenv('ENCRYPTION_KEY'));
+            $key = $key ?: 'change-me-app-key-in-env';
         }
         // Normalise to a 32-byte key regardless of input length.
         $this->key = hash('sha256', (string)$key, true);

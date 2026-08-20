@@ -6,3 +6,4 @@
 # under assets/ is directly fetchable by URL.
 *
 !.gitignore
+!.htaccess

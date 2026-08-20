@@ -78,6 +78,14 @@ class TicketService {
         $this->ci->Ticket_model->touch($ticket->id, $extra);
         $this->ci->db->trans_complete();
 
+        // staff_reply() has always checked this; the customer path did not, so
+        // a rolled-back reply was reported as sent and the message silently
+        // vanished — indistinguishable, from the customer's side, from the
+        // panel eating their second message.
+        if ($this->ci->db->trans_status() === false) {
+            return array('ok'=>false,'error'=>'Could not save reply','code'=>'PERSIST_FAILED');
+        }
+
         return array('ok'=>true,'message'=>$msg,'ticket'=>$this->ci->Ticket_model->find_by_id($ticket->id));
     }
 

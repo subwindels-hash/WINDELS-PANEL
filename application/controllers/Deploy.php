@@ -50,23 +50,21 @@ class Deploy extends Cron_Controller {
     }
 
     /**
-     * Create the runtime directories. They are gitignored (correctly — their
-     * contents are not source), which means a fresh clone has no storage/logs
-     * at all and CI3 silently drops every log line it tries to write.
+     * Create the runtime directories.
+     *
+     * No longer a deployment step: the directories are committed (only their
+     * contents are ignored), they ship inside application-deployment.zip, and
+     * Env::ensure_writable_paths() recreates any that are missing on the first
+     * request. This command remains for the case that motivates it — a host
+     * where the web user may not create directories, so someone with a shell
+     * has to — and for anyone who wants to see the resolved paths.
      */
     public function storage() {
-        $root = rtrim(realpath(APPPATH.'..'), '/');
-        foreach (Preflight::WRITABLE_PATHS as $rel) {
-            $path = $root.'/'.$rel;
-            if (is_dir($path)) {
-                $this->line('  exists   '.$rel);
-                continue;
-            }
-            if (@mkdir($path, 0775, TRUE)) {
-                $this->line('  created  '.$rel);
-            } else {
-                $this->line('  FAILED   '.$rel);
-            }
+        require_once APPPATH.'core/Env.php';
+        Env::ensure_writable_paths();
+        foreach (Env::writable_report() as $name => $info) {
+            $state = !$info['exists'] ? 'FAILED  ' : ($info['writable'] ? 'ok      ' : 'READONLY');
+            $this->line(sprintf('  %s %-10s %s', $state, $name, $info['path']));
         }
         $this->line('');
     }

@@ -70,11 +70,14 @@ class MailService {
     /**
      * Deliver one queued message (called by the email_queue cron worker).
      *
-     * Transport is chosen from settings: `smtp` uses CI3's email library,
-     * `log` writes the payload to the log (the default in dev, and what the
-     * verify/reset links are read from locally). The queue row itself is
-     * managed by the worker — this method only attempts delivery and reports
-     * the outcome.
+     * Transport is chosen from settings, falling back to VP_MAIL_DRIVER in
+     * .env so a fresh deployment sends mail without an admin first visiting a
+     * settings screen: `mail` hands off to PHP's mail() (what a cPanel account
+     * has working out of the box), `smtp` uses CI3's email library against the
+     * configured server, `log` writes the payload to the log (the default in
+     * dev, and what the verify/reset links are read from locally). The queue
+     * row itself is managed by the worker — this method only attempts delivery
+     * and reports the outcome.
      *
      * @return array{ok:bool, transport?:string, error?:string}
      */
@@ -82,7 +85,12 @@ class MailService {
         if (!$mail || empty($mail->to_email)) {
             return array('ok'=>false, 'error'=>'missing recipient');
         }
-        $transport = strtolower((string)$this->ci->Setting_model->get('mail_transport', 'log'));
+        require_once APPPATH.'core/Env.php';
+        $default_transport = strtolower((string)Env::get('MAIL_DRIVER', 'log'));
+        if (!in_array($default_transport, array('log', 'smtp', 'mail'), TRUE)) {
+            $default_transport = 'log';
+        }
+        $transport = strtolower((string)$this->ci->Setting_model->get('mail_transport', $default_transport));
 
         if ($transport === 'log' || env_bool('MAIL_LOG')) {
             log_message('info', sprintf(
@@ -92,7 +100,7 @@ class MailService {
             if ($transport === 'log') return array('ok'=>true, 'transport'=>'log');
         }
 
-        if ($transport !== 'smtp') {
+        if ($transport !== 'smtp' && $transport !== 'mail') {
             return array('ok'=>false, 'error'=>"unknown mail transport '{$transport}'");
         }
 
@@ -112,7 +120,7 @@ class MailService {
                 // print_debugger() is the only way CI3 surfaces the SMTP error.
                 return array('ok'=>false, 'error'=>strip_tags((string)$this->ci->email->print_debugger(array('headers'))));
             }
-            return array('ok'=>true, 'transport'=>'smtp');
+            return array('ok'=>true, 'transport'=>$transport);
         } catch (Exception $e) {
             return array('ok'=>false, 'error'=>$e->getMessage());
         }

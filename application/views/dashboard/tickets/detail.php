@@ -40,24 +40,32 @@ $t = $ticket;
     <?php if ($t->status !== 'CLOSED'): ?>
     <div class="card">
       <h3 class="card-title">Reply</h3>
+      <?php
+      // The reply form and the close form used to be interleaved: </form> was
+      // emitted in the middle of the flex row, with the close form opening
+      // inside the div the reply form had opened. Browsers recover from that
+      // by re-parenting elements, which is how a "Send reply" button ends up
+      // associated with the wrong form (or no form) after the first submit.
+      // Two complete, sibling forms — no nesting, no overlap.
+      ?>
       <?=form_open('dashboard/tickets/'.$t->public_id.'/reply', array('class'=>'mt-2 stack'))?>
         <textarea class="textarea" name="message" required rows="4" maxlength="20000" placeholder="Type your reply…"></textarea>
-        <div class="row" style="justify-content:space-between">
-          <button class="btn btn-primary" type="submit">Send reply</button>
+        <button class="btn btn-primary" type="submit">Send reply</button>
       <?=form_close()?>
-          <form method="post" action="<?=site_url('dashboard/tickets/'.$t->public_id.'/close')?>">
-            <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
-            <button class="btn btn-ghost btn-sm" type="submit">Close ticket</button>
-          </form>
-        </div>
+      <div class="row mt-3" style="justify-content:flex-end">
+        <?=form_open('dashboard/tickets/'.$t->public_id.'/close', array('class'=>'m-0'))?>
+          <button class="btn btn-ghost btn-sm" type="submit">Close ticket</button>
+        <?=form_close()?>
+      </div>
     </div>
     <?php else: ?>
     <div class="card muted text-center">This ticket is closed.
-      <form method="post" action="<?=site_url('dashboard/tickets/'.$t->public_id.'/reply')?>" class="mt-2">
-        <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
+      <?php // form_open() emits the CSRF field itself, so the token can never
+            // be forgotten here or go stale differently from the other forms. ?>
+      <?=form_open('dashboard/tickets/'.$t->public_id.'/reply', array('class'=>'mt-2'))?>
         <input type="hidden" name="message" value="I'd like to reopen this ticket.">
         <button class="btn btn-secondary btn-sm" type="submit">Reopen with a reply</button>
-      </form>
+      <?=form_close()?>
     </div>
     <?php endif; ?>
   </div>

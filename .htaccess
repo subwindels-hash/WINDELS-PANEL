@@ -8,7 +8,7 @@ Options -Indexes
 
     # Deny direct access to sensitive directories (parity with
     # docker/nginx/nginx.conf and nginx.prod.conf deny rules).
-    RewriteRule ^(application|system|storage|vendor|docs|tests|tools|cron|node_modules)(/|$) - [F,L]
+    RewriteRule ^(application|system|storage|vendor|docs|database|tests|tools|cron|node_modules)(/|$) - [F,L]
 
     # Deny dotfiles and dot-directories (.env, .git, ...).
     RewriteRule (^|/)\. - [F,L]
@@ -18,6 +18,20 @@ Options -Indexes
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^(.*)$ index.php/$1 [L,QSA]
 </IfModule>
+
+# Belt and braces for the two files that are worth stealing on their own: the
+# environment file (every credential) and the production database dump (schema
+# plus the seeded administrator hash). The RewriteRules above already cover
+# them where mod_rewrite is enabled; these work even where it is not.
+<FilesMatch "(^\.env|\.sql|\.sql\.gz|\.zip)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>
 
 # Protect dotfiles even when mod_rewrite is unavailable.
 <FilesMatch "^\.">

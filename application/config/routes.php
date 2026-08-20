@@ -5,6 +5,17 @@ $route['default_controller'] = 'home';
 $route['404_override'] = '';
 $route['translate_uri_dashes'] = FALSE;
 
+// First-run setup / deployment self-check. 404 unless VP_SETUP_TOKEN is set in
+// .env and the request presents it, so these two lines add no attack surface
+// to a deployment that never uses them.
+$route['setup'] = 'setup/index';
+$route['setup/admin'] = 'setup/admin';
+
+// Current CSRF token for JavaScript (GET, no side effects). This is what lets
+// a reply box, a chat widget or any fetch() post more than once without the
+// page being reloaded between messages.
+$route['csrf'] = 'csrf/index';
+
 // Health
 $route['health'] = 'health/index';
 $route['health/live'] = 'health/live';
@@ -19,7 +30,12 @@ $route['faq'] = 'home/faq';
 $route['blog'] = 'blog/index';
 $route['blog/category/(:any)'] = 'blog/index?category=$1';
 $route['blog/(:any)'] = 'blog/post/$1';
-$route['contact'] = 'home/contact';
+// Same URL, different verb: the form posts back to /contact so a validation
+// error re-renders the page the visitor is already on. Both keys are declared
+// together because CI3 verb routing needs an array here — assigning
+// $route['contact']['post'] on top of a string value is a fatal in PHP 8.
+$route['contact']['get']  = 'home/contact';
+$route['contact']['post'] = 'home/contact_submit';
 $route['design-system'] = 'home/styleguide';
 $route['terms'] = 'home/terms';
 $route['privacy'] = 'home/privacy';

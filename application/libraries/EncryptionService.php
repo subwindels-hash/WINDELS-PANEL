@@ -42,8 +42,12 @@ class EncryptionService {
         $env = $environment !== null
             ? $environment
             : (defined('ENVIRONMENT') ? ENVIRONMENT : 'production');
-        $key = getenv('ENCRYPTION_KEY');
-        $key = ($key === false) ? '' : trim($key);
+        // Env resolves VP_ENCRYPTION_KEY as well as ENCRYPTION_KEY, so a
+        // panel migrated to another cPanel keeps decrypting what the previous
+        // server encrypted as long as the same key travels in .env.
+        require_once APPPATH.'core/Env.php';
+        $key = Env::get('ENCRYPTION_KEY');
+        $key = ($key === null) ? '' : trim((string)$key);
 
         $problem = self::key_problem($key);
         if ($problem === null) return $key;

@@ -326,11 +326,15 @@ class ProductionReadinessTest extends TestCase
 
     public function testPreflightChecksTheRuntimeDirectories()
     {
+        // The list comes from Env, which is also what the application writes
+        // through and what the deployment package pre-creates — one source of
+        // truth instead of a preflight-only copy that can drift.
+        require_once self::$root.'/application/core/Env.php';
         $report = $this->preflight()->run('production');
-        foreach (Preflight::WRITABLE_PATHS as $rel) {
-            $check = $this->named($report, 'writable:'.$rel);
+        foreach (array_keys(Env::writable_report()) as $name) {
+            $check = $this->named($report, 'writable:'.$name);
             $this->assertSame(Preflight::OK, $check['status'],
-                $rel.' must exist and be writable in a fresh clone: '.$check['detail']);
+                $name.' must exist and be writable in a fresh clone: '.$check['detail']);
         }
     }
 

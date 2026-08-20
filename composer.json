@@ -44,7 +44,11 @@
     "seed": "php index.php seed core",
     "seed:demo": "php index.php seed demo",
     "schema:export": "php tools/export_schema.php",
-    "schema:check": "php tools/export_schema.php --check"
+    "schema:check": "php tools/export_schema.php --check",
+    "db:production": "php tools/build_production_sql.php",
+    "db:production:check": "php tools/build_production_sql.php --check",
+    "package": "bash tools/build_deployment_package.sh",
+    "package:verify": "bash tools/verify_deployment_package.sh"
   },
   "config": {
     "optimize-autoloader": true,
