@@ -2,7 +2,7 @@
 $cu = $current_user ?? null;
 $is_staff = $cu && in_array($cu->role, array('SUPER_ADMIN','ADMIN','STAFF'), true);
 ?>
-<nav class="border-b bg-white/80 backdrop-blur sticky top-0 z-50">
+<nav class="border-b bg-white/80 backdrop-blur sticky ws-sticky-below-announce z-50">
 <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
 <a href="<?=site_url()?>" class="font-bold text-lg">WINDELS PANEL</a>
 <div class="hidden md:flex gap-6 text-sm">

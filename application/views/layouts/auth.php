@@ -17,6 +17,7 @@
 <link rel="stylesheet" href="<?=base_url('assets/css/design-system.css')?>">
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
+<?php $this->load->view('partials/announcement_bar'); ?>
 <div class="min-h-screen flex flex-col">
   <header class="border-b bg-white">
     <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">

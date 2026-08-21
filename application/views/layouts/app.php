@@ -102,13 +102,14 @@ try {
 <?php endif; ?>
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-900 antialiased<?=!empty($impersonation['active']) ? ' impersonation-read-only' : ''?>">
+<?php $this->load->view('partials/announcement_bar'); ?>
 <?php if (!empty($impersonation['active'])): ?>
 <?php
   $__imp_actor = $impersonation['actor'] ?? null;
   $__imp_ctx = $impersonation['context'] ?? array();
   $__imp_minutes = max(0, (int)ceil(((int)($__imp_ctx['expires_at'] ?? time()) - time()) / 60));
 ?>
-<div role="alert" aria-live="assertive" style="position:sticky;top:0;z-index:1000;background:#7f1d1d;color:#fff;border-bottom:4px solid #fbbf24;padding:.75rem 1rem;box-shadow:0 4px 12px rgba(0,0,0,.3)">
+<div role="alert" aria-live="assertive" style="position:sticky;top:var(--ws-announce-h);z-index:1000;background:#7f1d1d;color:#fff;border-bottom:4px solid #fbbf24;padding:.75rem 1rem;box-shadow:0 4px 12px rgba(0,0,0,.3)">
   <div class="row justify-between" style="align-items:center;gap:1rem;flex-wrap:wrap;max-width:90rem;margin:0 auto">
     <div>
       <strong style="display:block;letter-spacing:.03em">IMPERSONATING CUSTOMER — READ-ONLY SUPPORT SESSION</strong>
@@ -172,7 +173,7 @@ try {
 
   <!-- Main column -->
   <div class="flex-1 flex flex-col min-w-0">
-    <header class="h-16 border-b bg-white flex items-center justify-between px-4 md:px-6 sticky top-0 z-40">
+    <header class="h-16 border-b bg-white flex items-center justify-between px-4 md:px-6 sticky ws-sticky-below-announce z-40">
       <h1 class="text-base md:text-lg font-semibold truncate"><?=htmlspecialchars($title ?? '')?></h1>
       <div class="flex items-center gap-2">
         <a href="<?=site_url('dashboard/notifications')?>"

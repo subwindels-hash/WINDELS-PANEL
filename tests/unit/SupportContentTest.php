@@ -147,9 +147,20 @@ class SupportContentTest extends TestCase
 
     public function testAnnouncementsRenderedInPublicLayout()
     {
-        $layout = file_get_contents(self::$root.'/application/views/layouts/public.php');
-        $this->assertStringContainsString('Announcement_model', $layout);
-        $this->assertStringContainsString('visible(', $layout);
+        $partial = file_get_contents(self::$root.'/application/views/partials/announcement_bar.php');
+        $this->assertStringContainsString('Announcement_model', $partial);
+        $this->assertStringContainsString('visible(', $partial);
+        $this->assertStringContainsString('get_instance()', $partial,
+            'views must not resolve models through $this (CI_Loader has no __get)');
+        $this->assertStringContainsString('ws-announce-track', $partial);
+    }
+
+    public function testAnnouncementBarIsIncludedInEveryLayout()
+    {
+        foreach (array('public.php', 'app.php', 'auth.php') as $layout) {
+            $src = file_get_contents(self::$root.'/application/views/layouts/'.$layout);
+            $this->assertStringContainsString("partials/announcement_bar", $src, $layout);
+        }
     }
 
     public function testTicketActionsArePostAndCsrfProtected()
