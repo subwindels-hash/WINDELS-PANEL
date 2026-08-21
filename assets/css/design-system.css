@@ -10,6 +10,7 @@
    ========================================================================= */
 
 :root {
+  --ws-announce-h: 2.375rem;
   /* Brand — indigo (mirrors tailwind.config.js -> colors.brand) */
   --brand-50:#eef2ff; --brand-100:#e0e7ff; --brand-200:#c7d2fe; --brand-300:#a5b4fc;
   --brand-400:#818cf8; --brand-500:#6366f1; --brand-600:#4f46e5; --brand-700:#4338ca;
@@ -191,10 +192,28 @@ button { font-family:inherit; cursor:pointer; }
   *, *::before, *::after { animation-duration:.001ms!important; transition-duration:.001ms!important; scroll-behavior:auto!important; }
 }
 
-/* Announcements */
-.ws-announce{background:#0f172a;color:#fff}
-.ws-announce-item{padding:.55rem 1rem;text-align:center;font-size:.875rem}
-.ws-sev-warning{background:#b45309}
-.ws-sev-critical{background:#b91c1c}
-.ws-sev-success{background:#15803d}
-.ws-sev-info{background:#0f172a}
+/* Announcements — moving ticker, black on white, every layout */
+.ws-announce{
+  background:#fff;color:#000;border-bottom:1px solid var(--slate-200);
+  overflow:hidden;white-space:nowrap;height:var(--ws-announce-h);
+  position:sticky;top:0;z-index:80;
+}
+.ws-announce-track{
+  display:inline-flex;align-items:center;height:100%;
+  animation:ws-announce-scroll 32s linear infinite;
+}
+.ws-announce:hover .ws-announce-track{animation-play-state:paused}
+.ws-announce-group{display:inline-flex;align-items:center}
+.ws-announce-item{
+  padding:0 1.75rem;font-size:.875rem;font-weight:500;color:#000;
+  background:transparent;flex-shrink:0;line-height:var(--ws-announce-h);
+}
+.ws-announce-item + .ws-announce-item::before{
+  content:"•";margin-right:1.75rem;color:#000;
+}
+@keyframes ws-announce-scroll{
+  from{transform:translateX(0)}
+  to{transform:translateX(-50%)}
+}
+.ws-sticky-below-announce{top:var(--ws-announce-h)}
+.ws-sev-warning,.ws-sev-critical,.ws-sev-success,.ws-sev-info{background:transparent;color:#000}
