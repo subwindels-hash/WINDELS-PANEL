@@ -48,7 +48,9 @@ $active = function ($href) use ($path) {
           <a class="btn btn-primary btn-sm" href="<?=site_url('register')?>">Sign up</a>
         <?php endif; ?>
       </div>
-      <button type="button" class="ws-nav-toggle" data-nav-toggle aria-controls="ws-nav-panel" aria-expanded="false">Menu</button>
+      <button type="button" class="ws-nav-toggle" data-nav-toggle aria-controls="ws-nav-panel" aria-expanded="false" aria-label="Open menu">
+        <span data-nav-toggle-label>Menu</span>
+      </button>
     </div>
   </div>
 

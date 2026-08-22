@@ -283,9 +283,12 @@
     var toggle = document.querySelector('[data-nav-toggle]');
     var panel = document.getElementById('ws-nav-panel');
     if (!toggle || !panel) return;
+    var label = toggle.querySelector('[data-nav-toggle-label]');
     toggle.addEventListener('click', function () {
       var open = panel.classList.toggle('is-open');
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+      if (label) label.textContent = open ? 'Close' : 'Menu';
       panel.hidden = !open;
     });
   }

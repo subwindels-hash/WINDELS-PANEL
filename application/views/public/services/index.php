@@ -127,32 +127,37 @@ $show_marketing = !empty($show_marketing);
       <div class="grid" style="grid-template-columns:1fr;gap:.75rem">
         <div class="row" style="gap:.5rem">
           <div class="ws-searchwrap">
+            <label class="sr-only" for="services-search">Search services</label>
             <?php $this->load->view('partials/icon', array('name'=>'search','class'=>'w-5 h-5')); ?>
-            <input class="input" type="search" name="q" value="<?=htmlspecialchars($f['q'])?>"
+            <input class="input" id="services-search" type="search" name="q" value="<?=htmlspecialchars($f['q'])?>"
                    placeholder="Search services — e.g. Instagram followers">
           </div>
           <button class="btn btn-primary" type="submit">Search</button>
         </div>
         <div class="row" style="gap:.5rem;flex-wrap:wrap">
-          <select class="select" name="category" style="width:auto">
+          <label class="sr-only" for="services-category">Category</label>
+          <select class="select" id="services-category" name="category" style="width:auto">
             <option value="">All categories</option>
             <?php foreach ($categories as $c): ?>
               <option value="<?=htmlspecialchars($c->slug)?>" <?=($f['category']===$c->slug)?'selected':''?>><?=htmlspecialchars($c->name)?></option>
             <?php endforeach; ?>
           </select>
-          <select class="select" name="platform" style="width:auto">
+          <label class="sr-only" for="services-platform">Platform</label>
+          <select class="select" id="services-platform" name="platform" style="width:auto">
             <option value="">All platforms</option>
             <?php foreach ($platforms as $p): ?>
               <option value="<?=htmlspecialchars($p)?>" <?=($f['platform']===$p)?'selected':''?>><?=htmlspecialchars(ucfirst($p))?></option>
             <?php endforeach; ?>
           </select>
-          <select class="select" name="type" style="width:auto">
+          <label class="sr-only" for="services-type">Service type</label>
+          <select class="select" id="services-type" name="type" style="width:auto">
             <option value="">All types</option>
             <?php foreach ($types as $t): ?>
               <option value="<?=htmlspecialchars($t)?>" <?=($f['type']===$t)?'selected':''?>><?=htmlspecialchars(str_replace('_',' ',ucwords(strtolower($t))))?></option>
             <?php endforeach; ?>
           </select>
-          <select class="select" name="sort" style="width:auto">
+          <label class="sr-only" for="services-sort">Sort</label>
+          <select class="select" id="services-sort" name="sort" style="width:auto">
             <?php foreach (array('popular'=>'Most popular','price_asc'=>'Price: low to high','price_desc'=>'Price: high to low','name'=>'Name A–Z','newest'=>'Newest') as $k=>$lbl): ?>
               <option value="<?=$k?>" <?=($f['sort']===$k)?'selected':''?>><?=htmlspecialchars($lbl)?></option>
             <?php endforeach; ?>
