@@ -70,6 +70,31 @@ class SchemaManifest {
                         $table['indexes'][$k[1]] = self::col_list($k[2]);
                         continue;
                     }
+                    if (preg_match('/^FULLTEXT(?:\s+KEY|\s+INDEX)?\s+(\w+)\s*\(([^)]+)\)/i', $line, $k)) {
+                        $table['indexes'][$k[1]] = self::col_list($k[2]);
+                        continue;
+                    }
+
+                    // Inline FKs: CONSTRAINT name FOREIGN KEY (...) REFERENCES t(...)
+                    if (preg_match('/^(?:CONSTRAINT\s+`?(\w+)`?\s+)?FOREIGN KEY\s*\(([^)]+)\)\s*REFERENCES\s+`?(\w+)`?\s*\(([^)]+)\)(.*)$/i', $line, $k)) {
+                        $fkname = $k[1] !== '' ? $k[1] : ('fk_' . $name . '_' . implode('_', self::col_list($k[2])));
+                        $clause = strtoupper($k[5]);
+                        $table['fks'][$fkname] = array(
+                            'cols'      => self::col_list($k[2]),
+                            'ref_table' => $k[3],
+                            'ref_cols'  => self::col_list($k[4]),
+                            'on_delete' => preg_match('/ON DELETE\s+(RESTRICT|CASCADE|SET NULL|NO ACTION|SET DEFAULT)/i', $clause, $r) ? strtoupper($r[1]) : null,
+                            'on_update' => preg_match('/ON UPDATE\s+(RESTRICT|CASCADE|SET NULL|NO ACTION|SET DEFAULT)/i', $clause, $r) ? strtoupper($r[1]) : null,
+                        );
+                        continue;
+                    }
+
+                    // CHECK constraints (and leftover CONSTRAINT lines) are not
+                    // columns. Treating "CONSTRAINT" as a column is what made
+                    // deploy-verify.php report dozens of "missing columns".
+                    if (preg_match('/^CONSTRAINT\b/i', $line) || preg_match('/^CHECK\s*\(/i', $line)) {
+                        continue;
+                    }
 
                     // column definition
                     if (preg_match('/^`?([a-zA-Z0-9_]+)`?\s+([a-zA-Z]+(?:\s*\([^)]*\))?(?:\s+unsigned)?)(.*)$/i', $line, $c)) {
@@ -98,7 +123,9 @@ class SchemaManifest {
                         }
                         if (strpos($rest, 'AUTO_INCREMENT') !== false) $coldef['auto'] = true;
                         if (strpos($rest, 'PRIMARY KEY') !== false) $table['pk'] = array($col);
-                        if (preg_match('/\bUNIQUE\b/', $rest)) $table['unique']['uniq_' . $col] = array($col);
+                        // MySQL names an inline UNIQUE after the column itself
+                        // (`name VARCHAR(64) NOT NULL UNIQUE` → index `name`).
+                        if (preg_match('/\bUNIQUE\b/', $rest)) $table['unique'][$col] = array($col);
                         $table['columns'][$col] = $coldef;
                     }
                 }

@@ -5,30 +5,22 @@
 # This is the ONE command in the whole deployment story, and it is run by a
 # maintainer on a development machine (or by CI), never by the person doing the
 # deployment. What it produces is a directory tree that works the moment it is
-# extracted into public_html: framework included, dependencies included,
-# runtime directories included, database included as one importable .sql file.
+# extracted into public_html: framework included as REAL FILES (never a
+# symlink), dependencies included, runtime directories included, database
+# included as one importable .sql file.
 #
 #   bash tools/build_deployment_package.sh
 #   bash tools/build_deployment_package.sh --output dist/panel-2026-08.zip
 #
-# What goes in the package:
+# The script FAILS (and deletes a half-written zip) unless a clean extract of
+# the archive contains:
 #
-#   index.php  .htaccess  .env.example  deploy-verify.php
-#   application/   the app, minus caches and the dev-only seeds
-#   system/        CodeIgniter 3.1.13 as REAL FILES (no symlink — works on
-#                  every shared host, including ones that disable symlinks)
-#   vendor/        ALWAYS: codeigniter/framework (system/ included at
-#                  vendor/codeigniter/framework/system — the second path
-#                  index.php probes) plus a fallback vendor/autoload.php;
-#                  full composer dependencies when composer has been run
-#   assets/        css/js/images plus the pre-created uploads directory
-#   storage/       pre-created, pre-guarded log/cache/session directories
-#   database/windels_panel.sql
-#   cron/          crontab example for Cron Jobs in cPanel
-#   docs/cpanel-deployment.md  README-DEPLOYMENT.txt
+#   system/core/CodeIgniter.php
+#   vendor/autoload.php
+#   vendor/codeigniter/framework/system/core/CodeIgniter.php
 #
-# What stays out: tests, tools, docker, node/npm files, phpunit/phpstan
-# configs, .git, the rest of docs/ — nothing a running panel reads.
+# A package that cannot satisfy those three paths is the 503 page
+# "CodeIgniter framework files are missing". It must never be marked complete.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -40,7 +32,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --output) OUTPUT="$2"; shift 2 ;;
     --output=*) OUTPUT="${1#*=}"; shift ;;
-    -h|--help) sed -n '2,40p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n '2,45p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -49,6 +41,31 @@ BUILD="${ROOT}/build"
 STAGE="${BUILD}/${STAGE_NAME}"
 
 say() { printf '  %s\n' "$*"; }
+die() { echo "  ! $*" >&2; rm -f "${OUTPUT}"; exit 1; }
+
+# Copy a directory tree as REAL FILES. Resolves the source through any
+# symlink (./system is often a link created by tools/link_system.php) so
+# the zip never stores a dangling pointer that cPanel extract cannot follow.
+materialize_tree() {
+  local src="$1" dst="$2"
+  [[ -d "${src}" ]] || return 1
+  mkdir -p "${dst}"
+  src="$(cd "${src}" && pwd -P)"
+  cp -a "${src}/." "${dst}/"
+  if find "${dst}" -type l -print -quit | grep -q .; then
+    echo "  ! symlink survived copy into ${dst}:" >&2
+    find "${dst}" -type l >&2
+    return 1
+  fi
+  return 0
+}
+
+require_regular_file() {
+  local path="$1" label="${2:-$1}"
+  [[ -e "${path}" ]] || die "missing ${label}"
+  [[ ! -L "${path}" ]] || die "${label} is a symlink — the package must ship real files"
+  [[ -f "${path}" ]] || die "${label} is not a regular file"
+}
 
 echo "Building the cPanel deployment package"
 
@@ -73,25 +90,32 @@ if [[ ! -f "${ROOT}/database/windels_panel.sql" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 2. CodeIgniter. Prefer what is already in the tree, then composer's copy,
-#    then fetch the tagged release. The package must never depend on the
-#    destination host having composer.
+# 2. Locate CodeIgniter 3.1.13. Prefer a tree that already has
+#    core/CodeIgniter.php (a real directory or a resolved symlink), then
+#    composer's copy, then fetch the tagged release. Existence of an empty
+#    system/ directory is NOT enough — that is how a previous package shipped
+#    without the framework.
 # ---------------------------------------------------------------------------
 SYSTEM_SRC=""
-if [[ -d "${ROOT}/system" ]]; then
-  SYSTEM_SRC="${ROOT}/system"
-  say "framework: ./system"
-elif [[ -d "${ROOT}/vendor/codeigniter/framework/system" ]]; then
-  SYSTEM_SRC="${ROOT}/vendor/codeigniter/framework/system"
-  say "framework: vendor/codeigniter/framework/system"
+if [[ -f "${ROOT}/system/core/CodeIgniter.php" ]]; then
+  SYSTEM_SRC="$(cd "${ROOT}/system" && pwd -P)"
+  say "framework: ${SYSTEM_SRC} (from ./system)"
+elif [[ -f "${ROOT}/vendor/codeigniter/framework/system/core/CodeIgniter.php" ]]; then
+  SYSTEM_SRC="$(cd "${ROOT}/vendor/codeigniter/framework/system" && pwd -P)"
+  say "framework: ${SYSTEM_SRC} (from vendor/)"
 else
   say "framework: downloading CodeIgniter ${CI_VERSION}"
   TMP="$(mktemp -d)"
-  curl -fsSL "https://codeload.github.com/bcit-ci/CodeIgniter/tar.gz/refs/tags/${CI_VERSION}" \
-    | tar xz -C "${TMP}"
+  if ! curl -fsSL "https://codeload.github.com/bcit-ci/CodeIgniter/tar.gz/refs/tags/${CI_VERSION}" \
+      | tar xz -C "${TMP}"; then
+    die "could not download CodeIgniter ${CI_VERSION}"
+  fi
   SYSTEM_SRC="${TMP}/CodeIgniter-${CI_VERSION}/system"
-  [[ -d "${SYSTEM_SRC}" ]] || { echo "  ! could not obtain CodeIgniter ${CI_VERSION}" >&2; exit 1; }
+  [[ -f "${SYSTEM_SRC}/core/CodeIgniter.php" ]] || die "downloaded archive is missing system/core/CodeIgniter.php"
 fi
+
+grep -q "CI_VERSION = '${CI_VERSION}'" "${SYSTEM_SRC}/core/CodeIgniter.php" \
+  || die "framework at ${SYSTEM_SRC} is not CodeIgniter ${CI_VERSION}"
 
 # ---------------------------------------------------------------------------
 # 3. Stage the tree
@@ -118,37 +142,41 @@ copy database/windels_panel.sql
 copy database/schema_verification.php
 copy database/README.md
 copy docs/cpanel-deployment.md
-[[ -d "${ROOT}/vendor" ]] && { say "staging vendor/ (dependencies)"; copy vendor; }
 
-# system/ at the package root: real files, never a symlink. index.php probes
-# ./system first, so the panel boots on hosts that disable symlinks, and zip
-# extraction can't leave a dangling link behind.
-mkdir -p "${STAGE}/system"
-cp -R "${SYSTEM_SRC}/." "${STAGE}/system/"
-# CodeIgniter ships under the MIT licence; keep the notice with the code.
+# Full composer vendor/ when present (production dependencies). Copied first
+# so the explicit framework materialisation below can overwrite any symlink
+# the post-install hook left behind.
+if [[ -d "${ROOT}/vendor/composer" ]]; then
+  say "staging vendor/ (composer production dependencies)"
+  copy vendor
+fi
+
+# system/ at the package root: REAL FILES, never a symlink. index.php probes
+# ./system first. zip extraction on cPanel cannot follow a link, so a
+# symlink here is a 503 on the destination host.
+say "materialising system/ as real files from ${SYSTEM_SRC}"
+rm -rf "${STAGE}/system"
+materialize_tree "${SYSTEM_SRC}" "${STAGE}/system" \
+  || die "failed to copy CodeIgniter into system/"
 if [[ -f "$(dirname "${SYSTEM_SRC}")/license.txt" ]]; then
   cp "$(dirname "${SYSTEM_SRC}")/license.txt" "${STAGE}/system/LICENSE.txt"
 fi
 
 # vendor/codeigniter/framework/system — the SECOND path index.php probes.
-# When composer wasn't run on the build machine there is no vendor tree to
-# copy, so stage the framework from SYSTEM_SRC: both framework locations the
-# front controller knows about then exist in the package, redundantly.
-if [[ ! -f "${STAGE}/vendor/codeigniter/framework/system/core/CodeIgniter.php" ]]; then
-  say "staging vendor/codeigniter/framework (second autodetected framework path)"
-  mkdir -p "${STAGE}/vendor/codeigniter/framework"
-  cp -R "${SYSTEM_SRC}" "${STAGE}/vendor/codeigniter/framework/system"
-  if [[ -f "$(dirname "${SYSTEM_SRC}")/license.txt" ]]; then
-    cp "$(dirname "${SYSTEM_SRC}")/license.txt" "${STAGE}/vendor/codeigniter/framework/license.txt"
-  fi
+# Always (re)materialise so a composer copy that happens to be a link, or a
+# build machine that never ran composer, still ships a complete tree.
+say "materialising vendor/codeigniter/framework/system as real files"
+rm -rf "${STAGE}/vendor/codeigniter/framework/system"
+mkdir -p "${STAGE}/vendor/codeigniter/framework"
+materialize_tree "${SYSTEM_SRC}" "${STAGE}/vendor/codeigniter/framework/system" \
+  || die "failed to copy CodeIgniter into vendor/codeigniter/framework/system"
+if [[ -f "$(dirname "${SYSTEM_SRC}")/license.txt" ]]; then
+  cp "$(dirname "${SYSTEM_SRC}")/license.txt" "${STAGE}/vendor/codeigniter/framework/license.txt"
 fi
 
 # vendor/autoload.php — when composer produced the real one (vendor/composer/
 # exists) it ships as-is. Otherwise drop in the bundled fallback so the
-# composer_autoload config item resolves to a working file: it registers the
-# project's own autoload rules (Windels\ psr-4, helpers, Seeder classmap) and
-# the optional feature packages simply stay disabled, exactly as index.php
-# documents. A later `composer install` overwrites it cleanly.
+# composer_autoload config item resolves to a working file.
 if [[ ! -d "${STAGE}/vendor/composer" ]]; then
   say "no composer install detected — staging the fallback vendor/autoload.php"
   mkdir -p "${STAGE}/vendor"
@@ -269,12 +297,38 @@ Full guide: docs/cpanel-deployment.md
 TXT
 
 # ---------------------------------------------------------------------------
-# 6. Zip
+# 6. Stage-time gate — refuse to zip a tree that cannot boot
+# ---------------------------------------------------------------------------
+say "validating staged tree"
+require_regular_file "${STAGE}/system/core/CodeIgniter.php" \
+  "system/core/CodeIgniter.php"
+require_regular_file "${STAGE}/vendor/autoload.php" \
+  "vendor/autoload.php"
+require_regular_file "${STAGE}/vendor/codeigniter/framework/system/core/CodeIgniter.php" \
+  "vendor/codeigniter/framework/system/core/CodeIgniter.php"
+[[ ! -L "${STAGE}/system" ]] || die "staged system/ is a symlink"
+[[ -d "${STAGE}/system/core" && -d "${STAGE}/system/database" \
+   && -d "${STAGE}/system/helpers" && -d "${STAGE}/system/language" \
+   && -d "${STAGE}/system/libraries" ]] \
+  || die "staged system/ is missing core/database/helpers/language/libraries"
+grep -q "CI_VERSION = '${CI_VERSION}'" "${STAGE}/system/core/CodeIgniter.php" \
+  || die "staged system/core/CodeIgniter.php is not CodeIgniter ${CI_VERSION}"
+if find "${STAGE}" -type l -print -quit | grep -q .; then
+  find "${STAGE}" -type l >&2
+  die "staged tree still contains symlink(s)"
+fi
+say "staged tree contains CodeIgniter ${CI_VERSION} as real files"
+
+# ---------------------------------------------------------------------------
+# 7. Zip, then extract-and-verify the archive itself (not just the stage)
 # ---------------------------------------------------------------------------
 say "creating $(basename "${OUTPUT}")"
 mkdir -p "$(dirname "${OUTPUT}")"
 rm -f "${OUTPUT}"
 (cd "${STAGE}" && zip -qr "${OUTPUT}" . -x '.DS_Store')
+
+bash "${ROOT}/tools/validate_deployment_zip.sh" "${OUTPUT}" \
+  || die "zip failed extract validation — package is not shippable"
 
 SIZE="$(du -h "${OUTPUT}" | cut -f1)"
 FILES="$(cd "${STAGE}" && find . -type f | wc -l | tr -d ' ')"

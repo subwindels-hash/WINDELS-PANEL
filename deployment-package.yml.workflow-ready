@@ -56,9 +56,14 @@ jobs:
           python3 tools/validate_production_sql.py
 
       - name: Build the package
+        # The build copies CodeIgniter as REAL files into system/ and
+        # vendor/codeigniter/framework/system, then extract-validates the zip.
+        # A missing system/core/CodeIgniter.php fails the job.
         run: bash tools/build_deployment_package.sh
 
       - name: Verify a fresh deployment of the package
+        # Re-extracts the zip into an empty directory, asserts no symlinks,
+        # writes a .env, and (when MySQL is available) runs deploy-verify.php.
         run: bash tools/verify_deployment_package.sh
 
       - name: Upload the artifact
