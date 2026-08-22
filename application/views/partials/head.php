@@ -36,3 +36,24 @@ $canonical_url = site_url($canonical);
 <meta name="csrf-endpoint" content="<?=htmlspecialchars(site_url('csrf'))?>">
 <link rel="stylesheet" href="<?=base_url('assets/css/tailwind.css')?>">
 <link rel="stylesheet" href="<?=base_url('assets/css/design-system.css')?>">
+<?php
+// Structured data — one Organization/WebSite block driven by the same brand
+// config as the rest of the shell, so a rename never leaves stale JSON-LD.
+$sd_org = array(
+    '@context' => 'https://schema.org',
+    '@type'    => 'Organization',
+    'name'     => $site_name,
+    'url'      => site_url(),
+    'logo'     => base_url('assets/brand/logo.svg'),
+    'description' => $site_tag,
+);
+$sd_web = array(
+    '@context' => 'https://schema.org',
+    '@type'    => 'WebSite',
+    'name'     => $site_name,
+    'url'      => site_url(),
+    'publisher' => array('@type' => 'Organization', 'name' => $site_name, 'logo' => base_url('assets/brand/logo.svg')),
+);
+?>
+<script type="application/ld+json" <?=csp_nonce_attr()?>><?=json_encode($sd_org, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)?></script>
+<script type="application/ld+json" <?=csp_nonce_attr()?>><?=json_encode($sd_web, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)?></script>

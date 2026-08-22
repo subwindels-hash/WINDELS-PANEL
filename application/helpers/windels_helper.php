@@ -92,6 +92,32 @@ if (!function_exists('windels_brand_logo')) {
     }
 }
 
+if (!function_exists('windels_brand_setting')) {
+    /**
+     * Read a branding setting (brand_logo_url, brand_favicon_url, …) saved
+     * through Admin → Appearance. Returns NULL when unset or the database is
+     * unavailable, so callers always have a bundled fallback.
+     */
+    function windels_brand_setting($key, $default = null) {
+        static $cache = array();
+        if (array_key_exists($key, $cache)) {
+            return $cache[$key] !== null ? $cache[$key] : $default;
+        }
+        $cache[$key] = null;
+        try {
+            if (function_exists('get_instance')) {
+                $ci =& get_instance();
+                if ($ci && isset($ci->db) && is_object($ci->db) && !empty($ci->db->conn_id)) {
+                    $ci->load->model('Setting_model');
+                    $v = $ci->Setting_model->get($key);
+                    if ($v !== null && $v !== '') $cache[$key] = $v;
+                }
+            }
+        } catch (Throwable $e) { $cache[$key] = null; }
+        return $cache[$key] !== null ? $cache[$key] : $default;
+    }
+}
+
 if (!function_exists('windels_base_currency')) {
     /**
      * The panel's base currency code.

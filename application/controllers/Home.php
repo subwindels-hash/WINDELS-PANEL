@@ -122,6 +122,7 @@ class Home extends Public_Controller {
             'email'   => trim((string)$this->input->post('email')),
             'subject' => trim((string)$this->input->post('subject')),
             'message' => trim((string)$this->input->post('message')),
+            'department' => trim((string)$this->input->post('department')),
         );
 
         if ($this->ratelimiter->too_many_failures($ip, $bucket, 5, 3600)) {
@@ -152,10 +153,11 @@ class Home extends Public_Controller {
         $user = $this->current_user();
         if ($user) {
             $this->load->library('TicketService');
+            $departments = array('orders', 'payments', 'api', 'other');
             $res = $this->ticketservice->open($user, array(
                 'subject'    => $form['subject'],
                 'message'    => $form['message'],
-                'department' => 'general',
+                'department' => in_array($form['department'], $departments, true) ? $form['department'] : 'other',
                 'priority'   => 'MEDIUM',
             ));
             if (empty($res['ok'])) {

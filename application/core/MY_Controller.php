@@ -51,6 +51,57 @@ class MY_Controller extends CI_Controller {
         // instead of a dashboard controller. The one exception is the
         // dedicated POST endpoint that restores the original staff identity.
         $this->enforce_impersonation_request_boundary();
+
+        // Maintenance mode (§ settings: maintenance_mode). When enabled, hold
+        // non-staff visitors on a branded page while staff keep working.
+        $this->enforce_maintenance();
+    }
+
+    /**
+     * Maintenance gate.
+     *
+     * Enabled by config `windels.maintenance` (bool) or the DB setting
+     * `maintenance_mode`. Staff (SUPER_ADMIN/ADMIN/STAFF) pass through so they
+     * can keep operating; the login/health/status routes stay reachable so a
+     * staff member can authenticate and load balancers keep getting a healthy
+     * response. Everything else sees a 503 holding page.
+     */
+    protected function enforce_maintenance() {
+        if (!isset($this->input) || $this->input->is_cli_request()) return;
+
+        $enabled = false;
+        $cfg = $this->config->item('windels');
+        if (is_array($cfg) && !empty($cfg['maintenance'])) $enabled = true;
+
+        if (!$enabled && $this->db_ready) {
+            try {
+                $this->load->model('Setting_model');
+                $v = $this->Setting_model->get('maintenance_mode');
+                if ($v !== null && $v !== '' && in_array(strtolower(trim((string)$v)), array('1','true','yes','on'), true)) {
+                    $enabled = true;
+                }
+            } catch (Throwable $e) { /* settings unavailable — fail open */ }
+        }
+
+        if (!$enabled) return;
+
+        $path = trim((string)$this->uri->uri_string(), '/');
+        $exempt = array('login','admin/login','forgot-password','logout','impersonation/stop',
+                        'health','health/live','health/ready');
+        if (in_array($path, $exempt, true)) return;
+        if (strpos($path, 'reset-password/') === 0) return;
+        if (strpos($path, 'health') === 0) return;
+
+        $role = null;
+        try {
+            $u = $this->auth ? $this->auth->user() : null;
+            $role = $u ? $u->role : null;
+        } catch (Throwable $e) { $role = null; }
+        if ($role && in_array($role, array('SUPER_ADMIN','ADMIN','STAFF'), true)) return;
+
+        $this->output->set_status_header(503);
+        $this->load->view('errors/html/maintenance');
+        exit;
     }
 
     private function enforce_impersonation_request_boundary() {

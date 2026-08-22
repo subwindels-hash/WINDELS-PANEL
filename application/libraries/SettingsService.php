@@ -42,6 +42,8 @@ class SettingsService {
                 'Shown in the browser title and in every email this panel sends.', 'WINDELS PANEL'),
             'support_email' => array('email', 'general', 'Support email',
                 'The reply-to address on outgoing mail.', 'support@windels.local'),
+            'maintenance_mode' => array('bool', 'general', 'Maintenance mode',
+                'On shows a branded holding page to everyone except staff.', false),
             'active_homepage' => array('choice:AURORA|NEXUS|PULSE', 'homepage', 'Active homepage',
                 'Which of the three homepage designs visitors land on.', 'AURORA'),
 
@@ -86,7 +88,6 @@ class SettingsService {
     public static function unwired() {
         return array(
             'site_tagline'           => 'Nothing reads it; the homepages carry their own copy.',
-            'maintenance_mode'       => 'Needs a gate in MY_Controller that shows a holding page to non-staff.',
             'default_theme'          => 'No theme switcher exists yet.',
             'currency_display'       => 'windels_money() always prints a symbol.',
             'order_auto_submit'      => 'OrderService always submits to the provider immediately.',
