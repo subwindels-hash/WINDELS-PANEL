@@ -12,14 +12,15 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *
  * Two rules shaped it, both learned from auditing what was already seeded.
  *
- * **Only wired settings appear.** Session 02 seeded 25 rows; a grep showed
- * eight of them — `site_tagline`, `maintenance_mode`, `currency_display`,
- * `default_theme`, `brand_*`, `order_auto_submit`, `partial_refund_enabled`,
- * `admin_mfa_required`, `api_enabled` — are read by no code at all. Putting
- * them on a form would be worse than omitting them: an operator would switch
- * "maintenance mode" on, see it save, and watch the site stay up. Each is
- * listed in UNWIRED below with the work it would take to honour it, so the
- * omission is a documented decision rather than an oversight.
+ * **Only wired settings appear.** A grep showed several seeded rows —
+ * `site_tagline`, `currency_display`, `default_theme`, `brand_*`,
+ * `order_auto_submit`, `partial_refund_enabled`, `admin_mfa_required`,
+ * `api_enabled` — were read by no code at all. Putting them on a form would be
+ * worse than omitting them: an operator would switch a toggle on, see it save,
+ * and watch nothing happen. Each remaining gap is listed in UNWIRED below with
+ * the work it would take to honour it, so the omission is a documented decision
+ * rather than an oversight. (`maintenance_mode` was previously one of these and
+ * is now wired through MY_Controller.)
  *
  * **`base_currency` is deliberately read-only.** The row exists, but
  * `windels_base_currency()` reads `config/windels.php`, not this table, and
