@@ -12,15 +12,13 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *
  * Two rules shaped it, both learned from auditing what was already seeded.
  *
- * **Only wired settings appear.** Several seeded rows — `default_theme`,
- * `brand_*`, `partial_refund_enabled` — were read by no code at all. Putting
- * them on a form would be worse than omitting them: an operator would switch a
- * toggle on, see it save, and watch nothing happen. Each remaining gap is
- * listed in UNWIRED below with the work it would take to honour it, so the
- * omission is a documented decision rather than an oversight.
- * (`maintenance_mode`, `site_tagline`, `api_enabled`, `admin_mfa_required`,
- * `currency_display` and `order_auto_submit` were previously among these and
- * are now wired.)
+ * **Only wired settings appear.** The `default_theme` row was seeded but read
+ * by no code at all. Putting it on a form would be worse than omitting it: an
+ * operator would switch the toggle, see it save, and watch nothing happen. It
+ * is listed in UNWIRED below, so the omission is a documented decision rather
+ * than an oversight. (`maintenance_mode`, `site_tagline`, `api_enabled`,
+ * `admin_mfa_required`, `currency_display`, `order_auto_submit` and
+ * `partial_refund_enabled` were previously among these and are now wired.)
  *
  * **`base_currency` is deliberately read-only.** The row exists, but
  * `windels_base_currency()` reads `config/windels.php`, not this table, and
@@ -64,6 +62,8 @@ class SettingsService {
 
             'order_auto_submit' => array('bool', 'orders', 'Auto-submit orders',
                 'Off holds new orders in PENDING for staff to review and submit manually.', true),
+            'partial_refund_enabled' => array('bool', 'orders', 'Auto-refund partial deliveries',
+                'On refunds the undelivered share of a partial delivery automatically; off leaves it for staff to refund.', true),
 
             'referral_commission_percent' => array('percent', 'affiliate', 'Referral commission',
                 'Percentage of a referred customer’s spend paid to the referrer.', '5.0000'),
@@ -101,8 +101,7 @@ class SettingsService {
      */
     public static function unwired() {
         return array(
-            'default_theme'          => 'No theme switcher exists yet.',
-            'partial_refund_enabled' => 'Partial refunds are always on; the state machine has no switch.',
+            'default_theme' => 'No theme switcher exists yet.',
         );
     }
 

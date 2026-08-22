@@ -306,20 +306,40 @@ class OrderService {
             return array('ok'=>false,'error'=>'Cannot mark PARTIAL from '.$order->status);
         }
         $this->transition($order->id, $order->status, 'PARTIAL', $source, $reason);
-        $this->ci->db->where('id',$order->id)->update('orders', array('remains'=>(int)$remains));
-        // Refund the undelivered share proportionally.
-        if ($order->quantity > 0 && $remains > 0 && $remains < (int)$order->quantity) {
-            $refund = bcmul($order->charge, bcdiv((string)$remains, (string)$order->quantity, 8), 8);
-            if (bccomp($refund, '0', 8) > 0) {
-                $wallet = $this->ci->Wallet_model->for_user($order->user_id);
-                $this->ci->ledgerservice->refund($wallet->id, $refund, 'ORDER', $order->public_id,
-                    'order:partial:'.$order->public_id);
-                $this->ci->db->where('id',$order->id)->update('orders', array('refunded_amount'=>$refund));
+        $update = array('remains'=>(int)$remains);
+        // Refund the undelivered share proportionally, unless the operator has
+        // switched automatic partial refunds off (settings `partial_refund_enabled`);
+        // in that case the amount stays charged until staff refund it manually.
+        if ($this->partial_refund_enabled()) {
+            if ($order->quantity > 0 && $remains > 0 && $remains < (int)$order->quantity) {
+                $refund = bcmul($order->charge, bcdiv((string)$remains, (string)$order->quantity, 8), 8);
+                if (bccomp($refund, '0', 8) > 0) {
+                    $wallet = $this->ci->Wallet_model->for_user($order->user_id);
+                    $this->ci->ledgerservice->refund($wallet->id, $refund, 'ORDER', $order->public_id,
+                        'order:partial:'.$order->public_id);
+                    $update['refunded_amount'] = $refund;
+                }
             }
+        } else {
+            $update['note'] = 'Partial delivery recorded; refund pending manual review';
         }
+        $this->ci->db->where('id',$order->id)->update('orders', $update);
         $order = $this->ci->Order_model->find_by_id($order->id);
         $this->sync_affiliate($order);
         return array('ok'=>true, 'order'=>$order);
+    }
+
+    /**
+     * Whether partial deliveries auto-refund their undelivered share
+     * (settings `partial_refund_enabled`, default on).
+     */
+    private function partial_refund_enabled() {
+        try {
+            $this->ci->load->model('Setting_model');
+            $v = $this->ci->Setting_model->get('partial_refund_enabled', true);
+        } catch (Throwable $e) { return true; }
+        if ($v === null || $v === '') return true;
+        return in_array(strtolower(trim((string)$v)), array('1','true','yes','on'), true);
     }
 
     /**
