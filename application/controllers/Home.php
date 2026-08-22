@@ -39,8 +39,7 @@ class Home extends Public_Controller {
             'categories'=>$this->Faq_model->categories(),
         )));
     }
-    public function blog(){ $this->load->view('layouts/public', array('content_view'=>'public/blog_list','data'=>array('title'=>'Blog'))); }
-    public function blog_detail($slug){ $this->load->view('layouts/public', array('content_view'=>'public/blog_detail','data'=>array('title'=>$slug))); }
+
     /**
      * Contact page.
      *
