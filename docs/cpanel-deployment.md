@@ -294,6 +294,9 @@ bash tools/build_deployment_package.sh      # regenerate application-deployment.
 bash tools/verify_deployment_package.sh     # extract it into a scratch account and prove it boots
 ```
 
-`CpanelDeploymentTest` fails when the committed zip no longer matches the tree,
-and CI runs all three of the above plus a real MySQL import of
+`CpanelDeploymentTest` fails when the committed zip no longer matches the tree:
+its staleness check compares every packaged application file (views, layouts,
+assets, config, controllers, models, libraries, database dump, runtime
+guards) hash-for-hash against the working tree, not just `production.sql` and
+`index.php`. CI runs all three of the above plus a real MySQL import of
 `database/production.sql`.

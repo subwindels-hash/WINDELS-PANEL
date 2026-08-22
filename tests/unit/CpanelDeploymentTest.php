@@ -333,16 +333,118 @@ class CpanelDeploymentTest extends TestCase
         $this->assertFalse($zip->locateName('application/seeds/Demo_seeder.php'),
             'demo data must never ship to a live panel');
 
-        // Staleness: the two files that decide whether a deployment works must
-        // match the tree they were built from.
-        foreach (array('database/production.sql', 'index.php') as $entry) {
+        // Staleness: every application file the package is supposed to carry
+        // must match the tree it was built from. Only checking the SQL dump and
+        // index.php used to let a new view or a layout change ship two versions
+        // apart — the package would extract fine and quietly serve old markup.
+        $expected = $this->expected_deployment_files();
+        foreach ($expected as $entry => $sha1) {
+            $this->assertNotFalse($zip->locateName($entry), "the package is missing {$entry}");
             $this->assertSame(
-                sha1_file(self::$root.'/'.$entry),
+                $sha1,
                 sha1($zip->getFromName($entry)),
                 "application-deployment.zip is out of date for {$entry} — "
                 ."rebuild it with: bash tools/build_deployment_package.sh");
         }
+
+        // And nothing else may have leaked in under the source prefixes. The
+        // only additions allowed are the bundled framework (system/) and the
+        // generated README-DEPLOYMENT.txt the build script writes.
+        $extra = array();
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $entry = (string)$zip->getNameIndex($i);
+            if ($entry === '' || substr($entry, -1) === '/') {
+                continue;
+            }
+            if ($entry === 'README-DEPLOYMENT.txt' || strpos($entry, 'system/') === 0) {
+                continue;
+            }
+            if (isset($expected[$entry])) {
+                continue;
+            }
+            $extra[] = $entry;
+        }
+        $this->assertSame(array(), $extra,
+            "application-deployment.zip carries files that are not in the deployment tree — "
+            ."remove them from the package or delete them from the repo. Rebuild with: "
+            ."bash tools/build_deployment_package.sh\n".implode("\n", array_slice($extra, 0, 20)));
         $zip->close();
+    }
+
+    /**
+     * The exact file set `tools/build_deployment_package.sh` is expected to
+     * stage from the repository (framework and the generated operator README
+     * are handled separately in the staleness test).
+     *
+     * Runtime contents (logs, sessions, caches, uploads) are excluded: only
+     * the stub guards ship with the package. Development-only directories and
+     * generated artefacts are excluded too.
+     */
+    private function expected_deployment_files()
+    {
+        $out = array();
+        $skip_prefix = array('application/seeds/', 'vendor/', 'system/');
+        $skip_suffix = array('.gitignore', '.gitkeep', '.map');
+
+        $it = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator(self::$root, FilesystemIterator::SKIP_DOTS)
+        );
+        foreach ($it as $file) {
+            if (!$file->isFile()) {
+                continue;
+            }
+            $rel = substr($file->getPathname(), strlen(self::$root) + 1);
+            $rel = str_replace('\\', '/', $rel);
+
+            foreach ($skip_prefix as $prefix) {
+                if (strpos($rel, $prefix) === 0) {
+                    continue 2;
+                }
+            }
+            foreach ($skip_suffix as $suffix) {
+                if (substr($rel, -strlen($suffix)) === $suffix) {
+                    continue 2;
+                }
+            }
+
+            // Only the directories a running panel reads are packaged.
+            $included_prefix = array(
+                'application/', 'assets/', 'storage/', 'cron/', 'database/', 'docs/cpanel-deployment.md',
+            );
+            $included_root = array('.htaccess', '.env.example', 'index.php');
+            $root_ok = in_array($rel, $included_root, true);
+            if (!$root_ok) {
+                $prefix_ok = false;
+                foreach ($included_prefix as $prefix) {
+                    if (strpos($rel, $prefix) === 0) {
+                        $prefix_ok = true;
+                        break;
+                    }
+                }
+                if (!$prefix_ok) {
+                    continue;
+                }
+            }
+
+            // Runtime directories ship empty; the guards are the only files in
+            // them. A cache/log/session file from a local run must never be a
+            // deployment surprise.
+            if (preg_match('#^(application/cache|storage/(logs|cache|cache/sessions|cache/ratelimit))/.*$#', $rel)) {
+                $base = basename($rel);
+                if ($base !== '.htaccess' && $base !== 'index.html') {
+                    continue;
+                }
+            }
+            if (strpos($rel, 'assets/uploads/') === 0) {
+                $base = basename($rel);
+                if ($base === '.gitignore' || $base === 'index.html') {
+                    continue;
+                }
+            }
+
+            $out[$rel] = sha1_file(self::$root.'/'.$rel);
+        }
+        return $out;
     }
 
     public function testEnvExampleDocumentsExactlyWhatAMigrationChanges()
