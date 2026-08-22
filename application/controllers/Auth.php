@@ -462,7 +462,7 @@ class Auth extends MY_Controller {
     /**
      * POST /auth/mfa/setup  — begin TOTP enrolment.
      * Expects JSON; returns the provisioning URI + one-time recovery codes.
-     * The caller then POSTs /auth/mfa/verify-style confirmation via mfa_confirm.
+     * The caller then POSTs /auth/mfa/confirm with the first code.
      */
     public function mfa_setup() {
         if (!$this->auth->check()) {
@@ -480,6 +480,59 @@ class Auth extends MY_Controller {
             'otpauth_uri'    => $result['otpauth_uri'],
             'recovery_codes' => $result['recovery_codes'],
         ));
+    }
+
+    /**
+     * POST /auth/mfa/confirm — verify a TOTP code and enable MFA on the account.
+     */
+    public function mfa_confirm() {
+        if (!$this->auth->check()) {
+            $this->json_error('UNAUTHORIZED', 'Authentication required', 401);
+        }
+        if (!$this->input->is_ajax_request()) {
+            show_404();
+        }
+        $code = $this->json_code();
+        if ($code === '') {
+            return $this->json_error('BAD_CODE', 'Enter the 6-digit code from your authenticator app.', 400);
+        }
+        $result = $this->auth->confirm_mfa($this->auth->user(), $code);
+        if (!$result['ok']) {
+            return $this->json_error($result['error'], 'That code was not accepted.', 400);
+        }
+        $this->json_success(array('enabled' => true));
+    }
+
+    /**
+     * POST /auth/mfa/disable — confirm a current code and disable MFA.
+     */
+    public function mfa_disable() {
+        if (!$this->auth->check()) {
+            $this->json_error('UNAUTHORIZED', 'Authentication required', 401);
+        }
+        if (!$this->input->is_ajax_request()) {
+            show_404();
+        }
+        $code = $this->json_code();
+        $result = $this->auth->disable_mfa($this->auth->user(), $code !== '' ? $code : null);
+        if (!$result['ok']) {
+            return $this->json_error($result['error'], 'Could not disable two-factor authentication.', 400);
+        }
+        $this->json_success(array('disabled' => true));
+    }
+
+    /**
+     * Read a submitted verification code from either a JSON body or a form POST.
+     */
+    private function json_code() {
+        $raw = $this->input->raw_input_stream;
+        if (is_string($raw) && $raw !== '') {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded) && isset($decoded['code'])) {
+                return trim((string)$decoded['code']);
+            }
+        }
+        return trim((string)$this->input->post('code'));
     }
 
     /* -------------------------------------------------------------- */

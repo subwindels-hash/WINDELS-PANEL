@@ -207,6 +207,7 @@
       initAnnounce();
       initFaqFilter();
       initSiteOperator();
+      initMfa();
     } catch (e) {
       // A broken optional widget must never stop the other global behaviours
       // (CSRF plumbing, mobile nav, FAQ filter, assistant) from running.
@@ -467,6 +468,206 @@
     for (var s = 0; s < initial.length; s++) {
       initial[s].addEventListener('click', function () {
         ask(this.getAttribute('data-suggest') || this.textContent);
+      });
+    }
+  }
+
+  /* ----------------------------- MFA enrolment --------------------------- */
+
+  function initMfa() {
+    var section = document.getElementById('ws-mfa-section');
+    if (!section) return;
+
+    var setupUrl = section.getAttribute('data-endpoint-setup');
+    var confirmUrl = section.getAttribute('data-endpoint-confirm');
+    var disableUrl = section.getAttribute('data-endpoint-disable');
+
+    var startBtn = document.getElementById('ws-mfa-start');
+    var enroll = document.getElementById('ws-mfa-enroll');
+    var qrHost = document.getElementById('ws-mfa-qr');
+    var secretEl = document.getElementById('ws-mfa-secret');
+    var copyBtn = document.getElementById('ws-mfa-copy-secret');
+    var codeInput = document.getElementById('ws-mfa-code');
+    var confirmBtn = document.getElementById('ws-mfa-confirm');
+    var cancelBtn = document.getElementById('ws-mfa-cancel');
+    var errorEl = document.getElementById('ws-mfa-error');
+    var recoveryHost = document.getElementById('ws-mfa-recovery');
+
+    var secret = '';
+
+    function showError(el, msg) {
+      if (!el) return;
+      el.textContent = msg || '';
+      el.hidden = !msg;
+    }
+
+    function postJson(url, payload) {
+      return fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify(payload || {})
+      }).then(function (r) {
+        return r.json().then(function (body) { return { ok: r.ok, body: body }; });
+      });
+    }
+
+    function renderQr(text) {
+      if (!qrHost || typeof qrcode !== 'function' || !text) return;
+      try {
+        var q = qrcode(0, 'M');
+        q.addData(text);
+        q.make();
+        qrHost.innerHTML = q.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+      } catch (e) {
+        if (window.console && console.error) console.error('qr render failed:', e);
+      }
+    }
+
+    function renderRecovery(codes) {
+      if (!recoveryHost) return;
+      recoveryHost.innerHTML = '';
+      (codes || []).forEach(function (c) {
+        var code = document.createElement('code');
+        code.className = 'mono';
+        code.style.cssText = 'background:var(--slate-100);padding:.25rem .55rem;border-radius:.4rem;font-size:.8rem';
+        code.textContent = c;
+        recoveryHost.appendChild(code);
+      });
+    }
+
+    function copyText(text) {
+      var done = function () {
+        if (copyBtn) { copyBtn.textContent = 'Copied'; setTimeout(function () { copyBtn.textContent = 'Copy'; }, 1500); }
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(function () { legacyCopy(text); });
+      } else {
+        legacyCopy(text);
+      }
+      function legacyCopy(text) {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) {}
+        document.body.removeChild(ta);
+      }
+    }
+
+    if (startBtn && enroll) {
+      startBtn.addEventListener('click', function () {
+        startBtn.disabled = true;
+        startBtn.textContent = 'Preparing…';
+        showError(errorEl, '');
+        postJson(setupUrl).then(function (res) {
+          startBtn.disabled = false;
+          startBtn.textContent = 'Enable two-factor authentication';
+          if (!res.ok || !res.body || !res.body.success) {
+            var msg = (res.body && res.body.error && res.body.error.message) || 'Could not start MFA setup. Try again.';
+            showError(errorEl, msg);
+            return;
+          }
+          var d = res.body.data || {};
+          secret = d.secret || '';
+          if (secretEl) secretEl.textContent = secret;
+          renderRecovery(d.recovery_codes || []);
+          renderQr(d.otpauth_uri || '');
+          enroll.hidden = false;
+          startBtn.hidden = true;
+        }).catch(function () {
+          startBtn.disabled = false;
+          startBtn.textContent = 'Enable two-factor authentication';
+          showError(errorEl, 'Network error. Try again.');
+        });
+      });
+    }
+
+    if (copyBtn) {
+      copyBtn.addEventListener('click', function () {
+        var t = secretEl ? (secretEl.textContent || '') : '';
+        if (t) copyText(t);
+      });
+    }
+
+    if (confirmBtn && codeInput) {
+      confirmBtn.addEventListener('click', function () {
+        var code = (codeInput.value || '').trim();
+        if (!code) { showError(errorEl, 'Enter the 6-digit code from your authenticator app.'); return; }
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Verifying…';
+        showError(errorEl, '');
+        postJson(confirmUrl, { code: code }).then(function (res) {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = 'Verify & enable';
+          if (!res.ok || !res.body || !res.body.success) {
+            var msg = (res.body && res.body.error && res.body.error.message) || 'That code was not accepted.';
+            showError(errorEl, msg);
+            return;
+          }
+          window.location.reload();
+        }).catch(function () {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = 'Verify & enable';
+          showError(errorEl, 'Network error. Try again.');
+        });
+      });
+    }
+
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', function () {
+        enroll.hidden = true;
+        startBtn.hidden = false;
+        startBtn.disabled = false;
+        secret = '';
+        showError(errorEl, '');
+        if (secretEl) secretEl.textContent = '';
+        if (qrHost) qrHost.innerHTML = '';
+        if (recoveryHost) recoveryHost.innerHTML = '';
+      });
+    }
+
+    // Disable flow
+    var disableBtn = document.getElementById('ws-mfa-disable-btn');
+    var disableWrap = document.getElementById('ws-mfa-disable-confirm');
+    var disableCode = document.getElementById('ws-mfa-disable-code');
+    var disableConfirm = document.getElementById('ws-mfa-disable-confirm-btn');
+    var disableError = document.getElementById('ws-mfa-disable-error');
+
+    if (disableBtn && disableWrap) {
+      disableBtn.addEventListener('click', function () {
+        disableWrap.hidden = !disableWrap.hidden;
+        showError(disableError, '');
+      });
+    }
+    if (disableConfirm && disableCode) {
+      disableConfirm.addEventListener('click', function () {
+        var code = (disableCode.value || '').trim();
+        if (!code) { showError(disableError, 'Enter a code from your authenticator app to confirm.'); return; }
+        disableConfirm.disabled = true;
+        disableConfirm.textContent = 'Disabling…';
+        showError(disableError, '');
+        postJson(disableUrl, { code: code }).then(function (res) {
+          disableConfirm.disabled = false;
+          disableConfirm.textContent = 'Disable';
+          if (!res.ok || !res.body || !res.body.success) {
+            var msg = (res.body && res.body.error && res.body.error.message) || 'That code was not accepted.';
+            showError(disableError, msg);
+            return;
+          }
+          window.location.reload();
+        }).catch(function () {
+          disableConfirm.disabled = false;
+          disableConfirm.textContent = 'Disable';
+          showError(disableError, 'Network error. Try again.');
+        });
       });
     }
   }

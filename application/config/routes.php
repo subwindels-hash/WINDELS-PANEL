@@ -65,6 +65,8 @@ $route['verify-email/(:any)'] = 'auth/verify_email/$1';
 $route['verify-email'] = 'auth/verify_email';
 $route['auth/mfa/verify'] = 'auth/mfa_verify';
 $route['auth/mfa/setup'] = 'auth/mfa_setup';
+$route['auth/mfa/confirm'] = 'auth/mfa_confirm';
+$route['auth/mfa/disable'] = 'auth/mfa_disable';
 
 // Dashboard (customer)
 $route['dashboard'] = 'dashboard/dashboard/index';
