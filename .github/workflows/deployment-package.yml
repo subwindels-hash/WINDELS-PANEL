@@ -6,9 +6,11 @@
 # operator's whole deployment is: download, upload through File Manager,
 # extract, create the database, import the SQL, edit .env.
 #
-# Active since 2026-08-21 (moved from repo root, where it was staged as
-# deployment-package.yml.workflow-ready because automation tokens without
-# the `workflows` permission cannot create files under .github/workflows).
+# Lives in .github/workflows/deployment-package.yml (activated; runs on
+# demand and on every tag). It was previously staged at the repo root as
+# deployment-package.yml.workflow-ready while automation tokens without
+# the `workflows` permission could not create files under
+# .github/workflows.
 #
 # Runs on demand and on every tag. The artifact is what the deployment guide
 # tells operators to download, so nobody ever has to run the build themselves.

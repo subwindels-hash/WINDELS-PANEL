@@ -1,8 +1,9 @@
 # WINDELS PANEL — CI pipeline (two jobs, ~31 steps)
 #
-# Active since 2026-08-21 (moved from repo root, where it was staged as
-# ci.yml.workflow-ready because automation tokens without the `workflows`
-# permission cannot create files under .github/workflows).
+# Lives in .github/workflows/ci.yml (activated; runs on every push and PR).
+# It was previously staged at the repo root as ci.yml.workflow-ready while
+# automation tokens without the `workflows` permission could not create
+# files under .github/workflows.
 #
 # Runs on every push and pull request.
 #

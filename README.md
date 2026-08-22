@@ -301,13 +301,11 @@ referrals) run through `tests/_support/IntegrationHarness.php`.
 
 ## CI/CD
 
-The complete pipeline is staged at the repo root as
-**`ci.yml.workflow-ready`** (two jobs, ~31 steps, summarised below). To
-activate it, rename it into `.github/workflows/ci.yml` (the GitHub web UI
-works) — the repository's automation bot intentionally lacks the `workflows`
-permission, so the file ships one rename away from live. The release
-packaging pipeline is staged alongside it as
-`deployment-package.yml.workflow-ready`.
+The complete pipeline is **live in `.github/workflows/ci.yml`** (two jobs, ~31
+steps, summarised below) and runs on every push and pull request. The release
+packaging pipeline lives alongside it in
+`.github/workflows/deployment-package.yml` and runs on demand and on version
+tags.
 
 Stages, in order:
 
@@ -462,8 +460,7 @@ cron/crontab.example  15 scheduled jobs (installed by the cron container)
 docker/               php.Dockerfile, nginx + nginx.prod conf, nginx/certs, mysql init
 docker-compose.yml            development stack (MailHog, MinIO, dev creds)
 docker-compose.production.yml production stack (required secrets, TLS, no dev services)
-ci.yml.workflow-ready / deployment-package.yml.workflow-ready
-                      staged CI + release pipelines (rename into .github/workflows/ to activate)
+.github/workflows/        ci.yml (CI) + deployment-package.yml (release build)
 docs/                 database.sql (canonical schema), deployment, backups,
                       impersonation, certification reports, session logs
 database/             windels_panel.sql (complete importable database),
