@@ -12,7 +12,13 @@
     <h2 class="card-title">Transactions</h2>
     <p class="muted text-sm mb-4">Deposits, order charges, refunds, bonuses and adjustments — your wallet balance is spent here, inside the platform.</p>
     <?php if (empty($transactions)): ?>
-      <p class="muted mt-3">No transactions yet.</p>
+      <?php $this->load->view('partials/empty_state', array(
+          'icon'  => 'wallet',
+          'title' => 'No transactions yet',
+          'body'  => 'Deposits, order charges and credits are recorded here on a double-entry ledger.',
+          'action_href'  => site_url('dashboard/add-funds'),
+          'action_label' => 'Add funds',
+      )); ?>
     <?php else: ?>
     <div class="overflow-x-auto mt-3">
       <table class="table">

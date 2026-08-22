@@ -9,7 +9,11 @@
 
 <div class="card">
 <?php if (empty($subscriptions)): ?>
-  <p class="muted">No subscriptions yet.</p>
+  <?php $this->load->view('partials/empty_state', array(
+      'icon'  => 'repeat',
+      'title' => 'No subscriptions yet',
+      'body'  => 'Recurring orders you set up will appear here with their next run and status.',
+  )); ?>
 <?php else: ?>
 <div class="overflow-x-auto">
   <table class="table">

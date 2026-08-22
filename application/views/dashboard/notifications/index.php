@@ -9,7 +9,11 @@
   </div>
 
   <?php if (empty($notifications)): ?>
-    <p class="muted mt-4">You're all caught up.</p>
+    <?php $this->load->view('partials/empty_state', array(
+        'icon'  => 'bell',
+        'title' => 'No notifications yet',
+        'body'  => 'Order updates, payment confirmations and account alerts will appear here.',
+    )); ?>
   <?php else: ?>
   <ul class="mt-4 stack" style="gap:.25rem">
     <?php foreach ($notifications as $n): ?>

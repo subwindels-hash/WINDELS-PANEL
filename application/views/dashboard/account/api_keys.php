@@ -14,7 +14,11 @@
     <div class="card">
       <h2 class="card-title">Your API keys</h2>
       <?php if (empty($keys)): ?>
-        <p class="muted mt-2">No keys yet. Create one to start calling <code>/api/v1</code>.</p>
+        <?php $this->load->view('partials/empty_state', array(
+            'icon'  => 'key',
+            'title' => 'No API keys yet',
+            'body'  => 'Create a key to place and manage orders programmatically against the /api/v1 endpoints.',
+        )); ?>
       <?php else: ?>
       <div class="overflow-x-auto mt-3">
         <table class="table">

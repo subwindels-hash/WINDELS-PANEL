@@ -20,8 +20,13 @@ $statuses = array(''=>'All','PENDING'=>'Pending','IN_PROGRESS'=>'In progress','C
   </div>
 
   <?php if (empty($orders)): ?>
-    <p class="muted mt-6">No orders found<?=$status?' with status "'.htmlspecialchars($status).'"':''?>.
-      <a href="<?=site_url('dashboard/new-order')?>">Place one →</a></p>
+    <?php $this->load->view('partials/empty_state', array(
+        'icon'  => 'package',
+        'title' => $status ? 'No '.htmlspecialchars($status).' orders' : 'No orders yet',
+        'body'  => 'Orders you place show up here with their live status, charge and history.',
+        'action_href'  => site_url('dashboard/new-order'),
+        'action_label' => 'Place your first order',
+    )); ?>
   <?php else: ?>
   <div class="overflow-x-auto mt-4">
     <table class="table">
