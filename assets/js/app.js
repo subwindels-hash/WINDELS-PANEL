@@ -200,5 +200,200 @@
     window.addEventListener('pageshow', function (event) {
       if (event.persisted) token(true);
     });
+
+    initPasswordToggles();
+    initMobileNav();
+    initFaqFilter();
+    initSiteOperator();
   });
+
+  function initPasswordToggles() {
+    var buttons = document.querySelectorAll('[data-password-toggle]');
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].addEventListener('click', function () {
+        var id = this.getAttribute('data-password-toggle');
+        var input = document.getElementById(id);
+        if (!input) return;
+        var show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        this.textContent = show ? 'Hide' : 'Show';
+        this.setAttribute('aria-pressed', show ? 'true' : 'false');
+      });
+    }
+  }
+
+  function initMobileNav() {
+    var toggle = document.querySelector('[data-nav-toggle]');
+    var panel = document.getElementById('ws-nav-panel');
+    if (!toggle || !panel) return;
+    toggle.addEventListener('click', function () {
+      var open = panel.classList.toggle('is-open');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      panel.hidden = !open;
+    });
+  }
+
+  function initFaqFilter() {
+    var input = document.getElementById('ws-faq-search');
+    if (!input) return;
+    var items = document.querySelectorAll('[data-faq-item]');
+    var empty = document.getElementById('ws-faq-empty');
+    input.addEventListener('input', function () {
+      var q = (input.value || '').toLowerCase().trim();
+      var shown = 0;
+      for (var i = 0; i < items.length; i++) {
+        var hay = (items[i].getAttribute('data-faq-text') || '').toLowerCase();
+        var match = !q || hay.indexOf(q) !== -1;
+        items[i].hidden = !match;
+        if (match) shown++;
+      }
+      var cats = document.querySelectorAll('[data-faq-category]');
+      for (var c = 0; c < cats.length; c++) {
+        var visible = cats[c].querySelectorAll('[data-faq-item]:not([hidden])');
+        cats[c].hidden = visible.length === 0;
+      }
+      if (empty) empty.hidden = shown !== 0;
+    });
+  }
+
+  function initSiteOperator() {
+    var root = document.getElementById('ws-assistant');
+    if (!root) return;
+
+    var launch = document.getElementById('ws-assistant-launch');
+    var closeBtn = document.getElementById('ws-assistant-close');
+    var log = document.getElementById('ws-assistant-log');
+    var form = document.getElementById('ws-assistant-form');
+    var input = document.getElementById('ws-assistant-input');
+    var send = document.getElementById('ws-assistant-send');
+    var status = document.getElementById('ws-assistant-status');
+    var suggest = document.getElementById('ws-assistant-suggest');
+    var endpoint = root.getAttribute('data-endpoint') || '/assistant/chat';
+    var history = [];
+    var pending = false;
+
+    function setOpen(open) {
+      root.hidden = !open;
+      if (launch) launch.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open && input) input.focus();
+    }
+
+    if (launch) {
+      launch.addEventListener('click', function () { setOpen(root.hidden); });
+    }
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function () { setOpen(false); if (launch) launch.focus(); });
+    }
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !root.hidden) setOpen(false);
+    });
+
+    function bubble(role, text, links) {
+      var wrap = document.createElement('div');
+      wrap.className = 'ws-bubble ' + (role === 'user' ? 'ws-bubble-user' : 'ws-bubble-assistant');
+      wrap.textContent = text;
+      if (links && links.length) {
+        var nav = document.createElement('div');
+        nav.className = 'ws-assistant-links';
+        for (var i = 0; i < links.length; i++) {
+          var a = document.createElement('a');
+          a.href = links[i].href;
+          a.textContent = links[i].label;
+          nav.appendChild(a);
+        }
+        wrap.appendChild(nav);
+      }
+      log.appendChild(wrap);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function renderSuggestions(items) {
+      if (!suggest) return;
+      suggest.innerHTML = '';
+      if (!items || !items.length) return;
+      for (var i = 0; i < items.length; i++) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = items[i];
+        b.addEventListener('click', function (copy) {
+          return function () { ask(copy); };
+        }(items[i]));
+        suggest.appendChild(b);
+      }
+    }
+
+    function setBusy(on) {
+      pending = on;
+      if (send) send.disabled = on;
+      if (input) input.disabled = on;
+      if (status) status.textContent = on ? 'Looking that up…' : '';
+    }
+
+    function ask(text) {
+      text = (text || '').trim();
+      if (!text || pending) return;
+      bubble('user', text);
+      history.push({ role: 'user', content: text });
+      setBusy(true);
+      fetch(endpoint, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({ message: text, history: history.slice(-8) })
+      })
+        .then(function (r) {
+          return r.json().then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
+        })
+        .then(function (res) {
+          setBusy(false);
+          if (!res.ok || !res.body || !res.body.success) {
+            var msg = (res.body && res.body.error && res.body.error.message)
+              ? res.body.error.message
+              : 'The assistant could not answer just now. Try again, or use Contact.';
+            bubble('assistant', msg);
+            if (status) status.textContent = 'Something went wrong.';
+            return;
+          }
+          var data = res.body.data || {};
+          bubble('assistant', data.reply || '', data.links || []);
+          history.push({ role: 'assistant', content: data.reply || '' });
+          renderSuggestions(data.suggestions || []);
+        })
+        .catch(function () {
+          setBusy(false);
+          bubble('assistant', 'The assistant is unavailable right now. Use the Contact page if you need a person.');
+        });
+    }
+
+    if (form) {
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var value = input ? input.value : '';
+        if (input) input.value = '';
+        ask(value);
+      });
+    }
+    if (input) {
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          if (form) {
+            if (typeof form.requestSubmit === 'function') form.requestSubmit();
+            else form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+          }
+        }
+      });
+    }
+
+    var initial = suggest ? suggest.querySelectorAll('button[data-suggest]') : [];
+    for (var s = 0; s < initial.length; s++) {
+      initial[s].addEventListener('click', function () {
+        ask(this.getAttribute('data-suggest') || this.textContent);
+      });
+    }
+  }
 })();

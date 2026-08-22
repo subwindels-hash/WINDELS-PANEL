@@ -1,15 +1,77 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
 $f = $filters;
 $base = site_url('services');
-function ws_query_string($overrides, $current) {
-    return http_build_query(array_merge(array_filter($current, function($v){ return $v !== '' && $v !== null; }), $overrides));
+if (!function_exists('ws_query_string')) {
+    function ws_query_string($overrides, $current) {
+        return http_build_query(array_merge(array_filter($current, function($v){ return $v !== '' && $v !== null; }), $overrides));
+    }
 }
 ?>
-<section class="py-10">
+<?php
+$product_areas = $product_areas ?? array();
+$how_it_works = $how_it_works ?? array();
+$advantages = $advantages ?? array();
+$security_practices = $security_practices ?? array();
+$show_marketing = !empty($show_marketing);
+?>
+<?php if ($show_marketing): ?>
+<section class="ws-page-hero">
+  <div class="container" style="max-width:800px">
+    <p class="ws-kicker">What you can buy</p>
+    <h1>One wallet for SMM, bills and digital goods</h1>
+    <p class="ws-lede">WINDELS PANEL is for creators, agencies and resellers who want prepaid checkout, a live catalogue and a staff-run back office. It solves scattered provider logins and untracked wallet movement — not by promising fake volume numbers.</p>
+    <div class="row" style="margin-top:1.25rem">
+      <a class="btn btn-primary" href="<?=site_url('register')?>">Create an account</a>
+      <a class="btn btn-secondary" href="#catalogue">Jump to catalogue</a>
+    </div>
+  </div>
+</section>
+
+<section class="ws-section-sm">
+  <div class="container">
+    <h2>Product areas</h2>
+    <p class="muted">Only areas the operator has enabled and priced are actually buyable.</p>
+    <div class="grid grid-3 mt-4">
+      <?php foreach ($product_areas as $area): ?>
+      <article class="card" style="padding-top:0;overflow:hidden">
+        <?php
+          $visual = array(
+            'smm' => 'services/smm.jpg',
+            'vtu' => 'services/vtu.jpg',
+            'numbers' => 'services/numbers.jpg',
+            'identity' => 'services/identity.jpg',
+            'giftcards' => 'services/giftcards.jpg',
+            'marketplace' => 'services/marketplace.jpg',
+            'api' => 'services/marketplace.jpg',
+          );
+          $img = isset($visual[$area['id']]) ? $visual[$area['id']] : null;
+        ?>
+        <?php if ($img): ?>
+          <img class="ws-visual-card" src="<?=base_url('assets/images/'.$img)?>"
+               alt="<?=htmlspecialchars($area['name'])?> — visual of this product area"
+               width="640" height="400" loading="lazy">
+        <?php endif; ?>
+        <h3 class="card-title"><?=htmlspecialchars($area['name'])?></h3>
+        <p class="hint"><?=htmlspecialchars($area['audience'])?></p>
+        <p><?=htmlspecialchars($area['summary'])?></p>
+        <ul class="hint" style="padding-left:1.1rem">
+          <?php foreach (array_slice($area['capabilities'], 0, 3) as $cap): ?>
+            <li><?=htmlspecialchars($cap)?></li>
+          <?php endforeach; ?>
+        </ul>
+        <a class="btn btn-secondary btn-sm" href="<?=site_url($area['href'])?>"><?=htmlspecialchars($area['cta'])?></a>
+      </article>
+      <?php endforeach; ?>
+    </div>
+  </div>
+</section>
+<?php endif; ?>
+
+<section class="py-10" id="catalogue">
   <div class="container" style="max-width:1200px">
     <header class="text-center mb-8">
-      <h1>Services</h1>
-      <p class="muted">Browse <?=number_format($total)?> services across every major platform. Pricing is frozen at checkout.</p>
+      <h1><?=$show_marketing ? 'SMM catalogue' : 'Services'?></h1>
+      <p class="muted">Browse <?=number_format($total)?> published SMM services. Pricing is frozen at checkout. Other product lines live in the signed-in dashboard.</p>
     </header>
 
     <!-- Search + filters -->

@@ -17,7 +17,11 @@
     <?php endif; ?>
 
     <?php if (empty($posts)): ?>
-      <div class="card muted text-center">No posts published yet.</div>
+      <div class="empty-state card">
+        <h2>No posts published yet</h2>
+        <p>Staff publish guides and product notes from the admin content tools. In the meantime the FAQ covers how the panel works.</p>
+        <a class="btn btn-secondary" href="<?=site_url('faq')?>">Read the FAQ</a>
+      </div>
     <?php else: ?>
     <div class="grid grid-3" style="gap:1.25rem">
       <?php foreach ($posts as $p): ?>

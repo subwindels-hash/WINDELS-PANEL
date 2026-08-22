@@ -220,6 +220,10 @@ class Auth_Controller extends MY_Controller {
                 $dest = '/dashboard';
             }
             $this->session->set_userdata('redirect_after_login', $dest);
+            $path = isset($this->uri) ? trim((string)$this->uri->uri_string(), '/') : '';
+            if ($path === 'admin' || strpos($path, 'admin/') === 0) {
+                redirect('admin/login');
+            }
             redirect('login');
         }
         $this->current_user = $this->auth->user();

@@ -548,11 +548,16 @@ class Core_seeder extends Seeder {
 
     private function seed_faqs() {
         $faqs = array(
-            array('How fast are orders delivered?', 'Most services start within minutes. Each service card shows its average start time; drip-feed orders follow the interval you choose.', 'orders', 10),
-            array('How do I add funds?', 'Open Dashboard → Add Funds, pick a payment method and follow the checkout. Your wallet is credited automatically once the payment is verified.', 'payments', 20),
-            array('What is a partial order?', 'If a provider delivers only part of the quantity, the order is marked PARTIAL and the undelivered portion is refunded to your wallet automatically.', 'orders', 30),
+            array('How fast are orders delivered?', 'Most services start within minutes. Each service card shows its average start time; drip-feed orders follow the interval you choose. The panel does not guarantee a completion time.', 'orders', 10),
+            array('How do I add funds?', 'Open Dashboard → Add Funds, pick a payment method the operator has enabled, and follow checkout. Your wallet is credited after the payment is verified. There are no customer withdrawals.', 'payments', 20),
+            array('What is a partial order?', 'If a provider delivers only part of the quantity, the order is marked PARTIAL and the undelivered portion is refunded to your wallet when partial refunds are enabled.', 'orders', 30),
             array('Do you offer an API for resellers?', 'Yes. Create an API key in Dashboard → API and call /api/v1 with the X-Api-Key header. Full docs are at /api/docs.', 'api', 40),
             array('Can I get a refill?', 'Services marked "Refill" support refill requests from the order detail page within the refill window.', 'orders', 50),
+            array('What is WINDELS PANEL?', 'A prepaid reseller platform for SMM services, Nigerian VTU, virtual numbers, identity lookups, gift cards and a platform-owned marketplace.', 'general', 5),
+            array('Can I withdraw wallet funds?', 'No. The wallet is a spending balance for purchases on this panel.', 'payments', 25),
+            array('How do I contact support?', 'Signed-in customers should open a ticket. Visitors can use the contact form. Include the public order ID.', 'support', 60),
+            array('Is the site assistant a cloud AI?', 'No. It is an embedded operational engine. It does not call a third-party AI API and cannot place orders for you.', 'general', 70),
+            array('Where do staff sign in?', 'Use /admin/login. Customer accounts are refused after the password check.', 'general', 80),
         );
         foreach ($faqs as $f) {
             $this->insert_once('faqs', array('question'=>$f[0]), array(
