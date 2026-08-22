@@ -16,7 +16,7 @@ server.
 | --- | --- |
 | Hosting | cPanel with PHP **8.1+** and MySQL 5.7+ / MariaDB 10.4+ |
 | PHP extensions | `mysqli`, `mbstring`, `openssl`, `curl`, `json`, `bcmath` (cPanel → Select PHP Version → Extensions) |
-| The package | `application-deployment.zip` — committed at the root of this repository (GitHub → the file → *Download raw file*), also published as a release artifact. Contains index.php, application/, system/, assets/, storage/, cron/, database/production.sql and .env.example. |
+| The package | `application-deployment.zip` — published as a **release artifact** (GitHub → Releases), or built locally with `bash tools/build_deployment_package.sh`. It is a build artifact and is not committed to git. Contains index.php, application/, system/, assets/, storage/, cron/, database/windels_panel.sql and .env.example. |
 
 Nothing else. The framework is inside the package, so `composer install` is
 never required; the CSS is pre-built, so `npm install` is never required.
@@ -59,7 +59,7 @@ Write down the three prefixed values: **database name**, **user name**,
 
 1. Select the database you just created in the left-hand list.
 2. Open the **Import** tab.
-3. **Choose file** → `database/production.sql` from the extracted package
+3. **Choose file** → `database/windels_panel.sql` from the extracted package
    (download it from File Manager first if your browser needs a local copy).
 4. Press **Go**.
 
@@ -73,7 +73,7 @@ first administrator account.
 finished when the import finishes.
 
 > If phpMyAdmin refuses the upload because the file is larger than the host's
-> limit, compress it first (`production.sql.zip`) — phpMyAdmin imports zipped
+> limit, compress it first (`windels_panel.sql.zip`) — phpMyAdmin imports zipped
 > SQL directly.
 
 ---
@@ -114,12 +114,35 @@ S3 storage, session/cache tuning.
 
 ---
 
-## 5. Open the site
+## 5. Verify the deployment (one page, in the browser)
+
+Visit `https://yourdomain.com/deploy-verify.php`.
+
+It checks, and names the exact fix for anything red:
+
+- PHP version and required extensions (`mysqli`, `mbstring`, `curl`,
+  `openssl`, `bcmath`, `json` + recommended ones)
+- the CodeIgniter system path — resolved automatically from `system/` or
+  `vendor/codeigniter/framework/system`, whichever the upload produced
+- `vendor/autoload.php` (bundled fallback or full composer install)
+- writable runtime directories (with real write probes, not guesses)
+- `.env` — required values present, secrets non-default, https base URL
+- database credentials **and a live connection**, including whether the
+  `windels_panel.sql` import actually ran (table count)
+
+**Delete `deploy-verify.php` when everything is green** — File Manager →
+right-click → Delete. (Or set `VP_VERIFY_DISABLE=1` in `.env` to disable it
+without deleting.) It can also run from a shell: `php deploy-verify.php`
+exits 0/1, so monitoring can gate on it.
+
+---
+
+## 6. Open the site
 
 Visit `https://yourdomain.com`.
 
 The homepage should render. Sign in at `/login` with the credentials printed in
-the header of `database/production.sql`:
+the header of `database/windels_panel.sql`:
 
 ```
 username: admin
@@ -197,7 +220,7 @@ Same five steps, with two differences.
 4. Upload and extract the files (step 1), and upload the contents of
    `assets/uploads/` if you compressed the app without them.
 5. Create the new database and user (step 2).
-6. Import **your exported dump**, not `database/production.sql` — your dump
+6. Import **your exported dump**, not `database/windels_panel.sql` — your dump
    already contains the schema *and* your live data.
 7. Edit `.env` (step 4) with the **new** database name/user/password and the
    new domain, and paste the **old** `VP_ENCRYPTION_KEY` and `VP_AUTH_SECRET`
@@ -248,6 +271,7 @@ serves traffic correctly without it.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
+| “CodeIgniter framework files are missing” / “system folder path does not appear to be set correctly” | The upload was cut short — `system/` (and/or `vendor/`) is incomplete | Re-upload the zip and re-extract. The package ships the framework as ordinary files in **both** auto-detected locations, so no symlink or `composer install` is ever needed. `/deploy-verify.php` confirms the fix. |
 | “The panel is not configured yet” | `.env` missing a required value | The page names it. Edit `.env` in File Manager. |
 | Blank page / HTTP 500 | Usually a permissions problem | Set the five folders above to 755/775; check `storage/logs/log-*.php`. |
 | “Unable to connect to your database server” | Wrong `VP_DB_*` values, or the user is not assigned to the database | cPanel → MySQL Databases → *Add User To Database* → ALL PRIVILEGES. |
@@ -268,18 +292,26 @@ application-deployment.zip
 ├── index.php                 front controller — reads .env, boots the app
 ├── .htaccess                 clean URLs + denies application/, system/, database/, dotfiles
 ├── .env.example              copy to .env and edit; the only configuration
+├── deploy-verify.php         browser diagnostics — delete after a green report
 ├── README-DEPLOYMENT.txt     this guide, condensed to one screen
 ├── application/              controllers, models, views, libraries, config
-├── system/                   CodeIgniter 3.1.13 (bundled — no Composer needed)
+├── system/                   CodeIgniter 3.1.13, REAL files (no symlink — works everywhere)
+├── vendor/                   codeigniter/framework + fallback autoloader;
+│   │                         full composer dependencies when built after composer install
+│   └── codeigniter/framework/system/   ← the second path index.php auto-detects
 ├── assets/                   css, js, images, uploads/ (writable)
 ├── storage/                  logs/ and cache/ (writable, pre-guarded)
 ├── cron/                     crontab example for cPanel → Cron Jobs
 └── database/
-    └── production.sql        the complete database: schema + data + admin
+    └── windels_panel.sql        the complete database: schema + data + admin
 ```
 
-`vendor/` appears only if the package was built with optional dependencies
-(S3 storage, Redis). Nothing in the request path needs it.
+`index.php` auto-detects the framework in `system/` first and
+`vendor/codeigniter/framework/system` second — both always exist in the
+package, as ordinary files, so no composer install and no symlink support is
+needed at the destination. The remaining composer packages (S3 storage,
+Redis, payment SDKs) stay optional feature flags: the request path never
+requires them.
 
 ---
 
@@ -289,7 +321,7 @@ The zip is committed so that an operator can download it without tooling. After
 changing application code, a migration or the core seed:
 
 ```bash
-php tools/build_production_sql.php          # regenerate database/production.sql
+php tools/build_production_sql.php          # regenerate database/windels_panel.sql
 bash tools/build_deployment_package.sh      # regenerate application-deployment.zip
 bash tools/verify_deployment_package.sh     # extract it into a scratch account and prove it boots
 ```
@@ -297,6 +329,6 @@ bash tools/verify_deployment_package.sh     # extract it into a scratch account 
 `CpanelDeploymentTest` fails when the committed zip no longer matches the tree:
 its staleness check compares every packaged application file (views, layouts,
 assets, config, controllers, models, libraries, database dump, runtime
-guards) hash-for-hash against the working tree, not just `production.sql` and
+guards) hash-for-hash against the working tree, not just `windels_panel.sql` and
 `index.php`. CI runs all three of the above plus a real MySQL import of
-`database/production.sql`.
+`database/windels_panel.sql`.

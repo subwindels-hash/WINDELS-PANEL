@@ -6,7 +6,7 @@ where a terminal exists and CI drives releases.
 > **Deploying on shared hosting (cPanel)? Read
 > [cpanel-deployment.md](cpanel-deployment.md) instead.** That path needs no
 > terminal at all: upload the package, create the database, import
-> `database/production.sql` through phpMyAdmin, edit `.env`, open the domain.
+> `database/windels_panel.sql` through phpMyAdmin, edit `.env`, open the domain.
 > The commands on this page are conveniences for maintainers, not requirements
 > for an install.
 
@@ -56,7 +56,7 @@ Alternatively — and this is what shared hosting does — skip `migrate`/`seed`
 entirely and import the one complete database file:
 
 ```bash
-mysql -u user -p dbname < database/production.sql   # or phpMyAdmin → Import
+mysql -u user -p dbname < database/windels_panel.sql   # or phpMyAdmin → Import
 ```
 
 It contains the schema, the migration bookkeeping (so a later `migrate` applies
@@ -64,7 +64,7 @@ only what came afterwards), all core seed data and a first administrator.
 Regenerate it after any migration or seeder change:
 
 ```bash
-php tools/build_production_sql.php          # writes database/production.sql
+php tools/build_production_sql.php          # writes database/windels_panel.sql
 php tools/build_production_sql.php --check  # CI: fails when it is stale
 python3 tools/validate_production_sql.py    # completeness + consistency
 ```
@@ -79,9 +79,10 @@ bash tools/verify_deployment_package.sh     # extracts it into a scratch
 ```
 
 The zip carries CodeIgniter, the compiled CSS, the pre-created writable
-directories and `database/production.sql`, so the destination host needs
-neither Composer nor npm. CI publishes it as a release artifact
-(`deployment-package.yml.workflow-ready`).
+directories and `database/windels_panel.sql`, so the destination host needs
+neither Composer nor npm. The packaging pipeline is staged at the repo root
+as `deployment-package.yml.workflow-ready` (rename into `.github/workflows/`
+to activate it; it publishes the zip as a release artifact).
 
 `deploy check` exits non-zero if anything is unsafe, so it can gate a release:
 

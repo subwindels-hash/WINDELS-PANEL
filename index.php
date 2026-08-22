@@ -107,9 +107,30 @@ if (($_temp = realpath($system_path)) !== FALSE) {
 
 if (!is_dir($system_path) || !is_file($system_path . 'core' . DIRECTORY_SEPARATOR . 'CodeIgniter.php')) {
     header('HTTP/1.1 503 Service Unavailable.', TRUE, 503);
-    echo 'Your system folder path does not appear to be set correctly. '
-        . 'Run `composer install` in the project root (this creates vendor/codeigniter/framework/system), '
-        . 'then `php tools/link_system.php` if you want a ./system symlink.';
+    // No framework found in any of the candidate locations. Spell out every
+    // path that was probed, because the person seeing this is usually staring
+    // at a cPanel File Manager with no Terminal: the fix is re-uploading the
+    // system/ directory from application-deployment.zip, not running commands.
+    $probed = array();
+    foreach ($system_candidates as $candidate) {
+        $probed[] = rtrim((string) $candidate, '/\\') . '/core/CodeIgniter.php';
+    }
+    echo '<!doctype html><html><head><meta charset="utf-8"><title>WINDELS PANEL — framework missing</title>'
+        . '<style>body{font:16px/1.5 system-ui,sans-serif;margin:2em auto;max-width:44em;padding:0 1em;color:#222}'
+        . 'code{background:#f3f3f3;padding:1px 5px;border-radius:4px}li{margin:.25em 0}</style></head><body>'
+        . '<h1>CodeIgniter framework files are missing</h1>'
+        . '<p>The application looked for <code>core/CodeIgniter.php</code> in each of these places:</p>'
+        . '<ul><li><code>' . implode('</code></li><li><code>', array_map('htmlspecialchars', $probed)) . '</code></li></ul>'
+        . '<p><strong>If you deployed with application-deployment.zip:</strong> the upload was incomplete — '
+        . 're-upload the <code>system/</code> directory (and <code>vendor/</code> if present) from the zip '
+        . 'extract. No <code>composer install</code> or <code>symlink</code> is required; the package ships '
+        . '<code>system/</code> as real files.</p>'
+        . '<p><strong>If you deployed from a git clone:</strong> run <code>composer install</code> '
+        . '(it creates <code>vendor/codeigniter/framework/system</code>), then optionally '
+        . '<code>php tools/link_system.php</code> — which creates <code>system/</code> as a symlink, or as a '
+        . 'real directory copy on hosts where symlinks are unavailable.</p>'
+        . '<p>Open <code>/deploy-verify.php</code> in the browser afterwards for a full environment check.</p>'
+        . '</body></html>';
     exit(3);
 }
 

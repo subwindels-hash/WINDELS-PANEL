@@ -28,8 +28,10 @@ class MY_Controller extends CI_Controller {
     public function __construct() {
         parent::__construct();
         $this->request_id = bin2hex(random_bytes(8));
-        // UTC
-        date_default_timezone_set('UTC');
+        // Configurable (VP_TIMEZONE / APP_TIMEZONE), UTC by default. Storage
+        // columns stay UTC DATETIME either way — services write gmdate().
+        $tz = class_exists('Env') ? Env::get('APP_TIMEZONE', 'UTC') : 'UTC';
+        @date_default_timezone_set(($tz === null || $tz === '') ? 'UTC' : $tz);
         $this->send_security_headers();
 
         $this->db_ready = windels_load_database();

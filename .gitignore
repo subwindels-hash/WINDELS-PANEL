@@ -34,7 +34,9 @@
 !/assets/uploads/.htaccess
 !/assets/uploads/index.html
 
-# Staging directory of tools/build_deployment_package.sh. The zip it produces
-# (application-deployment.zip) IS committed: an operator with no terminal has
-# to be able to download a ready package straight from the repository.
+# Staging directory of tools/build_deployment_package.sh, and the zip it
+# produces. application-deployment.zip is NOT committed to git — it is a
+# build artifact: downloaded from Releases (built by the packaging pipeline)
+# or produced locally with `bash tools/build_deployment_package.sh`.
 /build/
+/application-deployment.zip

@@ -1,13 +1,10 @@
 # WINDELS PANEL — CI pipeline (two jobs, ~31 steps)
 #
-# Activation (one-time maintainer step — GitHub refuses to let an automation
-# token without the `workflows` permission create or update files under
-# .github/workflows, so a maintainer must land this move):
+# Active since 2026-08-21 (moved from repo root, where it was staged as
+# ci.yml.workflow-ready because automation tokens without the `workflows`
+# permission cannot create files under .github/workflows).
 #
-#   mkdir -p .github/workflows && git mv ci.yml.workflow-ready .github/workflows/ci.yml
-#   git commit -m "Enable CI" && git push
-#
-# Runs on every push and pull request once activated.
+# Runs on every push and pull request.
 #
 # Job 1 `php` — lint, static analysis, schema sync, real-MySQL migration +
 #              seeder validation, full PHPUnit suite, security greps, preflight
@@ -173,17 +170,17 @@ jobs:
       # operator with no terminal actually installs, so it is verified the way
       # they will use it: import it into an empty database, then assert the
       # panel's own expectations against the result.
-      - name: production.sql is current with the migrations and the core seed
+      - name: windels_panel.sql is current with the migrations and the core seed
         run: |
           php tools/build_production_sql.php --check
           python3 tools/validate_production_sql.py
 
-      - name: Import production.sql into an empty database (what phpMyAdmin does)
+      - name: Import windels_panel.sql into an empty database (what phpMyAdmin does)
         env:
           MYSQL_PWD: windels_secret
         run: |
           mysql -h 127.0.0.1 -P 3306 -uwindels -e "DROP DATABASE IF EXISTS windels_import; CREATE DATABASE windels_import CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-          mysql -h 127.0.0.1 -P 3306 -uwindels windels_import < database/production.sql
+          mysql -h 127.0.0.1 -P 3306 -uwindels windels_import < database/windels_panel.sql
 
       - name: A freshly imported database needs no migration and no seed
         env:
@@ -202,13 +199,13 @@ jobs:
             echo "an imported database should have nothing to migrate" >&2; exit 1; }
 
           # Core seed: idempotent, so re-running it must insert nothing. If it
-          # does, production.sql is missing seed data an operator would never
+          # does, windels_panel.sql is missing seed data an operator would never
           # get without a terminal.
           before=$(mysql -h 127.0.0.1 -uwindels -N -B windels_import -e "SELECT (SELECT COUNT(*) FROM roles)+(SELECT COUNT(*) FROM permissions)+(SELECT COUNT(*) FROM settings)+(SELECT COUNT(*) FROM feature_flags)+(SELECT COUNT(*) FROM payment_methods)+(SELECT COUNT(*) FROM email_templates)+(SELECT COUNT(*) FROM currencies)+(SELECT COUNT(*) FROM vtu_products);")
           php index.php seed core
           after=$(mysql -h 127.0.0.1 -uwindels -N -B windels_import -e "SELECT (SELECT COUNT(*) FROM roles)+(SELECT COUNT(*) FROM permissions)+(SELECT COUNT(*) FROM settings)+(SELECT COUNT(*) FROM feature_flags)+(SELECT COUNT(*) FROM payment_methods)+(SELECT COUNT(*) FROM email_templates)+(SELECT COUNT(*) FROM currencies)+(SELECT COUNT(*) FROM vtu_products);")
           [ "$before" = "$after" ] || {
-            echo "core seed inserted rows into an imported database ($before -> $after): production.sql is incomplete" >&2; exit 1; }
+            echo "core seed inserted rows into an imported database ($before -> $after): windels_panel.sql is incomplete" >&2; exit 1; }
 
       - name: The seeded administrator can authenticate
         env:
@@ -219,7 +216,7 @@ jobs:
           DB_NAME: windels_import
         run: |
           php -r '
-            $sql = file_get_contents("database/production.sql");
+            $sql = file_get_contents("database/windels_panel.sql");
             preg_match("/--\s+password:\s+(\S+)/", $sql, $pw);
             $db = new mysqli("127.0.0.1", "windels", "windels_secret", "windels_import", 3306);
             $row = $db->query("SELECT password_hash, status, role FROM users WHERE role = \"SUPER_ADMIN\" LIMIT 1")->fetch_assoc();

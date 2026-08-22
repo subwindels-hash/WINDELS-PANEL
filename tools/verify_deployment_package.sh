@@ -10,16 +10,20 @@
 #
 # What it proves (no MySQL server required):
 #   · the zip extracts to a tree whose entry point is index.php
-#   · CodeIgniter is inside the package (no composer install)
-#   · no vendor/, node_modules/, composer.json or package.json is needed
+#   · CodeIgniter is inside the package as REAL FILES at both paths index.php
+#     auto-detects (system/ and vendor/codeigniter/framework/system) — no
+#     composer install, no symlinks anywhere in the archive
+#   · deploy-verify.php ships for browser-side environment checks
+#   · a vendor/autoload.php (bundled fallback or full composer install) exists
+#   · no composer.json or package.json to satisfy on the destination host
 #   · .env alone produces the base URL, database credentials, log/cache/session
 #     paths and secrets — nothing is read from an installer-generated file
 #   · the runtime directories are created on first boot and are guarded
 #   · encryption and token signing work with the keys carried in .env, and
 #     ciphertext written on the "old server" still decrypts on the "new" one
-#   · the administrator hash in database/production.sql verifies with the
+#   · the administrator hash in database/windels_panel.sql verifies with the
 #     documented password
-#   · production.sql is complete (delegates to validate_production_sql.py)
+#   · windels_panel.sql is complete (delegates to validate_production_sql.py)
 #
 # What it cannot prove here: Apache rewriting and live MySQL queries. Those
 # need a real host; docs/cpanel-deployment.md documents the checks for them and
@@ -65,11 +69,20 @@ unzip -q "${WORK}/application-deployment.zip" -d "${SITE}"
 check "index.php is at the document root"            "[[ -f '${SITE}/index.php' ]]"
 check ".htaccess shipped (clean URLs)"               "[[ -f '${SITE}/.htaccess' ]]"
 check "CodeIgniter is bundled (system/core)"         "[[ -f '${SITE}/system/core/CodeIgniter.php' ]]"
-check "database/production.sql is in the package"    "[[ -f '${SITE}/database/production.sql' ]]"
+check "system/ is REAL files, not a symlink"         "[[ ! -L '${SITE}/system' && -d '${SITE}/system' ]]"
+check "second framework path exists (vendor/codeigniter/framework/system)" \
+  "[[ -f '${SITE}/vendor/codeigniter/framework/system/core/CodeIgniter.php' ]]"
+check "vendor framework is REAL files, not a symlink" \
+  "[[ ! -L '${SITE}/vendor/codeigniter/framework/system' ]]"
+check "no symlinks anywhere in the package"          "[[ -z \"$(find '${SITE}' -type l -print -quit)\" ]]"
+check "database/windels_panel.sql is in the package"    "[[ -f '${SITE}/database/windels_panel.sql' ]]"
+check "schema_verification.php ships for post-import audits" "[[ -f '${SITE}/database/schema_verification.php' ]]"
+check "database/README.md ships"                        "[[ -f '${SITE}/database/README.md' ]]"
 check ".env.example is in the package"               "[[ -f '${SITE}/.env.example' ]]"
+check "deploy-verify.php shipped (browser diagnostics)" "[[ -f '${SITE}/deploy-verify.php' ]]"
+check "vendor/autoload.php shipped (bundled fallback or full)" "[[ -f '${SITE}/vendor/autoload.php' ]]"
 check "no composer.json — nothing to install"        "[[ ! -f '${SITE}/composer.json' ]]"
 check "no package.json — nothing to build"           "[[ ! -f '${SITE}/package.json' ]]"
-check "no vendor/ needed"                            "[[ ! -d '${SITE}/vendor' ]] || [[ -d '${SITE}/vendor' ]]"
 check "no tests/ or tools/ shipped"                  "[[ ! -d '${SITE}/tests' && ! -d '${SITE}/tools' ]]"
 check "demo seeder is not in the package"            "[[ ! -d '${SITE}/application/seeds' ]]"
 check "uploads directory pre-created"                "[[ -d '${SITE}/assets/uploads' ]]"
@@ -194,11 +207,11 @@ $token = $signer->issue(1, 'password_reset');
 $claims = $signer->verify(is_array($token) ? $token['token'] : $token, 'password_reset');
 want('password-reset tokens sign and verify with VP_AUTH_SECRET', !empty($claims));
 
-// --- the administrator in production.sql can actually log in ----------------
-$sql = file_get_contents($site . '/database/production.sql');
+// --- the administrator in windels_panel.sql can actually log in ----------------
+$sql = file_get_contents($site . '/database/windels_panel.sql');
 preg_match('/--\s+password:\s+(\S+)/', $sql, $pw);
 preg_match('/(\$2y\$\d\d\$[.\/A-Za-z0-9]{53})/', $sql, $hash);
-want('production.sql documents the first-login password', !empty($pw[1]), $pw[1] ?? '');
+want('windels_panel.sql documents the first-login password', !empty($pw[1]), $pw[1] ?? '');
 want('that password verifies against the seeded bcrypt hash',
      !empty($hash[1]) && password_verify($pw[1], $hash[1]));
 
@@ -225,10 +238,10 @@ fi
 echo
 echo "5. The imported database is complete"
 if command -v python3 >/dev/null 2>&1 && python3 -c 'import sqlglot' >/dev/null 2>&1; then
-  if python3 "${ROOT}/tools/validate_production_sql.py" "${SITE}/database/production.sql" >/dev/null 2>&1; then
-    ok "database/production.sql validates (schema + seed + admin + bookkeeping)"
+  if python3 "${ROOT}/tools/validate_production_sql.py" "${SITE}/database/windels_panel.sql" >/dev/null 2>&1; then
+    ok "database/windels_panel.sql validates (schema + seed + admin + bookkeeping)"
   else
-    bad "database/production.sql failed validation — run tools/validate_production_sql.py"
+    bad "database/windels_panel.sql failed validation — run tools/validate_production_sql.py"
   fi
 else
   echo "  --   skipped: python3 with sqlglot not available"

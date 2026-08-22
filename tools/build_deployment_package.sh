@@ -13,13 +13,17 @@
 #
 # What goes in the package:
 #
-#   index.php  .htaccess  .env.example
+#   index.php  .htaccess  .env.example  deploy-verify.php
 #   application/   the app, minus caches and the dev-only seeds
-#   system/        CodeIgniter 3.1.13 — the only hard dependency
+#   system/        CodeIgniter 3.1.13 as REAL FILES (no symlink — works on
+#                  every shared host, including ones that disable symlinks)
+#   vendor/        ALWAYS: codeigniter/framework (system/ included at
+#                  vendor/codeigniter/framework/system — the second path
+#                  index.php probes) plus a fallback vendor/autoload.php;
+#                  full composer dependencies when composer has been run
 #   assets/        css/js/images plus the pre-created uploads directory
 #   storage/       pre-created, pre-guarded log/cache/session directories
-#   vendor/        only if composer has been run (all of it is optional)
-#   database/production.sql
+#   database/windels_panel.sql
 #   cron/          crontab example for Cron Jobs in cPanel
 #   docs/cpanel-deployment.md  README-DEPLOYMENT.txt
 #
@@ -50,21 +54,21 @@ echo "Building the cPanel deployment package"
 
 # ---------------------------------------------------------------------------
 # 1. The database file has to exist and has to be current, because it *is* the
-#    installer now. A stale production.sql is a deployment that boots into a
+#    installer now. A stale windels_panel.sql is a deployment that boots into a
 #    half-migrated database with no terminal available to fix it.
 # ---------------------------------------------------------------------------
 if command -v php >/dev/null 2>&1; then
-  say "checking database/production.sql is current"
+  say "checking database/windels_panel.sql is current"
   if ! php "${ROOT}/tools/build_production_sql.php" --check >/dev/null; then
-    echo "  ! database/production.sql is out of date." >&2
+    echo "  ! database/windels_panel.sql is out of date." >&2
     echo "    Run: php tools/build_production_sql.php" >&2
     exit 1
   fi
 else
-  say "php not found — skipping the production.sql freshness check"
+  say "php not found — skipping the windels_panel.sql freshness check"
 fi
-if [[ ! -f "${ROOT}/database/production.sql" ]]; then
-  echo "  ! database/production.sql is missing — run: php tools/build_production_sql.php" >&2
+if [[ ! -f "${ROOT}/database/windels_panel.sql" ]]; then
+  echo "  ! database/windels_panel.sql is missing — run: php tools/build_production_sql.php" >&2
   exit 1
 fi
 
@@ -106,18 +110,49 @@ say "staging application files"
 copy index.php
 copy .htaccess
 copy .env.example
+copy deploy-verify.php
 copy application
 copy assets
 copy cron
-copy database/production.sql
+copy database/windels_panel.sql
+copy database/schema_verification.php
+copy database/README.md
 copy docs/cpanel-deployment.md
-[[ -d "${ROOT}/vendor" ]] && { say "staging vendor/ (optional dependencies)"; copy vendor; }
+[[ -d "${ROOT}/vendor" ]] && { say "staging vendor/ (dependencies)"; copy vendor; }
 
+# system/ at the package root: real files, never a symlink. index.php probes
+# ./system first, so the panel boots on hosts that disable symlinks, and zip
+# extraction can't leave a dangling link behind.
 mkdir -p "${STAGE}/system"
 cp -R "${SYSTEM_SRC}/." "${STAGE}/system/"
 # CodeIgniter ships under the MIT licence; keep the notice with the code.
 if [[ -f "$(dirname "${SYSTEM_SRC}")/license.txt" ]]; then
   cp "$(dirname "${SYSTEM_SRC}")/license.txt" "${STAGE}/system/LICENSE.txt"
+fi
+
+# vendor/codeigniter/framework/system — the SECOND path index.php probes.
+# When composer wasn't run on the build machine there is no vendor tree to
+# copy, so stage the framework from SYSTEM_SRC: both framework locations the
+# front controller knows about then exist in the package, redundantly.
+if [[ ! -f "${STAGE}/vendor/codeigniter/framework/system/core/CodeIgniter.php" ]]; then
+  say "staging vendor/codeigniter/framework (second autodetected framework path)"
+  mkdir -p "${STAGE}/vendor/codeigniter/framework"
+  cp -R "${SYSTEM_SRC}" "${STAGE}/vendor/codeigniter/framework/system"
+  if [[ -f "$(dirname "${SYSTEM_SRC}")/license.txt" ]]; then
+    cp "$(dirname "${SYSTEM_SRC}")/license.txt" "${STAGE}/vendor/codeigniter/framework/license.txt"
+  fi
+fi
+
+# vendor/autoload.php — when composer produced the real one (vendor/composer/
+# exists) it ships as-is. Otherwise drop in the bundled fallback so the
+# composer_autoload config item resolves to a working file: it registers the
+# project's own autoload rules (Windels\ psr-4, helpers, Seeder classmap) and
+# the optional feature packages simply stay disabled, exactly as index.php
+# documents. A later `composer install` overwrites it cleanly.
+if [[ ! -d "${STAGE}/vendor/composer" ]]; then
+  say "no composer install detected — staging the fallback vendor/autoload.php"
+  mkdir -p "${STAGE}/vendor"
+  cp "${ROOT}/tools/templates/vendor-autoload.fallback.php" "${STAGE}/vendor/autoload.php"
 fi
 
 # Runtime directories, pre-created and pre-guarded so nobody has to make them
@@ -173,12 +208,16 @@ cat > "${STAGE}/README-DEPLOYMENT.txt" <<'TXT'
 WINDELS PANEL — cPanel deployment
 =================================
 
-Five steps, no terminal, no Composer, no npm.
+Six steps, no terminal, no Composer, no npm, no symlinks.
 
 1. UPLOAD
    cPanel -> File Manager -> the folder your domain serves (usually
    public_html) -> Upload this zip -> Extract. index.php must end up directly
-   in that folder.
+   in that folder. The framework ships INSIDE this package as real files —
+   system/ and vendor/codeigniter/framework/system are both included, so the
+   application finds it automatically. "Your system folder path does not
+   appear to be set correctly" means the upload was cut short: re-upload and
+   re-extract.
 
 2. CREATE THE DATABASE
    cPanel -> MySQL Databases. Create a database, create a user, set a password,
@@ -186,7 +225,7 @@ Five steps, no terminal, no Composer, no npm.
 
 3. IMPORT THE DATABASE
    cPanel -> phpMyAdmin -> select the new database -> Import ->
-   choose database/production.sql -> Go.
+   choose database/windels_panel.sql -> Go.
    This creates every table and all the data the panel needs. Nothing else has
    to run afterwards.
 
@@ -202,11 +241,18 @@ Five steps, no terminal, no Composer, no npm.
        VP_ENCRYPTION_KEY=...   (32+ random characters; when MOVING an existing
        VP_AUTH_SECRET=...       panel, copy these two from the old server)
 
-5. OPEN THE SITE
+5. VERIFY THE DEPLOYMENT (browser, one page)
+   Open https://yourdomain.com/deploy-verify.php
+   It checks the PHP version, extensions, the CodeIgniter system path,
+   writable folders, .env and a live database connection, and names the exact
+   fix for anything that failed. When everything is green, DELETE
+   deploy-verify.php in File Manager.
+
+6. OPEN THE SITE
    https://yourdomain.com
 
 FIRST LOGIN
-   The credentials are printed at the top of database/production.sql.
+   The credentials are printed at the top of database/windels_panel.sql.
    Change the password immediately, or set your own before the first login by
    putting VP_SETUP_TOKEN=<32 random characters> in .env and visiting
    https://yourdomain.com/setup?token=<that value>. Remove the line afterwards.
@@ -236,8 +282,9 @@ echo
 echo "  ${OUTPUT}"
 echo "  ${SIZE}, ${FILES} files"
 echo
-echo "  Contents: index.php .htaccess .env.example application/ system/ assets/"
-echo "            storage/ database/production.sql cron/ README-DEPLOYMENT.txt"
-[[ -d "${STAGE}/vendor" ]] && echo "            vendor/ (optional dependencies included)"
+echo "  Contents: index.php .htaccess .env.example deploy-verify.php application/"
+echo "            system/ (real files) vendor/ (framework + autoloader) assets/"
+echo "            storage/ database/windels_panel.sql cron/ README-DEPLOYMENT.txt"
 echo
 echo "  Upload it through cPanel File Manager and extract. Nothing else to run."
+echo "  Post-deploy check: open /deploy-verify.php in the browser (then delete it)."

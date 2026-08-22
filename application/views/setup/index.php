@@ -56,7 +56,7 @@ foreach ($checks as $c) { if ($c['status'] === 'fail') $failed++; }
   <p class="lede">
     Everything below is read from <code>.env</code> and the database. Nothing on this page
     runs a migration, a seed or an installer — the import of
-    <code>database/production.sql</code> already did all of that.
+    <code>database/windels_panel.sql</code> already did all of that.
   </p>
 
   <?php if (!empty($error)): ?>
@@ -94,7 +94,7 @@ foreach ($checks as $c) { if ($c['status'] === 'fail') $failed++; }
   <div class="card">
     <p class="detail">
       The imported database already contains a SUPER_ADMIN whose password is printed in the
-      header of <code>database/production.sql</code>. Setting your own credentials here
+      header of <code>database/windels_panel.sql</code>. Setting your own credentials here
       replaces it, so that documented password is never a live password on your panel.
     </p>
     <?= form_open('setup/admin') ?>

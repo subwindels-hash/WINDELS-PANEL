@@ -2,16 +2,13 @@
 #
 # Produces `application-deployment.zip`: the terminal-free cPanel package
 # (index.php, .htaccess, .env.example, application/, system/, assets/,
-# storage/, cron/, database/production.sql). Attach it to a release and an
+# storage/, cron/, database/windels_panel.sql). Attach it to a release and an
 # operator's whole deployment is: download, upload through File Manager,
 # extract, create the database, import the SQL, edit .env.
 #
-# Activation (one-time maintainer step — an automation token without the
-# `workflows` permission cannot create files under .github/workflows):
-#
-#   mkdir -p .github/workflows
-#   git mv deployment-package.yml.workflow-ready .github/workflows/deployment-package.yml
-#   git commit -m "Enable the deployment package workflow" && git push
+# Active since 2026-08-21 (moved from repo root, where it was staged as
+# deployment-package.yml.workflow-ready because automation tokens without
+# the `workflows` permission cannot create files under .github/workflows).
 #
 # Runs on demand and on every tag. The artifact is what the deployment guide
 # tells operators to download, so nobody ever has to run the build themselves.
