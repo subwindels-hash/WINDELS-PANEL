@@ -95,20 +95,26 @@ class DesignSystemTest extends TestCase
         }
     }
 
-    public function testBuiltTailwindArtifactIsGitIgnored()
+    public function testBuiltTailwindArtifactShipsWithTheRepo()
     {
-        // tailwind.css is a generated artifact (design-system.css is the
-        // committed fallback). It may exist locally after `npm run build:css`
-        // but must never be tracked by git.
-        $gitignore = $this->get('.gitignore');
-        $this->assertStringContainsString('tailwind.css', $gitignore);
+        // The compiled Tailwind bundle ships in the repository (fresh checkouts
+        // and no-Node deployments must never 404 the stylesheet the layouts
+        // link). It is rebuilt at CI/deploy time with `npm run build:css` and
+        // must stay in sync — design-system.css remains the component-level
+        // fallback that keeps the shell usable even without it.
+        $this->assertFileExists(self::$root.'/assets/css/tailwind.css');
+        $css = $this->get('assets/css/tailwind.css');
+        $this->assertGreaterThan(10000, strlen($css), 'tailwind.css looks empty/truncated');
+        $this->assertStringContainsString('.bg-surface', $css,
+            'tailwind.css must contain the utility classes the layouts use');
+        $this->assertStringNotContainsString('@tailwind', $css,
+            'tailwind.css must be the compiled output, not the source');
         // The tracked-file check needs a git binary; the WASM offline runner has
-        // none. CI runs this test with git and enforces it; here the .gitignore
-        // contract above is what can be checked.
+        // none. CI runs this test with git and enforces it.
         $is_wasm = function_exists('windels_runtime_is_wasm') && windels_runtime_is_wasm();
         if (function_exists('exec') && !$is_wasm) {
             exec('git -C '.escapeshellarg(self::$root).' ls-files --error-unmatch assets/css/tailwind.css 2>/dev/null', $out, $rc);
-            $this->assertNotSame(0, $rc, 'assets/css/tailwind.css must not be tracked by git');
+            $this->assertSame(0, $rc, 'assets/css/tailwind.css must be tracked in git');
         }
     }
 

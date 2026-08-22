@@ -18,9 +18,17 @@
 
 ## Two-layer approach
 
-The stack is PHP with no committed Node tooling, and `assets/css/tailwind.css` is
-git-ignored (built at deploy time). To keep the UI working in every environment
-the design system has two layers:
+> **Revised (2026-08-22):** the compiled `assets/css/tailwind.css` is now a
+> tracked artifact. A fresh checkout or no-Node deployment must never 404 the
+> stylesheet the layouts link, so the build output ships with the repo and
+> `npm run build:css` only needs to run when utility classes change
+> (CI verifies the committed file is in sync). `design-system.css` remains the
+> committed component-layer fallback.
+
+The stack is PHP with no runtime Node tooling, and `assets/css/tailwind.css`
+is the committed compiled output (rebuilt at deploy time when utilities
+change). To keep the UI working in every environment the design system has two
+layers:
 
 1. **`tailwind.config.js`** declares the brand palette, fonts, radii, shadows and
    animations. The production build (`npm run build:css`) compiles the utility

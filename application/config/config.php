@@ -14,8 +14,14 @@ Env::bootstrap(rtrim(realpath(APPPATH.'..'), DIRECTORY_SEPARATOR));
 $windels_paths = Env::writable_paths();
 
 /* Base URL — VP_BASE_URL (or APP_URL). Auto-detected from the request when
-   unset, so a freshly uploaded panel still links to itself correctly. */
-$config['base_url'] = rtrim((string) Env::get('APP_URL', ''), '/').'/';
+   unset, so a freshly uploaded panel still links to itself correctly.
+   NOTE: leaving this as '/' would force every asset URL to the domain root,
+   which breaks subdirectory installs and path-prefixed preview proxies —
+   those requests then hit the front controller and come back as HTML, so the
+   browser silently drops the stylesheets. CI3 only auto-detects when the
+   value is the empty string. */
+$windels_base_url = trim((string) Env::get('APP_URL', ''));
+$config['base_url'] = $windels_base_url === '' ? '' : rtrim($windels_base_url, '/').'/';
 $config['index_page'] = '';
 $config['uri_protocol'] = 'REQUEST_URI';
 $config['url_suffix'] = '';

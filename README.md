@@ -45,9 +45,10 @@ services and supported products within the WINDELS-PANEL ecosystem.
 ## Architecture
 
 - **Classic CI3 monolith.** PHP controllers render server-side views; Tailwind
-  supplies utility CSS (`assets/css/tailwind.css`, built by npm) layered over the
-  committed design system (`assets/css/design-system.css`, which makes the panel
-  usable even before the asset build runs).
+  supplies utility CSS (`assets/css/tailwind.css` — the compiled artifact ships
+  in the repo and is rebuilt with `npm run build:css`, which CI verifies stays
+  in sync) layered over the committed design system (`assets/css/design-system.css`,
+  which makes the panel usable even without the Tailwind build).
 - **Domain services** live in `application/libraries/` (OrderService, LedgerService,
   PaymentService, GiftcardService, MarketplaceService, …). Providers (SMM panels,
   VTpass, 5sim, Dojah, Reloadly) sit behind adapter interfaces with mock adapters
@@ -134,7 +135,8 @@ cp .env.example .env        # fill at minimum: APP_URL, ENCRYPTION_KEY, DB_*
 
 composer install            # PHP dependencies (also links system/ -> vendor/codeigniter/framework/system)
 npm install                 # asset build dependencies (frontend only)
-npm run build:css           # compile Tailwind → assets/css/tailwind.css
+npm run build:css           # recompile Tailwind → assets/css/tailwind.css
+                            # (artefact is committed; keep it in sync)
 
 docker compose build        # build the PHP image
 docker compose up -d mysql redis
