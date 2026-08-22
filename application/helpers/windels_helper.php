@@ -151,8 +151,17 @@ if (!function_exists('windels_base_currency')) {
 if (!function_exists('windels_money')) {
     function windels_money($amount, $currency=NULL){
         if ($currency === NULL) $currency = windels_base_currency();
+        $formatted = number_format((float)$amount, 2, '.', ',');
+        // Admin → Settings `currency_display` (symbol|code). `code` prints
+        // "NGN 1,234.56" instead of "₦1,234.56". Fail open to the symbol.
+        $display = 'symbol';
+        if (function_exists('windels_brand_setting')) {
+            $setting = windels_brand_setting('currency_display');
+            if ($setting !== null && strtolower(trim((string)$setting)) === 'code') $display = 'code';
+        }
+        if ($display === 'code') return strtoupper($currency).' '.$formatted;
         $sym = array('NGN'=>'₦','USD'=>'$','EUR'=>'€','GBP'=>'£','INR'=>'₹','BRL'=>'R$')[strtoupper($currency)] ?? $currency.' ';
-        return $sym . number_format((float)$amount, 2, '.', ',');
+        return $sym . $formatted;
     }
 }
 if (!function_exists('windels_request_id')) {

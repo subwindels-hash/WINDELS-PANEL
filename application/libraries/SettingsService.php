@@ -12,14 +12,14 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *
  * Two rules shaped it, both learned from auditing what was already seeded.
  *
- * **Only wired settings appear.** Several seeded rows — `currency_display`,
- * `default_theme`, `brand_*`, `order_auto_submit`, `partial_refund_enabled` —
- * were read by no code at all. Putting them on a form would be worse than
- * omitting them: an operator would switch a toggle on, see it save, and watch
- * nothing happen. Each remaining gap is listed in UNWIRED below with the work
- * it would take to honour it, so the omission is a documented decision rather
- * than an oversight. (`maintenance_mode`, `site_tagline`, `api_enabled` and
- * `admin_mfa_required` were previously among these and are now wired.)
+ * **Only wired settings appear.** Several seeded rows — `default_theme`,
+ * `brand_*`, `order_auto_submit`, `partial_refund_enabled` — were read by no
+ * code at all. Putting them on a form would be worse than omitting them: an
+ * operator would switch a toggle on, see it save, and watch nothing happen.
+ * Each remaining gap is listed in UNWIRED below with the work it would take to
+ * honour it, so the omission is a documented decision rather than an oversight.
+ * (`maintenance_mode`, `site_tagline`, `api_enabled`, `admin_mfa_required` and
+ * `currency_display` were previously among these and are now wired.)
  *
  * **`base_currency` is deliberately read-only.** The row exists, but
  * `windels_base_currency()` reads `config/windels.php`, not this table, and
@@ -83,6 +83,9 @@ class SettingsService {
 
             'api_enabled' => array('bool', 'api', 'Enable the reseller API',
                 'Off returns a 503 for every /api/v1 call without revoking any keys.', true),
+
+            'currency_display' => array('choice:symbol|code', 'currency', 'Currency display',
+                'Whether prices render as a symbol (₦1,234.56) or a code (NGN 1,234.56).', 'symbol'),
         );
     }
 
@@ -95,7 +98,6 @@ class SettingsService {
     public static function unwired() {
         return array(
             'default_theme'          => 'No theme switcher exists yet.',
-            'currency_display'       => 'windels_money() always prints a symbol.',
             'order_auto_submit'      => 'OrderService always submits to the provider immediately.',
             'partial_refund_enabled' => 'Partial refunds are always on; the state machine has no switch.',
         );
