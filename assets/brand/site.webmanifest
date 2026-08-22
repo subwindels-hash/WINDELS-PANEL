@@ -1,14 +1,14 @@
 {
-  "name": "WINDELS PANEL",
-  "short_name": "WINDELS",
-  "description": "Prepaid reseller panel for SMM, VTU and digital goods.",
+  "name": "Averion Commerce",
+  "short_name": "Averion",
+  "description": "Prepaid commerce platform for SMM, VTU and digital goods.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0B1020",
   "theme_color": "#4F46E5",
   "icons": [
     {
-      "src": "../brand/logo-icon.svg",
+      "src": "../brand/logo-averion-commerce-icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"

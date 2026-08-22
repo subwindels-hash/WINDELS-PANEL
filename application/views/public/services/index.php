@@ -19,7 +19,7 @@ $show_marketing = !empty($show_marketing);
   <div class="container" style="max-width:800px">
     <p class="ws-kicker">What you can buy</p>
     <h1>One wallet for SMM, bills and digital goods</h1>
-    <p class="ws-lede">WINDELS PANEL is for creators, agencies and resellers who want prepaid checkout, a live catalogue and a staff-run back office. It solves scattered provider logins and untracked wallet movement — not by promising fake volume numbers.</p>
+    <p class="ws-lede">Averion Commerce is for creators, agencies and resellers who want prepaid checkout, a live catalogue and a staff-run back office. It solves scattered provider logins and untracked wallet movement — not by promising fake volume numbers.</p>
     <div class="row" style="margin-top:1.25rem">
       <a class="btn btn-primary" href="<?=site_url('register')?>">Create an account</a>
       <a class="btn btn-secondary" href="#catalogue">Jump to catalogue</a>
@@ -65,6 +65,54 @@ $show_marketing = !empty($show_marketing);
     </div>
   </div>
 </section>
+
+<?php if (!empty($how_it_works)): ?>
+<section class="ws-section-sm">
+  <div class="container">
+    <h2>How it works</h2>
+    <p class="ws-section-lead">The same four steps for every product line this operator has enabled.</p>
+    <div class="grid grid-4 mt-4">
+      <?php foreach ($how_it_works as $i => $step): ?>
+        <article class="card card-hover">
+          <span class="badge badge-brand"><?=str_pad($i + 1, 2, '0', STR_PAD_LEFT)?></span>
+          <h3 class="card-title mt-2"><?=htmlspecialchars($step[0])?></h3>
+          <p class="hint"><?=htmlspecialchars($step[1])?></p>
+        </article>
+      <?php endforeach; ?>
+    </div>
+  </div>
+</section>
+<?php endif; ?>
+
+<?php if (!empty($advantages)): ?>
+<section class="ws-section-sm" style="background:var(--surface-muted)">
+  <div class="container">
+    <h2>Why people use it</h2>
+    <div class="grid grid-3 mt-4">
+      <?php foreach ($advantages as $adv): ?>
+        <div class="card">
+          <h3 class="card-title"><?=htmlspecialchars($adv[0])?></h3>
+          <p class="hint"><?=htmlspecialchars($adv[1])?></p>
+        </div>
+      <?php endforeach; ?>
+    </div>
+  </div>
+</section>
+<?php endif; ?>
+
+<?php if (!empty($security_practices)): ?>
+<section class="ws-section-sm">
+  <div class="container">
+    <h2>How the platform protects you</h2>
+    <p class="ws-section-lead">These practices apply to the account, wallet, API and the on-site assistant.</p>
+    <div class="stack mt-4">
+      <?php foreach ($security_practices as $text): ?>
+        <div class="ws-callout"><?=htmlspecialchars($text)?></div>
+      <?php endforeach; ?>
+    </div>
+  </div>
+</section>
+<?php endif; ?>
 <?php endif; ?>
 
 <section class="py-10" id="catalogue">
@@ -166,9 +214,15 @@ $show_marketing = !empty($show_marketing);
   </div>
 </section>
 
-<style>
-.ws-searchwrap{position:relative;flex:1;display:flex;align-items:center}
-.ws-searchwrap svg{position:absolute;left:.75rem;color:var(--slate-400)}
-.ws-searchwrap .input{padding-left:2.5rem}
-@media(max-width:560px){.ws-searchwrap{width:100%}}
-</style>
+<section class="ws-section-sm ws-cta">
+  <div class="container">
+    <div class="card text-center" style="padding:var(--space-6)">
+      <h2 class="card-title">Ready to place your first order?</h2>
+      <p class="muted">Create an account to see the live catalogue, wallet and the product areas the operator has enabled.</p>
+      <div class="row" style="justify-content:center;margin-top:1rem">
+        <a class="btn btn-primary btn-lg" href="<?=site_url('register')?>">Create an account</a>
+        <a class="btn btn-secondary btn-lg" href="<?=site_url('pricing')?>">View pricing</a>
+      </div>
+    </div>
+  </div>
+</section>

@@ -179,9 +179,9 @@ class Public_Controller extends MY_Controller {
         $this->load->vars(array('current_user' => $user, 'db_ready' => $this->db_ready));
     }
 
-    /** Render a page inside the public shell, passing the current user to views. */
+    /** Render a page inside the global public shell, passing the current user to views. */
     protected function render_public($content_view, $data = array()) {
-        $this->load->view('layouts/public', array('content_view' => $content_view, 'data' => $data));
+        $this->load->view('layouts/main', array('content_view' => $content_view, 'data' => $data));
     }
 }
 

@@ -11,7 +11,7 @@ $plans = SiteOperatorKnowledge::pricing_plans();
       <div>
         <p class="ws-kicker">Pricing</p>
         <h1>Prepaid wallet. Published rates. No fake plans.</h1>
-        <p class="ws-lede">WINDELS PANEL does not sell a public monthly subscription. You add funds and pay the rate shown on each service or product. Volume groups exist, but staff assign them — they are not something you check out.</p>
+        <p class="ws-lede">Averion Commerce does not sell a public monthly subscription. You add funds and pay the rate shown on each service or product. Volume groups exist, but staff assign them — they are not something you check out.</p>
       </div>
       <div class="ws-hero-media">
         <img src="<?=base_url('assets/images/services/marketplace.jpg')?>" alt="Quiet digital storefront of glass product tiles — a visual for prepaid catalogue pricing, not a plan grid." width="800" height="600" fetchpriority="high">
@@ -108,6 +108,19 @@ $plans = SiteOperatorKnowledge::pricing_plans();
         <summary>Can I get a cheaper rate?</summary>
         <div class="accordion-body">Ask support to review a volume group. Staff can assign Silver, Gold, Reseller or a per-user override. That is the upgrade path — not a self-serve checkout.</div>
       </details>
+    </div>
+  </div>
+</section>
+
+<section class="ws-section-sm ws-cta">
+  <div class="container">
+    <div class="card text-center" style="padding:var(--space-6)">
+      <h2 class="card-title">Start with the wallet plan</h2>
+      <p class="muted">Register for free, then add funds when you are ready to order. No forced monthly plan.</p>
+      <div class="row" style="justify-content:center;margin-top:1rem">
+        <a class="btn btn-primary btn-lg" href="<?=site_url('register')?>">Create an account</a>
+        <a class="btn btn-secondary btn-lg" href="<?=site_url('contact')?>">Contact sales</a>
+      </div>
     </div>
   </div>
 </section>

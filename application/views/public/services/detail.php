@@ -116,7 +116,7 @@ $badges = array(
         </div>
 
         <div class="card">
-          <h3 class="card-title">Why WINDELS</h3>
+          <h3 class="card-title">Why <?=htmlspecialchars(function_exists('windels_site_name') ? windels_site_name() : 'this platform')?></h3>
           <ul class="stack" style="gap:.5rem;padding-left:1.1rem">
             <li>Pricing frozen at checkout — no surprise charges</li>
             <li>Double-entry wallet ledger, refunds handled automatically</li>

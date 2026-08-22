@@ -104,7 +104,7 @@ try {
 <?php endif; ?>
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-900 antialiased<?=!empty($impersonation['active']) ? ' impersonation-read-only' : ''?>">
-<?php $this->load->view('partials/announcement_bar'); ?>
+<?php $this->load->view('partials/announcement'); ?>
 <?php if (!empty($impersonation['active'])): ?>
 <?php
   $__imp_actor = $impersonation['actor'] ?? null;
@@ -141,7 +141,7 @@ try {
           <img src="<?=htmlspecialchars($brand['brand_logo_url'])?>" alt="WINDELS PANEL"
                style="max-height:2rem;max-width:10rem">
         <?php else: ?>
-          <?php $this->load->view('partials/brand_logo', array('variant'=>'icon','height'=>32)); ?>
+          <?php $this->load->view('partials/brand_logo', array('variant'=>'icon','height'=>32,'force_legacy'=>true)); ?>
           <span class="font-bold tracking-tight">WINDELS</span>
         <?php endif; ?>
       </a>
@@ -244,7 +244,7 @@ try {
   <?php endforeach; ?>
 </nav>
 
-<?php $this->load->view('partials/site_operator'); ?>
-<script src="<?=base_url('assets/js/app.js')?>"></script>
+<?php $this->load->view('partials/chatbot'); ?>
+<?php $this->load->view('partials/scripts'); ?>
 </body>
 </html>

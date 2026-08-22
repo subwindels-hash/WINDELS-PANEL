@@ -60,14 +60,21 @@ class RateLimiter {
         if (!windels_load_database()) {
             return;
         }
-        $this->ci->db->insert('login_attempts', array(
-            'email'      => $identifier ? strtolower($identifier) : null,
-            'ip'         => $ip,
-            'success'    => $success ? 1 : 0,
-            'reason'     => $reason,
-            'user_agent' => $user_agent ? substr($user_agent, 0, 500) : null,
-            'created_at' => gmdate('Y-m-d H:i:s'),
-        ));
+        // A fresh install can have MySQL but not yet have the login_attempts
+        // table (migrations not run). Failing a side-effectful rate-limit row
+        // must never turn an otherwise working assistant request into a 500.
+        try {
+            $this->ci->db->insert('login_attempts', array(
+                'email'      => $identifier ? strtolower($identifier) : null,
+                'ip'         => $ip,
+                'success'    => $success ? 1 : 0,
+                'reason'     => $reason,
+                'user_agent' => $user_agent ? substr($user_agent, 0, 500) : null,
+                'created_at' => gmdate('Y-m-d H:i:s'),
+            ));
+        } catch (Throwable $e) {
+            log_message('error', 'ratelimit: record failed: '.$e->getMessage());
+        }
     }
 
     /**
@@ -97,18 +104,23 @@ class RateLimiter {
         if (!windels_load_database()) {
             return false;
         }
-        $since = gmdate('Y-m-d H:i:s', time() - $window);
+        try {
+            $since = gmdate('Y-m-d H:i:s', time() - $window);
 
-        // Per-account: the strict limit. Checked first because it is the one
-        // that actually stops a targeted attack.
-        if ($identifier !== '' && $identifier !== null) {
-            if ($this->count('email', strtolower($identifier), $since) >= $max) {
-                return true;
+            // Per-account: the strict limit. Checked first because it is the one
+            // that actually stops a targeted attack.
+            if ($identifier !== '' && $identifier !== null) {
+                if ($this->count('email', strtolower($identifier), $since) >= $max) {
+                    return true;
+                }
             }
-        }
 
-        // Per-network: looser, so shared addresses are not collateral damage.
-        return $this->count('ip', $ip, $since) >= ($max * self::IP_MULTIPLIER);
+            // Per-network: looser, so shared addresses are not collateral damage.
+            return $this->count('ip', $ip, $since) >= ($max * self::IP_MULTIPLIER);
+        } catch (Throwable $e) {
+            log_message('error', 'ratelimit: check failed: '.$e->getMessage());
+            return false;
+        }
     }
 
     /**
@@ -116,19 +128,24 @@ class RateLimiter {
      * whichever bucket is actually locked.
      */
     public function retry_after($ip, $identifier = '', $window = 900, $max = 5) {
-        $since = gmdate('Y-m-d H:i:s', time() - $window);
+        try {
+            $since = gmdate('Y-m-d H:i:s', time() - $window);
 
-        $newest = null;
-        if ($identifier !== '' && $identifier !== null
-            && $this->count('email', strtolower($identifier), $since) >= $max) {
-            $newest = $this->newest('email', strtolower($identifier), $since);
-        }
-        if ($newest === null && $this->count('ip', $ip, $since) >= ($max * self::IP_MULTIPLIER)) {
-            $newest = $this->newest('ip', $ip, $since);
-        }
-        if ($newest === null) return 0;
+            $newest = null;
+            if ($identifier !== '' && $identifier !== null
+                && $this->count('email', strtolower($identifier), $since) >= $max) {
+                $newest = $this->newest('email', strtolower($identifier), $since);
+            }
+            if ($newest === null && $this->count('ip', $ip, $since) >= ($max * self::IP_MULTIPLIER)) {
+                $newest = $this->newest('ip', $ip, $since);
+            }
+            if ($newest === null) return 0;
 
-        return max(0, $window - (time() - strtotime($newest)));
+            return max(0, $window - (time() - strtotime($newest)));
+        } catch (Throwable $e) {
+            log_message('error', 'ratelimit: retry_after failed: '.$e->getMessage());
+            return 0;
+        }
     }
 
     /** Failures for one column value inside the window. */
