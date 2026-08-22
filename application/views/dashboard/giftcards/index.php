@@ -67,7 +67,7 @@ ksort($by_brand);
       minute; if the card is never issued, the charge is refunded automatically.
     </p>
 
-    <button class="btn btn-primary" type="submit">Buy card</button>
+    <button class="btn btn-primary" type="submit" data-loading-text="Placing order…">Buy card</button>
   </form>
   <?php endif; ?>
 </div>

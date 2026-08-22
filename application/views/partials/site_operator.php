@@ -37,7 +37,7 @@ Ask about services, pricing, accounts or where to find a page.</div>
     <?php endforeach; ?>
   </div>
   <div class="ws-assistant-status" id="ws-assistant-status" aria-live="polite"></div>
-  <form class="ws-assistant-form" id="ws-assistant-form">
+  <form class="ws-assistant-form" id="ws-assistant-form" data-no-guard>
     <label class="sr-only" for="ws-assistant-input">Your question</label>
     <input class="input" id="ws-assistant-input" name="message" autocomplete="off"
            maxlength="1000" placeholder="Ask about the panel…">

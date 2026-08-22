@@ -208,6 +208,7 @@
       initFaqFilter();
       initSiteOperator();
       initMfa();
+      initFormSubmitGuard();
     } catch (e) {
       // A broken optional widget must never stop the other global behaviours
       // (CSRF plumbing, mobile nav, FAQ filter, assistant) from running.
@@ -470,6 +471,37 @@
         ask(this.getAttribute('data-suggest') || this.textContent);
       });
     }
+  }
+
+  /* -------------------------- form submit guard -------------------------- */
+  // Disables a form's submit button the moment a real (navigation) submit
+  // fires, so a double-click can never double-place an order or double-fund a
+  // wallet. Forms that drive their own async flow opt out with data-no-guard.
+  function initFormSubmitGuard() {
+    document.addEventListener('submit', function (e) {
+      var form = e.target;
+      if (!form || form.tagName !== 'FORM') return;
+      if (form.hasAttribute('data-no-guard')) return;
+
+      var btn = form.querySelector('button[type="submit"], input[type="submit"]');
+      if (!btn || btn.disabled) return;
+      if (btn.classList.contains('ws-submitting')) return;
+
+      btn.classList.add('ws-submitting');
+      btn.disabled = true;
+
+      var label = btn.getAttribute('data-loading-text');
+      if (label) {
+        btn.setAttribute('data-original-text', btn.textContent);
+        btn.textContent = label;
+      }
+      if (!btn.querySelector('.spinner')) {
+        var spin = document.createElement('span');
+        spin.className = 'spinner';
+        spin.setAttribute('aria-hidden', 'true');
+        btn.insertBefore(spin, btn.firstChild);
+      }
+    }, true);
   }
 
   /* ----------------------------- MFA enrolment --------------------------- */

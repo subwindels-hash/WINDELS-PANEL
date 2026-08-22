@@ -94,7 +94,7 @@ $value = function ($key) use ($form) {
             <input id="contact-website" name="website" type="text" tabindex="-1" autocomplete="off">
           </div>
 
-          <button class="btn btn-primary" type="submit">Send message</button>
+          <button class="btn btn-primary" type="submit" data-loading-text="Sending…">Send message</button>
         <?=form_close()?>
       </div>
 
