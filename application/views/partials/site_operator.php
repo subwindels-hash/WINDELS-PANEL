@@ -1,5 +1,5 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
-$site_name = function_exists('windels_site_name') ? windels_site_name() : 'Averion Commerce';
+$site_name = function_exists('windels_site_name') ? windels_site_name() : 'WINDELS PANEL';
 $suggestions = class_exists('SiteOperatorKnowledge')
     ? SiteOperatorKnowledge::suggested_questions()
     : array('What services can I order?', 'How does pricing work?', 'How do I create an account?');
@@ -37,7 +37,7 @@ Ask about services, pricing, accounts or where to find a page.</div>
     <?php endforeach; ?>
   </div>
   <div class="ws-assistant-status" id="ws-assistant-status" aria-live="polite"></div>
-  <form class="ws-assistant-form" id="ws-assistant-form">
+  <form class="ws-assistant-form" id="ws-assistant-form" data-no-guard>
     <label class="sr-only" for="ws-assistant-input">Your question</label>
     <input class="input" id="ws-assistant-input" name="message" autocomplete="off"
            maxlength="1000" placeholder="Ask about the panel…">

@@ -9,7 +9,13 @@
 
 <div class="card">
 <?php if (empty($tickets)): ?>
-  <p class="muted">No tickets yet.</p>
+  <?php $this->load->view('partials/empty_state', array(
+      'icon'  => 'message-square',
+      'title' => 'No support tickets yet',
+      'body'  => 'Questions about an order or payment can be raised here and tracked in one thread.',
+      'action_href'  => site_url('dashboard/tickets/create'),
+      'action_label' => 'Open a ticket',
+  )); ?>
 <?php else: ?>
 <div class="overflow-x-auto">
   <table class="table">

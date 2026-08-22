@@ -25,6 +25,7 @@ $nav = $is_admin ? array(
     array('admin/media',        'Media',      'media.manage',    'star'),
     array('admin/categories',   'System',     'audit.view',      'globe'),
     array('admin/settings',     'Settings',   'settings.manage', 'settings'),
+    array('dashboard/security', 'Account & security', null,      'shield'),
 ) : array(
     array('dashboard',           'Dashboard',  null, 'dashboard'),
     array('dashboard/new-order', 'New Order',  null, 'zap'),
@@ -45,6 +46,7 @@ $nav = $is_admin ? array(
     array('dashboard/tickets',   'Support',    null, 'message-square'),
     array('dashboard/referrals', 'Referrals',  null, 'gift'),
     array('dashboard/api',       'API',        null, 'key'),
+    array('dashboard/security',  'Security',   null, 'shield'),
 );
 
 // Keep disabled modules out of customer navigation as well as guarding their
@@ -134,7 +136,7 @@ try {
 <?php endif; ?>
 <div class="flex min-h-screen">
   <!-- Sidebar (desktop) -->
-  <aside class="w-64 shrink-0 border-r bg-white hidden md:flex flex-col">
+  <aside class="w-64 shrink-0 border-r bg-surface hidden md:flex flex-col">
     <div class="h-16 flex items-center px-6 border-b">
       <a href="<?=site_url()?>" class="ws-brand">
         <?php if (!empty($brand['brand_logo_url'])): ?>
@@ -178,9 +180,13 @@ try {
 
   <!-- Main column -->
   <div class="flex-1 flex flex-col min-w-0">
-    <header class="h-16 border-b bg-white flex items-center justify-between px-4 md:px-6 sticky ws-sticky-below-announce z-40">
+    <header class="h-16 border-b bg-surface flex items-center justify-between px-4 md:px-6 sticky ws-sticky-below-announce z-40">
       <h1 class="text-base md:text-lg font-semibold truncate"><?=htmlspecialchars($title ?? '')?></h1>
       <div class="flex items-center gap-2">
+        <button type="button" class="btn btn-ghost btn-sm" data-theme-toggle
+                aria-label="Toggle light or dark theme" title="Toggle theme">
+          <span data-theme-toggle-label>Dark</span>
+        </button>
         <a href="<?=site_url('dashboard/notifications')?>"
            class="relative p-2 rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Notifications">
           <?php $this->load->view('partials/icon', array('name'=>'bell','class'=>'w-5 h-5')); ?>
@@ -196,29 +202,14 @@ try {
     </header>
 
     <main class="flex-1 p-4 md:p-6 pb-24 md:pb-6">
-      <?php $flash_success = $this->session->flashdata('success'); ?>
-      <?php $flash_error   = $this->session->flashdata('error'); ?>
-      <?php // A change that went through but that the operator should look at
-            // twice — selling below cost, a product hidden behind an inactive
-            // parent. Distinct from an error: refusing these would refuse
-            // legitimate decisions, and hiding them would let a typo ship.
-            $flash_warning = $this->session->flashdata('warning'); ?>
-      <?php if ($flash_success): ?>
-        <div class="alert alert-success"><?=htmlspecialchars($flash_success)?></div>
-      <?php endif; ?>
-      <?php if ($flash_warning): ?>
-        <div class="alert alert-warning"><?=htmlspecialchars($flash_warning)?></div>
-      <?php endif; ?>
-      <?php if ($flash_error): ?>
-        <div class="alert alert-danger"><?=htmlspecialchars($flash_error)?></div>
-      <?php endif; ?>
+      <?php $this->load->view('partials/flash'); ?>
       <?php $this->load->view($content_view, array_diff_key(get_defined_vars(), array_flip(array('content_view')))); ?>
     </main>
   </div>
 </div>
 
 <!-- Mobile bottom nav -->
-<nav class="md:hidden fixed bottom-0 inset-x-0 border-t bg-white z-50 grid grid-cols-5" aria-label="Mobile">
+<nav class="md:hidden fixed bottom-0 inset-x-0 border-t bg-surface z-50 grid grid-cols-5" aria-label="Mobile">
   <?php
   $mobile = array(
     array('dashboard','dashboard','Dashboard'),

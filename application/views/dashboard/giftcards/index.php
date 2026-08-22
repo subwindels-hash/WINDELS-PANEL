@@ -17,7 +17,11 @@ ksort($by_brand);
     <strong><?=windels_money($wallet->balance)?></strong></p>
 
   <?php if (empty($products)): ?>
-    <p class="muted">Gift cards are not on sale yet. Check back shortly.</p>
+    <?php $this->load->view('partials/empty_state', array(
+        'icon'  => 'gift',
+        'title' => 'Gift cards are not on sale yet',
+        'body'  => 'As soon as the operator prices gift card products, they will appear here ready to buy from your wallet.',
+    )); ?>
   <?php else: ?>
 
   <form method="post" action="<?=site_url('dashboard/giftcards/buy')?>">
@@ -63,7 +67,7 @@ ksort($by_brand);
       minute; if the card is never issued, the charge is refunded automatically.
     </p>
 
-    <button class="btn btn-primary" type="submit">Buy card</button>
+    <button class="btn btn-primary" type="submit" data-loading-text="Placing order…">Buy card</button>
   </form>
   <?php endif; ?>
 </div>

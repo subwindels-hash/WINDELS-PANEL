@@ -68,7 +68,19 @@ $value = function ($key) use ($form) {
           <div>
             <label class="label" for="contact-subject">Subject</label>
             <input class="input" id="contact-subject" name="subject" type="text" maxlength="150" required
+                   placeholder="Brief summary of your question"
                    value="<?=$value('subject')?>">
+          </div>
+
+          <div>
+            <label class="label" for="contact-department">Topic</label>
+            <select class="select" id="contact-department" name="department">
+              <option value="orders" <?=($value('department')==='orders'?'selected':'')?>>Service / order support</option>
+              <option value="payments" <?=($value('department')==='payments'?'selected':'')?>>Billing / payments</option>
+              <option value="api" <?=($value('department')==='api'?'selected':'')?>>API support</option>
+              <option value="other" <?=($value('department')==='other'?'selected':'')?>>Account / general inquiry</option>
+            </select>
+            <p class="hint">Signed-in customers get a ticket routed to the right team.</p>
           </div>
 
           <div>
@@ -82,7 +94,7 @@ $value = function ($key) use ($form) {
             <input id="contact-website" name="website" type="text" tabindex="-1" autocomplete="off">
           </div>
 
-          <button class="btn btn-primary" type="submit">Send message</button>
+          <button class="btn btn-primary" type="submit" data-loading-text="Sending…">Send message</button>
         <?=form_close()?>
       </div>
 

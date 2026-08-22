@@ -33,7 +33,7 @@ $toc = array(
   <div class="container">
     <p class="ws-kicker">Legal</p>
     <h1>Terms of Service</h1>
-    <p class="ws-lede">These terms govern use of this Averion Commerce instance. They describe the software as it actually behaves. They are not a substitute for advice from the operator’s counsel.</p>
+    <p class="ws-lede">These terms govern use of this WINDELS PANEL instance. They describe the software as it actually behaves. They are not a substitute for advice from the operator’s counsel.</p>
     <p class="hint">Effective <?=htmlspecialchars($effective)?> · Last updated <?=htmlspecialchars($updated)?></p>
   </div>
 </section>

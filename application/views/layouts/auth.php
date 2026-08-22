@@ -1,5 +1,5 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
-$auth_site = function_exists('windels_site_name') ? windels_site_name() : 'Averion Commerce';
+$auth_site = function_exists('windels_site_name') ? windels_site_name() : 'WINDELS PANEL';
 ?>
 <!doctype html>
 <html lang="en">
@@ -14,7 +14,7 @@ $auth_site = function_exists('windels_site_name') ? windels_site_name() : 'Averi
 <body class="min-h-screen bg-slate-50 text-slate-900 antialiased ws-auth-shell-page">
 <?php $this->load->view('partials/announcement'); ?>
 <div class="min-h-screen flex flex-col">
-  <header class="border-b bg-white">
+  <header class="border-b bg-surface">
     <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
       <a href="<?=site_url()?>" class="ws-brand">
         <?php $this->load->view('partials/brand_logo', array('variant'=>'horizontal','height'=>30)); ?>
@@ -43,15 +43,8 @@ $auth_site = function_exists('windels_site_name') ? windels_site_name() : 'Averi
       </aside>
       <div class="flex items-start justify-center px-4 py-12">
     <div class="w-full max-w-md">
-      <?php $flash_success = $this->session->flashdata('success'); ?>
-      <?php $flash_error   = $this->session->flashdata('error'); ?>
-      <?php $dev_link      = $this->session->flashdata('dev_link'); ?>
-      <?php if ($flash_success): ?>
-        <div class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"><?=htmlspecialchars($flash_success)?></div>
-      <?php endif; ?>
-      <?php if ($flash_error): ?>
-        <div class="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800"><?=htmlspecialchars($flash_error)?></div>
-      <?php endif; ?>
+      <?php $this->load->view('partials/flash'); ?>
+      <?php $dev_link = $this->session->flashdata('dev_link'); ?>
       <?php if ($dev_link): ?>
         <div class="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <strong>Development link:</strong>
@@ -59,7 +52,7 @@ $auth_site = function_exists('windels_site_name') ? windels_site_name() : 'Averi
         </div>
       <?php endif; ?>
 
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+      <div class="bg-surface rounded-2xl shadow-sm border border-slate-200 p-8">
         <?php
         // Expose every view variable (title, referral, token, error, …) to the partial.
         $this->load->view($content_view, array_diff_key(get_defined_vars(), array_flip(array('content_view'))));

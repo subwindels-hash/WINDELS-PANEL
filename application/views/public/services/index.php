@@ -19,7 +19,7 @@ $show_marketing = !empty($show_marketing);
   <div class="container" style="max-width:800px">
     <p class="ws-kicker">What you can buy</p>
     <h1>One wallet for SMM, bills and digital goods</h1>
-    <p class="ws-lede">Averion Commerce is for creators, agencies and resellers who want prepaid checkout, a live catalogue and a staff-run back office. It solves scattered provider logins and untracked wallet movement — not by promising fake volume numbers.</p>
+    <p class="ws-lede">WINDELS PANEL is for creators, agencies and resellers who want prepaid checkout, a live catalogue and a staff-run back office. It solves scattered provider logins and untracked wallet movement — not by promising fake volume numbers.</p>
     <div class="row" style="margin-top:1.25rem">
       <a class="btn btn-primary" href="<?=site_url('register')?>">Create an account</a>
       <a class="btn btn-secondary" href="#catalogue">Jump to catalogue</a>
@@ -127,32 +127,37 @@ $show_marketing = !empty($show_marketing);
       <div class="grid" style="grid-template-columns:1fr;gap:.75rem">
         <div class="row" style="gap:.5rem">
           <div class="ws-searchwrap">
+            <label class="sr-only" for="services-search">Search services</label>
             <?php $this->load->view('partials/icon', array('name'=>'search','class'=>'w-5 h-5')); ?>
-            <input class="input" type="search" name="q" value="<?=htmlspecialchars($f['q'])?>"
+            <input class="input" id="services-search" type="search" name="q" value="<?=htmlspecialchars($f['q'])?>"
                    placeholder="Search services — e.g. Instagram followers">
           </div>
           <button class="btn btn-primary" type="submit">Search</button>
         </div>
         <div class="row" style="gap:.5rem;flex-wrap:wrap">
-          <select class="select" name="category" style="width:auto">
+          <label class="sr-only" for="services-category">Category</label>
+          <select class="select" id="services-category" name="category" style="width:auto">
             <option value="">All categories</option>
             <?php foreach ($categories as $c): ?>
               <option value="<?=htmlspecialchars($c->slug)?>" <?=($f['category']===$c->slug)?'selected':''?>><?=htmlspecialchars($c->name)?></option>
             <?php endforeach; ?>
           </select>
-          <select class="select" name="platform" style="width:auto">
+          <label class="sr-only" for="services-platform">Platform</label>
+          <select class="select" id="services-platform" name="platform" style="width:auto">
             <option value="">All platforms</option>
             <?php foreach ($platforms as $p): ?>
               <option value="<?=htmlspecialchars($p)?>" <?=($f['platform']===$p)?'selected':''?>><?=htmlspecialchars(ucfirst($p))?></option>
             <?php endforeach; ?>
           </select>
-          <select class="select" name="type" style="width:auto">
+          <label class="sr-only" for="services-type">Service type</label>
+          <select class="select" id="services-type" name="type" style="width:auto">
             <option value="">All types</option>
             <?php foreach ($types as $t): ?>
               <option value="<?=htmlspecialchars($t)?>" <?=($f['type']===$t)?'selected':''?>><?=htmlspecialchars(str_replace('_',' ',ucwords(strtolower($t))))?></option>
             <?php endforeach; ?>
           </select>
-          <select class="select" name="sort" style="width:auto">
+          <label class="sr-only" for="services-sort">Sort</label>
+          <select class="select" id="services-sort" name="sort" style="width:auto">
             <?php foreach (array('popular'=>'Most popular','price_asc'=>'Price: low to high','price_desc'=>'Price: high to low','name'=>'Name A–Z','newest'=>'Newest') as $k=>$lbl): ?>
               <option value="<?=$k?>" <?=($f['sort']===$k)?'selected':''?>><?=htmlspecialchars($lbl)?></option>
             <?php endforeach; ?>
@@ -165,10 +170,27 @@ $show_marketing = !empty($show_marketing);
     </form>
 
     <?php if (empty($services)): ?>
+      <?php $has_filter = ($f['q'] !== '' || $f['category'] !== '' || $f['platform'] !== '' || $f['type'] !== ''); ?>
+      <?php if (!$has_filter): ?>
+      <div class="card text-center" style="padding:3.5rem 2rem">
+        <span class="ws-empty-icon"><?php $this->load->view('partials/icon', array('name'=>'shopping-bag','class'=>'w-10 h-10')); ?></span>
+        <h2 style="margin-top:1rem">Services will appear here</h2>
+        <p class="muted" style="max-width:30rem;margin:0 auto">
+          No services have been published yet. As soon as the operator prices and
+          activates services, they show up here with search, filters and live pricing.
+        </p>
+        <p class="hint" style="margin:.75rem 0 0">
+          In the meantime you can read <a href="<?=site_url('pricing')?>">how pricing works</a>
+          or <a href="<?=site_url('faq')?>">browse the FAQ</a>.
+        </p>
+        <a class="btn btn-primary mt-4" href="<?=site_url('register')?>">Create an account</a>
+      </div>
+      <?php else: ?>
       <div class="card text-center" style="padding:3rem">
         <p class="muted">No services match your filters.</p>
         <a class="btn btn-secondary mt-4" href="<?=site_url('services')?>">Clear filters</a>
       </div>
+      <?php endif; ?>
     <?php else: ?>
     <div class="grid grid-4" style="gap:1rem">
       <?php foreach ($services as $s):

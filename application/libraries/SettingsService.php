@@ -12,14 +12,12 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *
  * Two rules shaped it, both learned from auditing what was already seeded.
  *
- * **Only wired settings appear.** Session 02 seeded 25 rows; a grep showed
- * eight of them — `site_tagline`, `maintenance_mode`, `currency_display`,
- * `default_theme`, `brand_*`, `order_auto_submit`, `partial_refund_enabled`,
- * `admin_mfa_required`, `api_enabled` — are read by no code at all. Putting
- * them on a form would be worse than omitting them: an operator would switch
- * "maintenance mode" on, see it save, and watch the site stay up. Each is
- * listed in UNWIRED below with the work it would take to honour it, so the
- * omission is a documented decision rather than an oversight.
+ * **Every seeded setting is now wired.** Earlier sessions left several rows
+ * read by no code at all — `maintenance_mode`, `site_tagline`, `api_enabled`,
+ * `admin_mfa_required`, `currency_display`, `order_auto_submit`,
+ * `partial_refund_enabled` and `default_theme`. Each has since been honoured,
+ * so the UNWIRED list below is empty. It is kept (rather than deleted) so any
+ * future seeded-but-unwired setting has an obvious, honest place to be listed.
  *
  * **`base_currency` is deliberately read-only.** The row exists, but
  * `windels_base_currency()` reads `config/windels.php`, not this table, and
@@ -42,6 +40,10 @@ class SettingsService {
                 'Shown in the browser title and in every email this panel sends.', 'WINDELS PANEL'),
             'support_email' => array('email', 'general', 'Support email',
                 'The reply-to address on outgoing mail.', 'support@windels.local'),
+            'site_tagline' => array('text', 'general', 'Site tagline',
+                'Fallback meta description and public strapline.', 'Prepaid commerce for social media, VTU, virtual numbers, identity, gift cards and digital goods'),
+            'maintenance_mode' => array('bool', 'general', 'Maintenance mode',
+                'On shows a branded holding page to everyone except staff.', false),
             'active_homepage' => array('choice:AURORA|NEXUS|PULSE', 'homepage', 'Active homepage',
                 'Which of the three homepage designs visitors land on.', 'AURORA'),
 
@@ -49,11 +51,18 @@ class SettingsService {
                 'Off closes registration; existing customers can still sign in.', true),
             'email_verification_required' => array('bool', 'security', 'Require email verification',
                 'New accounts must confirm their address before they can order.', true),
+            'admin_mfa_required' => array('bool', 'security', 'Require MFA for staff',
+                'On redirects any staff account without two-factor authentication to the security screen to enrol before it can open the back office.', false),
 
             'min_deposit' => array('money', 'payments', 'Minimum deposit',
                 'The smallest top-up a customer may make.', '500.00000000'),
             'max_deposit' => array('money', 'payments', 'Maximum deposit',
                 'The largest single top-up, before manual review.', '5000000.00000000'),
+
+            'order_auto_submit' => array('bool', 'orders', 'Auto-submit orders',
+                'Off holds new orders in PENDING for staff to review and submit manually.', true),
+            'partial_refund_enabled' => array('bool', 'orders', 'Auto-refund partial deliveries',
+                'On refunds the undelivered share of a partial delivery automatically; off leaves it for staff to refund.', true),
 
             'referral_commission_percent' => array('percent', 'affiliate', 'Referral commission',
                 'Percentage of a referred customer’s spend paid to the referrer.', '5.0000'),
@@ -74,6 +83,15 @@ class SettingsService {
             // seller the gross is the revenue — nothing is split or paid out.
             'marketplace_auto_release_hours' => array('int', 'marketplace', 'Escrow auto-release (hours)',
                 'Hours after fulfilment before an undisputed order completes automatically (1–720).', 72),
+
+            'api_enabled' => array('bool', 'api', 'Enable the reseller API',
+                'Off returns a 503 for every /api/v1 call without revoking any keys.', true),
+
+            'currency_display' => array('choice:symbol|code', 'currency', 'Currency display',
+                'Whether prices render as a symbol (₦1,234.56) or a code (NGN 1,234.56).', 'symbol'),
+
+            'default_theme' => array('choice:system|light|dark', 'branding', 'Default theme',
+                'System follows the visitor\'s OS preference; light and dark force a theme. Visitors can still override it in their browser.', 'system'),
         );
     }
 
@@ -84,16 +102,7 @@ class SettingsService {
      * this list, so an operator can see the switch is missing on purpose.
      */
     public static function unwired() {
-        return array(
-            'site_tagline'           => 'Nothing reads it; the homepages carry their own copy.',
-            'maintenance_mode'       => 'Needs a gate in MY_Controller that shows a holding page to non-staff.',
-            'default_theme'          => 'No theme switcher exists yet.',
-            'currency_display'       => 'windels_money() always prints a symbol.',
-            'order_auto_submit'      => 'OrderService always submits to the provider immediately.',
-            'partial_refund_enabled' => 'Partial refunds are always on; the state machine has no switch.',
-            'admin_mfa_required'     => 'Needs enforcement in Admin_Controller, which would lock out admins without MFA.',
-            'api_enabled'            => 'Needs a gate in Api_Controller.',
-        );
+        return array();
     }
 
     /** Settings shown but not editable, with the reason. */

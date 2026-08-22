@@ -4,7 +4,7 @@
 $cu = $current_user ?? null;
 $is_staff = $cu && in_array($cu->role, array('SUPER_ADMIN','ADMIN','STAFF'), true);
 $path = isset($this->uri) ? trim((string)$this->uri->uri_string(), '/') : '';
-$site = function_exists('windels_site_name') ? windels_site_name() : 'Averion Commerce';
+$site = function_exists('windels_site_name') ? windels_site_name() : 'WINDELS PANEL';
 $links = array(
     array('services', 'Services'),
     array('pricing', 'Pricing'),
@@ -34,6 +34,10 @@ $active = function ($href) use ($path) {
     </div>
 
     <div class="ws-nav-actions">
+      <button type="button" class="btn btn-ghost btn-sm ws-nav-desktop" data-theme-toggle
+              aria-label="Toggle light or dark theme" title="Toggle theme">
+        <span data-theme-toggle-label>Dark</span>
+      </button>
       <div class="ws-nav-desktop row" style="gap:.4rem">
         <?php if ($cu): ?>
           <a class="btn btn-secondary btn-sm" href="<?=site_url($is_staff ? 'admin' : 'dashboard')?>">
@@ -48,7 +52,9 @@ $active = function ($href) use ($path) {
           <a class="btn btn-primary btn-sm" href="<?=site_url('register')?>">Sign up</a>
         <?php endif; ?>
       </div>
-      <button type="button" class="ws-nav-toggle" data-nav-toggle aria-controls="ws-nav-panel" aria-expanded="false">Menu</button>
+      <button type="button" class="ws-nav-toggle" data-nav-toggle aria-controls="ws-nav-panel" aria-expanded="false" aria-label="Open menu">
+        <span data-nav-toggle-label>Menu</span>
+      </button>
     </div>
   </div>
 
@@ -56,7 +62,6 @@ $active = function ($href) use ($path) {
     <?php foreach ($links as $item): ?>
       <a href="<?=site_url($item[0])?>"><?=htmlspecialchars($item[1])?></a>
     <?php endforeach; ?>
-    <a href="<?=site_url('design-system')?>">Design system</a>
     <?php if ($cu): ?>
       <a href="<?=site_url($is_staff ? 'admin' : 'dashboard')?>"><?=$is_staff ? 'Admin' : 'Dashboard'?></a>
       <form method="post" action="<?=site_url('logout')?>" class="m-0">

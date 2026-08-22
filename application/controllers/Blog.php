@@ -26,7 +26,7 @@ class Blog extends Public_Controller {
                 'active_category' => $category,
                 'page' => $page,
                 'total_pages' => max(1, (int)ceil($total / $limit)),
-                'meta_description' => 'Guides, product updates and reseller tips from Averion Commerce.',
+                'meta_description' => 'Guides, product updates and reseller tips from WINDELS PANEL.',
             ),
         ));
     }

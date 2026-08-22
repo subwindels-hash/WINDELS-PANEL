@@ -44,11 +44,17 @@ $qs = function (array $over = array()) use ($filters, $page) {
 
 <div class="card">
   <?php if (empty($rows)): ?>
-    <p class="muted">
-      <?=empty($filters['domain']) && empty($filters['status'])
-          ? 'You have not bought anything yet.'
-          : 'Nothing matches this filter.'?>
-    </p>
+    <?php $this->load->view('partials/empty_state', array(
+        'icon'  => 'list',
+        'title' => empty($filters['domain']) && empty($filters['status'])
+            ? 'No purchases yet'
+            : 'Nothing matches this filter',
+        'body'  => empty($filters['domain']) && empty($filters['status'])
+            ? 'Everything you buy — SMM, VTU, numbers, identity and gift cards — appears here in one list.'
+            : 'Try a different domain or status, or clear the filter to see everything.',
+        'action_href'  => site_url('dashboard/history'),
+        'action_label' => 'Clear filter',
+    )); ?>
   <?php else: ?>
   <div class="overflow-x-auto">
     <table class="table">

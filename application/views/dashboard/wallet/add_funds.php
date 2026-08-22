@@ -38,7 +38,7 @@ $suggested = min($max, max($min, 5000));
           </div>
         </div>
 
-        <button class="btn btn-primary" type="submit" id="ws-submit">Continue →</button>
+        <button class="btn btn-primary" type="submit" id="ws-submit" data-loading-text="Processing…">Continue →</button>
       <?=form_close()?>
     </div>
 

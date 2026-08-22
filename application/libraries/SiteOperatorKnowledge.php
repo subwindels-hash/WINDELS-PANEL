@@ -15,7 +15,7 @@ class SiteOperatorKnowledge {
 
     public static function site_name() {
         if (function_exists('windels_site_name')) return windels_site_name();
-        return 'Averion Commerce';
+        return 'WINDELS PANEL';
     }
 
     public static function tagline() {

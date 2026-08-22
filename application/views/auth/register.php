@@ -58,7 +58,7 @@
   </label>
   <?=form_error('terms', '<p class="form-error">', '</p>')?>
 
-  <button type="submit" class="btn btn-primary btn-block">Create account</button>
+  <button type="submit" class="btn btn-primary btn-block" data-loading-text="Creating account…">Create account</button>
 <?=form_close()?>
 
 <p class="ws-auth-aside">

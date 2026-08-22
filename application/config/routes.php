@@ -65,6 +65,8 @@ $route['verify-email/(:any)'] = 'auth/verify_email/$1';
 $route['verify-email'] = 'auth/verify_email';
 $route['auth/mfa/verify'] = 'auth/mfa_verify';
 $route['auth/mfa/setup'] = 'auth/mfa_setup';
+$route['auth/mfa/confirm'] = 'auth/mfa_confirm';
+$route['auth/mfa/disable'] = 'auth/mfa_disable';
 
 // Dashboard (customer)
 $route['dashboard'] = 'dashboard/dashboard/index';
@@ -170,6 +172,7 @@ $route['admin/orders'] = 'admin/orders/index';
 $route['admin/orders/(:any)/status'] = 'admin/orders/status/$1';
 $route['admin/orders/(:any)/cancel'] = 'admin/orders/cancel/$1';
 $route['admin/orders/(:any)/refund'] = 'admin/orders/refund/$1';
+$route['admin/orders/(:any)/submit'] = 'admin/orders/submit/$1';
 $route['admin/orders/(:any)'] = 'admin/orders/detail/$1';
 $route['admin/vtu'] = 'admin/vtu/index';
 // Action routes must precede the catch-all detail route below.

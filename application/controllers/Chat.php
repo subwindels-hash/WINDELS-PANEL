@@ -20,7 +20,7 @@ class Chat extends Public_Controller {
         $welcome = $this->siteoperatorengine->welcome();
         $this->render_public('public/assistant', array(
             'title' => 'Site assistant',
-            'meta_description' => 'Ask Averion Commerce’s on-site assistant about services, pricing, accounts and navigation. No external AI API is used.',
+            'meta_description' => 'Ask WINDELS PANEL’s on-site assistant about services, pricing, accounts and navigation. No external AI API is used.',
             'meta_robots' => 'noindex',
             'welcome' => $welcome,
         ));

@@ -194,6 +194,66 @@
     return field;
   };
 
+  /* ----------------------------- theme ----------------------------------- */
+  // Theme switch (light | dark | system). 'system' resolves against the OS
+  // preference; the result is stored so the next load picks it up before paint.
+  window.WINDELS.setTheme = function (theme) {
+    var t = (theme === 'light' || theme === 'dark' || theme === 'system') ? theme : 'system';
+    var dark = t === 'dark';
+    if (t === 'system') {
+      dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    document.documentElement.classList.toggle('dark', dark);
+    document.documentElement.setAttribute('data-theme', t);
+    try { localStorage.setItem('ws-theme', t); } catch (e) {}
+    // Keep every theme toggle in the page in sync.
+    var toggles = document.querySelectorAll('[data-theme-toggle]');
+    for (var i = 0; i < toggles.length; i++) {
+      toggles[i].setAttribute('data-theme-current', t);
+      var label = toggles[i].querySelector('[data-theme-toggle-label]');
+      if (label) label.textContent = t === 'dark' ? 'Light' : 'Dark';
+    }
+  };
+
+  /* ----------------------------- toast ----------------------------------- */
+  // One transient notification component for async feedback:
+  //   WINDELS.toast('success', 'Saved') / 'error' / 'warning' / 'info'
+  window.WINDELS.toast = function (type, message) {
+    var host = document.getElementById('ws-toast-host');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'ws-toast-host';
+      host.setAttribute('aria-live', 'polite');
+      document.body.appendChild(host);
+    }
+    var kinds = { success: 'success', error: 'danger', warning: 'warning', info: 'info' };
+    var kind = kinds[type] || 'info';
+
+    var el = document.createElement('div');
+    el.className = 'toast alert alert-' + kind;
+    el.setAttribute('role', kind === 'danger' ? 'alert' : 'status');
+    el.textContent = message || '';
+
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'toast-close';
+    close.setAttribute('aria-label', 'Dismiss');
+    close.textContent = '×';
+    close.addEventListener('click', function () { dismiss(); });
+    el.appendChild(close);
+
+    host.appendChild(el);
+
+    function dismiss() {
+      el.classList.add('is-leaving');
+      window.setTimeout(function () {
+        if (el.parentNode) el.parentNode.removeChild(el);
+      }, 200);
+    }
+
+    window.setTimeout(dismiss, 5000);
+  };
+
   function boot() {
     // A page restored from the back/forward cache carries the token it was
     // rendered with, which may have been retired in the meantime.
@@ -204,8 +264,12 @@
     try {
       initPasswordToggles();
       initMobileNav();
+      initAnnounce();
       initFaqFilter();
       initSiteOperator();
+      initMfa();
+      initFormSubmitGuard();
+      initThemeToggle();
     } catch (e) {
       // A broken optional widget must never stop the other global behaviours
       // (CSRF plumbing, mobile nav, FAQ filter, assistant) from running.
@@ -241,11 +305,63 @@
     var toggle = document.querySelector('[data-nav-toggle]');
     var panel = document.getElementById('ws-nav-panel');
     if (!toggle || !panel) return;
+    var label = toggle.querySelector('[data-nav-toggle-label]');
     toggle.addEventListener('click', function () {
       var open = panel.classList.toggle('is-open');
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+      if (label) label.textContent = open ? 'Close' : 'Menu';
       panel.hidden = !open;
     });
+  }
+
+  function initAnnounce() {
+    var bar = document.querySelector('[data-announce]');
+    if (!bar) return;
+    var slides = bar.querySelectorAll('.ws-announce-slide');
+    if (!slides.length) return;
+    var dotsHost = bar.querySelector('[data-announce-dots]');
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    var dots = [];
+    if (slides.length > 1 && dotsHost) {
+      for (var i = 0; i < slides.length; i++) {
+        (function (i) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'ws-announce-dot';
+          b.setAttribute('aria-label', 'Show announcement ' + (i + 1));
+          b.addEventListener('click', function () { show(i); restart(); });
+          dotsHost.appendChild(b);
+          dots.push(b);
+        })(i);
+      }
+    }
+
+    var idx = 0;
+    var timer = null;
+    var interval = parseInt(bar.getAttribute('data-announce-interval') || '9000', 10);
+
+    function show(i) {
+      idx = ((i % slides.length) + slides.length) % slides.length;
+      for (var s = 0; s < slides.length; s++) {
+        slides[s].classList.toggle('is-active', s === idx);
+      }
+      for (var d = 0; d < dots.length; d++) {
+        dots[d].classList.toggle('is-active', d === idx);
+      }
+    }
+    function stop() { if (timer) { clearInterval(timer); timer = null; } }
+    function start() { if (reduce || slides.length <= 1) return; stop(); timer = setInterval(function () { show(idx + 1); }, interval); }
+    function restart() { stop(); start(); }
+
+    bar.addEventListener('mouseenter', stop);
+    bar.addEventListener('mouseleave', start);
+    bar.addEventListener('focusin', stop);
+    bar.addEventListener('focusout', start);
+
+    show(0);
+    start();
   }
 
   function initFaqFilter() {
@@ -417,6 +533,254 @@
     for (var s = 0; s < initial.length; s++) {
       initial[s].addEventListener('click', function () {
         ask(this.getAttribute('data-suggest') || this.textContent);
+      });
+    }
+  }
+
+  function initThemeToggle() {
+    var toggles = document.querySelectorAll('[data-theme-toggle]');
+    for (var i = 0; i < toggles.length; i++) {
+      (function (btn) {
+        var label = btn.querySelector('[data-theme-toggle-label]');
+        var current = document.documentElement.getAttribute('data-theme') || 'system';
+        var dark = document.documentElement.classList.contains('dark');
+        btn.setAttribute('data-theme-current', current);
+        if (label) label.textContent = dark ? 'Light' : 'Dark';
+        btn.addEventListener('click', function () {
+          var isDark = document.documentElement.classList.contains('dark');
+          WINDELS.setTheme(isDark ? 'light' : 'dark');
+        });
+      })(toggles[i]);
+    }
+  }
+
+  /* -------------------------- form submit guard -------------------------- */
+  // Disables a form's submit button the moment a real (navigation) submit
+  // fires, so a double-click can never double-place an order or double-fund a
+  // wallet. Forms that drive their own async flow opt out with data-no-guard.
+  function initFormSubmitGuard() {
+    document.addEventListener('submit', function (e) {
+      var form = e.target;
+      if (!form || form.tagName !== 'FORM') return;
+      if (form.hasAttribute('data-no-guard')) return;
+
+      var btn = form.querySelector('button[type="submit"], input[type="submit"]');
+      if (!btn || btn.disabled) return;
+      if (btn.classList.contains('ws-submitting')) return;
+
+      btn.classList.add('ws-submitting');
+      btn.disabled = true;
+
+      var label = btn.getAttribute('data-loading-text');
+      if (label) {
+        btn.setAttribute('data-original-text', btn.textContent);
+        btn.textContent = label;
+      }
+      if (!btn.querySelector('.spinner')) {
+        var spin = document.createElement('span');
+        spin.className = 'spinner';
+        spin.setAttribute('aria-hidden', 'true');
+        btn.insertBefore(spin, btn.firstChild);
+      }
+    }, true);
+  }
+
+  /* ----------------------------- MFA enrolment --------------------------- */
+
+  function initMfa() {
+    var section = document.getElementById('ws-mfa-section');
+    if (!section) return;
+
+    var setupUrl = section.getAttribute('data-endpoint-setup');
+    var confirmUrl = section.getAttribute('data-endpoint-confirm');
+    var disableUrl = section.getAttribute('data-endpoint-disable');
+
+    var startBtn = document.getElementById('ws-mfa-start');
+    var enroll = document.getElementById('ws-mfa-enroll');
+    var qrHost = document.getElementById('ws-mfa-qr');
+    var secretEl = document.getElementById('ws-mfa-secret');
+    var copyBtn = document.getElementById('ws-mfa-copy-secret');
+    var codeInput = document.getElementById('ws-mfa-code');
+    var confirmBtn = document.getElementById('ws-mfa-confirm');
+    var cancelBtn = document.getElementById('ws-mfa-cancel');
+    var errorEl = document.getElementById('ws-mfa-error');
+    var recoveryHost = document.getElementById('ws-mfa-recovery');
+
+    var secret = '';
+
+    function showError(el, msg) {
+      if (!el) return;
+      el.textContent = msg || '';
+      el.hidden = !msg;
+    }
+
+    function postJson(url, payload) {
+      return fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify(payload || {})
+      }).then(function (r) {
+        return r.json().then(function (body) { return { ok: r.ok, body: body }; });
+      });
+    }
+
+    function renderQr(text) {
+      if (!qrHost || typeof qrcode !== 'function' || !text) return;
+      try {
+        var q = qrcode(0, 'M');
+        q.addData(text);
+        q.make();
+        qrHost.innerHTML = q.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+      } catch (e) {
+        if (window.console && console.error) console.error('qr render failed:', e);
+      }
+    }
+
+    function renderRecovery(codes) {
+      if (!recoveryHost) return;
+      recoveryHost.innerHTML = '';
+      (codes || []).forEach(function (c) {
+        var code = document.createElement('code');
+        code.className = 'mono';
+        code.style.cssText = 'background:var(--slate-100);padding:.25rem .55rem;border-radius:.4rem;font-size:.8rem';
+        code.textContent = c;
+        recoveryHost.appendChild(code);
+      });
+    }
+
+    function copyText(text) {
+      var done = function () {
+        if (copyBtn) { copyBtn.textContent = 'Copied'; setTimeout(function () { copyBtn.textContent = 'Copy'; }, 1500); }
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(function () { legacyCopy(text); });
+      } else {
+        legacyCopy(text);
+      }
+      function legacyCopy(text) {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) {}
+        document.body.removeChild(ta);
+      }
+    }
+
+    if (startBtn && enroll) {
+      startBtn.addEventListener('click', function () {
+        startBtn.disabled = true;
+        startBtn.textContent = 'Preparing…';
+        showError(errorEl, '');
+        postJson(setupUrl).then(function (res) {
+          startBtn.disabled = false;
+          startBtn.textContent = 'Enable two-factor authentication';
+          if (!res.ok || !res.body || !res.body.success) {
+            var msg = (res.body && res.body.error && res.body.error.message) || 'Could not start MFA setup. Try again.';
+            showError(errorEl, msg);
+            return;
+          }
+          var d = res.body.data || {};
+          secret = d.secret || '';
+          if (secretEl) secretEl.textContent = secret;
+          renderRecovery(d.recovery_codes || []);
+          renderQr(d.otpauth_uri || '');
+          enroll.hidden = false;
+          startBtn.hidden = true;
+        }).catch(function () {
+          startBtn.disabled = false;
+          startBtn.textContent = 'Enable two-factor authentication';
+          showError(errorEl, 'Network error. Try again.');
+        });
+      });
+    }
+
+    if (copyBtn) {
+      copyBtn.addEventListener('click', function () {
+        var t = secretEl ? (secretEl.textContent || '') : '';
+        if (t) copyText(t);
+      });
+    }
+
+    if (confirmBtn && codeInput) {
+      confirmBtn.addEventListener('click', function () {
+        var code = (codeInput.value || '').trim();
+        if (!code) { showError(errorEl, 'Enter the 6-digit code from your authenticator app.'); return; }
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Verifying…';
+        showError(errorEl, '');
+        postJson(confirmUrl, { code: code }).then(function (res) {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = 'Verify & enable';
+          if (!res.ok || !res.body || !res.body.success) {
+            var msg = (res.body && res.body.error && res.body.error.message) || 'That code was not accepted.';
+            showError(errorEl, msg);
+            return;
+          }
+          window.location.reload();
+        }).catch(function () {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = 'Verify & enable';
+          showError(errorEl, 'Network error. Try again.');
+        });
+      });
+    }
+
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', function () {
+        enroll.hidden = true;
+        startBtn.hidden = false;
+        startBtn.disabled = false;
+        secret = '';
+        showError(errorEl, '');
+        if (secretEl) secretEl.textContent = '';
+        if (qrHost) qrHost.innerHTML = '';
+        if (recoveryHost) recoveryHost.innerHTML = '';
+      });
+    }
+
+    // Disable flow
+    var disableBtn = document.getElementById('ws-mfa-disable-btn');
+    var disableWrap = document.getElementById('ws-mfa-disable-confirm');
+    var disableCode = document.getElementById('ws-mfa-disable-code');
+    var disableConfirm = document.getElementById('ws-mfa-disable-confirm-btn');
+    var disableError = document.getElementById('ws-mfa-disable-error');
+
+    if (disableBtn && disableWrap) {
+      disableBtn.addEventListener('click', function () {
+        disableWrap.hidden = !disableWrap.hidden;
+        showError(disableError, '');
+      });
+    }
+    if (disableConfirm && disableCode) {
+      disableConfirm.addEventListener('click', function () {
+        var code = (disableCode.value || '').trim();
+        if (!code) { showError(disableError, 'Enter a code from your authenticator app to confirm.'); return; }
+        disableConfirm.disabled = true;
+        disableConfirm.textContent = 'Disabling…';
+        showError(disableError, '');
+        postJson(disableUrl, { code: code }).then(function (res) {
+          disableConfirm.disabled = false;
+          disableConfirm.textContent = 'Disable';
+          if (!res.ok || !res.body || !res.body.success) {
+            var msg = (res.body && res.body.error && res.body.error.message) || 'That code was not accepted.';
+            showError(disableError, msg);
+            return;
+          }
+          window.location.reload();
+        }).catch(function () {
+          disableConfirm.disabled = false;
+          disableConfirm.textContent = 'Disable';
+          showError(disableError, 'Network error. Try again.');
+        });
       });
     }
   }

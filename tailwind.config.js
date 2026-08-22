@@ -55,6 +55,7 @@ const windelsTokens = {
 };
 
 module.exports = {
+  darkMode: 'class',
   content: [
     './application/views/**/*.php',
     './assets/js/**/*.js',
@@ -63,15 +64,35 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // ADDITIVE brand tokens — Tailwind's default palette (indigo, slate,
-        // rose, cyan, gray, ...) stays intact, so existing utility classes in
-        // the homepages/auth views keep compiling.
+        // ADDITIVE brand tokens — Tailwind's default palette (indigo, rose,
+        // cyan, gray, ...) stays intact, so existing utility classes in the
+        // homepages/auth views keep compiling.
         brand: windelsTokens.brand,
         accent: windelsTokens.accent,
         success: windelsTokens.success,
         warning: windelsTokens.warning,
         danger: windelsTokens.danger,
         info: windelsTokens.info,
+        // Themeable neutrals. `slate` and `surface` are driven by CSS
+        // variables (--ws-slate-*, --ws-surface) defined in
+        // assets/css/design-system.css, so a single `.dark` class on <html>
+        // re-themes every slate/surface utility across the app without editing
+        // individual views. `white`/`black` stay literal (used as text on
+        // coloured buttons/badges) — surfaces are `bg-surface` instead.
+        slate: {
+          50:  'rgb(var(--ws-slate-50) / <alpha-value>)',
+          100: 'rgb(var(--ws-slate-100) / <alpha-value>)',
+          200: 'rgb(var(--ws-slate-200) / <alpha-value>)',
+          300: 'rgb(var(--ws-slate-300) / <alpha-value>)',
+          400: 'rgb(var(--ws-slate-400) / <alpha-value>)',
+          500: 'rgb(var(--ws-slate-500) / <alpha-value>)',
+          600: 'rgb(var(--ws-slate-600) / <alpha-value>)',
+          700: 'rgb(var(--ws-slate-700) / <alpha-value>)',
+          800: 'rgb(var(--ws-slate-800) / <alpha-value>)',
+          900: 'rgb(var(--ws-slate-900) / <alpha-value>)',
+          950: 'rgb(var(--ws-slate-950) / <alpha-value>)',
+        },
+        surface: 'rgb(var(--ws-surface) / <alpha-value>)',
       },
       fontFamily: {
         sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],

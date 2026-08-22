@@ -3,7 +3,7 @@
   <div class="container" style="max-width:720px">
     <p class="ws-kicker">On-site assistant</p>
     <h1>Ask the panel, not a cloud model</h1>
-    <p class="ws-lede">This assistant matches your question to Averion Commerce’s built-in knowledge. It does not call OpenAI, Anthropic, Gemini or any other third-party AI API, and it cannot complete account actions for you.</p>
+    <p class="ws-lede">This assistant matches your question to WINDELS PANEL’s built-in knowledge. It does not call OpenAI, Anthropic, Gemini or any other third-party AI API, and it cannot complete account actions for you.</p>
     <p>Use the Assistant button at the bottom of any public page, or type below if you prefer a full page.</p>
   </div>
 </section>

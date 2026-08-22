@@ -32,8 +32,13 @@ $total_pages = max(1, (int)ceil($total / $per_page));
   </div>
 
   <?php if (empty($transactions)): ?>
-    <p class="muted mt-6">Nothing here yet.
-      <a href="<?=site_url('dashboard/vtu')?>">Buy something →</a></p>
+    <?php $this->load->view('partials/empty_state', array(
+        'icon'  => 'zap',
+        'title' => 'No VTU purchases yet',
+        'body'  => 'Airtime, data, cable and electricity purchases appear here with their delivery status.',
+        'action_href'  => site_url('dashboard/vtu'),
+        'action_label' => 'Buy airtime or data',
+    )); ?>
   <?php else: ?>
   <div class="overflow-x-auto mt-4">
     <table class="table">

@@ -30,12 +30,15 @@ $fav_ids = $favorites ?? array();
     </div>
 
     <?php if (empty($services)): ?>
-      <div class="card text-center" style="padding:3rem">
-        <p class="muted">
-          <?=$favorites_only ? 'No favorites yet. Tap the ☆ on a service to save it.' : 'No services available.'?>
-        </p>
-        <?=$favorites_only ? '<a class="btn btn-primary mt-4" href="'.site_url('dashboard/services').'">Browse services</a>' : ''?>
-      </div>
+      <?php $this->load->view('partials/empty_state', array(
+          'icon'  => $favorites_only ? 'star' : 'shopping-bag',
+          'title' => $favorites_only ? 'No favorites yet' : 'No services available',
+          'body'  => $favorites_only
+              ? 'Tap the ☆ on a service to keep it here for quick access.'
+              : 'Services will appear here as soon as the operator publishes and prices them.',
+          'action_href'  => $favorites_only ? site_url('dashboard/services') : '',
+          'action_label' => 'Browse services',
+      )); ?>
     <?php else: ?>
     <div class="grid grid-3" style="gap:1rem">
       <?php foreach ($services as $s):

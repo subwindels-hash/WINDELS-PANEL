@@ -1,5 +1,11 @@
 # Averion Commerce — architecture-level frontend & chatbot fix report
 
+> **Superseded note (brand):** the "Averion Commerce" public brand described in
+> this report was later reverted. The public-facing name is now **WINDELS PANEL**
+> (`config/windels.php` → `public_name`), and the "Averion" logo assets were
+> removed. This report is retained as a historical record of the earlier
+> frontend/chatbot work only.
+
 Branch: `arena/01a0292e-windels-panel`
 Commit: `a27b7f3`
 

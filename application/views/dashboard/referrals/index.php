@@ -48,7 +48,11 @@ $currency = windels_base_currency();
         <a class="btn btn-ghost btn-sm" href="<?=site_url('dashboard/referrals/commissions')?>">View all →</a>
       </div>
       <?php if (empty($stats['commissions'])): ?>
-        <p class="muted mt-3">No commissions yet. They appear here once a referred customer's order completes.</p>
+        <?php $this->load->view('partials/empty_state', array(
+            'icon'  => 'users',
+            'title' => 'No commissions yet',
+            'body'  => 'Commissions appear here once a referred customer\'s first order completes.',
+        )); ?>
       <?php else: ?>
       <div class="overflow-x-auto mt-3">
         <table class="table">

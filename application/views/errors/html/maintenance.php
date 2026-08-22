@@ -1,13 +1,6 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
-// Branded uncaught-exception page. The visitor sees a generic message; the
-// technical detail (file, line, backtrace) is shown only outside production
-// and is always written to the log by CodeIgniter.
-$heading = isset($heading) ? $heading : 'An unexpected error occurred';
-$is_prod = defined('ENVIRONMENT') && ENVIRONMENT === 'production';
-$message = 'The request could not be completed. Our team has been notified if logging is enabled.';
-if (!$is_prod && isset($exception) && $exception instanceof Throwable) {
-    $message = htmlspecialchars($exception->getMessage());
-}
+// Branded maintenance holding page, shown to non-staff while the operator has
+// maintenance mode enabled. Staff sign in through /admin/login to keep working.
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -15,7 +8,7 @@ if (!$is_prod && isset($exception) && $exception instanceof Throwable) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title><?php echo htmlspecialchars($heading); ?> · WINDELS PANEL</title>
+<title>Under maintenance · WINDELS PANEL</title>
 <link rel="icon" href="/assets/brand/favicon.svg" type="image/svg+xml">
 <style>
 *{box-sizing:border-box}
@@ -29,23 +22,20 @@ p{color:#475569;margin:0 auto 1.5rem;max-width:30rem}
 .btn{display:inline-block;padding:.65rem 1.15rem;border-radius:.75rem;font-weight:600;font-size:.925rem;text-decoration:none;border:1px solid transparent}
 .btn-primary{background:#4f46e5;color:#fff}
 .btn-secondary{background:#fff;color:#0f172a;border-color:#cbd5e1}
-pre{text-align:left;background:#0f172a;color:#e2e8f0;border-radius:.75rem;padding:1rem;overflow:auto;max-height:16rem;font-size:.78rem}
 </style>
 </head>
 <body>
   <div class="wrap">
     <a class="brand" href="/">
-      <svg width="34" height="34" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="wpe" x1="8" y1="4" x2="58" y2="60" gradientUnits="userSpaceOnUse"><stop stop-color="#6366F1"/><stop offset=".55" stop-color="#4F46E5"/><stop offset="1" stop-color="#C026D3"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#wpe)"/><path d="M16 42V24.5L24.2 38h3.1L35.6 24.5V42h4.4V22h-6.2L25.8 35.4 17.8 22H11.5v20H16z" fill="#fff"/><rect x="42" y="28" width="5.2" height="14" rx="1.4" fill="#fff" opacity=".92"/><rect x="48.6" y="22" width="5.2" height="20" rx="1.4" fill="#fff" opacity=".75"/></svg>
+      <svg width="34" height="34" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="wpm" x1="8" y1="4" x2="58" y2="60" gradientUnits="userSpaceOnUse"><stop stop-color="#6366F1"/><stop offset=".55" stop-color="#4F46E5"/><stop offset="1" stop-color="#C026D3"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#wpm)"/><path d="M16 42V24.5L24.2 38h3.1L35.6 24.5V42h4.4V22h-6.2L25.8 35.4 17.8 22H11.5v20H16z" fill="#fff"/><rect x="42" y="28" width="5.2" height="14" rx="1.4" fill="#fff" opacity=".92"/><rect x="48.6" y="22" width="5.2" height="20" rx="1.4" fill="#fff" opacity=".75"/></svg>
       WINDELS PANEL
     </a>
-    <div><span class="code">500</span></div>
-    <h1><?php echo htmlspecialchars($heading); ?></h1>
-    <p><?php echo htmlspecialchars($message); ?></p>
-    <?php if (!$is_prod && isset($exception) && $exception instanceof Throwable): ?>
-      <pre><?php echo htmlspecialchars($exception->getFile().':'.$exception->getLine()); ?></pre>
-    <?php endif; ?>
+    <div><span class="code">Maintenance</span></div>
+    <h1>We&rsquo;ll be back shortly</h1>
+    <p>WINDELS PANEL is currently undergoing maintenance. Orders, the wallet and the catalogue are temporarily unavailable. Please check back in a few minutes.</p>
     <div class="actions">
-      <a class="btn btn-primary" href="/">Go to homepage</a>
+      <a class="btn btn-primary" href="/" onclick="setTimeout(function(){location.reload();},0);return true;">Try again</a>
+      <a class="btn btn-secondary" href="/admin/login">Staff sign in</a>
       <a class="btn btn-secondary" href="/contact">Contact support</a>
     </div>
   </div>

@@ -34,7 +34,7 @@ const html = `<!doctype html><html><head>
     <div class="ws-bubble ws-bubble-assistant">Welcome</div>
   </div>
   <div class="ws-suggest" id="ws-assistant-suggest">
-    <button type="button" data-suggest="What is Averion Commerce?">What is Averion Commerce?</button>
+    <button type="button" data-suggest="What is WINDELS PANEL?">What is WINDELS PANEL?</button>
   </div>
   <div class="ws-assistant-status" id="ws-assistant-status" aria-live="polite"></div>
   <form class="ws-assistant-form" id="ws-assistant-form">
@@ -69,7 +69,7 @@ window.fetch = async (input) => {
     return makeResponse({
       success: true,
       data: {
-        reply: 'Averion Commerce is a prepaid commerce platform. Recent data from the test harness.',
+        reply: 'WINDELS PANEL is a prepaid commerce platform. Recent data from the test harness.',
         intent: 'about',
         links: [{ label: 'Services', href: '/services' }],
         suggestions: ['What services do you offer?', 'How do I sign up?'],
@@ -112,7 +112,7 @@ assert(focused, 'chat input receives focus after opening');
 
 const input = window.document.getElementById('ws-assistant-input');
 const form = window.document.getElementById('ws-assistant-form');
-input.value = 'What is Averion Commerce?';
+input.value = 'What is WINDELS PANEL?';
 form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
 
 // Allow the CSRF token resolution + fetch to resolve.
@@ -125,7 +125,7 @@ const assistantBubble = log.querySelector('.ws-bubble-assistant:not(:first-child
 
 assert(assistantHits === 1, 'assistant endpoint is called once');
 assert(userBubble !== null, 'user message bubble is rendered');
-assert(assistantBubble !== null && assistantBubble.textContent.indexOf('Averion Commerce') !== -1,
+assert(assistantBubble !== null && assistantBubble.textContent.indexOf('WINDELS PANEL') !== -1,
   'assistant reply bubble is rendered from JSON');
 
 // Close path.

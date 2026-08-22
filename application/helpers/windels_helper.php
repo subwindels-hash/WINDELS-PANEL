@@ -30,7 +30,7 @@ if (!function_exists('windels_site_name')) {
     function windels_site_name(){
         static $name = null;
         if ($name !== null) return $name;
-        $name = 'Averion Commerce';
+        $name = 'WINDELS PANEL';
         if (function_exists('get_instance')) {
             $ci = @get_instance();
             if ($ci && isset($ci->config)) {
@@ -65,6 +65,11 @@ if (!function_exists('windels_site_tagline')) {
                 }
             }
         }
+        // Admin → Settings `site_tagline` overrides the config default.
+        if (function_exists('windels_brand_setting')) {
+            $setting = windels_brand_setting('site_tagline');
+            if ($setting !== null && $setting !== '') $tagline = (string)$setting;
+        }
         return $tagline;
     }
 }
@@ -77,13 +82,68 @@ if (!function_exists('windels_brand_logo')) {
      * footer and auth shell from each hardcoding a different asset path.
      */
     function windels_brand_logo($variant = 'horizontal', $height = 32){
-        $name = strtolower(str_replace(' ', '-', preg_replace('/[^A-Za-z0-9 ]/', '', windels_site_name())));
-        $file = 'logo-'.$name;
-        if ($variant === 'icon') $file = 'logo-'.$name.'-icon';
-        if ($variant === 'dark') $file = 'logo-'.$name.'-dark';
-        $path = FCPATH.'assets/brand/'.$file.'.svg';
-        if ($variant !== 'icon' && !is_file($path)) $path = FCPATH.'assets/brand/logo-'.$name.'.svg';
-        return (is_file($path) ? base_url('assets/brand/'.$file.'.svg') : base_url('assets/brand/logo.svg'));
+        // Canonical WINDELS PANEL mark set. Variant-first, then a safe fallback
+        // to the primary horizontal logo so a missing asset can't white-screen.
+        $map = array(
+            'icon'       => 'logo-icon.svg',
+            'dark'       => 'logo-dark.svg',
+            'horizontal' => 'logo-horizontal.svg',
+            'full'       => 'logo.svg',
+        );
+        $file = $map[$variant] ?? $map['horizontal'];
+        $path = FCPATH.'assets/brand/'.$file;
+        if (!is_file($path)) $file = $map['horizontal'];
+        return base_url('assets/brand/'.$file);
+    }
+}
+
+if (!function_exists('windels_brand_setting')) {
+    /**
+     * Read a branding setting (brand_logo_url, brand_favicon_url, …) saved
+     * through Admin → Appearance. Returns NULL when unset or the database is
+     * unavailable, so callers always have a bundled fallback.
+     */
+    function windels_brand_setting($key, $default = null) {
+        static $cache = array();
+        if (array_key_exists($key, $cache)) {
+            return $cache[$key] !== null ? $cache[$key] : $default;
+        }
+        $cache[$key] = null;
+        try {
+            if (function_exists('get_instance')) {
+                $ci =& get_instance();
+                if ($ci && isset($ci->db) && is_object($ci->db) && !empty($ci->db->conn_id)) {
+                    $ci->load->model('Setting_model');
+                    $v = $ci->Setting_model->get($key);
+                    if ($v !== null && $v !== '') $cache[$key] = $v;
+                }
+            }
+        } catch (Throwable $e) { $cache[$key] = null; }
+        return $cache[$key] !== null ? $cache[$key] : $default;
+    }
+}
+
+if (!function_exists('windels_default_theme')) {
+    /**
+     * The site-wide default theme: 'system', 'light' or 'dark'.
+     *
+     * Reads Admin → Settings `default_theme` (seeded 'system') and falls back to
+     * 'system', which follows the visitor's OS preference. Individual visitors
+     * can override it in their browser (stored in localStorage) via the theme
+     * toggle; the initial paint uses this value so there is no flash.
+     */
+    function windels_default_theme(){
+        static $theme = null;
+        if ($theme !== null) return $theme;
+        $theme = 'system';
+        if (function_exists('windels_brand_setting')) {
+            $v = windels_brand_setting('default_theme');
+            if ($v !== null && $v !== '') {
+                $v = strtolower(trim((string)$v));
+                if (in_array($v, array('system', 'light', 'dark'), true)) $theme = $v;
+            }
+        }
+        return $theme;
     }
 }
 
@@ -115,8 +175,17 @@ if (!function_exists('windels_base_currency')) {
 if (!function_exists('windels_money')) {
     function windels_money($amount, $currency=NULL){
         if ($currency === NULL) $currency = windels_base_currency();
+        $formatted = number_format((float)$amount, 2, '.', ',');
+        // Admin → Settings `currency_display` (symbol|code). `code` prints
+        // "NGN 1,234.56" instead of "₦1,234.56". Fail open to the symbol.
+        $display = 'symbol';
+        if (function_exists('windels_brand_setting')) {
+            $setting = windels_brand_setting('currency_display');
+            if ($setting !== null && strtolower(trim((string)$setting)) === 'code') $display = 'code';
+        }
+        if ($display === 'code') return strtoupper($currency).' '.$formatted;
         $sym = array('NGN'=>'₦','USD'=>'$','EUR'=>'€','GBP'=>'£','INR'=>'₹','BRL'=>'R$')[strtoupper($currency)] ?? $currency.' ';
-        return $sym . number_format((float)$amount, 2, '.', ',');
+        return $sym . $formatted;
     }
 }
 if (!function_exists('windels_request_id')) {

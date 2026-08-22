@@ -22,7 +22,10 @@
       <?=form_close()?>
     </div>
 
-    <div class="card">
+    <div class="card" id="ws-mfa-section"
+         data-endpoint-setup="<?=htmlspecialchars(site_url('auth/mfa/setup'))?>"
+         data-endpoint-confirm="<?=htmlspecialchars(site_url('auth/mfa/confirm'))?>"
+         data-endpoint-disable="<?=htmlspecialchars(site_url('auth/mfa/disable'))?>">
       <div class="row justify-between">
         <div>
           <h2 class="card-title">Two-factor authentication</h2>
@@ -34,8 +37,55 @@
           <span class="badge badge-default">Not enabled</span>
         <?php endif; ?>
       </div>
-      <p class="hint mt-3">Full TOTP enrollment (QR code + recovery codes) is wired in the auth service;
-        the setup UI arrives with the account/security screen polish in Session 17. MFA is already enforced at login once enabled.</p>
+
+      <?php if (empty($mfa)): ?>
+      <div id="ws-mfa-enable">
+        <p class="hint mt-2">Two-factor authentication is enforced at login once enabled.</p>
+        <button type="button" class="btn btn-primary mt-3" id="ws-mfa-start">Enable two-factor authentication</button>
+
+        <div id="ws-mfa-enroll" hidden class="mt-4">
+          <p class="muted text-sm">Scan the QR code with your authenticator app (Google Authenticator, Authy, 1Password, &hellip;), or enter the secret key manually.</p>
+          <div class="row" style="gap:1.5rem;align-items:flex-start">
+            <div id="ws-mfa-qr" style="background:#fff;border:1px solid var(--slate-200);border-radius:.75rem;padding:.75rem;display:inline-block"></div>
+            <div style="flex:1;min-width:220px">
+              <label class="label" for="ws-mfa-secret">Secret key</label>
+              <div class="row" style="gap:.4rem;align-items:center">
+                <code id="ws-mfa-secret" class="mono" style="word-break:break-all;font-size:.85rem"></code>
+                <button type="button" class="btn btn-ghost btn-sm" id="ws-mfa-copy-secret">Copy</button>
+              </div>
+              <label class="label mt-3" for="ws-mfa-code">Verification code</label>
+              <input class="input" id="ws-mfa-code" inputmode="numeric" autocomplete="one-time-code"
+                     maxlength="6" pattern="[0-9]*" placeholder="6-digit code">
+              <div class="row mt-2" style="gap:.5rem">
+                <button type="button" class="btn btn-primary btn-sm" id="ws-mfa-confirm">Verify &amp; enable</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="ws-mfa-cancel">Cancel</button>
+              </div>
+              <p class="form-error" id="ws-mfa-error" hidden></p>
+            </div>
+          </div>
+
+          <div class="mt-4">
+            <h3 class="card-meta" style="margin:0 0 .5rem;text-transform:uppercase;letter-spacing:.05em">Recovery codes</h3>
+            <p class="hint">Store these somewhere safe. Each can be used once to sign in if you lose your device.</p>
+            <div id="ws-mfa-recovery" class="row" style="gap:.4rem"></div>
+          </div>
+        </div>
+      </div>
+      <?php else: ?>
+      <div id="ws-mfa-disable">
+        <p class="hint mt-2">Two-factor authentication is enforced at login while enabled.</p>
+        <button type="button" class="btn btn-secondary mt-3" id="ws-mfa-disable-btn">Disable two-factor authentication</button>
+        <div id="ws-mfa-disable-confirm" hidden class="mt-3">
+          <label class="label" for="ws-mfa-disable-code">Enter a code from your authenticator app to confirm</label>
+          <div class="row" style="gap:.5rem">
+            <input class="input" id="ws-mfa-disable-code" inputmode="numeric" autocomplete="one-time-code"
+                   maxlength="6" pattern="[0-9]*" placeholder="6-digit code" style="max-width:10rem">
+            <button type="button" class="btn btn-danger btn-sm" id="ws-mfa-disable-confirm-btn">Disable</button>
+          </div>
+          <p class="form-error" id="ws-mfa-disable-error" hidden></p>
+        </div>
+      </div>
+      <?php endif; ?>
     </div>
 
     <div class="card">
@@ -61,6 +111,8 @@
       <?php endif; ?>
     </div>
   </div>
+
+  <script src="<?=base_url('assets/js/qrcode.js')?>" defer></script>
 
   <aside class="card">
     <h3 class="card-title">Last login</h3>

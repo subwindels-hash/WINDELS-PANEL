@@ -26,7 +26,7 @@
     Remember me on this device
   </label>
 
-  <button type="submit" class="btn btn-primary btn-block">Log in</button>
+  <button type="submit" class="btn btn-primary btn-block" data-loading-text="Signing in…">Log in</button>
 <?=form_close()?>
 
 <p class="ws-auth-aside">

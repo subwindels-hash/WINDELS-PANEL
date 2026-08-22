@@ -60,7 +60,13 @@ $price_badges = function ($item) use ($effective) {
   </div>
 </form>
 <?php if (empty($listings)): ?>
-<div class="card"><p class="muted">No active listings match this search.</p></div>
+<?php $this->load->view('partials/empty_state', array(
+    'icon'  => 'shopping-bag',
+    'title' => 'No listings match this search',
+    'body'  => 'Try a different search term or clear the filters to browse everything that is on sale.',
+    'action_href'  => site_url('dashboard/marketplace'),
+    'action_label' => 'Clear filters',
+)); ?>
 <?php else: ?>
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:1rem">
 <?php foreach ($listings as $item): ?>

@@ -11,7 +11,11 @@
     <strong><?=windels_money($wallet->balance)?></strong></p>
 
   <?php if (empty($countries) || empty($products)): ?>
-    <p class="muted">No numbers are on sale yet. Check back shortly.</p>
+    <?php $this->load->view('partials/empty_state', array(
+        'icon'  => 'smartphone',
+        'title' => 'No virtual numbers on sale yet',
+        'body'  => 'Once the operator prices virtual numbers, you will be able to rent one for SMS verification here.',
+    )); ?>
   <?php else: ?>
 
   <form method="get" action="<?=site_url('dashboard/numbers')?>" class="mb-4">
