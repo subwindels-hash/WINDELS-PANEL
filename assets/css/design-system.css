@@ -313,9 +313,15 @@ button { font-family:inherit; cursor:pointer; }
   text-transform:uppercase;color:var(--brand-700);margin-bottom:.75rem}
 
 /* ------------------------------- Public nav ----------------------------- */
-.ws-skip{position:absolute;left:1rem;top:-3rem;z-index:200;background:var(--brand-700);color:#fff;
-  padding:.5rem .9rem;border-radius:.5rem}
-.ws-skip:focus{top:1rem}
+/* Skip link: visually hidden until keyboard focus, but always present in the
+   DOM as the first focusable element. It must never hide or clip the main
+   content — only itself. Fixed positioning keeps it in the viewport when the
+   user tabs while scrolled down; transform (not top/left) avoids layout shifts
+   and stays off the screen-reader/gfx fast path. */
+.ws-skip{position:fixed;top:1rem;left:1rem;z-index:9999;background:var(--brand-700);color:#fff;
+  padding:.5rem .9rem;border-radius:.5rem;text-decoration:none;
+  transform:translateY(-200%);transition:transform .2s ease}
+.ws-skip:focus,.ws-skip:focus-visible{transform:translateY(0);outline:2px solid #fff;outline-offset:2px}
 .ws-public-nav{border-bottom:1px solid var(--color-border);background:var(--surface-glass);
   backdrop-filter:saturate(140%) blur(10px);position:sticky;z-index:50}
 .ws-public-nav-inner{display:flex;align-items:center;justify-content:space-between;gap:1rem;

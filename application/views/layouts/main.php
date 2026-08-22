@@ -27,8 +27,9 @@ if (!class_exists('SiteOperatorKnowledge', false)) {
 ))); ?>
 </head>
 <body class="min-h-screen bg-surface text-slate-900 antialiased ws-public-shell">
+<a class="ws-skip" href="#main">Skip to content</a>
 <?php $this->load->view('partials/header'); ?>
-<main id="main" class="ws-main">
+<main id="main" class="ws-main" tabindex="-1">
   <?php if ($content !== ''): ?>
     <?php $this->load->view($content, $page_data); ?>
   <?php else: ?>

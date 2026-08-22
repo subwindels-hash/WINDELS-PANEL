@@ -12,6 +12,7 @@ $auth_site = function_exists('windels_site_name') ? windels_site_name() : 'WINDE
 )); ?>
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-900 antialiased ws-auth-shell-page">
+<a class="ws-skip" href="#main">Skip to content</a>
 <?php $this->load->view('partials/announcement'); ?>
 <div class="min-h-screen flex flex-col">
   <header class="border-b bg-surface">
@@ -31,7 +32,7 @@ $auth_site = function_exists('windels_site_name') ? windels_site_name() : 'WINDE
     </div>
   </header>
 
-  <main class="flex-1">
+  <main id="main" class="flex-1" tabindex="-1">
     <div class="ws-auth-shell">
       <aside class="ws-auth-visual" aria-hidden="true">
         <img src="<?=base_url('assets/images/home/hero.jpg')?>" alt="" width="960" height="1200">
