@@ -194,6 +194,45 @@
     return field;
   };
 
+  /* ----------------------------- toast ----------------------------------- */
+  // One transient notification component for async feedback:
+  //   WINDELS.toast('success', 'Saved') / 'error' / 'warning' / 'info'
+  window.WINDELS.toast = function (type, message) {
+    var host = document.getElementById('ws-toast-host');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'ws-toast-host';
+      host.setAttribute('aria-live', 'polite');
+      document.body.appendChild(host);
+    }
+    var kinds = { success: 'success', error: 'danger', warning: 'warning', info: 'info' };
+    var kind = kinds[type] || 'info';
+
+    var el = document.createElement('div');
+    el.className = 'toast alert alert-' + kind;
+    el.setAttribute('role', kind === 'danger' ? 'alert' : 'status');
+    el.textContent = message || '';
+
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'toast-close';
+    close.setAttribute('aria-label', 'Dismiss');
+    close.textContent = '×';
+    close.addEventListener('click', function () { dismiss(); });
+    el.appendChild(close);
+
+    host.appendChild(el);
+
+    function dismiss() {
+      el.classList.add('is-leaving');
+      window.setTimeout(function () {
+        if (el.parentNode) el.parentNode.removeChild(el);
+      }, 200);
+    }
+
+    window.setTimeout(dismiss, 5000);
+  };
+
   function boot() {
     // A page restored from the back/forward cache carries the token it was
     // rendered with, which may have been retired in the meantime.

@@ -43,15 +43,8 @@ $auth_site = function_exists('windels_site_name') ? windels_site_name() : 'WINDE
       </aside>
       <div class="flex items-start justify-center px-4 py-12">
     <div class="w-full max-w-md">
-      <?php $flash_success = $this->session->flashdata('success'); ?>
-      <?php $flash_error   = $this->session->flashdata('error'); ?>
-      <?php $dev_link      = $this->session->flashdata('dev_link'); ?>
-      <?php if ($flash_success): ?>
-        <div class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"><?=htmlspecialchars($flash_success)?></div>
-      <?php endif; ?>
-      <?php if ($flash_error): ?>
-        <div class="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800"><?=htmlspecialchars($flash_error)?></div>
-      <?php endif; ?>
+      <?php $this->load->view('partials/flash'); ?>
+      <?php $dev_link = $this->session->flashdata('dev_link'); ?>
       <?php if ($dev_link): ?>
         <div class="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <strong>Development link:</strong>
