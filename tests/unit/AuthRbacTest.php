@@ -40,7 +40,7 @@ class AuthRbacTest extends TestCase
         // fake CI for this test. The shared global slot is the same one
         // SeedRunTest uses, so we cooperate rather than redefine it.
         if (!function_exists('get_instance')) {
-            eval('function get_instance() { return $GLOBALS["__fake_ci"]; }');
+            eval('function &get_instance() { return $GLOBALS["__fake_ci"]; }');
         }
         $this->fake_ci = new AuthRbacFakeCI();
         $GLOBALS['__fake_ci'] = $this->fake_ci;
@@ -151,12 +151,13 @@ class AuthRbacTest extends TestCase
     {
         require_once self::$root.'/application/libraries/RateLimiter.php';
         $ci = $this->fake_ci;
+        // RateLimiter aliases $this->ci =& get_instance(), so the fake CI's db
+        // IS the counter store. Point it at the attempts fake before
+        // constructing (reflection afterwards would write through the alias
+        // and replace the global used by windels_load_database()).
         $ci->rate_db = new AuthRbacFakeRateDb();
+        $ci->db = $ci->rate_db;
         $rl = new RateLimiter();
-        // Reflection to redirect $ci->db to the fake for this library's instance.
-        $ref = new ReflectionProperty($rl, 'ci'); $ref->setAccessible(true);
-        $stub = new stdClass(); $stub->db = $ci->rate_db;
-        $ref->setValue($rl, $stub);
 
         $this->assertFalse($rl->too_many_failures('1.2.3.4', 'a@b.com', 3, 900));
         $rl->record('a@b.com', '1.2.3.4', false);
@@ -256,6 +257,7 @@ class AuthRbacFakeInput {
 }
 
 class AuthRbacFakeDb {
+    public $conn_id = 'fake'; // windels_load_database() accepts an open connection
     public function insert($t,$d){ return true; }
     public function where($k,$v=null){ return $this; }
 }
@@ -271,6 +273,7 @@ class AuthRbacFakePermModel {
 }
 
 class AuthRbacFakeRateDb {
+    public $conn_id = 'fake'; // mirrors a live connection for windels_load_database()
     public $attempts = array();
     public function insert($t, $d) { $this->attempts[] = $d; return $this; }
     public function where($k, $v = null) { return $this; }

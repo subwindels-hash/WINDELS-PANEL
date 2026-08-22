@@ -38,7 +38,7 @@ class SeedRunTest extends TestCase
         $ci = new FakeCI(self::$db);
         if (!function_exists('get_instance')) {
             $GLOBALS['__fake_ci'] = $ci;
-            eval('function get_instance() { return $GLOBALS["__fake_ci"]; }');
+            eval('function &get_instance() { return $GLOBALS["__fake_ci"]; }');
         } else {
             $GLOBALS['__fake_ci'] = $ci;
         }

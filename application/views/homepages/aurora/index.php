@@ -136,7 +136,8 @@ $testimonials = array(
 
 <section class="py-12" style="background:var(--slate-50)">
   <div class="container" style="max-width:1080px">
-    <h2 class="text-center">Built for resellers, agencies and creators</h2>
+    <h2 class="text-center">Loved by resellers</h2>
+    <p class="muted text-center mt-2">Built for resellers, agencies and creators — here is what they say.</p>
     <div class="grid grid-3 mt-6">
       <?php foreach ($testimonials as $t): ?>
       <figure class="card">

@@ -549,7 +549,7 @@ class Core_seeder extends Seeder {
     private function seed_faqs() {
         $faqs = array(
             array('How fast are orders delivered?', 'Most services start within minutes. Each service card shows its average start time; drip-feed orders follow the interval you choose. The panel does not guarantee a completion time.', 'orders', 10),
-            array('How do I add funds?', 'Open Dashboard → Add Funds, pick a payment method the operator has enabled, and follow checkout. Your wallet is credited after the payment is verified. There are no customer withdrawals.', 'payments', 20),
+            array('How do I add funds?', 'Open Dashboard → Add Funds, pick a payment method the operator has enabled, and follow checkout. Your wallet is credited after the payment is verified. Funds stay in your panel spending balance — there is no cash-out.', 'payments', 20),
             array('What is a partial order?', 'If a provider delivers only part of the quantity, the order is marked PARTIAL and the undelivered portion is refunded to your wallet when partial refunds are enabled.', 'orders', 30),
             array('Do you offer an API for resellers?', 'Yes. Create an API key in Dashboard → API and call /api/v1 with the X-Api-Key header. Full docs are at /api/docs.', 'api', 40),
             array('Can I get a refill?', 'Services marked "Refill" support refill requests from the order detail page within the refill window.', 'orders', 50),

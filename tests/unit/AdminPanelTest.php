@@ -20,7 +20,7 @@ class AdminPanelTest extends TestCase
         self::$root = dirname(dirname(__DIR__));
         if (!defined('BASEPATH')) define('BASEPATH', self::$root.'/system/');
         if (!class_exists('CI_Model')) eval('class CI_Model {}');
-        if (!function_exists('get_instance')) eval('function get_instance(){ return $GLOBALS["__fake_ci"]; }');
+        if (!function_exists('get_instance')) eval('function &get_instance(){ return $GLOBALS["__fake_ci"]; }');
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         if (!function_exists('windels_public_id')) require_once self::$root.'/application/helpers/windels_helper.php';
         require_once self::$root.'/application/libraries/LedgerService.php';
@@ -247,7 +247,7 @@ class AdminPanelTest extends TestCase
         // Each mutating action must refuse a GET, so a link or a prefetch can
         // never change state.
         $expected = array(
-            'Orders.php'   => array('status','cancel','refund'),
+            'Orders.php'   => array('status','cancel','submit','refund'),
             'Payments.php' => array('approve','reject'),
             'Tickets.php'  => array('reply','assign','status','priority'),
             // Catalogue changes a price, which is money by another name.

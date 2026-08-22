@@ -67,7 +67,9 @@ class IntegrationHarness
 
         $root = dirname(dirname(__DIR__));
         if (!defined('BASEPATH')) define('BASEPATH', $root.'/system/');
-        if (!class_exists('CI_Migration')) eval('class CI_Migration {}');
+        // Migrations assign $mig->db; declare it so PHP 8.2 logs no dynamic-
+        // property deprecation (real CI_Migration declares the property).
+        if (!class_exists('CI_Migration')) eval('class CI_Migration { public $db; }');
 
         $statements = array();
         foreach (glob($root.'/application/migrations/*.php') as $file) {

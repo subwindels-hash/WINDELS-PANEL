@@ -16,7 +16,7 @@ if (!class_exists('SiteOperatorKnowledge', false)) {
 <section class="ws-section-sm">
   <div class="container ws-prose">
     <h2>Wallet, not cash-out</h2>
-    <p>When a refund is due, the amount is credited back to your panel wallet through the ledger. The software does not offer customer withdrawals of leftover deposits. Affiliate commissions are a separate programme and are not a refund of deposits.</p>
+    <p>When a refund is due, the amount is credited back to your panel wallet — your spending balance — through the ledger. The software does not offer customer withdrawals of leftover deposits. Affiliate commissions are a separate programme and are not a refund of deposits.</p>
 
     <h2>Social-media orders</h2>
     <ul>

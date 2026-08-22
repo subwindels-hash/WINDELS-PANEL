@@ -31,7 +31,7 @@ class AdminOperationsTest extends TestCase
             eval('#[AllowDynamicProperties] class CI_Model { public $db; }');
         }
         if (!function_exists('get_instance')) {
-            eval('function get_instance(){ return $GLOBALS["__fake_ci"]; }');
+            eval('function &get_instance(){ return $GLOBALS["__fake_ci"]; }');
         }
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         require_once self::$root.'/application/core/MY_Model.php';

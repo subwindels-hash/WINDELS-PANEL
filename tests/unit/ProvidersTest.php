@@ -15,7 +15,7 @@ class ProvidersTest extends TestCase
         if (!defined('BASEPATH')) define('BASEPATH', self::$root.'/system/');
         if (!class_exists('CI_Model')) eval('class CI_Model {}');
         if (!function_exists('get_instance')) {
-            eval('function get_instance() { return $GLOBALS["__fake_ci"]; }');
+            eval('function &get_instance() { return $GLOBALS["__fake_ci"]; }');
         }
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         if (!function_exists('windels_public_id')) {

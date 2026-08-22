@@ -14,7 +14,7 @@ class SupportContentTest extends TestCase
         self::$root = dirname(dirname(__DIR__));
         if (!defined('BASEPATH')) define('BASEPATH', self::$root.'/system/');
         if (!class_exists('CI_Model')) eval('class CI_Model {}');
-        if (!function_exists('get_instance')) eval('function get_instance(){ return $GLOBALS["__fake_ci"]; }');
+        if (!function_exists('get_instance')) eval('function &get_instance(){ return $GLOBALS["__fake_ci"]; }');
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         if (!function_exists('windels_public_id')) require_once self::$root.'/application/helpers/windels_helper.php';
         require_once self::$root.'/application/libraries/TicketService.php';
@@ -152,14 +152,24 @@ class SupportContentTest extends TestCase
         $this->assertStringContainsString('visible(', $partial);
         $this->assertStringContainsString('get_instance()', $partial,
             'views must not resolve models through $this (CI_Loader has no __get)');
-        $this->assertStringContainsString('ws-announce-track', $partial);
+        $this->assertStringContainsString('ws-announce-slides', $partial);
+        $this->assertStringContainsString('ws-announce-dots', $partial);
     }
 
     public function testAnnouncementBarIsIncludedInEveryLayout()
     {
-        foreach (array('public.php', 'app.php', 'auth.php') as $layout) {
+        // The component is partials/announcement (which forwards to
+        // partials/announcement_bar). The public shell renders it through
+        // partials/header; auth and app load it directly.
+        $wrapper = file_get_contents(self::$root.'/application/views/partials/announcement.php');
+        $this->assertStringContainsString('partials/announcement_bar', $wrapper);
+        $header = file_get_contents(self::$root.'/application/views/partials/header.php');
+        $this->assertStringContainsString('partials/announcement', $header);
+        foreach (array('main.php', 'app.php', 'auth.php') as $layout) {
             $src = file_get_contents(self::$root.'/application/views/layouts/'.$layout);
-            $this->assertStringContainsString("partials/announcement_bar", $src, $layout);
+            $this->assertTrue(
+                strpos($src, 'partials/announcement') !== false || strpos($src, 'partials/header') !== false,
+                $layout.' must render the announcement component');
         }
     }
 

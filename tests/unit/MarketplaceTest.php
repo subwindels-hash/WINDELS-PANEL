@@ -23,7 +23,7 @@ class MarketplaceTest extends TestCase
             eval('#[AllowDynamicProperties] class CI_Model { public $db; }');
         }
         if (!function_exists('get_instance')) {
-            eval('function get_instance(){ return $GLOBALS["__fake_ci"]; }');
+            eval('function &get_instance(){ return $GLOBALS["__fake_ci"]; }');
         }
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         require_once self::$root.'/application/core/MY_Model.php';
@@ -508,7 +508,7 @@ class MarketplaceTest extends TestCase
 
     public function testMigrationHasNoVendorShape()
     {
-        if (!class_exists('CI_Migration')) eval('class CI_Migration {}');
+        if (!class_exists('CI_Migration')) eval('class CI_Migration { public $db; }');
         require_once self::$root.'/application/migrations/015_marketplace.php';
         $this->assertSame(array(
             'marketplace_listings',
@@ -528,7 +528,7 @@ class MarketplaceTest extends TestCase
 
     public function testMigration019RetiresVendorDataOnUpgrades()
     {
-        if (!class_exists('CI_Migration')) eval('class CI_Migration {}');
+        if (!class_exists('CI_Migration')) eval('class CI_Migration { public $db; }');
         require_once self::$root.'/application/migrations/019_remove_marketplace_vendors.php';
         // Contract: it creates nothing and drops exactly the vendor table.
         $this->assertSame(array(), Migration_Remove_marketplace_vendors::statements());
@@ -554,7 +554,7 @@ class MarketplaceTest extends TestCase
 
     public function testMigration019RehearsesAgainstLegacyAndFreshShapes()
     {
-        if (!class_exists('CI_Migration')) eval('class CI_Migration {}');
+        if (!class_exists('CI_Migration')) eval('class CI_Migration { public $db; }');
         require_once self::$root.'/application/migrations/019_remove_marketplace_vendors.php';
 
         // Legacy shape: every vendor column/index/table exists.
@@ -647,7 +647,7 @@ class MarketplaceTest extends TestCase
 
     public function testMigrationAndGeneratedSchemaAreCurrent()
     {
-        if (!class_exists('CI_Migration')) eval('class CI_Migration {}');
+        if (!class_exists('CI_Migration')) eval('class CI_Migration { public $db; }');
         require_once self::$root.'/application/migrations/015_marketplace.php';
         $config = file_get_contents(self::$root.'/application/config/migration.php');
         $this->assertStringContainsString("\$config['migration_version'] = 19;", $config);

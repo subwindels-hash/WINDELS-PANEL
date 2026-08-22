@@ -61,11 +61,21 @@ class DesignSystemTest extends TestCase
 
     public function testEveryLayoutLinksBothStylesheets()
     {
-        foreach (array('public', 'auth', 'app') as $layout) {
+        // The canonical head partial owns metadata, the two stylesheets and the
+        // font stack so no page can accidentally load a third CSS file. The
+        // authenticated shell (layouts/app.php) carries its own <head> for the
+        // admin/customer chrome and repeats the same three links.
+        $head = $this->get('application/views/partials/head.php');
+        foreach (array('assets/css/tailwind.css', 'assets/css/design-system.css', 'fonts.googleapis.com') as $needle) {
+            $this->assertStringContainsString($needle, $head, 'partials/head.php must link '.$needle);
+        }
+        foreach (array('main', 'auth') as $layout) {
             $src = $this->get("application/views/layouts/{$layout}.php");
-            $this->assertStringContainsString('assets/css/tailwind.css', $src, "{$layout} must link tailwind.css");
-            $this->assertStringContainsString('assets/css/design-system.css', $src, "{$layout} must link design-system.css");
-            $this->assertStringContainsString('fonts.googleapis.com', $src, "{$layout} must load the design-system fonts");
+            $this->assertStringContainsString('partials/head', $src, "{$layout} must render through partials/head.php");
+        }
+        $app = $this->get('application/views/layouts/app.php');
+        foreach (array('assets/css/tailwind.css', 'assets/css/design-system.css', 'fonts.googleapis.com') as $needle) {
+            $this->assertStringContainsString($needle, $app, 'layouts/app.php must link '.$needle);
         }
     }
 
@@ -92,8 +102,14 @@ class DesignSystemTest extends TestCase
         // but must never be tracked by git.
         $gitignore = $this->get('.gitignore');
         $this->assertStringContainsString('tailwind.css', $gitignore);
-        exec('git -C '.escapeshellarg(self::$root).' ls-files --error-unmatch assets/css/tailwind.css 2>/dev/null', $out, $rc);
-        $this->assertNotSame(0, $rc, 'assets/css/tailwind.css must not be tracked by git');
+        // The tracked-file check needs a git binary; the WASM offline runner has
+        // none. CI runs this test with git and enforces it; here the .gitignore
+        // contract above is what can be checked.
+        $is_wasm = function_exists('windels_runtime_is_wasm') && windels_runtime_is_wasm();
+        if (function_exists('exec') && !$is_wasm) {
+            exec('git -C '.escapeshellarg(self::$root).' ls-files --error-unmatch assets/css/tailwind.css 2>/dev/null', $out, $rc);
+            $this->assertNotSame(0, $rc, 'assets/css/tailwind.css must not be tracked by git');
+        }
     }
 
     public function testPackageJsonExposesBuildScripts()
