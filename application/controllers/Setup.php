@@ -42,8 +42,11 @@ class Setup extends CI_Controller {
         parent::__construct();
         date_default_timezone_set('UTC');
         require_once APPPATH.'core/Env.php';
-        $this->load->helper(array('form', 'url'));
-        $this->load->library('RateLimiter');
+        $this->load->helper(array('form', 'url', 'windels'));
+        // RateLimiter writes login_attempts — only load it when MySQL is up.
+        if (windels_load_database()) {
+            $this->load->library('RateLimiter');
+        }
     }
 
     /* ------------------------------------------------------------------ */
@@ -72,7 +75,7 @@ class Setup extends CI_Controller {
 
         $ip = $this->input->ip_address();
         $bucket = RateLimiter::scope(self::BUCKET, 'admin');
-        if ($this->ratelimiter->too_many_failures($ip, $bucket, 5, 900)) {
+        if (isset($this->ratelimiter) && $this->ratelimiter->too_many_failures($ip, $bucket, 5, 900)) {
             $this->render($token, array(
                 'checks' => $this->checks(),
                 'error'  => 'Too many attempts. Try again in '
@@ -91,7 +94,7 @@ class Setup extends CI_Controller {
             $error = 'The database is not reachable yet — fix the VP_DB_* values in .env first.';
         }
         if ($error !== null) {
-            $this->ratelimiter->record($bucket, $ip, false, 'SETUP_ADMIN_INVALID', $this->input->user_agent());
+            $this->note_attempt($bucket, $ip, false, 'SETUP_ADMIN_INVALID');
             $this->render($token, array(
                 'checks' => $this->checks(),
                 'error'  => $error,
@@ -146,7 +149,7 @@ class Setup extends CI_Controller {
         }
 
         $this->record_completion($user_id);
-        $this->ratelimiter->record($bucket, $ip, true, 'SETUP_ADMIN_OK', $this->input->user_agent());
+        $this->note_attempt($bucket, $ip, true, 'SETUP_ADMIN_OK');
 
         $this->render($token, array(
             'checks'  => $this->checks(),
@@ -178,7 +181,7 @@ class Setup extends CI_Controller {
         }
         if ($presented === '' || !hash_equals($expected, $presented)) {
             $ip = $this->input->ip_address();
-            $this->ratelimiter->record(RateLimiter::scope(self::BUCKET, 'token'), $ip, false, 'SETUP_BAD_TOKEN', $this->input->user_agent());
+            $this->note_attempt(RateLimiter::scope(self::BUCKET, 'token'), $ip, false, 'SETUP_BAD_TOKEN');
             show_404();
         }
         return $expected;
@@ -277,8 +280,9 @@ class Setup extends CI_Controller {
 
     private function database_ready() {
         try {
-            $this->load->database();
-            if (!isset($this->db) || !is_object($this->db)) return false;
+            if (!windels_load_database()) {
+                return false;
+            }
             $this->db->query('SELECT 1');
             return true;
         } catch (Exception $e) {

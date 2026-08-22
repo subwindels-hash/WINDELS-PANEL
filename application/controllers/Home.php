@@ -22,10 +22,13 @@ class Home extends Public_Controller {
     }
     private function active_homepage(){
         try {
+            if (!windels_load_database()) {
+                throw new RuntimeException('database unavailable');
+            }
             $this->load->model('Setting_model');
             $v = $this->Setting_model->get('active_homepage');
             if ($v) return $v;
-        } catch(Exception $e){}
+        } catch(Throwable $e){}
         $cfg = $this->config->item('windels');
         return $cfg['active_homepage'] ?? 'AURORA';
     }

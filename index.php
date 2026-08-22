@@ -82,15 +82,34 @@ if (defined('STDIN')) {
     chdir(dirname(__FILE__));
 }
 
+// Composer ships CodeIgniter at vendor/codeigniter/framework/system.
+// tools/link_system.php normally symlinks that to ./system after install,
+// but cPanel uploads, missing symlink support, or a clone that never ran
+// composer would otherwise 503 here. Prefer ./system, then the vendor path.
+$system_candidates = array(
+    $system_path,
+    'vendor/codeigniter/framework/system',
+    __DIR__ . '/system',
+    __DIR__ . '/vendor/codeigniter/framework/system',
+);
+foreach ($system_candidates as $candidate) {
+    if (is_dir($candidate) && is_file(rtrim($candidate, '/\\') . DIRECTORY_SEPARATOR . 'core' . DIRECTORY_SEPARATOR . 'CodeIgniter.php')) {
+        $system_path = $candidate;
+        break;
+    }
+}
+
 if (($_temp = realpath($system_path)) !== FALSE) {
     $system_path = $_temp . DIRECTORY_SEPARATOR;
 } else {
     $system_path = strtr(rtrim($system_path, '/\\'), '/\\', DIRECTORY_SEPARATOR . DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
 }
 
-if (!is_dir($system_path)) {
+if (!is_dir($system_path) || !is_file($system_path . 'core' . DIRECTORY_SEPARATOR . 'CodeIgniter.php')) {
     header('HTTP/1.1 503 Service Unavailable.', TRUE, 503);
-    echo 'Your system folder path does not appear to be set correctly.';
+    echo 'Your system folder path does not appear to be set correctly. '
+        . 'Run `composer install` in the project root (this creates vendor/codeigniter/framework/system), '
+        . 'then `php tools/link_system.php` if you want a ./system symlink.';
     exit(3);
 }
 

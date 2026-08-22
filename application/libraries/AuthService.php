@@ -282,7 +282,14 @@ class AuthService {
         if ($cached !== null && (int)$cached->id === (int)$uid) {
             return $cached;
         }
-        return $cached = $this->ci->User_model->find_by_id($uid);
+        if (!windels_load_database()) {
+            return null;
+        }
+        try {
+            return $cached = $this->ci->User_model->find_by_id($uid);
+        } catch (Throwable $e) {
+            return null;
+        }
     }
 
     public function check() {

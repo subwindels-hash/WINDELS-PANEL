@@ -22,6 +22,8 @@ class Health extends MY_Controller {
 
     /** Liveness: PHP is executing. No database, no Redis, no disk. */
     public function live() {
+        // Skip the parent DB probe: liveness must stay green while MySQL is
+        // still being imported on a fresh cPanel account.
         $this->json_success(array('status' => 'ok', 'time' => gmdate('c')));
     }
 
@@ -51,7 +53,7 @@ class Health extends MY_Controller {
 
     private function check_database() {
         try {
-            $this->load->database();
+            if (!windels_load_database()) return 'fail';
             $this->db->query('SELECT 1');
             return 'ok';
         } catch (Exception $e) {

@@ -57,6 +57,9 @@ class RateLimiter {
      * @param string   $user_agent
      */
     public function record($identifier, $ip, $success, $reason = null, $user_agent = null) {
+        if (!windels_load_database()) {
+            return;
+        }
         $this->ci->db->insert('login_attempts', array(
             'email'      => $identifier ? strtolower($identifier) : null,
             'ip'         => $ip,
@@ -91,6 +94,9 @@ class RateLimiter {
      * @return bool
      */
     public function too_many_failures($ip, $identifier = '', $max = 5, $window = 900) {
+        if (!windels_load_database()) {
+            return false;
+        }
         $since = gmdate('Y-m-d H:i:s', time() - $window);
 
         // Per-account: the strict limit. Checked first because it is the one
