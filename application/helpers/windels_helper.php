@@ -99,6 +99,85 @@ if (!function_exists('env_bool')) {
     }
 }
 
+if (!function_exists('windels_load_database')) {
+    /**
+     * Connect to MySQL without killing the request.
+     *
+     * Returns TRUE when $CI->db is usable. A failed connect (wrong .env,
+     * MySQL not imported yet, host down) returns FALSE and leaves no
+     * mysqli warning on the output buffer — those warnings used to become
+     * "headers already sent" on top of the database error page.
+     */
+    function windels_load_database() {
+        if (!function_exists('get_instance')) {
+            return false;
+        }
+        $CI =& get_instance();
+        if (isset($CI->db) && is_object($CI->db) && !empty($CI->db->conn_id)) {
+            return true;
+        }
+
+        if (!windels_db_reachable()) {
+            return false;
+        }
+
+        $handler = set_error_handler(function () { return true; });
+        try {
+            $CI->load->database();
+        } catch (Throwable $e) {
+            if ($handler) { set_error_handler($handler); } else { restore_error_handler(); }
+            return false;
+        }
+        if ($handler) { set_error_handler($handler); } else { restore_error_handler(); }
+
+        if (!isset($CI->db) || !is_object($CI->db) || empty($CI->db->conn_id)) {
+            return false;
+        }
+        if (defined('ENVIRONMENT') && ENVIRONMENT !== 'production') {
+            $CI->db->db_debug = true;
+        }
+        return true;
+    }
+
+    /** Cheap TCP/auth probe so we never let CI's mysqli driver emit warnings. */
+    function windels_db_reachable() {
+        if (!function_exists('mysqli_init')) {
+            return false;
+        }
+        $host = (string)(function_exists('env_str') ? env_str('DB_HOST', 'localhost') : 'localhost');
+        $port = (int)(getenv('DB_PORT') ?: 3306);
+        $user = (string)(getenv('DB_USER') ?: '');
+        $pass = (string)(getenv('DB_PASSWORD') ?: '');
+        $name = (string)(getenv('DB_NAME') ?: '');
+        if ($host === '' || $name === '') {
+            return false;
+        }
+        $probe = @fsockopen($host === 'localhost' ? '127.0.0.1' : $host, $port, $errno, $errstr, 1);
+        if (!$probe) {
+            return false;
+        }
+        fclose($probe);
+
+        $mysqli = mysqli_init();
+        if (!$mysqli) {
+            return false;
+        }
+        @$mysqli->options(MYSQLI_OPT_CONNECT_TIMEOUT, 2);
+        $handler = set_error_handler(function () { return true; });
+        try {
+            $ok = @$mysqli->real_connect($host, $user, $pass, $name, $port);
+        } catch (Throwable $e) {
+            $ok = false;
+        }
+        if ($handler) { set_error_handler($handler); } else { restore_error_handler(); }
+        if ($ok) {
+            $mysqli->close();
+            return true;
+        }
+        return false;
+    }
+}
+
 if (!function_exists('env_str')) {
     /** Trimmed string from the environment, or $default when unset/blank. */
     function env_str($key, $default = null) {

@@ -22,12 +22,17 @@ class MY_Controller extends CI_Controller {
     /** Per-request CSP nonce; views use csp_nonce() to whitelist inline JS. */
     protected $csp_nonce;
 
+    /** Whether MySQL answered this request. Public pages degrade; auth does not. */
+    protected $db_ready = false;
+
     public function __construct() {
         parent::__construct();
         $this->request_id = bin2hex(random_bytes(8));
         // UTC
         date_default_timezone_set('UTC');
         $this->send_security_headers();
+
+        $this->db_ready = windels_load_database();
 
         // AuthService is available to every controller but loaded defensively:
         // CLI maintenance flows (migrate/seed) run before the schema exists.
@@ -159,9 +164,13 @@ class Public_Controller extends MY_Controller {
     public function __construct(){
         parent::__construct();
         // Load homepage setting (DB overrides config) if table exists — fail open.
-        try { $this->load->model('Setting_model'); } catch (Exception $e) {}
+        if ($this->db_ready) {
+            try { $this->load->model('Setting_model'); } catch (Exception $e) {}
+        }
         // Share the authenticated user with every public view/partial.
-        $this->load->vars(array('current_user' => $this->current_user()));
+        $user = null;
+        try { $user = $this->current_user(); } catch (Throwable $e) { $user = null; }
+        $this->load->vars(array('current_user' => $user, 'db_ready' => $this->db_ready));
     }
 
     /** Render a page inside the public shell, passing the current user to views. */

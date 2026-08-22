@@ -5,6 +5,9 @@ if (!isset($announcements)) {
     $announcements = array();
     try {
         $CI =& get_instance();
+        if (!function_exists('windels_load_database') || !windels_load_database()) {
+            throw new RuntimeException('database unavailable');
+        }
         $CI->load->model('Announcement_model');
         $audience = 'all';
         $cu = $current_user ?? null;

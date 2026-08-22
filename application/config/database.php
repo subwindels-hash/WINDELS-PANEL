@@ -27,7 +27,10 @@ $db['default'] = array(
     'dbdriver' => Env::get('DB_DRIVER', 'mysqli'),
     'dbprefix' => '',
     'pconnect' => FALSE,
-    'db_debug' => (ENVIRONMENT !== 'production'),
+    // Stay silent on connect failure so /setup and /health/live can report
+    // "cannot connect" instead of CodeIgniter's fatal database page. Query
+    // debugging is re-enabled after a successful connect in windels_load_database().
+    'db_debug' => FALSE,
     'cache_on' => FALSE,
     'cachedir' => '',
     'char_set' => Env::get('DB_CHARSET', 'utf8mb4'),
