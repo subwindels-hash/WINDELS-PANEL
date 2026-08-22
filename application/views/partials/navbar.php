@@ -18,7 +18,6 @@ $active = function ($href) use ($path) {
     return $path === $href || strpos($path, $href.'/') === 0;
 };
 ?>
-<a class="ws-skip" href="#main">Skip to content</a>
 <nav class="ws-public-nav ws-sticky-below-announce" aria-label="Primary">
   <div class="ws-public-nav-inner">
     <a class="ws-brand" href="<?=site_url()?>" aria-label="<?=htmlspecialchars($site)?> home">
