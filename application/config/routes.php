@@ -172,6 +172,7 @@ $route['admin/orders'] = 'admin/orders/index';
 $route['admin/orders/(:any)/status'] = 'admin/orders/status/$1';
 $route['admin/orders/(:any)/cancel'] = 'admin/orders/cancel/$1';
 $route['admin/orders/(:any)/refund'] = 'admin/orders/refund/$1';
+$route['admin/orders/(:any)/submit'] = 'admin/orders/submit/$1';
 $route['admin/orders/(:any)'] = 'admin/orders/detail/$1';
 $route['admin/vtu'] = 'admin/vtu/index';
 // Action routes must precede the catch-all detail route below.

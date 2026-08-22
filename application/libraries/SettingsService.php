@@ -13,13 +13,14 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * Two rules shaped it, both learned from auditing what was already seeded.
  *
  * **Only wired settings appear.** Several seeded rows — `default_theme`,
- * `brand_*`, `order_auto_submit`, `partial_refund_enabled` — were read by no
- * code at all. Putting them on a form would be worse than omitting them: an
- * operator would switch a toggle on, see it save, and watch nothing happen.
- * Each remaining gap is listed in UNWIRED below with the work it would take to
- * honour it, so the omission is a documented decision rather than an oversight.
- * (`maintenance_mode`, `site_tagline`, `api_enabled`, `admin_mfa_required` and
- * `currency_display` were previously among these and are now wired.)
+ * `brand_*`, `partial_refund_enabled` — were read by no code at all. Putting
+ * them on a form would be worse than omitting them: an operator would switch a
+ * toggle on, see it save, and watch nothing happen. Each remaining gap is
+ * listed in UNWIRED below with the work it would take to honour it, so the
+ * omission is a documented decision rather than an oversight.
+ * (`maintenance_mode`, `site_tagline`, `api_enabled`, `admin_mfa_required`,
+ * `currency_display` and `order_auto_submit` were previously among these and
+ * are now wired.)
  *
  * **`base_currency` is deliberately read-only.** The row exists, but
  * `windels_base_currency()` reads `config/windels.php`, not this table, and
@@ -61,6 +62,9 @@ class SettingsService {
             'max_deposit' => array('money', 'payments', 'Maximum deposit',
                 'The largest single top-up, before manual review.', '5000000.00000000'),
 
+            'order_auto_submit' => array('bool', 'orders', 'Auto-submit orders',
+                'Off holds new orders in PENDING for staff to review and submit manually.', true),
+
             'referral_commission_percent' => array('percent', 'affiliate', 'Referral commission',
                 'Percentage of a referred customer’s spend paid to the referrer.', '5.0000'),
             'referral_commission_scope' => array('choice:LIFETIME|FIRST_ORDER', 'affiliate', 'Commission scope',
@@ -98,7 +102,6 @@ class SettingsService {
     public static function unwired() {
         return array(
             'default_theme'          => 'No theme switcher exists yet.',
-            'order_auto_submit'      => 'OrderService always submits to the provider immediately.',
             'partial_refund_enabled' => 'Partial refunds are always on; the state machine has no switch.',
         );
     }

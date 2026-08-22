@@ -155,6 +155,19 @@ class OrderService {
         }
 
         // 7. Submit to the provider (inline; a queue/worker can take over later).
+        //    When the operator disables auto-submit, a regular order is held in
+        //    PENDING for staff review instead of being submitted here. Prepaid
+        //    child orders (drip-feed/subscription runs) keep auto-submitting so
+        //    scheduled money flow is never left stranded in a review queue.
+        if (!$prepaid && !$this->auto_submit_enabled()) {
+            $this->ci->db->where('id', $order->id)->update('orders', array(
+                'note' => 'Awaiting manual review (auto-submit disabled)',
+                'updated_at' => gmdate('Y-m-d H:i:s'),
+            ));
+            $order = $this->ci->Order_model->find_by_id($order->id);
+            $this->notify($user, $order);
+            return array('ok' => true, 'order' => $order, 'held' => true);
+        }
         $submit = $this->submit_to_provider($order, $service, $link, $q, $input);
         if (!empty($submit['ok']) && !empty($submit['submitted'])) {
             $this->transition($order->id, 'PENDING', 'PROCESSING', 'SYSTEM', 'Submitted to provider');
@@ -415,6 +428,74 @@ class OrderService {
         $this->ci->db->trans_complete();
         if ($this->ci->db->trans_status() === false) return null;
         return $this->ci->Order_model->find_by_id($order_id);
+    }
+
+    /**
+     * Whether orders auto-submit to the provider (settings `order_auto_submit`,
+     * default on). Fail open so an unreadable setting never strands orders.
+     */
+    private function auto_submit_enabled() {
+        try {
+            $this->ci->load->model('Setting_model');
+            $v = $this->ci->Setting_model->get('order_auto_submit', true);
+        } catch (Throwable $e) { return true; }
+        if ($v === null || $v === '') return true;
+        return in_array(strtolower(trim((string)$v)), array('1','true','yes','on'), true);
+    }
+
+    /**
+     * Manually submit a held (PENDING) order to its provider — the staff action
+     * behind the `order_auto_submit` review queue. Mirrors the inline path in
+     * place(): on success the order moves PENDING → PROCESSING with provider
+     * fields set; on a provider rejection it fails and refunds the charge.
+     *
+     * @param object|string $order the order object or its public id
+     */
+    public function manually_submit($order, $staff_user = null) {
+        $order = is_object($order) ? $order : $this->ci->Order_model->find_by_public_id((string)$order);
+        if (!$order) return array('ok' => false, 'error' => 'Order not found', 'code' => 'NO_ORDER');
+        if ($order->status !== 'PENDING') {
+            return array('ok' => false, 'error' => 'Only PENDING orders can be submitted', 'code' => 'NOT_PENDING');
+        }
+
+        $service = $this->ci->Service_model->find_by_id((int)$order->service_id);
+        if (!$service) return array('ok' => false, 'error' => 'Service not found', 'code' => 'NO_SERVICE');
+
+        $fields = array();
+        if (!empty($order->fields)) {
+            $decoded = json_decode($order->fields, true);
+            if (is_array($decoded)) $fields = $decoded;
+        }
+        $input = array('fields' => $fields, 'source' => $order->source ?? 'WEB');
+
+        $submit = $this->submit_to_provider($order, $service, $order->link, (int)$order->quantity, $input);
+        if (!empty($submit['ok']) && !empty($submit['submitted'])) {
+            $this->transition($order->id, 'PENDING', 'PROCESSING', $staff_user ? 'ADMIN' : 'SYSTEM', 'Submitted to provider');
+            $this->ci->db->where('id', $order->id)->update('orders', array(
+                'provider_id'        => $service->provider_id,
+                'provider_service_id'=> $service->provider_service_id,
+                'provider_order_id'  => $submit['provider_order_id'],
+                'submitted_at'       => gmdate('Y-m-d H:i:s'),
+                'note'               => null,
+            ));
+            return array('ok' => true, 'order' => $this->ci->Order_model->find_by_id($order->id));
+        }
+
+        if (!empty($submit['ok'])) {
+            // No provider configured/active: the order legitimately stays
+            // PENDING so a worker/admin can route it later.
+            return array('ok' => false, 'error' => 'No active provider is configured for this service', 'code' => 'NO_PROVIDER');
+        }
+
+        // Provider rejected the order: fail it and refund the charge, exactly
+        // as the inline path would have.
+        $this->transition($order->id, 'PENDING', 'FAILED', $staff_user ? 'ADMIN' : 'SYSTEM', $submit['error'] ?? 'Provider submission failed');
+        $this->refund_charge($order, $staff_user ? 'ADMIN' : 'SYSTEM');
+        $this->ci->db->where('id', $order->id)->update('orders', array(
+            'note' => $submit['error'] ?? 'Provider submission failed',
+        ));
+        return array('ok' => false, 'order' => $this->ci->Order_model->find_by_id($order->id),
+                     'error' => $submit['error'] ?? 'Submission failed', 'code' => 'SUBMIT_FAILED');
     }
 
     private function submit_to_provider($order, $service, $link, $quantity, $input) {

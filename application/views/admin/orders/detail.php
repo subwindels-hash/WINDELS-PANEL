@@ -56,6 +56,15 @@ $can_refund = OrderStateMachine::can($order->status, 'REFUNDED');
       <p class="muted text-sm">You have read-only access to orders.</p>
     <?php else: ?>
 
+      <?php if ($has('orders.edit') && $order->status === 'PENDING'): ?>
+      <form method="post" action="<?=site_url('admin/orders/'.$order->public_id.'/submit')?>" class="mb-4"
+            onsubmit="return confirm('Submit this order to its provider?')">
+        <?=$csrf()?>
+        <button class="btn btn-primary btn-sm" type="submit">Submit to provider</button>
+        <p class="hint">The order is held in PENDING (manual review). Submitting pushes it to the provider.</p>
+      </form>
+      <?php endif; ?>
+
       <?php if ($has('orders.edit') && $targets): ?>
       <form method="post" action="<?=site_url('admin/orders/'.$order->public_id.'/status')?>" class="mb-4">
         <?=$csrf()?>

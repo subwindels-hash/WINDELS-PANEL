@@ -117,6 +117,24 @@ class Orders extends Admin_Controller {
         redirect('admin/orders/'.$order->public_id);
     }
 
+    /** POST /admin/orders/:id/submit — submit a held (PENDING) order to its provider. */
+    public function submit($public_id) {
+        $order = $this->guard($public_id, 'orders.edit');
+
+        $before = array('status' => $order->status, 'provider_order_id' => $order->provider_order_id);
+        $result = $this->orderservice->manually_submit($order, $this->current_user);
+        if (empty($result['ok'])) {
+            return $this->fail($order, $result['error'] ?? 'Could not submit the order.');
+        }
+
+        $this->audit('order.submitted', $order, $before, array(
+            'status' => 'PROCESSING',
+            'provider_order_id' => $result['order']->provider_order_id,
+        ));
+        $this->session->set_flashdata('success', 'Order submitted to the provider.');
+        redirect('admin/orders/'.$order->public_id);
+    }
+
     /** POST /admin/orders/:id/refund — refund a completed order. */
     public function refund($public_id) {
         $order  = $this->guard($public_id, 'orders.refund');
