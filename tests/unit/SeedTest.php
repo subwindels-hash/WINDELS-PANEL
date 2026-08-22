@@ -18,7 +18,7 @@ class SeedTest extends TestCase
         if (!class_exists('Seeder')) {
             // Load the real base class with a stubbed get_instance().
             if (!function_exists('get_instance')) {
-                eval('function get_instance() { static $i; if (!$i) $i = new stdClass(); return $i; }');
+                eval('function &get_instance() { static $i; if (!$i) $i = new stdClass(); return $i; }');
             }
             if (!function_exists('log_message')) { eval('function log_message($l, $m) {}'); }
             if (!function_exists('windels_public_id')) {

@@ -33,7 +33,7 @@ class AdminMediaTest extends TestCase
             eval('#[AllowDynamicProperties] class CI_Model { public $db; }');
         }
         if (!function_exists('get_instance')) {
-            eval('function get_instance(){ return $GLOBALS["__fake_ci"]; }');
+            eval('function &get_instance(){ return $GLOBALS["__fake_ci"]; }');
         }
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         if (!function_exists('base_url')) {

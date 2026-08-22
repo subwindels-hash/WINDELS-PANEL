@@ -17,7 +17,7 @@ class AffiliateTest extends TestCase
         self::$root = dirname(dirname(__DIR__));
         if (!defined('BASEPATH')) define('BASEPATH', self::$root.'/system/');
         if (!class_exists('CI_Model')) eval('class CI_Model {}');
-        if (!function_exists('get_instance')) eval('function get_instance(){ return $GLOBALS["__fake_ci"]; }');
+        if (!function_exists('get_instance')) eval('function &get_instance(){ return $GLOBALS["__fake_ci"]; }');
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         if (!function_exists('site_url')) eval('function site_url($u=""){ return "https://panel.test/".ltrim($u,"/"); }');
         if (!function_exists('windels_public_id')) require_once self::$root.'/application/helpers/windels_helper.php';

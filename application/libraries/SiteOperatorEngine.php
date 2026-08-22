@@ -325,7 +325,16 @@ class SiteOperatorEngine {
 
         $catalog = SiteOperatorPhrases::all();
 
-        // Conversational intents first so "good morning" is never "unknown".
+        // Specific account paths before the generic “help me” catch-all:
+        // “Help me create an account” is a registration request, not a
+        // “what can you help me with” question.
+        foreach (array('forgot', 'register', 'login') as $key) {
+            if ($this->match_group($normalized, $catalog[$key])) {
+                return $key;
+            }
+        }
+
+        // Conversational intents next so "good morning" is never "unknown".
         foreach (array(
             'farewell', 'greeting_morning', 'greeting_afternoon',
             'greeting_evening', 'greeting_day', 'greeting',
@@ -338,13 +347,6 @@ class SiteOperatorEngine {
 
         if ($this->match_group($normalized, $catalog['courtesy']) && $this->word_count($normalized) <= 6) {
             return 'courtesy';
-        }
-
-        // Specific account paths before the generic “login/register” bag.
-        foreach (array('forgot', 'register', 'login') as $key) {
-            if ($this->match_group($normalized, $catalog[$key])) {
-                return $key;
-            }
         }
 
         foreach (array(

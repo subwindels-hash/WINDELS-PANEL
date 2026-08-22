@@ -18,7 +18,7 @@ class SecurityHardeningTest extends TestCase
     {
         self::$root = dirname(dirname(__DIR__));
         if (!defined('BASEPATH')) define('BASEPATH', self::$root.'/system/');
-        if (!function_exists('get_instance')) eval('function get_instance(){ return $GLOBALS["__fake_ci"]; }');
+        if (!function_exists('get_instance')) eval('function &get_instance(){ return $GLOBALS["__fake_ci"]; }');
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         require_once self::$root.'/application/libraries/RateLimiter.php';
     }
@@ -701,10 +701,15 @@ class SecurityHardeningTest extends TestCase
     private function limiter(&$db)
     {
         $db = new SecFakeAttemptDb();
+        // RateLimiter aliases $this->ci =& get_instance(), so the fake CI's db
+        // IS the counter store. Make it the attempts fake (with a conn_id so
+        // windels_load_database() accepts it) BEFORE constructing — reflection
+        // afterwards would write through the alias and replace the global.
+        $fake = new stdClass();
+        $fake->db = $db;
+        $fake->db->conn_id = 'fake';
+        $GLOBALS['__fake_ci'] = $fake;
         $rl = new RateLimiter();
-        $ref = new ReflectionProperty($rl, 'ci'); $ref->setAccessible(true);
-        $stub = new stdClass(); $stub->db = $db;
-        $ref->setValue($rl, $stub);
         return $rl;
     }
 
@@ -755,6 +760,7 @@ class SecurityHardeningTest extends TestCase
  * so the per-bucket separation is genuinely exercised rather than assumed.
  */
 class SecFakeAttemptDb {
+    public $conn_id = 'fake'; // mirrors a live connection for windels_load_database()
     public $rows = array();
     private $w = array(), $since = null, $order_desc = false, $limit = null;
 

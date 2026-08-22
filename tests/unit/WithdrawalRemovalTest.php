@@ -100,8 +100,20 @@ class WithdrawalRemovalTest extends TestCase
 
     public function testApplicationCodeHasNoWithdrawalReferences()
     {
-        // The intentional exception is migration 018, whose entire purpose is
-        // to erase the feature's rows from upgraded databases.
+        // The intentional exceptions are migration 018 (whose entire purpose is
+        // to erase the feature's rows from upgraded databases) and a small set
+        // of user-facing copy files that explain the platform deliberately has
+        // NO withdrawals. The knowledge base and legal pages must say this or
+        // customers would be misled — those are statements about an absent
+        // feature, not references to a withdrawal feature.
+        $copy_only = array(
+            'application/libraries/SiteOperatorEngine.php',
+            'application/libraries/SiteOperatorKnowledge.php',
+            'application/views/public/terms.php',
+            'application/views/public/refund_policy.php',
+            'application/views/public/styleguide.php',
+            'application/views/public/pricing.php',
+        );
         $clean = array(
             'application/controllers', 'application/core', 'application/libraries',
             'application/models', 'application/seeds', 'application/views',
@@ -114,6 +126,8 @@ class WithdrawalRemovalTest extends TestCase
             foreach ($files as $file) {
                 $name = (string)$file;
                 if (substr($name, -4) !== '.php') continue;
+                $rel = ltrim(str_replace(self::$root.'/', '', $name), '/');
+                if (in_array($rel, $copy_only, true)) continue;
                 if (stripos(file_get_contents($name), 'withdrawal') !== false) {
                     $offenders[] = $name;
                 }
@@ -156,8 +170,10 @@ class WithdrawalRemovalTest extends TestCase
     {
         foreach (array('assets/js', 'assets/css') as $dir) {
             if (!is_dir(self::$root.'/'.$dir)) continue;
-            $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(self::$root.'/'.$dir));
+            $it = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator(self::$root.'/'.$dir, FilesystemIterator::SKIP_DOTS));
             foreach ($it as $file) {
+                if (!$file->isFile()) continue;
                 $this->assertStringNotContainsStringIgnoringCase(
                     'withdraw', file_get_contents((string)$file),
                     (string)$file.' contains a withdrawal reference');

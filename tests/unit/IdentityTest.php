@@ -36,7 +36,7 @@ class IdentityTest extends TestCase
             eval('#[AllowDynamicProperties] class CI_Model { public $db; }');
         }
         if (!function_exists('get_instance')) {
-            eval('function get_instance(){ return $GLOBALS["__fake_ci"]; }');
+            eval('function &get_instance(){ return $GLOBALS["__fake_ci"]; }');
         }
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         require_once self::$root.'/application/core/MY_Model.php';
@@ -647,7 +647,10 @@ class IdentityTest extends TestCase
         list($app,) = $this->app();
 
         $this->assertSame(30, $app->identityservice->retention_days());
-        $app->config->set_item('identity_retention_days', 7);
+        // Retention is wired to the settings table (Admin → Settings), not to
+        // the CI config registry — see IdentityService::retention_days().
+        $app->model('Setting_model');
+        $app->Setting_model->set('identity_retention_days', 7);
         $this->assertSame(7, $app->identityservice->retention_days());
 
         $out = $app->identityservice->purge_expired(0);

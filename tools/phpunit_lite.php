@@ -207,36 +207,52 @@ namespace {
                 if (!$hit) continue;
             }
             $instance = new $class();
-            try {
-                invoke_protected($instance, 'setUp');
-                $instance->$method();
-                // expectException() with nothing thrown is a failure, not a pass.
-                if ($instance->__expected_exception !== null) {
-                    throw new AssertionFailedError(
-                        'Expected exception '.$instance->__expected_exception.' was not thrown');
-                }
-                invoke_protected($instance, 'tearDown');
-                echo "  ✔ ".$method."\n";
-                $passed++;
-            } catch (SkippedTest $e) {
-                echo "  ○ ".$method." (skipped: ".$e->getMessage().")\n";
-                $skipped++;
-            } catch (AssertionFailedError $e) {
-                echo "  ✘ ".$method."\n      ".str_replace("\n", "\n      ", $e->getMessage())."\n";
-                $failed++;
-                $failures[] = $class.'::'.$method."\n    ".$e->getMessage();
-            } catch (\Throwable $e) {
-                $want = $instance->__expected_exception;
-                if ($want !== null && $e instanceof $want) {
-                    TestCase::$assertions++;
+            // PHPUnit-style @dataProvider support: a provider method on the
+            // same instance supplies argument rows; without one the test runs
+            // once with no arguments.
+            $rows = null;
+            $ref = new \ReflectionMethod($class, $method);
+            $doc = $ref->getDocComment();
+            if ($doc && preg_match('/@dataProvider\s+(\w+)/', $doc, $m)) {
+                $rows = (array)$instance->{$m[1]}();
+            }
+            if ($rows === null) {
+                $rows = array(array());
+            }
+            $set_no = 0;
+            foreach ($rows as $row) {
+                $label = count($rows) > 1 ? $method.' [data set #'.($set_no++).']' : $method;
+                try {
+                    invoke_protected($instance, 'setUp');
+                    call_user_func_array(array($instance, $method), (array)$row);
+                    // expectException() with nothing thrown is a failure, not a pass.
+                    if ($instance->__expected_exception !== null) {
+                        throw new AssertionFailedError(
+                            'Expected exception '.$instance->__expected_exception.' was not thrown');
+                    }
                     invoke_protected($instance, 'tearDown');
-                    echo "  ✔ ".$method."\n";
+                    echo "  ✔ ".$label."\n";
                     $passed++;
-                    continue;
+                } catch (SkippedTest $e) {
+                    echo "  ○ ".$label." (skipped: ".$e->getMessage().")\n";
+                    $skipped++;
+                } catch (AssertionFailedError $e) {
+                    echo "  ✘ ".$label."\n      ".str_replace("\n", "\n      ", $e->getMessage())."\n";
+                    $failed++;
+                    $failures[] = $class.'::'.$label."\n    ".$e->getMessage();
+                } catch (\Throwable $e) {
+                    $want = $instance->__expected_exception;
+                    if ($want !== null && $e instanceof $want) {
+                        TestCase::$assertions++;
+                        invoke_protected($instance, 'tearDown');
+                        echo "  ✔ ".$label."\n";
+                        $passed++;
+                        continue;
+                    }
+                    echo "  ✘ ".$label." — ".get_class($e).': '.$e->getMessage()."\n";
+                    $failed++;
+                    $failures[] = $class.'::'.$label.' — '.$e->getMessage();
                 }
-                echo "  ✘ ".$method." — ".get_class($e).': '.$e->getMessage()."\n";
-                $failed++;
-                $failures[] = $class.'::'.$method.' — '.$e->getMessage();
             }
         }
         call_user_func(array($class, 'tearDownAfterClass'));

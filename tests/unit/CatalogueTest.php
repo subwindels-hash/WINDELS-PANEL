@@ -34,7 +34,7 @@ class CatalogueTest extends TestCase
             eval('#[AllowDynamicProperties] class CI_Model { public $db; }');
         }
         if (!function_exists('get_instance')) {
-            eval('function get_instance(){ return $GLOBALS["__fake_ci"]; }');
+            eval('function &get_instance(){ return $GLOBALS["__fake_ci"]; }');
         }
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         require_once self::$root.'/application/core/MY_Model.php';
@@ -837,9 +837,15 @@ class CatalogueTest extends TestCase
      */
     public function testTheLayoutRendersTheWarningFlash()
     {
+        // Flash rendering moved into the unified partials/flash.php; the app
+        // shell must include it (and therefore render success/info/warning/error).
+        $flash = file_get_contents(self::$root.'/application/views/partials/flash.php');
+        $this->assertStringContainsString('flashdata($key)', $flash);
+        $this->assertStringContainsString("'warning' => array('class' => 'warning'", $flash,
+            'the warning bucket must map to the shared alert-warning component class');
         $layout = file_get_contents(self::$root.'/application/views/layouts/app.php');
-        $this->assertStringContainsString("flashdata('warning')", $layout);
-        $this->assertStringContainsString('alert-warning', $layout);
+        $this->assertStringContainsString("partials/flash", $layout,
+            'layouts/app.php must render the unified flash partial');
     }
 
     public function testTheViewsCarryCsrfAndNeverRenderCredentials()

@@ -53,14 +53,27 @@ class CsrfAndContactTest extends TestCase
 
     public function testEveryLayoutPublishesTheTokenToJavaScript()
     {
-        foreach (array('public', 'app', 'auth') as $layout) {
+        // The canonical head partial publishes the token so scripted posts can
+        // use it; partials/scripts.php attaches it via assets/js/app.js. Every
+        // shell renders through those two partials. layouts/app.php carries its
+        // own <head> and repeats the same three metas.
+        $head = file_get_contents(self::$root.'/application/views/partials/head.php');
+        foreach (array('name="csrf-token"', 'name="csrf-name"', 'name="csrf-endpoint"') as $meta) {
+            $this->assertStringContainsString($meta, $head, 'partials/head.php must publish '.$meta);
+        }
+        $scripts = file_get_contents(self::$root.'/application/views/partials/scripts.php');
+        $this->assertStringContainsString('assets/js/app.js', $scripts,
+            'partials/scripts.php must load the script that attaches the token');
+        foreach (array('main', 'auth') as $layout) {
             $src = file_get_contents(self::$root."/application/views/layouts/{$layout}.php");
-            $this->assertStringContainsString('name="csrf-token"', $src,
-                "layouts/{$layout}.php must expose the token so scripted posts can use it");
-            $this->assertStringContainsString('name="csrf-name"', $src);
-            $this->assertStringContainsString('name="csrf-endpoint"', $src);
-            $this->assertStringContainsString('assets/js/app.js', $src,
-                "layouts/{$layout}.php must load the script that attaches the token");
+            $this->assertStringContainsString('partials/head', $src,
+                "layouts/{$layout}.php must render through partials/head.php");
+            $this->assertStringContainsString('partials/scripts', $src,
+                "layouts/{$layout}.php must load partials/scripts.php");
+        }
+        $app = file_get_contents(self::$root.'/application/views/layouts/app.php');
+        foreach (array('name="csrf-token"', 'name="csrf-name"', 'name="csrf-endpoint"', 'partials/scripts') as $needle) {
+            $this->assertStringContainsString($needle, $app, 'layouts/app.php must publish '.$needle);
         }
     }
 

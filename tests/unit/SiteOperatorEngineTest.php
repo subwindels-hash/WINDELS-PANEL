@@ -28,7 +28,7 @@ class SiteOperatorEngineTest extends TestCase
     {
         $w = $this->engine->welcome();
         $this->assertTrue($w['ok']);
-        $this->assertStringContainsString('not a cloud generative AI', strtolower($w['reply']).' '.strtolower(SiteOperatorKnowledge::assistant_disclaimer()));
+        $this->assertStringContainsString('not a cloud generative ai', strtolower($w['reply']).' '.strtolower(SiteOperatorKnowledge::assistant_disclaimer()));
         $this->assertNotEmpty($w['suggestions']);
     }
 

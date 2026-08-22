@@ -41,7 +41,9 @@ class PublicSiteContentTest extends TestCase
 
     public function testNavAndFooterHaveNoHashPlaceholders()
     {
-        foreach (array('partials/public_nav.php', 'partials/footer.php') as $rel) {
+        // partials/public_nav.php is a backward-compatible wrapper for the
+        // canonical navbar partial, so the source contract lives in navbar.php.
+        foreach (array('partials/navbar.php', 'partials/footer.php') as $rel) {
             $html = $this->view($rel);
             $this->assertStringNotContainsString('href="#"', $html, $rel);
             $this->assertStringContainsString('site_url(', $html);
@@ -54,12 +56,19 @@ class PublicSiteContentTest extends TestCase
 
     public function testPublicLayoutHasSeoTagsAndAssistant()
     {
-        $layout = $this->view('layouts/public.php');
-        $this->assertStringContainsString('og:title', $layout);
-        $this->assertStringContainsString('canonical', $layout);
-        $this->assertStringContainsString('partials/site_operator', $layout);
-        $this->assertStringContainsString('partials/public_nav', $layout);
+        // layouts/public.php is a compat wrapper around layouts/main.php, the
+        // real public shell: SEO lives in partials/head.php, the assistant in
+        // partials/chatbot.php (-> site_operator.php), nav in partials/header.
+        $wrapper = $this->view('layouts/public.php');
+        $this->assertStringContainsString('layouts/main', $wrapper);
+        $layout = $this->view('layouts/main.php');
+        $this->assertStringContainsString('partials/head', $layout);
+        $this->assertStringContainsString('partials/chatbot', $layout);
+        $this->assertStringContainsString('partials/header', $layout);
         $this->assertStringContainsString('partials/footer', $layout);
+        $head = $this->view('partials/head.php');
+        $this->assertStringContainsString('og:title', $head);
+        $this->assertStringContainsString('canonical', $head);
     }
 
     public function testAuthPagesHavePasswordToggleAndTerms()
@@ -98,7 +107,7 @@ class PublicSiteContentTest extends TestCase
         $routes = file_get_contents(self::$root.'/application/config/routes.php');
         $this->assertStringContainsString("'home/not_found'", $routes);
         $this->assertStringContainsString("'assistant'", $routes);
-        $this->assertStringContainsString("'admin/login' = 'auth/admin_login'", $routes);
+        $this->assertStringContainsString("['admin/login'] = 'auth/admin_login'", $routes);
         $home = file_get_contents(self::$root.'/application/controllers/Home.php');
         $this->assertStringContainsString('function not_found', $home);
         $this->assertStringContainsString('Faq_model', $home);

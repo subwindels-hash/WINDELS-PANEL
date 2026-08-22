@@ -246,6 +246,20 @@ $windels = ['panel' =&gt; 'ready'];</code></pre>
     <p>Dashboard and admin navigation use the inline SVG partial <code>partials/icon.php</code> (Lucide-style paths). Public marketing pages prefer text, badges and the brand mark rather than a second icon font.</p>
   </section>
 
+  <section class="card" id="assistant">
+    <h2 class="card-title">Site assistant</h2>
+    <p>The embedded assistant renders from <code>partials/site_operator.php</code> (wrapped by <code>partials/chatbot.php</code>). Use the documented classes — do not invent new ones:</p>
+    <div class="row" style="gap:.5rem;flex-wrap:wrap">
+      <button type="button" class="ws-assistant-launch" aria-expanded="false" aria-controls="ws-assistant">Assistant</button>
+    </div>
+    <section class="ws-assistant" id="ws-assistant" aria-label="Assistant example">
+      <header class="ws-assistant-head"><h3 class="card-title">Assistant</h3></header>
+      <div class="ws-assistant-log"><p class="muted">This is a static documentation example, not the live widget.</p></div>
+      <div class="ws-assistant-links"><a class="btn btn-secondary btn-sm" href="<?=site_url('faq')?>">Open the FAQ</a></div>
+    </section>
+    <p class="muted mt-3">The launch button is fixed to the corner (<code>.ws-assistant-launch</code>), the panel is fixed above it (<code>.ws-assistant</code>) and hides with <code>[hidden]</code> until opened. It is a local rule-based engine — it is not a cloud generative AI and cannot act on your account.</p>
+  </section>
+
   <p class="text-center muted">The compiled utility stylesheet <code>assets/css/tailwind.css</code> ships with the app. Rebuild it with <code>npm run build:css</code> after changing utility classes.</p>
 </div>
 </section>
