@@ -55,7 +55,10 @@ set_exception_handler(function ($e) {
  */
 switch (ENVIRONMENT) {
     case 'development':
-        error_reporting(-1);
+        // CI 3.1.13 is not annotated for PHP 8.2+ dynamic properties. Keep
+        // real errors visible, but do not dump E_DEPRECATED onto every page
+        // (that sends output before headers and breaks sessions/cookies).
+        error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED & ~E_STRICT);
         ini_set('display_errors', 1);
         break;
     case 'testing':

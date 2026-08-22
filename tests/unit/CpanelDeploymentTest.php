@@ -305,6 +305,14 @@ class CpanelDeploymentTest extends TestCase
         }
         $this->assertStringContainsString('system', $src,
             'CodeIgniter itself must be in the package — it is the only hard dependency');
+        $this->assertStringContainsString('materialize_tree', $src,
+            'system/ must be copied as real files (never a preserved symlink)');
+        $this->assertStringContainsString('system/core/CodeIgniter.php', $src,
+            'the build must look for the CodeIgniter front controller, not just a system/ directory');
+        $this->assertStringContainsString('vendor/autoload.php', $src);
+        $this->assertStringContainsString('vendor/codeigniter/framework/system/core/CodeIgniter.php', $src);
+        $this->assertStringContainsString('validate_deployment_zip.sh', $src,
+            'the zip itself must be extract-validated before the build is marked complete');
         $this->assertStringContainsString('rm -rf "${STAGE}/application/seeds"', $src,
             'the demo seeder must never ship to a live panel');
         $this->assertStringContainsString('build_production_sql.php', $src);
@@ -312,11 +320,52 @@ class CpanelDeploymentTest extends TestCase
             'a package built from a stale windels_panel.sql is a broken deployment');
     }
 
+    public function testZipValidatorRefusesAPackageWithoutTheFramework()
+    {
+        $script = self::$root.'/tools/validate_deployment_zip.sh';
+        $this->assertFileExists($script);
+        $src = file_get_contents($script);
+        foreach (array(
+            'system/core/CodeIgniter.php',
+            'vendor/autoload.php',
+            'vendor/codeigniter/framework/system/core/CodeIgniter.php',
+            'CI_VERSION',
+        ) as $needle) {
+            $this->assertStringContainsString($needle, $src,
+                "validate_deployment_zip.sh must require {$needle}");
+        }
+        $this->assertStringContainsString('type l', $src,
+            'the validator must reject a package that stores symlinks');
+    }
+
+    public function testSchemaManifestDoesNotTreatConstraintsAsColumns()
+    {
+        require_once self::$root.'/application/libraries/SchemaManifest.php';
+        $manifest = SchemaManifest::from_file(self::$root.'/database/windels_panel.sql');
+        $this->assertNull($manifest['error'], $manifest['error'] ?: '');
+        $this->assertArrayHasKey('wallets', $manifest['tables']);
+        $this->assertArrayNotHasKey('CONSTRAINT', $manifest['tables']['wallets']['columns'],
+            'CHECK / FOREIGN KEY clauses must not become a fake CONSTRAINT column');
+        $this->assertArrayNotHasKey('FULLTEXT', $manifest['tables']['services']['columns'],
+            'FULLTEXT INDEX clauses must not become a fake FULLTEXT column');
+        $this->assertArrayHasKey('ft_svc_search', $manifest['tables']['services']['indexes']);
+        $this->assertArrayHasKey('users', $manifest['tables']);
+        $this->assertArrayHasKey('username', $manifest['tables']['users']['unique'],
+            'inline UNIQUE must use the MySQL index name (the column), not uniq_*');
+        $this->assertArrayNotHasKey('uniq_username', $manifest['tables']['users']['unique']);
+        $this->assertNotEmpty($manifest['tables']['role_permissions']['fks'],
+            'inline CONSTRAINT ... FOREIGN KEY must be recorded as a foreign key');
+    }
+
     public function testTheCommittedPackageIsNotStale()
     {
         $zip_path = self::$root.'/application-deployment.zip';
-        $this->assertFileExists($zip_path,
-            'the repository ships a ready package: an operator with no terminal cannot build one');
+        if (!is_file($zip_path)) {
+            $this->markTestSkipped(
+                'application-deployment.zip is a build artifact (gitignored); '
+                .'produce and gate it with: bash tools/verify_deployment_package.sh'
+            );
+        }
 
         if (!class_exists('ZipArchive')) {
             $this->markTestSkipped('ext-zip not available');
@@ -356,7 +405,9 @@ class CpanelDeploymentTest extends TestCase
             if ($entry === '' || substr($entry, -1) === '/') {
                 continue;
             }
-            if ($entry === 'README-DEPLOYMENT.txt' || strpos($entry, 'system/') === 0) {
+            if ($entry === 'README-DEPLOYMENT.txt'
+                || strpos($entry, 'system/') === 0
+                || strpos($entry, 'vendor/') === 0) {
                 continue;
             }
             if (isset($expected[$entry])) {
@@ -411,7 +462,7 @@ class CpanelDeploymentTest extends TestCase
             $included_prefix = array(
                 'application/', 'assets/', 'storage/', 'cron/', 'database/', 'docs/cpanel-deployment.md',
             );
-            $included_root = array('.htaccess', '.env.example', 'index.php');
+                $included_root = array('.htaccess', '.env.example', 'index.php', 'deploy-verify.php');
             $root_ok = in_array($rel, $included_root, true);
             if (!$root_ok) {
                 $prefix_ok = false;

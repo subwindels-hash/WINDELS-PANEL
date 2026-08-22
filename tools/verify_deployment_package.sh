@@ -8,11 +8,13 @@
 # configuration exactly as index.php does — asserting that everything a first
 # request depends on resolves from .env alone.
 #
-# What it proves (no MySQL server required):
+# What it proves:
 #   · the zip extracts to a tree whose entry point is index.php
 #   · CodeIgniter is inside the package as REAL FILES at both paths index.php
 #     auto-detects (system/ and vendor/codeigniter/framework/system) — no
 #     composer install, no symlinks anywhere in the archive
+#   · tools/validate_deployment_zip.sh accepts the archive (same gate the
+#     build script runs before calling the package complete)
 #   · deploy-verify.php ships for browser-side environment checks
 #   · a vendor/autoload.php (bundled fallback or full composer install) exists
 #   · no composer.json or package.json to satisfy on the destination host
@@ -56,8 +58,18 @@ echo
 
 # ---------------------------------------------------------------------------
 echo "1. Build the package"
-bash "${ROOT}/tools/build_deployment_package.sh" --output "${WORK}/application-deployment.zip" >/dev/null
+bash "${ROOT}/tools/build_deployment_package.sh" --output "${WORK}/application-deployment.zip"
 ok "tools/build_deployment_package.sh produced application-deployment.zip"
+
+# The build already extract-validates the zip. Run the same gate here so a
+# caller that only invoked verify still fails if the archive is incomplete.
+echo
+echo "1b. Extract-validate the zip in a clean directory"
+if bash "${ROOT}/tools/validate_deployment_zip.sh" "${WORK}/application-deployment.zip"; then
+  ok "validate_deployment_zip.sh accepted the archive"
+else
+  bad "validate_deployment_zip.sh rejected the archive"
+fi
 
 # ---------------------------------------------------------------------------
 echo
@@ -74,7 +86,11 @@ check "second framework path exists (vendor/codeigniter/framework/system)" \
   "[[ -f '${SITE}/vendor/codeigniter/framework/system/core/CodeIgniter.php' ]]"
 check "vendor framework is REAL files, not a symlink" \
   "[[ ! -L '${SITE}/vendor/codeigniter/framework/system' ]]"
-check "no symlinks anywhere in the package"          "[[ -z \"$(find '${SITE}' -type l -print -quit)\" ]]"
+if [[ -z "$(find "${SITE}" -type l -print -quit)" ]]; then
+  ok "no symlinks anywhere in the package"
+else
+  bad "no symlinks anywhere in the package"
+fi
 check "database/windels_panel.sql is in the package"    "[[ -f '${SITE}/database/windels_panel.sql' ]]"
 check "schema_verification.php ships for post-import audits" "[[ -f '${SITE}/database/schema_verification.php' ]]"
 check "database/README.md ships"                        "[[ -f '${SITE}/database/README.md' ]]"
@@ -245,6 +261,99 @@ if command -v python3 >/dev/null 2>&1 && python3 -c 'import sqlglot' >/dev/null 
   fi
 else
   echo "  --   skipped: python3 with sqlglot not available"
+fi
+
+# ---------------------------------------------------------------------------
+echo
+echo "6. Clean-install boot (deploy-verify.php + CodeIgniter front controller)"
+# Optional live MySQL: import the packaged SQL into a throwaway database and
+# run the same checks an operator runs in the browser. Credentials come from
+# WINDELS_VERIFY_DB_* so they cannot leak into the .env-resolution checks
+# above (Env never overwrites a real process environment).
+DB_HOST="${WINDELS_VERIFY_DB_HOST:-127.0.0.1}"
+DB_PORT="${WINDELS_VERIFY_DB_PORT:-3306}"
+DB_USER="${WINDELS_VERIFY_DB_USER:-root}"
+DB_PASS="${WINDELS_VERIFY_DB_PASS:-}"
+DB_NAME="windels_pkg_$$"
+MYSQL_OK=0
+if "${PHP_BIN}" -r 'exit(extension_loaded("mysqli") ? 0 : 1);'; then
+  if "${PHP_BIN}" -r '
+    mysqli_report(MYSQLI_REPORT_OFF);
+    $h=$argv[1]; $u=$argv[2]; $p=$argv[3]; $port=(int)$argv[4];
+    $l=@mysqli_connect($h,$u,$p,"",$port);
+    exit($l ? 0 : 1);
+  ' "${DB_HOST}" "${DB_USER}" "${DB_PASS}" "${DB_PORT}"; then
+    MYSQL_OK=1
+  fi
+fi
+
+if [[ "${MYSQL_OK}" -eq 1 ]]; then
+  echo "  importing packaged SQL into ${DB_NAME} on ${DB_HOST}:${DB_PORT}"
+  if TABLES="$("${PHP_BIN}" -r '
+    mysqli_report(MYSQLI_REPORT_OFF);
+    $h=$argv[1]; $u=$argv[2]; $p=$argv[3]; $port=(int)$argv[4]; $db=$argv[5]; $sqlFile=$argv[6];
+    $l=mysqli_connect($h,$u,$p,"",$port);
+    if (!$l) { fwrite(STDERR, mysqli_connect_error()."\n"); exit(1); }
+    if (!mysqli_query($l, "CREATE DATABASE `".$db."` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")) {
+        fwrite(STDERR, mysqli_error($l)."\n"); exit(1);
+    }
+    mysqli_select_db($l, $db);
+    mysqli_set_charset($l, "utf8mb4");
+    $sql = file_get_contents($sqlFile);
+    if (!mysqli_multi_query($l, $sql)) { fwrite(STDERR, mysqli_error($l)."\n"); exit(1); }
+    do { if ($r = mysqli_store_result($l)) mysqli_free_result($r); }
+    while (mysqli_more_results($l) && mysqli_next_result($l));
+    if (mysqli_errno($l)) { fwrite(STDERR, mysqli_error($l)."\n"); exit(1); }
+    $t = mysqli_query($l, "SHOW TABLES");
+    echo $t ? mysqli_num_rows($t) : 0;
+  ' "${DB_HOST}" "${DB_USER}" "${DB_PASS}" "${DB_PORT}" "${DB_NAME}" "${SITE}/database/windels_panel.sql")"; then
+    ok "imported database/windels_panel.sql (${TABLES} tables)"
+    cat > "${SITE}/.env" <<ENVFILE
+CI_ENV=production
+VP_BASE_URL=https://newdomain.example
+VP_DB_HOST=${DB_HOST}
+VP_DB_PORT=${DB_PORT}
+VP_DB_NAME=${DB_NAME}
+VP_DB_USER=${DB_USER}
+VP_DB_PASS=${DB_PASS}
+VP_ENCRYPTION_KEY=${ENC_KEY}
+VP_AUTH_SECRET=${AUTH_SECRET}
+ENVFILE
+    if (cd "${SITE}" && env -u VP_DB_HOST -u VP_DB_PORT -u VP_DB_NAME -u VP_DB_USER -u VP_DB_PASS -u DB_HOST -u DB_NAME -u DB_USER -u DB_PASSWORD \
+        "${PHP_BIN}" deploy-verify.php); then
+      ok "deploy-verify.php passed against the extracted package"
+    else
+      bad "deploy-verify.php failed against the extracted package"
+    fi
+    "${PHP_BIN}" -r '
+      mysqli_report(MYSQLI_REPORT_OFF);
+      $l=@mysqli_connect($argv[1],$argv[2],$argv[3],"",(int)$argv[4]);
+      if ($l) mysqli_query($l, "DROP DATABASE `".$argv[5]."`");
+    ' "${DB_HOST}" "${DB_USER}" "${DB_PASS}" "${DB_PORT}" "${DB_NAME}" >/dev/null 2>&1 || true
+  else
+    bad "could not import database/windels_panel.sql into a throwaway database"
+  fi
+else
+  echo "  --   skipped live import: no MySQL reachable at ${DB_HOST}:${DB_PORT}"
+fi
+
+# Front-controller boot: the exact probe index.php runs. A missing
+# CodeIgniter.php here is the 503 this package must never produce.
+if "${PHP_BIN}" -r '
+    $site = $argv[1];
+    $candidates = array($site."/system", $site."/vendor/codeigniter/framework/system");
+    foreach ($candidates as $c) {
+        if (is_dir($c) && is_file($c."/core/CodeIgniter.php") && !is_link($c)) {
+            $src = file_get_contents($c."/core/CodeIgniter.php");
+            if (strpos($src, "CI_VERSION = '\''3.1.") !== false) { echo $c, PHP_EOL; exit(0); }
+        }
+    }
+    fwrite(STDERR, "CodeIgniter 3.1.x not found as real files in the extract\n");
+    exit(1);
+' "${SITE}"; then
+  ok "CodeIgniter 3.1.x boots from the extracted package (no composer, no symlink)"
+else
+  bad "CodeIgniter did not boot from the extracted package"
 fi
 
 # ---------------------------------------------------------------------------
