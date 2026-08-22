@@ -264,6 +264,7 @@
     try {
       initPasswordToggles();
       initMobileNav();
+      initSkipLinks();
       initAnnounce();
       initFaqFilter();
       initSiteOperator();
@@ -284,6 +285,38 @@
     document.addEventListener('DOMContentLoaded', boot);
   } else {
     boot();
+  }
+
+  function initSkipLinks() {
+    // The "Skip to content" link is a plain #main anchor so it still works
+    // without JavaScript. Native behaviour, though, leaves #main stuck in the
+    // address bar (and in any URL the user copies afterwards). Intercept the
+    // click, move focus and scroll ourselves, and keep the URL clean.
+    document.addEventListener('click', function (e) {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      var link = e.target && e.target.closest ? e.target.closest('a[href="#main"]') : null;
+      if (!link) return;
+
+      var target = document.getElementById('main');
+      if (!target) return; // fall back to the browser's native jump
+
+      e.preventDefault();
+      if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+      target.focus({ preventScroll: true });
+
+      var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      target.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+
+      if (window.history && history.replaceState && location.hash === '#main') {
+        history.replaceState(null, '', location.pathname + location.search);
+      }
+    });
+
+    // Arriving with #main already in the URL (a copied or bookmarked link)
+    // should not leave the fragment behind either.
+    if (location.hash === '#main' && window.history && history.replaceState) {
+      history.replaceState(null, '', location.pathname + location.search);
+    }
   }
 
   function initPasswordToggles() {

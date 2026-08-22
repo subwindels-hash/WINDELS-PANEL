@@ -129,6 +129,10 @@ button { font-family:inherit; cursor:pointer; }
 .grid-3 { grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); }
 .grid-4 { grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); }
 .ws-main { min-height:60vh; }
+/* Keep the top of <main> clear of the sticky nav when the skip link (or a
+   #main URL) scrolls to it. */
+.ws-main:focus-visible{outline:none}
+#main{scroll-margin-top:6rem}
 
 /* Reusable section patterns */
 .ws-hero{background:radial-gradient(900px 280px at 12% -10%,var(--brand-100),transparent 60%),radial-gradient(700px 240px at 92% 0,var(--accent-100,#fae8ff),transparent 55%)}
