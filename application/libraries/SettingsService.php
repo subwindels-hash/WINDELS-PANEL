@@ -13,14 +13,13 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * Two rules shaped it, both learned from auditing what was already seeded.
  *
  * **Only wired settings appear.** Several seeded rows — `currency_display`,
- * `default_theme`, `brand_*`, `order_auto_submit`, `partial_refund_enabled`,
- * `admin_mfa_required` — were read by no code at all. Putting them on a form
- * would be worse than omitting them: an operator would switch a toggle on, see
- * it save, and watch nothing happen. Each remaining gap is listed in UNWIRED
- * below with the work it would take to honour it, so the omission is a
- * documented decision rather than an oversight. (`maintenance_mode`,
- * `site_tagline` and `api_enabled` were previously among these and are now
- * wired.)
+ * `default_theme`, `brand_*`, `order_auto_submit`, `partial_refund_enabled` —
+ * were read by no code at all. Putting them on a form would be worse than
+ * omitting them: an operator would switch a toggle on, see it save, and watch
+ * nothing happen. Each remaining gap is listed in UNWIRED below with the work
+ * it would take to honour it, so the omission is a documented decision rather
+ * than an oversight. (`maintenance_mode`, `site_tagline`, `api_enabled` and
+ * `admin_mfa_required` were previously among these and are now wired.)
  *
  * **`base_currency` is deliberately read-only.** The row exists, but
  * `windels_base_currency()` reads `config/windels.php`, not this table, and
@@ -54,6 +53,8 @@ class SettingsService {
                 'Off closes registration; existing customers can still sign in.', true),
             'email_verification_required' => array('bool', 'security', 'Require email verification',
                 'New accounts must confirm their address before they can order.', true),
+            'admin_mfa_required' => array('bool', 'security', 'Require MFA for staff',
+                'On redirects any staff account without two-factor authentication to the security screen to enrol before it can open the back office.', false),
 
             'min_deposit' => array('money', 'payments', 'Minimum deposit',
                 'The smallest top-up a customer may make.', '500.00000000'),
@@ -97,7 +98,6 @@ class SettingsService {
             'currency_display'       => 'windels_money() always prints a symbol.',
             'order_auto_submit'      => 'OrderService always submits to the provider immediately.',
             'partial_refund_enabled' => 'Partial refunds are always on; the state machine has no switch.',
-            'admin_mfa_required'     => 'Needs enforcement in Admin_Controller, which would lock out admins without MFA.',
         );
     }
 

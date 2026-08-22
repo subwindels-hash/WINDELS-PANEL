@@ -25,6 +25,7 @@ $nav = $is_admin ? array(
     array('admin/media',        'Media',      'media.manage',    'star'),
     array('admin/categories',   'System',     'audit.view',      'globe'),
     array('admin/settings',     'Settings',   'settings.manage', 'settings'),
+    array('dashboard/security', 'Account & security', null,      'shield'),
 ) : array(
     array('dashboard',           'Dashboard',  null, 'dashboard'),
     array('dashboard/new-order', 'New Order',  null, 'zap'),
@@ -45,6 +46,7 @@ $nav = $is_admin ? array(
     array('dashboard/tickets',   'Support',    null, 'message-square'),
     array('dashboard/referrals', 'Referrals',  null, 'gift'),
     array('dashboard/api',       'API',        null, 'key'),
+    array('dashboard/security',  'Security',   null, 'shield'),
 );
 
 // Keep disabled modules out of customer navigation as well as guarding their

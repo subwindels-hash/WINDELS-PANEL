@@ -312,6 +312,37 @@ class Admin_Controller extends Auth_Controller {
         if (!$this->auth->has_role(array('SUPER_ADMIN','ADMIN','STAFF'))) {
             show_error('Forbidden — admin only', 403);
         }
+        $this->enforce_admin_mfa();
+    }
+
+    /**
+     * Enforce mandatory MFA for staff when the `admin_mfa_required` setting is
+     * on. Staff without MFA are redirected to the security screen to enrol —
+     * never hard-blocked, which would strand them outside the back office.
+     */
+    protected function enforce_admin_mfa() {
+        try {
+            $this->load->model('Setting_model');
+            $required = $this->Setting_model->get('admin_mfa_required', false);
+        } catch (Throwable $e) { return; /* settings unavailable — fail open */ }
+        if ($required === null || $required === ''
+            || !in_array(strtolower(trim((string)$required)), array('1','true','yes','on'), true)) {
+            return;
+        }
+
+        $user = $this->current_user ?? null;
+        if (!$user || !in_array($user->role, array('SUPER_ADMIN','ADMIN','STAFF'), true)) return;
+        if (!empty($user->mfa_enabled)) return;
+
+        // Allow the routes a staff member needs to enrol, sign out or stop an
+        // impersonation; everything else redirects until MFA is on.
+        $path = trim((string)$this->uri->uri_string(), '/');
+        if (in_array($path, array('dashboard/security', 'dashboard/profile', 'logout', 'impersonation/stop'), true)) return;
+        if (strpos($path, 'auth/mfa') === 0) return;
+
+        $this->session->set_flashdata('warning',
+            'Two-factor authentication is required for staff access. Enable it below, then continue.');
+        redirect('dashboard/security');
     }
 
     /** Enforce a granular permission key from the RBAC catalog (Session 03). */
