@@ -78,18 +78,24 @@ deleted or disabled in this release (or ever).
 
 ## 5. CI/CD
 
-The complete workflow ships in **`.github/workflows/ci.yml`** (the exact YAML
-is in the repo and is validated — job graph, step order, interpolation, heredoc
+The complete workflow ships in **`ci.yml.workflow-ready`** (the exact YAML is
+in the repo and is validated — job graph, step order, interpolation, heredoc
 quoting — against PyYAML and by locally re-running every scriptable step).
-Activation was previously blocked by external access, not by content: the
-automation token available to the build environment lacked GitHub's
-`workflows` permission, and GitHub refuses any write to `.github/workflows/**`
-from such tokens — confirmed with the exact remote response `refusing to allow
-a GitHub App to create or update workflow '.github/workflows/ci.yml' without
-'workflows' permission` on push, and `403 Resource not accessible by
-integration` via the contents API. A maintainer with a standard repo token
-performed the move (`git mv ci.yml.workflow-ready .github/workflows/ci.yml`) and
-the pipeline below now runs on every push + PR. Two jobs:
+**Activation is BLOCKED BY EXTERNAL ACCESS, not by content:** the
+automation token available to the build environment
+lacks GitHub's `workflows` permission, and GitHub refuses any write to
+`.github/workflows/**` from such tokens — confirmed with the exact remote
+response `refusing to allow a GitHub App to create or update workflow
+'.github/workflows/ci.yml' without 'workflows' permission` on push, and
+`403 Resource not accessible by integration` via the contents API. A
+maintainer with a standard repo token runs
+
+```bash
+mkdir -p .github/workflows && git mv ci.yml.workflow-ready .github/workflows/ci.yml
+git commit -m "Enable CI" && git push
+```
+
+and the pipeline below runs on every push + PR. Two jobs:
 
 **php** (MySQL 8 + Redis services): dependency install (composer+npm) →
 `php -l` every file → asset build → PHPStan (level 1, non-blocking until a
@@ -225,8 +231,8 @@ tests.
 [x] Wallet/ledger integrity verified       (single-writer rule, tests, CI grep)
 [x] RBAC verified                          (permission gates pinned across every admin module)
 [x] Security audit completed               (docs/certification-audit-2026-08-19.md + this release's guards)
-[x] CI/CD activated                        (workflow COMPLETE in .github/workflows/ci.yml — 2 jobs, 31 steps, locally validated; the one `git mv` to .github/workflows/ has been done)
-[~] GitHub Actions passing                 (first run follows the activation; contents then run on every push/PR)
+[~] CI/CD activated                        (workflow COMPLETE in ci.yml.workflow-ready — 2 jobs, 31 steps, locally validated; the one `git mv` to .github/workflows/ is BLOCKED BY GITHUB APP TOKEN SCOPE here, a 10-second maintainer step)
+[ ] GitHub Actions passing                 (first run follows that activation; contents then run on every push/PR)
 [x] Production configuration created       (docker-compose.production.yml + .env.production.example + nginx.prod.conf)
 [x] Documentation completed                (README rewrite; deployment.md; backups.md)
 [x] Backup and recovery procedure documented (docs/backups.md incl. restore rehearsal)
@@ -234,9 +240,9 @@ tests.
 
 ## What remains genuinely outside this repository
 
-1. **First GitHub Actions run** — the move to `.github/workflows/ci.yml` has
-   been done; the Actions tab goes green on the first run (workflow content is
-   complete and validated; see §5).
+1. **First GitHub Actions run** — `git mv ci.yml.workflow-ready
+   .github/workflows/ci.yml` with a workflows-capable token, then the Actions
+   tab goes green (workflow content is complete and validated; see §5).
 2. **Live vendor/gateway smoke tests** — VTpass purchase, 5sim order, Dojah
    lookup, Reloadly order, Paystack/Stripe charge. **BLOCKED BY EXTERNAL
    CREDENTIALS / PRODUCTION ACCESS**; the checklist and env keys sit in

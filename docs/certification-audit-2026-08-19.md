@@ -66,11 +66,11 @@ test harness defining `get_instance()` as return-by-value; CI3's real
 4. **Dead route** — `$route['install'] = 'install/index'` targeted a controller
    that does not exist (provisioning is CLI-only per Session 20). Replaced with an
    explanatory comment; `/install` now 404s cleanly.
-5. **CI prepared, not active (at audit time)** — `ci.yml.workflow-ready`
-   (carrying fix #2) was one move away from being live; it has since been
-   moved to `.github/workflows/ci.yml` and is active. The audit token held no
-   `workflows` permission, so GitHub refused a bot push to that path — the move
-   had to be made by a repo admin. All workflow steps were dry-run locally where
+5. **CI prepared, not active** — `ci.yml.workflow-ready` (now carrying fix #2) is
+   one move away from being live: `mkdir -p .github/workflows && mv
+   ci.yml.workflow-ready .github/workflows/ci.yml`. The audit token holds no
+   `workflows` permission, so GitHub refuses a bot push to that path — the move
+   must be made by a repo admin. All workflow steps were dry-run locally where
    technically possible (greps, schema lint, tests).
 6. **README was two words** — replaced with full installation/env/test/deploy
    documentation.

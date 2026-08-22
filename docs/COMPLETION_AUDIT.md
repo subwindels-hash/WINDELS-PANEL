@@ -14,7 +14,7 @@ No rebuilt architecture. Existing CodeIgniter 3 / PHP / Tailwind / Docker / prov
 Status key:
 - **PASS** — code verified substantial; architecture correct; no stubs/placeholders/empty controllers.
 - **PASS + ENV** — code complete; requires live infrastructure (credentials, Docker, CI runner) for final runtime proof.
-- **PASS + CI** — code verified; final proof requires native GitHub Actions pass (`ci.yml.workflow-ready` has since been moved to `.github/workflows/ci.yml` and is active).
+- **PASS + CI** — code verified; final proof requires native GitHub Actions pass (activate by renaming `ci.yml.workflow-ready` into `.github/workflows/ci.yml`).
 - **BLOCKED** — impossible to verify fully in this sandbox; clearly documented below.
 
 | Module | Status | Evidence / Notes | Blocker (if any) |
@@ -99,7 +99,7 @@ From previous audit (`docs/certification-audit-2026-08-19.md` and `docs/final-ce
 2. Schema false positive — `withdrawal_requests.paid_by` flagged as money; fixed by treating `_by` columns as actor references.
 3. Empty-CI_ENV 503 wall — nginx shipped `fastcgi_param CI_ENV $CI_ENV`; fixed.
 4. README inconsistency — `currently 018` vs `001→019`; **fixed in cfc1b36**.
-5. CI workflow activation — done: `ci.yml.workflow-ready` was the one maintainer step of renaming into `.github/workflows/ci.yml` (the automation bot's token lacks the `workflows` scope — see below) and has now been performed.
+5. CI workflow activation — `ci.yml.workflow-ready` stays staged at the repo root; activation is the one maintainer step of renaming it into `.github/workflows/` (the automation bot's token lacks the `workflows` scope — see below).
 
 ---
 

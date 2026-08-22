@@ -80,9 +80,9 @@ bash tools/verify_deployment_package.sh     # extracts it into a scratch
 
 The zip carries CodeIgniter, the compiled CSS, the pre-created writable
 directories and `database/windels_panel.sql`, so the destination host needs
-neither Composer nor npm. The packaging pipeline lives in
-`.github/workflows/deployment-package.yml` (runs on demand and on version
-tags; it publishes the zip as a release artifact).
+neither Composer nor npm. The packaging pipeline is staged at the repo root
+as `deployment-package.yml.workflow-ready` (rename into `.github/workflows/`
+to activate it; it publishes the zip as a release artifact).
 
 `deploy check` exits non-zero if anything is unsafe, so it can gate a release:
 

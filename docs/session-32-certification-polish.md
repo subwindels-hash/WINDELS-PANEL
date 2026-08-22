@@ -97,8 +97,8 @@ automation token available in this environment:
 The maintainer step documented in the README and the certification doc
 (`git mv ci.yml.workflow-ready .github/workflows/ci.yml` with a
 workflows-capable token) is therefore confirmed as the real unblock — a
-10-second action, not missing pipeline content — and it has since been
-performed. The workflow itself (2 jobs, 31 steps) is unchanged and validated.
+10-second action, not missing pipeline content. The workflow itself (2 jobs,
+31 steps) is unchanged and validated.
 
 ## 5. Also attempted and ruled out: a native PHP runtime in the audit sandbox
 
