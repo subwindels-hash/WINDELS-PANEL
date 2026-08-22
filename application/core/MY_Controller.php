@@ -102,7 +102,9 @@ class MY_Controller extends CI_Controller {
             "base-uri 'self'",
             // No plugins, and nothing may frame us (the modern X-Frame-Options).
             "object-src 'none'",
-            "frame-ancestors 'self'",
+            // Development / preview hosts are often embedded in an IDE iframe.
+            // Production stays locked to same-origin (and X-Frame-Options below).
+            (env_str('APP_ENV') === 'production') ? "frame-ancestors 'self'" : "frame-ancestors *",
             "form-action 'self'",
             "script-src 'self' 'nonce-{$this->csp_nonce}'",
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
@@ -112,7 +114,9 @@ class MY_Controller extends CI_Controller {
         );
 
         $this->output->set_header('X-Content-Type-Options: nosniff');
-        $this->output->set_header('X-Frame-Options: SAMEORIGIN');
+        if (env_str('APP_ENV') === 'production') {
+            $this->output->set_header('X-Frame-Options: SAMEORIGIN');
+        }
         $this->output->set_header('Referrer-Policy: strict-origin-when-cross-origin');
         $this->output->set_header('Content-Security-Policy: '.implode('; ', $csp));
         // Browsers ignore the legacy per-feature opt-outs; deny the powerful
