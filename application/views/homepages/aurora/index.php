@@ -29,25 +29,32 @@ $faqs = array(
   array('Do you offer an API?','Yes — create an API key in your dashboard and integrate /api/v1 in minutes. Full docs at /api/docs.'),
 );
 $testimonials = array(
-  array('Mira K.','Agency owner','“We process thousands of orders a month. The wallet ledger and refill handling just work.”'),
-  array('Diego R.','Reseller','“The API is fast and the pricing tiers let us run real margins.”'),
-  array('Aisha B.','Creator','“Customer support actually replies and my orders complete every time.”'),
+  array('Agencies','Shared wallet','One prepaid balance for many orders, with refill and ticket history in the same dashboard.'),
+  array('Resellers','HTTP API','The same order engine as the dashboard, behind API keys, scopes and IP allowlists.'),
+  array('Creators','Self-serve checkout','Pick a service, freeze the rate, pay from the wallet. No invented subscriber counts.'),
 );
 ?>
 <section class="ws-aurora-hero">
-  <div class="container" style="max-width:1080px">
-    <span class="badge badge-brand">★ 4.9 · Trusted by 50,000+ marketers</span>
-    <h1 class="mt-4">Grow your social presence<br><span class="gradient-text">with WINDELS PANEL</span></h1>
-    <p class="ws-lead">One platform. 2,000+ services. Automated, reliable fulfillment at reseller speed — with a wallet ledger you can trust.</p>
-    <div class="row" style="justify-content:center;margin-top:1.5rem">
-      <a class="btn btn-primary btn-lg" href="<?=site_url('register')?>">Start ordering →</a>
-      <a class="btn btn-secondary btn-lg" href="<?=site_url('services')?>">View services</a>
+  <div class="container" style="max-width:1180px">
+    <div class="ws-hero-split">
+      <div>
+        <span class="badge badge-brand">Prepaid reseller panel</span>
+        <h1 class="mt-4">Grow your social presence<br><span class="gradient-text">with WINDELS PANEL</span></h1>
+        <p class="ws-lead" style="margin-left:0">One platform for SMM, VTU and digital goods — automated fulfilment when providers are connected, and a wallet ledger you can audit. Catalogue size is whatever this operator has published.</p>
+        <div class="row" style="margin-top:1.5rem">
+          <a class="btn btn-primary btn-lg" href="<?=site_url('register')?>">Start ordering →</a>
+          <a class="btn btn-secondary btn-lg" href="<?=site_url('services')?>">View services</a>
+        </div>
+      </div>
+      <div class="ws-hero-media">
+        <img src="<?=base_url('assets/images/home/hero.jpg')?>" alt="Abstract view of a commerce operations hub: glass panels, order flows and connected services." width="960" height="720" fetchpriority="high">
+      </div>
     </div>
-    <div class="ws-aurora-stats" aria-label="Platform statistics">
-      <div><strong>2M+</strong><span>Orders delivered</span></div>
-      <div><strong>48k</strong><span>Active users</span></div>
-      <div><strong>2,000+</strong><span>Services</span></div>
-      <div><strong>99.8%</strong><span>Uptime</span></div>
+    <div class="ws-aurora-stats" aria-label="What the panel includes">
+      <div><strong>Wallet</strong><span>Prepaid spend only</span></div>
+      <div><strong>Ledger</strong><span>Double-entry credits</span></div>
+      <div><strong>API</strong><span>Reseller keys &amp; scopes</span></div>
+      <div><strong>Staff</strong><span>RBAC back office</span></div>
     </div>
   </div>
 </section>
@@ -140,9 +147,8 @@ $testimonials = array(
     <div class="grid grid-3 mt-6">
       <?php foreach ($testimonials as $t): ?>
       <figure class="card">
-        <div aria-label="5 out of 5 stars">★★★★★</div>
-        <blockquote><?=htmlspecialchars($t[2])?></blockquote>
         <figcaption><strong><?=htmlspecialchars($t[0])?></strong> <span class="muted">· <?=htmlspecialchars($t[1])?></span></figcaption>
+        <blockquote><?=htmlspecialchars($t[2])?></blockquote>
       </figure>
       <?php endforeach; ?>
     </div>

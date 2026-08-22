@@ -37,7 +37,7 @@ $faqs = array(
         <p class="ws-nexus-sub">Aggregate providers, route orders with failover, and sync status automatically — backed by an idempotent API and an auditable wallet ledger.</p>
         <div class="row" style="margin-top:1.5rem">
           <a class="btn ws-nexus-cta" href="<?=site_url('register')?>">Launch dashboard →</a>
-          <a class="btn ws-nexus-ghost" href="<?=site_url('services')?>">View API docs</a>
+          <a class="btn ws-nexus-ghost" href="<?=site_url('api/docs')?>">View API docs</a>
         </div>
       </div>
       <div class="ws-flow" aria-hidden="true">
@@ -57,10 +57,10 @@ $faqs = array(
     </div>
 
     <div class="ws-nexus-stats">
-      <div><span class="ws-kpi">1,284</span><span class="ws-kpi-label">Orders/min</span></div>
-      <div><span class="ws-kpi">312</span><span class="ws-kpi-label">Queue depth</span></div>
-      <div><span class="ws-kpi">180ms</span><span class="ws-kpi-label">Provider latency</span></div>
-      <div><span class="ws-kpi">99.3%</span><span class="ws-kpi-label">Success rate</span></div>
+      <div><span class="ws-kpi">CLI</span><span class="ws-kpi-label">Cron workers</span></div>
+      <div><span class="ws-kpi">AES</span><span class="ws-kpi-label">Keys at rest</span></div>
+      <div><span class="ws-kpi">TLS</span><span class="ws-kpi-label">Provider egress</span></div>
+      <div><span class="ws-kpi">RBAC</span><span class="ws-kpi-label">Staff roles</span></div>
     </div>
   </div>
 </section>
@@ -68,7 +68,7 @@ $faqs = array(
 <section class="py-12" style="background:#0b0f1a;color:#cbd5e1">
   <div class="container" style="max-width:1180px">
     <h2 class="ws-section-title">Provider network</h2>
-    <p class="muted" style="color:#94a3b8">Live health, last sync, and balance across aggregated providers.</p>
+    <p class="muted" style="color:#94a3b8">Illustrative routing — real provider names, health and balances appear in the staff console after adapters are connected. These cards are not live figures.</p>
     <div class="grid grid-3 mt-6">
       <?php foreach ($providers as $p): $ok = $p[1]==='healthy'; ?>
       <div class="ws-nexus-card">

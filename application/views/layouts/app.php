@@ -81,6 +81,8 @@ try {
 <title><?=htmlspecialchars($title ?? 'WINDELS PANEL')?></title>
 <?php if (!empty($brand['brand_favicon_url'])): ?>
 <link rel="icon" href="<?=htmlspecialchars($brand['brand_favicon_url'])?>">
+<?php else: ?>
+<?php $this->load->view('partials/icons_meta'); ?>
 <?php endif; ?>
 <?php // CSRF token for JavaScript: assets/js/app.js reads these and attaches the
       // token to every same-origin fetch/XHR, so a page that posts more than
@@ -134,11 +136,14 @@ try {
   <!-- Sidebar (desktop) -->
   <aside class="w-64 shrink-0 border-r bg-white hidden md:flex flex-col">
     <div class="h-16 flex items-center px-6 border-b">
-      <a href="<?=site_url()?>" class="font-bold tracking-tight">
+      <a href="<?=site_url()?>" class="ws-brand">
         <?php if (!empty($brand['brand_logo_url'])): ?>
           <img src="<?=htmlspecialchars($brand['brand_logo_url'])?>" alt="WINDELS PANEL"
                style="max-height:2rem;max-width:10rem">
-        <?php else: ?>WINDELS PANEL<?php endif; ?>
+        <?php else: ?>
+          <?php $this->load->view('partials/brand_logo', array('variant'=>'icon','height'=>32)); ?>
+          <span class="font-bold tracking-tight">WINDELS</span>
+        <?php endif; ?>
       </a>
     </div>
     <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-0.5" aria-label="Primary">
@@ -239,6 +244,7 @@ try {
   <?php endforeach; ?>
 </nav>
 
+<?php $this->load->view('partials/site_operator'); ?>
 <script src="<?=base_url('assets/js/app.js')?>"></script>
 </body>
 </html>

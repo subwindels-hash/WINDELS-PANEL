@@ -1,29 +1,67 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
 $cu = $current_user ?? null;
 $is_staff = $cu && in_array($cu->role, array('SUPER_ADMIN','ADMIN','STAFF'), true);
+$path = isset($this->uri) ? trim((string)$this->uri->uri_string(), '/') : '';
+$links = array(
+    array('services', 'Services'),
+    array('pricing', 'Pricing'),
+    array('faq', 'FAQ'),
+    array('blog', 'Blog'),
+    array('contact', 'Contact'),
+);
+$active = function ($href) use ($path) {
+    if ($href === '') return $path === '';
+    return $path === $href || strpos($path, $href.'/') === 0;
+};
 ?>
-<nav class="border-b bg-white/80 backdrop-blur sticky ws-sticky-below-announce z-50">
-<div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-<a href="<?=site_url()?>" class="font-bold text-lg">WINDELS PANEL</a>
-<div class="hidden md:flex gap-6 text-sm">
-<a href="<?=site_url('services')?>">Services</a><a href="<?=site_url('pricing')?>">Pricing</a><a href="<?=site_url('faq')?>">FAQ</a><a href="<?=site_url('blog')?>">Blog</a>
-</div>
-<div class="flex items-center gap-2">
-  <?php if ($cu): ?>
-    <?php if ($is_staff): ?>
-      <a href="<?=site_url('admin')?>" class="px-4 py-2 text-sm">Admin</a>
+<a class="ws-skip" href="#main">Skip to content</a>
+<nav class="ws-public-nav ws-sticky-below-announce" aria-label="Primary">
+  <div class="ws-public-nav-inner">
+    <a class="ws-brand" href="<?=site_url()?>">
+      <?php $this->load->view('partials/brand_logo', array('variant'=>'horizontal','height'=>32)); ?>
+      <span class="sr-only">WINDELS PANEL</span>
+    </a>
+
+    <div class="ws-nav-links" role="list">
+      <?php foreach ($links as $item): ?>
+        <a href="<?=site_url($item[0])?>" class="<?=$active($item[0]) ? 'is-active' : ''?>"
+           <?=$active($item[0]) ? 'aria-current="page"' : ''?>><?=htmlspecialchars($item[1])?></a>
+      <?php endforeach; ?>
+    </div>
+
+    <div class="ws-nav-actions">
+      <div class="ws-nav-desktop row" style="gap:.4rem">
+        <?php if ($cu): ?>
+          <a class="btn btn-secondary btn-sm" href="<?=site_url($is_staff ? 'admin' : 'dashboard')?>">
+            <?=$is_staff ? 'Admin' : 'Dashboard'?>
+          </a>
+          <form method="post" action="<?=site_url('logout')?>" class="m-0">
+            <input type="hidden" name="<?=$this->security->get_csrf_token_name()?>" value="<?=$this->security->get_csrf_hash()?>">
+            <button type="submit" class="btn btn-ghost btn-sm">Log out</button>
+          </form>
+        <?php else: ?>
+          <a class="btn btn-ghost btn-sm" href="<?=site_url('login')?>">Log in</a>
+          <a class="btn btn-primary btn-sm" href="<?=site_url('register')?>">Create account</a>
+        <?php endif; ?>
+      </div>
+      <button type="button" class="ws-nav-toggle" data-nav-toggle aria-controls="ws-nav-panel" aria-expanded="false">Menu</button>
+    </div>
+  </div>
+
+  <div id="ws-nav-panel" class="ws-nav-panel" hidden>
+    <?php foreach ($links as $item): ?>
+      <a href="<?=site_url($item[0])?>"><?=htmlspecialchars($item[1])?></a>
+    <?php endforeach; ?>
+    <a href="<?=site_url('about')?>">About</a>
+    <?php if ($cu): ?>
+      <a href="<?=site_url($is_staff ? 'admin' : 'dashboard')?>"><?=$is_staff ? 'Admin' : 'Dashboard'?></a>
+      <form method="post" action="<?=site_url('logout')?>" class="m-0">
+        <input type="hidden" name="<?=$this->security->get_csrf_token_name()?>" value="<?=$this->security->get_csrf_hash()?>">
+        <button type="submit" class="btn btn-ghost">Log out</button>
+      </form>
     <?php else: ?>
-      <a href="<?=site_url('dashboard')?>" class="px-4 py-2 text-sm">Dashboard</a>
+      <a href="<?=site_url('login')?>">Log in</a>
+      <a href="<?=site_url('register')?>">Create account</a>
     <?php endif; ?>
-    <a href="<?=site_url('dashboard/favorites')?>" class="px-3 py-2 text-sm" title="Favorites" aria-label="Favorites">★</a>
-    <form method="post" action="<?=site_url('logout')?>" class="m-0 inline-block">
-      <input type="hidden" name="<?=$this->security->get_csrf_token_name()?>" value="<?=$this->security->get_csrf_hash()?>">
-      <button type="submit" class="px-4 py-2 bg-black text-white rounded-lg text-sm border-0 cursor-pointer">Log out</button>
-    </form>
-  <?php else: ?>
-    <a href="<?=site_url('login')?>" class="px-4 py-2 text-sm">Login</a>
-    <a href="<?=site_url('register')?>" class="px-4 py-2 bg-black text-white rounded-lg text-sm">Start Ordering</a>
-  <?php endif; ?>
-</div>
-</div>
+  </div>
 </nav>

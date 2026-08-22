@@ -5,10 +5,10 @@
  */
 $chips = array('Instagram','TikTok','YouTube','X','Facebook','Telegram');
 $categories = array(
-  array('Followers','👥','12.4k services'),array('Likes','❤️','8.1k'),
-  array('Views','👁️','9.7k'),array('Comments','💬','3.2k'),
-  array('Shares','🔗','2.8k'),array('Saves','🔖','1.9k'),
-  array('Subscribers','📺','4.0k'),array('Live viewers','📡','1.2k'),
+  array('Followers','👥','SMM catalogue'),array('Likes','❤️','SMM catalogue'),
+  array('Views','👁️','SMM catalogue'),array('Comments','💬','SMM catalogue'),
+  array('Shares','🔗','SMM catalogue'),array('Saves','🔖','SMM catalogue'),
+  array('Subscribers','📺','SMM catalogue'),array('Live viewers','📡','SMM catalogue'),
 );
 $trending = array(
   array('Instagram','Followers — HQ',4.9,'1.20','0–5 min','50','100k'),
@@ -21,14 +21,14 @@ $trending = array(
   array('Twitch','Live Viewers',4.7,'6.00','Instant','50','5k'),
 );
 $reviews = array(
-  array('Jordan M.','“Ordered 5k followers and they arrived within minutes. The dashboard makes tracking effortless.”',5),
-  array('Priya S.','“Best pricing I’ve found for TikTok, and refills actually work.”',5),
-  array('Samuel O.','“The search and one-click ordering is exactly what I wanted.”',5),
+  array('Search first','Find a service, paste a public link, pay from the wallet. No fake review scores.'),
+  array('Refill when marked','Services that support refill expose the action on the order — it is not a slogan.'),
+  array('Human support','Tickets and the contact form reach staff. The assistant only explains the site.'),
 );
 $faqs = array(
   array('How do I place an order?','Search for a service, paste your link, choose a quantity, and pay from your wallet. Most orders start automatically.'),
   array('Can I get a refill?','Services marked “refill” include a refill window from the order detail page.'),
-  array('What payment methods are supported?','You can add funds via card, PayPal and regional methods. The minimum deposit is $5.'),
+  array('What payment methods are supported?','Add funds through whichever methods the operator has enabled. Manual bank transfer ships on; card gateways stay off until credentials are configured. The default minimum deposit is ₦500.'),
 );
 ?>
 <section class="py-10 ws-pulse-hero">
@@ -76,7 +76,7 @@ $faqs = array(
       <article class="card card-hover">
         <div class="row justify-between">
           <span class="badge badge-default"><?=htmlspecialchars($s[0])?></span>
-          <span class="ws-stars" aria-label="<?=$s[2]?> out of 5">★ <?=$s[2]?></span>
+          <span class="muted" aria-label="Example catalogue card">Example</span>
         </div>
         <h3 class="card-title mt-2"><?=htmlspecialchars($s[1])?></h3>
         <p class="muted" style="font-size:.85rem">⏱ <?=htmlspecialchars($s[4])?></p>
@@ -124,15 +124,14 @@ $faqs = array(
 <section class="py-10">
   <div class="container" style="max-width:1080px">
     <div class="text-center">
-      <div class="ws-stars" style="font-size:1.25rem">★ 4.9/5</div>
-      <p class="muted">from 12,000+ customers</p>
+      <h2 class="mb-0">Built for placing orders, not collecting stars</h2>
+      <p class="muted">Capabilities of the panel — not fabricated ratings.</p>
     </div>
     <div class="grid grid-3 mt-6">
       <?php foreach ($reviews as $r): ?>
       <figure class="card">
-        <div class="ws-stars" aria-label="<?=$r[2]?> out of 5"><?=str_repeat('★',$r[2])?></div>
+        <figcaption class="muted"><?=htmlspecialchars($r[0])?></figcaption>
         <blockquote><?=htmlspecialchars($r[1])?></blockquote>
-        <figcaption class="muted">— <?=htmlspecialchars($r[0])?></figcaption>
       </figure>
       <?php endforeach; ?>
     </div>

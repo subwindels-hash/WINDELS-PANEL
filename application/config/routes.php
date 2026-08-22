@@ -2,7 +2,7 @@
 defined('BASEPATH') OR exit('No direct script access allowed');
 
 $route['default_controller'] = 'home';
-$route['404_override'] = '';
+$route['404_override'] = 'home/not_found';
 $route['translate_uri_dashes'] = FALSE;
 
 // First-run setup / deployment self-check. 404 unless VP_SETUP_TOKEN is set in
@@ -15,6 +15,11 @@ $route['setup/admin'] = 'setup/admin';
 // a reply box, a chat widget or any fetch() post more than once without the
 // page being reloaded between messages.
 $route['csrf'] = 'csrf/index';
+
+// Embedded site operator (no third-party AI).
+$route['assistant'] = 'chat/index';
+$route['assistant/chat'] = 'chat/message';
+$route['assistant/welcome'] = 'chat/welcome';
 
 // Health
 $route['health'] = 'health/index';
@@ -48,6 +53,9 @@ $route['robots\.txt'] = 'home/robots';
 $route['login'] = 'auth/login';
 $route['register'] = 'auth/register';
 $route['logout'] = 'auth/logout';
+// Staff-only sign-in. Must be declared before the /admin dashboard route so
+// unauthenticated operators land on a real login form, not the admin gate.
+$route['admin/login'] = 'auth/admin_login';
 // The only state-changing request allowed inside a read-only impersonation.
 $route['impersonation/stop'] = 'impersonation/stop';
 $route['forgot-password'] = 'auth/forgot_password';

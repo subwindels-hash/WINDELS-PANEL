@@ -28,27 +28,31 @@ if (!empty($announcements)) {
 }
 if (empty($items)) {
     $items = array(
-        'Welcome to WINDELS PANEL',
-        'SMM, VTU, gift cards, virtual numbers and identity verification — all in one panel',
-        'Add funds and place orders from your dashboard',
+        'Prepaid wallet: add funds and spend on services — leftover deposits cannot be withdrawn.',
+        'New here? Create an account, then browse Services or read Pricing.',
+        'Need help? Open the FAQ, send a Contact message, or ask the on-site assistant.',
+        'Staff sign in at Admin login. Customer passwords cannot open the back office.',
     );
 }
 
-// Repeat until the strip is long enough that the loop never looks empty.
-$group = $items;
-while (count($group) < 6) {
-    $group = array_merge($group, $items);
+// One visual cycle shows this group. Duration scales with readable characters
+// so a longer announcement stays on screen long enough to read (~6 chars/sec).
+$cycle_chars = 0;
+foreach ($items as $text) {
+    $cycle_chars += (function_exists('mb_strlen') ? mb_strlen($text) : strlen($text)) + 12;
 }
+$seconds = (int) max(55, min(180, $cycle_chars / 6));
 ?>
-<div class="ws-announce" role="region" aria-label="Announcements">
+<div class="ws-announce" role="region" aria-label="Announcements" tabindex="0"
+     style="--ws-announce-duration: <?=$seconds?>s">
   <div class="ws-announce-track">
     <div class="ws-announce-group">
-      <?php foreach ($group as $text): ?>
+      <?php foreach ($items as $text): ?>
         <span class="ws-announce-item"><?=htmlspecialchars($text)?></span>
       <?php endforeach; ?>
     </div>
     <div class="ws-announce-group" aria-hidden="true">
-      <?php foreach ($group as $text): ?>
+      <?php foreach ($items as $text): ?>
         <span class="ws-announce-item"><?=htmlspecialchars($text)?></span>
       <?php endforeach; ?>
     </div>

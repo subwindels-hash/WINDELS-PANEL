@@ -5,7 +5,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title><?=htmlspecialchars($title ?? 'WINDELS PANEL')?></title>
+<title><?=htmlspecialchars($title ?? 'WINDELS PANEL')?> · WINDELS PANEL</title>
+<?php $this->load->view('partials/icons_meta'); ?>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap">
 <?php // CSRF token for JavaScript: assets/js/app.js reads these and attaches the
       // token to every same-origin fetch/XHR, so a page that posts more than
@@ -21,7 +22,10 @@
 <div class="min-h-screen flex flex-col">
   <header class="border-b bg-white">
     <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-      <a href="<?=site_url()?>" class="font-bold text-lg tracking-tight">WINDELS PANEL</a>
+      <a href="<?=site_url()?>" class="ws-brand">
+        <?php $this->load->view('partials/brand_logo', array('variant'=>'horizontal','height'=>30)); ?>
+        <span class="sr-only">WINDELS PANEL</span>
+      </a>
       <?php if (!empty($current_user)): ?>
         <form method="post" action="<?=site_url('logout')?>" class="m-0">
           <input type="hidden" name="<?=$this->security->get_csrf_token_name()?>" value="<?=$this->security->get_csrf_hash()?>">
@@ -33,7 +37,17 @@
     </div>
   </header>
 
-  <main class="flex-1 flex items-start justify-center px-4 py-12">
+  <main class="flex-1">
+    <div class="ws-auth-shell">
+      <aside class="ws-auth-visual" aria-hidden="true">
+        <img src="<?=base_url('assets/images/home/hero.jpg')?>" alt="" width="960" height="1200">
+        <div class="ws-auth-visual-inner">
+          <img src="<?=base_url('assets/brand/logo-dark.svg')?>" alt="" height="40" width="176" class="ws-logo">
+          <h2 class="mt-6">A wallet you can audit. Orders you can follow.</h2>
+          <p class="muted" style="color:#cbd5e1">Prepaid SMM, VTU and digital goods — same ledger, same staff tools.</p>
+        </div>
+      </aside>
+      <div class="flex items-start justify-center px-4 py-12">
     <div class="w-full max-w-md">
       <?php $flash_success = $this->session->flashdata('success'); ?>
       <?php $flash_error   = $this->session->flashdata('error'); ?>
@@ -60,6 +74,7 @@
     </div>
   </main>
 </div>
+<?php $this->load->view('partials/site_operator'); ?>
 <script src="<?=base_url('assets/js/app.js')?>"></script>
 </body>
 </html>

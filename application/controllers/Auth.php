@@ -52,6 +52,87 @@ class Auth extends MY_Controller {
         ));
     }
 
+    /**
+     * Staff-only login. Same password check as /login, then the role must be
+     * SUPER_ADMIN, ADMIN or STAFF. Customer credentials receive the generic
+     * invalid-credentials message so this page cannot be used to probe roles.
+     */
+    public function admin_login() {
+        if ($this->auth->check()) {
+            if ($this->auth->has_role(array('SUPER_ADMIN','ADMIN','STAFF'))) {
+                redirect('admin');
+            }
+            $this->session->set_flashdata('error', 'That area is for staff. You are signed in as a customer.');
+            redirect('dashboard');
+        }
+
+        if ($this->input->method(true) === 'POST') {
+            return $this->admin_login_post();
+        }
+
+        $this->render_auth('auth/admin_login', array(
+            'title' => 'Staff sign-in',
+        ));
+    }
+
+    private function admin_login_post() {
+        $this->form_validation->set_rules('identifier', 'Email or username', 'required|trim');
+        $this->form_validation->set_rules('password', 'Password', 'required');
+        if (!$this->form_validation->run()) {
+            return $this->render_auth('auth/admin_login', array('title' => 'Staff sign-in'));
+        }
+
+        $ip         = $this->input->ip_address();
+        $identifier = $this->input->post('identifier', true);
+        $password   = $this->input->post('password');
+        $ua         = $this->input->user_agent();
+        $bucket     = RateLimiter::scope('adminlogin', $identifier);
+
+        if ($this->Blacklist_model->is_ip_blacklisted($ip)) {
+            $this->session->set_flashdata('error', 'Your IP address has been blocked.');
+            return redirect('admin/login');
+        }
+        if ($this->ratelimiter->too_many_failures($ip, $bucket, 5, 900)) {
+            $retry = $this->ratelimiter->retry_after($ip, $bucket, 900, 5);
+            $this->session->set_flashdata('error',
+                'Too many failed attempts. Try again in ' . ceil($retry / 60) . ' minute(s).');
+            return redirect('admin/login');
+        }
+
+        $result = $this->auth->attempt_login($identifier, $password, $ip, $ua);
+        if (!$result['ok']) {
+            $this->ratelimiter->record($bucket, $ip, false, 'ADMIN_INVALID', $ua);
+            $this->session->set_flashdata('error', $this->login_error_message($result['error']));
+            return redirect('admin/login');
+        }
+
+        if (!empty($result['mfa_required'])) {
+            $this->session->set_userdata('admin_login_intent', 1);
+            $this->capture_remember();
+            $this->session->set_flashdata('mfa_required', true);
+            $this->session->set_flashdata('mfa_email', $result['user']->email);
+            return redirect('login');
+        }
+
+        if (!$this->auth->has_role(array('SUPER_ADMIN','ADMIN','STAFF'))) {
+            // Do not sess_destroy(): that would drop the flash message and the
+            // CSRF cookie on the same request. Drop the auth keys only.
+            $this->session->unset_userdata(array('user_id', 'role', 'login_at'));
+            $this->ratelimiter->record($bucket, $ip, false, 'ADMIN_NOT_STAFF', $ua);
+            $this->session->set_flashdata('error', 'Invalid email/username or password.');
+            return redirect('admin/login');
+        }
+
+        $this->apply_remember_cookie();
+        $this->session->set_flashdata('success', 'Welcome back.');
+        $dest = $this->session->userdata('redirect_after_login') ?: 'admin';
+        $this->session->unset_userdata('redirect_after_login');
+        if (!is_string($dest) || strpos($dest, '/admin') !== 0) {
+            $dest = 'admin';
+        }
+        redirect($dest);
+    }
+
     private function login_post() {
         $this->form_validation->set_rules('identifier', 'Email or username', 'required|trim');
         $this->form_validation->set_rules('password', 'Password', 'required');
@@ -82,11 +163,13 @@ class Auth extends MY_Controller {
         }
 
         if (!empty($result['mfa_required'])) {
+            $this->capture_remember();
             $this->session->set_flashdata('mfa_required', true);
             $this->session->set_flashdata('mfa_email', $result['user']->email);
             return redirect('login');
         }
 
+        $this->apply_remember_cookie();
         $this->session->set_flashdata('success', 'Welcome back.');
         $dest = $this->session->userdata('redirect_after_login') ?: $this->default_landing();
         $this->session->unset_userdata('redirect_after_login');
@@ -116,8 +199,17 @@ class Auth extends MY_Controller {
             $this->session->set_flashdata('error', $this->login_error_message($result['error']));
             return redirect('login');
         }
+        if ($this->session->userdata('admin_login_intent') && !$this->auth->has_role(array('SUPER_ADMIN','ADMIN','STAFF'))) {
+            $this->session->unset_userdata(array('admin_login_intent', 'user_id', 'role', 'login_at'));
+            $this->session->set_flashdata('error', 'Invalid email/username or password.');
+            return redirect('admin/login');
+        }
+        $this->session->unset_userdata('admin_login_intent');
+        $this->apply_remember_cookie();
         $this->session->set_flashdata('success', 'Welcome back.');
-        redirect($this->default_landing());
+        $dest = $this->session->userdata('redirect_after_login') ?: $this->default_landing();
+        $this->session->unset_userdata('redirect_after_login');
+        redirect($dest);
     }
 
     /**
@@ -397,6 +489,37 @@ class Auth extends MY_Controller {
     private function default_landing() {
         if (!$this->auth) return 'login';
         return $this->auth->has_role(array('SUPER_ADMIN','ADMIN','STAFF')) ? 'admin' : 'dashboard';
+    }
+
+    /** Remember the checkbox across an MFA challenge. */
+    private function capture_remember() {
+        if ($this->input->post('remember')) {
+            $this->session->set_userdata('remember_login', 1);
+        }
+    }
+
+    /**
+     * Extend the session cookie when the user asked to be remembered.
+     * This does not create a second persistent login token; it only lengthens
+     * the existing first-party session cookie on this device.
+     */
+    private function apply_remember_cookie() {
+        $wanted = $this->input->post('remember') || $this->session->userdata('remember_login');
+        $this->session->unset_userdata('remember_login');
+        if (!$wanted) return;
+
+        $name = $this->config->item('sess_cookie_name') ?: session_name();
+        if ($name === '' || !isset($_COOKIE[$name])) return;
+        $params = session_get_cookie_params();
+        $options = array(
+            'expires'  => time() + (30 * 86400),
+            'path'     => $params['path'] ?: '/',
+            'domain'   => $params['domain'] ?: '',
+            'secure'   => !empty($params['secure']),
+            'httponly' => true,
+            'samesite' => 'Lax',
+        );
+        setcookie($name, $_COOKIE[$name], $options);
     }
 
     private function render_auth($view, $data = array()) {

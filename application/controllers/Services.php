@@ -36,8 +36,15 @@ class Services extends Public_Controller {
         $platforms  = array_unique(array_filter(array_map(function ($c) { return $c->platform; }, $categories)));
         $types      = array('DEFAULT','CUSTOM_COMMENTS','PACKAGE','SUBSCRIPTION','MENTIONS_USER_FOLLOWERS');
 
+        $this->load->library('SiteOperatorKnowledge');
         $this->render_public('public/services/index', array(
             'title'       => 'Services',
+            'meta_description' => 'Social-media services plus VTU, virtual numbers, identity checks, gift cards and a platform marketplace — priced from a prepaid wallet.',
+            'product_areas' => SiteOperatorKnowledge::product_areas(),
+            'how_it_works' => SiteOperatorKnowledge::how_it_works(),
+            'advantages' => SiteOperatorKnowledge::advantages(),
+            'security_practices' => SiteOperatorKnowledge::security_practices(),
+            'show_marketing' => ($q === '' && !$cat && !$platform && !$type && $page === 1),
             'services'    => $result['rows'],
             'categories'  => $categories,
             'platforms'   => $platforms,

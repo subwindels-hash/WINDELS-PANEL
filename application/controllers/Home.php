@@ -12,7 +12,12 @@ class Home extends Public_Controller {
         } else {
             $active = $this->active_homepage();
         }
-        $data = array('active_homepage'=>$active, 'title'=>'WINDELS PANEL — SMM Reseller Platform');
+        $data = array(
+            'active_homepage'=>$active,
+            'title'=>'Prepaid SMM, VTU and digital-goods panel',
+            'meta_description'=>'WINDELS PANEL is a prepaid reseller platform for social-media services, Nigerian VTU, virtual numbers, identity checks, gift cards and a platform marketplace.',
+            'canonical' => '',
+        );
         // Single switch — no Node
         $view = 'homepages/'.strtolower($active).'/index';
         // Fallback if template missing. CI_Loader has no view-exists helper, so
@@ -32,14 +37,46 @@ class Home extends Public_Controller {
         $cfg = $this->config->item('windels');
         return $cfg['active_homepage'] ?? 'AURORA';
     }
-    public function pricing(){ $this->load->view('layouts/public', array('content_view'=>'public/pricing','data'=>array('title'=>'Pricing'))); }
-    public function about(){ $this->load->view('layouts/public', array('content_view'=>'public/about','data'=>array('title'=>'About'))); }
+    public function pricing(){
+        $this->load->library('SiteOperatorKnowledge');
+        $this->load->view('layouts/public', array('content_view'=>'public/pricing','data'=>array(
+            'title'=>'Pricing',
+            'meta_description'=>'Prepaid wallet pricing for WINDELS PANEL. No invented monthly plans — you pay published service rates. Volume groups are assigned by staff.',
+        )));
+    }
+    public function about(){
+        $this->load->view('layouts/public', array('content_view'=>'public/about','data'=>array(
+            'title'=>'About',
+            'meta_description'=>'What WINDELS PANEL is, who it is for, and what this site will not invent about the operator.',
+        )));
+    }
     public function faq(){
-        $this->load->model('Faq_model');
+        $this->load->library('SiteOperatorKnowledge');
+        $faqs = array();
+        $categories = array();
+        try {
+            if ($this->db_ready) {
+                $this->load->model('Faq_model');
+                $faqs = $this->Faq_model->active();
+                $categories = $this->Faq_model->categories();
+            }
+        } catch (Throwable $e) {
+            $faqs = array();
+        }
+        if (empty($faqs)) {
+            foreach (SiteOperatorKnowledge::faqs() as $row) {
+                $faqs[] = (object)array(
+                    'question' => $row['q'],
+                    'answer'   => $row['a'],
+                    'category' => $row['category'],
+                );
+            }
+        }
         $this->load->view('layouts/public', array('content_view'=>'public/faq','data'=>array(
             'title'=>'FAQ',
-            'faqs'=>$this->Faq_model->active(),
-            'categories'=>$this->Faq_model->categories(),
+            'meta_description'=>'Answers about WINDELS PANEL accounts, wallet billing, services, security, the reseller API and the on-site assistant.',
+            'faqs'=>$faqs,
+            'categories'=>$categories,
         )));
     }
 
@@ -55,7 +92,7 @@ class Home extends Public_Controller {
             'content_view' => 'public/contact',
             'data' => array_merge(array(
                 'title'           => 'Contact',
-                'meta_description'=> 'Contact the WINDELS PANEL support team.',
+                'meta_description'=> 'Contact WINDELS PANEL support about an order, payment or the reseller API. Signed-in customers get a ticket.',
                 'support_email'   => $this->support_email(),
             ), $data),
         ));
@@ -196,10 +233,46 @@ class Home extends Public_Controller {
         $cfg = $this->config->item('windels');
         return $cfg['support_email'] ?? 'support@windels.local';
     }
-    public function terms(){ $this->load->view('layouts/public', array('content_view'=>'public/terms','data'=>array('title'=>'Terms'))); }
-    public function privacy(){ $this->load->view('layouts/public', array('content_view'=>'public/privacy','data'=>array('title'=>'Privacy'))); }
-    public function refund_policy(){ $this->load->view('layouts/public', array('content_view'=>'public/refund_policy','data'=>array('title'=>'Refund Policy'))); }
-    public function acceptable_use(){ $this->load->view('layouts/public', array('content_view'=>'public/acceptable_use','data'=>array('title'=>'Acceptable Use'))); }
+    public function terms(){
+        $this->load->library('SiteOperatorKnowledge');
+        $this->load->view('layouts/public', array('content_view'=>'public/terms','data'=>array(
+            'title'=>'Terms of Service',
+            'meta_description'=>'Terms of Service for this WINDELS PANEL instance, including accounts, wallet billing, acceptable use and the on-site assistant.',
+        )));
+    }
+    public function privacy(){
+        $this->load->library('SiteOperatorKnowledge');
+        $this->load->view('layouts/public', array('content_view'=>'public/privacy','data'=>array(
+            'title'=>'Privacy Policy',
+            'meta_description'=>'How WINDELS PANEL handles account, order, payment, identity and assistant data — written from the actual application.',
+        )));
+    }
+    public function refund_policy(){
+        $this->load->library('SiteOperatorKnowledge');
+        $this->load->view('layouts/public', array('content_view'=>'public/refund_policy','data'=>array(
+            'title'=>'Refund Policy',
+            'meta_description'=>'When WINDELS PANEL credits a prepaid wallet for partial deliveries, failed purchases or staff decisions.',
+        )));
+    }
+    public function acceptable_use(){
+        $this->load->library('SiteOperatorKnowledge');
+        $this->load->view('layouts/public', array('content_view'=>'public/acceptable_use','data'=>array(
+            'title'=>'Acceptable Use',
+            'meta_description'=>'What you may and may not do with a WINDELS PANEL account, wallet, API key and catalogue orders.',
+        )));
+    }
+
+    public function not_found(){
+        $this->output->set_status_header(404);
+        $this->load->view('layouts/public', array(
+            'content_view' => 'public/not_found',
+            'data' => array(
+                'title' => 'Page not found',
+                'meta_description' => 'That address is not a page on WINDELS PANEL.',
+                'meta_robots' => 'noindex,follow',
+            ),
+        ));
+    }
 
     /**
      * Living design-system guide (Session 04). Public so designers/reviewers can
@@ -215,6 +288,30 @@ class Home extends Public_Controller {
             ),
         ));
     }
-    public function sitemap(){ $this->output->set_content_type('text/xml')->set_output('<?xml version="1.0"?><urlset></urlset>'); }
-    public function robots(){ $this->output->set_content_type('text/plain')->set_output("User-agent: *\nAllow: /\nSitemap: ".base_url('sitemap.xml')); }
+    public function sitemap(){
+        $urls = array(
+            '', 'services', 'pricing', 'about', 'faq', 'blog', 'contact',
+            'terms', 'privacy', 'refund-policy', 'acceptable-use',
+            'design-system', 'api/docs',
+        );
+        if ($this->db_ready) {
+            try {
+                $this->load->model('Blog_post_model');
+                foreach ($this->Blog_post_model->published(null, 200, 0) as $post) {
+                    $urls[] = 'blog/'.$post->slug;
+                }
+            } catch (Throwable $e) { /* public pages only */ }
+        }
+        $xml = '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">';
+        foreach (array_unique($urls) as $path) {
+            $xml .= '<url><loc>'.htmlspecialchars(site_url($path)).'</loc></url>';
+        }
+        $xml .= '</urlset>';
+        $this->output->set_content_type('application/xml')->set_output($xml);
+    }
+    public function robots(){
+        $this->output->set_content_type('text/plain')->set_output(
+            "User-agent: *\nAllow: /\nDisallow: /dashboard\nDisallow: /admin\nDisallow: /login\nDisallow: /register\nSitemap: ".site_url('sitemap.xml')."\n"
+        );
+    }
 }

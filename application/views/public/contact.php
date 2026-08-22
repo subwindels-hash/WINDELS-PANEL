@@ -3,9 +3,7 @@
  * Public contact form.
  *
  * Signed in, the message becomes a support ticket you can follow in the
- * dashboard; signed out, it is emailed to the support address. Either way the
- * form is a plain server-rendered POST — no JavaScript is required for it to
- * work, so there is nothing here that can fail on a second submission.
+ * dashboard; signed out, it is emailed to the support address.
  *
  * @var string $support_email
  * @var string $error
@@ -17,26 +15,30 @@ $value = function ($key) use ($form) {
     return isset($form[$key]) ? htmlspecialchars($form[$key], ENT_QUOTES) : '';
 };
 ?>
-<section class="py-12">
-  <div class="container" style="max-width:720px">
-    <header class="text-center mb-8">
-      <h1>Contact us</h1>
-      <p class="muted">
-        Questions about an order, a payment or the reseller API — send them here and a
-        human answers.
-      </p>
-    </header>
-
-    <?php if (!empty($success)): ?>
-      <div class="card" style="border-color:#a7f3d0;background:#ecfdf5">
-        <p style="color:#065f46;margin:0"><?=htmlspecialchars($success)?></p>
+<section class="ws-page-hero">
+  <div class="container" style="max-width:1100px">
+    <div class="ws-hero-split">
+      <div>
+        <p class="ws-kicker">Support</p>
+        <h1>Contact us</h1>
+        <p class="ws-lede">Questions about an order, a payment or the reseller API — send them here. A person answers. The on-site assistant cannot open a ticket for you.</p>
       </div>
+      <div class="ws-hero-media">
+        <img src="<?=base_url('assets/images/faq/hero.jpg')?>" alt="Soft architectural light over a knowledge space — contact is a human conversation, not a call-centre stock photo." width="800" height="600" loading="lazy">
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="ws-section-sm">
+  <div class="container" style="max-width:720px">
+    <?php if (!empty($success)): ?>
+      <div class="alert alert-success" role="status"><?=htmlspecialchars($success)?></div>
+      <p><a class="btn btn-secondary" href="<?=site_url()?>">Back to home</a></p>
     <?php else: ?>
 
       <?php if (!empty($error)): ?>
-        <div class="card mb-4" style="border-color:#fecaca;background:#fef2f2">
-          <p style="color:#991b1b;margin:0"><?=htmlspecialchars($error)?></p>
-        </div>
+        <div class="alert alert-danger" role="alert"><?=htmlspecialchars($error)?></div>
       <?php endif; ?>
 
       <?php if (!empty($current_user)): ?>
@@ -60,7 +62,7 @@ $value = function ($key) use ($form) {
             <input class="input" id="contact-email" name="email" type="email" maxlength="255" required
                    autocomplete="email"
                    value="<?=$value('email') ?: (!empty($current_user) ? htmlspecialchars($current_user->email, ENT_QUOTES) : '')?>">
-            <p class="muted text-xs mt-1">We only use it to reply.</p>
+            <p class="hint">We only use it to reply.</p>
           </div>
 
           <div>
@@ -75,7 +77,6 @@ $value = function ($key) use ($form) {
                       required placeholder="Order ID, what you expected, what happened…"><?=$value('message')?></textarea>
           </div>
 
-          <?php // Honeypot. Hidden from people, irresistible to bots. ?>
           <div style="position:absolute;left:-9999px" aria-hidden="true">
             <label for="contact-website">Leave this field empty</label>
             <input id="contact-website" name="website" type="text" tabindex="-1" autocomplete="off">
@@ -85,10 +86,22 @@ $value = function ($key) use ($form) {
         <?=form_close()?>
       </div>
 
-      <p class="muted text-center mt-4 text-sm">
-        Prefer email? Write to
-        <a href="mailto:<?=htmlspecialchars($support_email ?? 'support@windels.local')?>"><?=htmlspecialchars($support_email ?? 'support@windels.local')?></a>.
-      </p>
+      <div class="grid grid-3 mt-6">
+        <div class="card">
+          <h2 class="card-title">Email</h2>
+          <p class="muted">Prefer a mailbox?
+            <a href="mailto:<?=htmlspecialchars($support_email ?? 'support@windels.local')?>"><?=htmlspecialchars($support_email ?? 'support@windels.local')?></a>
+          </p>
+        </div>
+        <div class="card">
+          <h2 class="card-title">Tickets</h2>
+          <p class="muted">Signed-in customers should use tickets so replies stay on the order history.</p>
+        </div>
+        <div class="card">
+          <h2 class="card-title">What to include</h2>
+          <p class="muted">Public order ID, approximate time, and what you already tried. Do not send passwords or full card numbers.</p>
+        </div>
+      </div>
     <?php endif; ?>
   </div>
 </section>
