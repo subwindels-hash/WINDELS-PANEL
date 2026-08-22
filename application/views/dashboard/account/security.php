@@ -34,8 +34,7 @@
           <span class="badge badge-default">Not enabled</span>
         <?php endif; ?>
       </div>
-      <p class="hint mt-3">Full TOTP enrollment (QR code + recovery codes) is wired in the auth service;
-        the setup UI arrives with the account/security screen polish in Session 17. MFA is already enforced at login once enabled.</p>
+      <p class="hint mt-3">Two-factor authentication is enforced at login once enabled.</p>
     </div>
 
     <div class="card">

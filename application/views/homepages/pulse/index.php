@@ -103,7 +103,7 @@ $faqs = array(
           <select class="select"><option>Followers</option><option>Likes</option><option>Views</option></select>
         </label>
         <label class="field"><span class="label">Service</span>
-          <select class="select"><option>Instagram Followers — HQ ($1.20/1k)</option></select>
+          <select class="select"><option>Instagram Followers — HQ (₦1.20/1k)</option></select>
         </label>
         <label class="field"><span class="label">Link</span>
           <input class="input" placeholder="https://instagram.com/yourhandle">
@@ -113,7 +113,7 @@ $faqs = array(
         </label>
       </form>
       <div class="row justify-between ws-fast-total">
-        <div><span class="muted">Total</span> <strong id="ws-total">$1.20</strong></div>
+        <div><span class="muted">Total</span> <strong id="ws-total">₦1.20</strong></div>
         <a class="btn btn-danger btn-lg" href="<?=site_url('register')?>">Place order →</a>
       </div>
       <p class="hint text-center">Live price is an estimate; the exact total is frozen at checkout (no provider calls on this page).</p>

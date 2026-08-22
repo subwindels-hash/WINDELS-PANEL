@@ -30,7 +30,7 @@ if (!function_exists('windels_site_name')) {
     function windels_site_name(){
         static $name = null;
         if ($name !== null) return $name;
-        $name = 'Averion Commerce';
+        $name = 'WINDELS PANEL';
         if (function_exists('get_instance')) {
             $ci = @get_instance();
             if ($ci && isset($ci->config)) {
@@ -77,13 +77,18 @@ if (!function_exists('windels_brand_logo')) {
      * footer and auth shell from each hardcoding a different asset path.
      */
     function windels_brand_logo($variant = 'horizontal', $height = 32){
-        $name = strtolower(str_replace(' ', '-', preg_replace('/[^A-Za-z0-9 ]/', '', windels_site_name())));
-        $file = 'logo-'.$name;
-        if ($variant === 'icon') $file = 'logo-'.$name.'-icon';
-        if ($variant === 'dark') $file = 'logo-'.$name.'-dark';
-        $path = FCPATH.'assets/brand/'.$file.'.svg';
-        if ($variant !== 'icon' && !is_file($path)) $path = FCPATH.'assets/brand/logo-'.$name.'.svg';
-        return (is_file($path) ? base_url('assets/brand/'.$file.'.svg') : base_url('assets/brand/logo.svg'));
+        // Canonical WINDELS PANEL mark set. Variant-first, then a safe fallback
+        // to the primary horizontal logo so a missing asset can't white-screen.
+        $map = array(
+            'icon'       => 'logo-icon.svg',
+            'dark'       => 'logo-dark.svg',
+            'horizontal' => 'logo-horizontal.svg',
+            'full'       => 'logo.svg',
+        );
+        $file = $map[$variant] ?? $map['horizontal'];
+        $path = FCPATH.'assets/brand/'.$file;
+        if (!is_file($path)) $file = $map['horizontal'];
+        return base_url('assets/brand/'.$file);
     }
 }
 

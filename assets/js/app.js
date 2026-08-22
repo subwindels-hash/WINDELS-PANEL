@@ -204,6 +204,7 @@
     try {
       initPasswordToggles();
       initMobileNav();
+      initAnnounce();
       initFaqFilter();
       initSiteOperator();
     } catch (e) {
@@ -246,6 +247,55 @@
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
       panel.hidden = !open;
     });
+  }
+
+  function initAnnounce() {
+    var bar = document.querySelector('[data-announce]');
+    if (!bar) return;
+    var slides = bar.querySelectorAll('.ws-announce-slide');
+    if (!slides.length) return;
+    var dotsHost = bar.querySelector('[data-announce-dots]');
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    var dots = [];
+    if (slides.length > 1 && dotsHost) {
+      for (var i = 0; i < slides.length; i++) {
+        (function (i) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'ws-announce-dot';
+          b.setAttribute('aria-label', 'Show announcement ' + (i + 1));
+          b.addEventListener('click', function () { show(i); restart(); });
+          dotsHost.appendChild(b);
+          dots.push(b);
+        })(i);
+      }
+    }
+
+    var idx = 0;
+    var timer = null;
+    var interval = parseInt(bar.getAttribute('data-announce-interval') || '9000', 10);
+
+    function show(i) {
+      idx = ((i % slides.length) + slides.length) % slides.length;
+      for (var s = 0; s < slides.length; s++) {
+        slides[s].classList.toggle('is-active', s === idx);
+      }
+      for (var d = 0; d < dots.length; d++) {
+        dots[d].classList.toggle('is-active', d === idx);
+      }
+    }
+    function stop() { if (timer) { clearInterval(timer); timer = null; } }
+    function start() { if (reduce || slides.length <= 1) return; stop(); timer = setInterval(function () { show(idx + 1); }, interval); }
+    function restart() { stop(); start(); }
+
+    bar.addEventListener('mouseenter', stop);
+    bar.addEventListener('mouseleave', start);
+    bar.addEventListener('focusin', stop);
+    bar.addEventListener('focusout', start);
+
+    show(0);
+    start();
   }
 
   function initFaqFilter() {

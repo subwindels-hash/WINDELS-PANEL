@@ -1,5 +1,5 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
-$site_name = function_exists('windels_site_name') ? windels_site_name() : 'Averion Commerce';
+$site_name = function_exists('windels_site_name') ? windels_site_name() : 'WINDELS PANEL';
 $suggestions = class_exists('SiteOperatorKnowledge')
     ? SiteOperatorKnowledge::suggested_questions()
     : array('What services can I order?', 'How does pricing work?', 'How do I create an account?');

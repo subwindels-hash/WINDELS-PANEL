@@ -12,10 +12,9 @@ require_once APPPATH.'helpers/windels_helper.php';
 $config['windels'] = array(
     'name' => 'WINDELS PANEL',
     // Public-facing brand used by the marketing site, the shared header/footer
-    // and the on-site assistant. The internal product name (admin settings,
-    // e-mail templates, API identifiers) stays 'name' so deployed operators
-    // are not surprised by a rename in a UI they already run.
-    'public_name' => 'Averion Commerce',
+    // and the on-site assistant. Single source of truth for every rendered
+    // brand string via windels_site_name().
+    'public_name' => 'WINDELS PANEL',
     'tagline' => 'Enterprise SMM Reseller Platform',
     'public_tagline' => 'Prepaid commerce for social media, VTU, virtual numbers, identity, gift cards and digital goods',
     'support_email' => getenv('MAIL_FROM_ADDRESS') ?: 'support@windels.local',

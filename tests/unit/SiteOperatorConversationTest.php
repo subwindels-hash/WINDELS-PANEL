@@ -119,8 +119,8 @@ class SiteOperatorConversationTest extends TestCase
             array('I have a question', 'help'),
             array('Tell me about this website.', 'about'),
             array('What is this website?', 'about'),
-            array('What does Averion Commerce do?', 'about'),
-            array('What is Averion Commerce?', 'about'),
+            array('What does WINDELS PANEL do?', 'about'),
+            array('What is WINDELS PANEL?', 'about'),
             array('What can I do here?', 'about'),
             array('How does this website work?', 'how'),
         );
@@ -207,7 +207,7 @@ class SiteOperatorConversationTest extends TestCase
     public function websiteProvider()
     {
         return array(
-            array('What is Averion Commerce?', 'about', null),
+            array('What is WINDELS PANEL?', 'about', null),
             array('What services do you offer?', 'services', 'services'),
             array('How much does it cost?', 'pricing', 'pricing'),
             array('Where can I see the pricing?', 'pricing', 'pricing'),

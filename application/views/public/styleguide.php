@@ -2,7 +2,7 @@
 <section class="ws-page-hero">
   <div class="container" style="max-width:1080px">
     <p class="ws-kicker">Product UI</p>
-    <h1><?=htmlspecialchars(function_exists('windels_site_name') ? windels_site_name() : 'Averion Commerce')?> <span class="gradient-text">Design System</span></h1>
+    <h1><?=htmlspecialchars(function_exists('windels_site_name') ? windels_site_name() : 'WINDELS PANEL')?> <span class="gradient-text">Design System</span></h1>
     <p class="ws-lede">The tokens and component classes the live site uses. Source of truth: <code>assets/css/design-system.css</code>, mirrored in <code>tailwind.config.js</code>. This page is a reference, not a separate visual language.</p>
   </div>
 </section>

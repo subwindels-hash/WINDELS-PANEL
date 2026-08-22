@@ -2,7 +2,7 @@
 // Global <head> for the public shell. The layout passes $page_* values; this
 // partial owns metadata, CSRF tags and the two stylesheets so no page can
 // accidentally load a third CSS file or a different font stack.
-$site_name  = function_exists('windels_site_name') ? windels_site_name() : 'Averion Commerce';
+$site_name  = function_exists('windels_site_name') ? windels_site_name() : 'WINDELS PANEL';
 $site_tag   = function_exists('windels_site_tagline') ? windels_site_tagline() : 'Prepaid commerce for digital goods';
 $title      = !empty($page_title) ? $page_title : (!empty($title) ? $title : $site_name);
 $desc       = !empty($page_desc) ? $page_desc : (!empty($meta_description) ? $meta_description : $site_tag);

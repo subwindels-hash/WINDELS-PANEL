@@ -98,7 +98,7 @@ class Services extends Public_Controller {
 
         $this->render_public('public/services/detail', array(
             'title'        => $service->name,
-            'meta_description' => trim(strip_tags((string)$service->description)) ?: 'Order '.$service->name.' on Averion Commerce.',
+            'meta_description' => trim(strip_tags((string)$service->description)) ?: 'Order '.$service->name.' on WINDELS PANEL.',
             'service'      => $service,
             'category'     => $category,
             'user_price'   => $user_price,

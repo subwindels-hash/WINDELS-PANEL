@@ -4,7 +4,7 @@
 $cu = $current_user ?? null;
 $is_staff = $cu && in_array($cu->role, array('SUPER_ADMIN','ADMIN','STAFF'), true);
 $path = isset($this->uri) ? trim((string)$this->uri->uri_string(), '/') : '';
-$site = function_exists('windels_site_name') ? windels_site_name() : 'Averion Commerce';
+$site = function_exists('windels_site_name') ? windels_site_name() : 'WINDELS PANEL';
 $links = array(
     array('services', 'Services'),
     array('pricing', 'Pricing'),
@@ -56,7 +56,6 @@ $active = function ($href) use ($path) {
     <?php foreach ($links as $item): ?>
       <a href="<?=site_url($item[0])?>"><?=htmlspecialchars($item[1])?></a>
     <?php endforeach; ?>
-    <a href="<?=site_url('design-system')?>">Design system</a>
     <?php if ($cu): ?>
       <a href="<?=site_url($is_staff ? 'admin' : 'dashboard')?>"><?=$is_staff ? 'Admin' : 'Dashboard'?></a>
       <form method="post" action="<?=site_url('logout')?>" class="m-0">

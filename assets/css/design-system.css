@@ -1,5 +1,5 @@
 /* =========================================================================
-   WINDELS PANEL — Design System (Session 04)
+   WINDELS PANEL — Design System
    -------------------------------------------------------------------------
    Self-contained stylesheet: brand tokens, base reset, typography, and
    reusable component classes. It is loaded AFTER tailwind.css in the layouts
@@ -234,38 +234,34 @@ button { font-family:inherit; cursor:pointer; }
   *, *::before, *::after { animation-duration:.001ms!important; transition-duration:.001ms!important; scroll-behavior:auto!important; }
 }
 
-/* Announcements — moving ticker, black on white, every layout */
+/* Announcements — single-at-a-time rotating carousel, black on white */
 .ws-announce{
   background:#fff;color:#000;border-bottom:1px solid var(--slate-200);
-  overflow:hidden;white-space:nowrap;height:var(--ws-announce-h);
+  height:var(--ws-announce-h);
   position:sticky;top:0;z-index:80;
-}
-.ws-announce-track{
-  display:inline-flex;align-items:center;height:100%;will-change:transform;
-  animation:ws-announce-scroll var(--ws-announce-duration,72s) linear infinite;
-}
-.ws-announce:hover .ws-announce-track,
-.ws-announce:focus .ws-announce-track,
-.ws-announce:focus-within .ws-announce-track{
-  animation-play-state:paused;
+  display:flex;align-items:center;overflow:hidden;
 }
 .ws-announce:focus-visible{outline:2px solid var(--brand-500);outline-offset:-2px}
-.ws-announce-group{display:inline-flex;align-items:center}
-.ws-announce-item{
-  padding:0 1.75rem;font-size:.875rem;font-weight:500;color:#000;
-  background:transparent;flex-shrink:0;line-height:var(--ws-announce-h);
+.ws-announce-viewport{flex:1;height:100%;position:relative;overflow:hidden;min-width:0}
+.ws-announce-slides{position:relative;height:100%}
+.ws-announce-slide{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  text-align:center;padding:0 1.5rem;font-size:.875rem;font-weight:500;color:#000;
+  opacity:0;visibility:hidden;transition:opacity .55s ease;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.ws-announce-item + .ws-announce-item::before{
-  content:"•";margin-right:1.75rem;color:#000;
+.ws-announce-slide.is-active{opacity:1;visibility:visible}
+.ws-announce-dots{display:flex;gap:.3rem;padding:0 .9rem;flex-shrink:0}
+.ws-announce-dots:empty{display:none}
+.ws-announce-dot{
+  width:.5rem;height:.5rem;border-radius:999px;border:0;padding:0;cursor:pointer;
+  background:var(--slate-300);transition:background .2s ease;
 }
-@keyframes ws-announce-scroll{
-  0%{transform:translateX(0)}
-  100%{transform:translateX(-50%)}
-}
+.ws-announce-dot.is-active{background:var(--brand-500)}
 .ws-sticky-below-announce{top:var(--ws-announce-h)}
 @media(max-width:560px){
-  .ws-announce-item{padding:0 1rem;font-size:.82rem}
-  .ws-announce-item + .ws-announce-item::before{margin-right:1rem}
+  .ws-announce-slide{padding:0 1rem;font-size:.8rem;justify-content:flex-start;text-align:left}
+  .ws-announce-dots{padding:0 .6rem}
 }
 .ws-sev-warning,.ws-sev-critical,.ws-sev-success,.ws-sev-info{background:transparent;color:#000}
 
@@ -340,7 +336,7 @@ button { font-family:inherit; cursor:pointer; }
 
 /* ------------------------------- Footer --------------------------------- */
 .ws-footer{border-top:1px solid var(--slate-200);background:var(--slate-50);padding:3.5rem 0 2rem;margin-top:2rem}
-.ws-footer-grid{display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:2rem}
+.ws-footer-grid{display:grid;grid-template-columns:1.6fr repeat(4,1fr);gap:2rem}
 .ws-footer h2{font-family:var(--font-sans);font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;
   color:var(--slate-500);margin:0 0 .85rem}
 .ws-footer ul{list-style:none;margin:0;padding:0}
@@ -348,7 +344,8 @@ button { font-family:inherit; cursor:pointer; }
 .ws-footer a{color:var(--slate-700)}
 .ws-footer-meta{margin-top:2.5rem;padding-top:1.25rem;border-top:1px solid var(--slate-200);
   display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;color:var(--slate-500);font-size:.85rem}
-@media(max-width:800px){.ws-footer-grid{grid-template-columns:1fr 1fr}.ws-footer{padding:2.5rem 0 5.5rem}}
+.ws-footer-links{display:flex;gap:1rem;flex-wrap:wrap}
+@media(max-width:1000px){.ws-footer-grid{grid-template-columns:1fr 1fr}.ws-footer{padding:2.5rem 0 5.5rem}}
 @media(max-width:520px){.ws-footer-grid{grid-template-columns:1fr}}
 
 /* ------------------------------- Legal / prose -------------------------- */
@@ -409,6 +406,8 @@ button { font-family:inherit; cursor:pointer; }
 @keyframes ws-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
 .empty-state{text-align:center;padding:3rem 1.5rem;color:var(--slate-500)}
 .empty-state h2,.empty-state h3{color:var(--slate-800)}
+.ws-empty-icon{display:inline-flex;align-items:center;justify-content:center;width:4rem;height:4rem;
+  border-radius:999px;background:var(--brand-50);color:var(--brand-600)}
 .toast{position:fixed;right:1rem;bottom:1rem;background:var(--slate-900);color:#fff;padding:.85rem 1rem;
   border-radius:var(--radius);box-shadow:var(--shadow-card);z-index:90;max-width:22rem}
 
@@ -458,5 +457,6 @@ button { font-family:inherit; cursor:pointer; }
 .ws-auth-aside{font-size:.85rem;color:var(--slate-500);margin-top:1rem}
 
 @media (prefers-reduced-motion: reduce) {
-  .spinner,.skeleton,.ws-announce-track{animation:none !important}
+  .spinner,.skeleton{animation:none !important}
+  .ws-announce-slide{transition:none !important}
 }

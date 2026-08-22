@@ -49,21 +49,16 @@ function layout(title, desc, body, extra = '') {
 </head>
 <body>
 <a class="ws-skip" href="#main">Skip to content</a>
-<div class="ws-announce" role="region" aria-label="Announcements" tabindex="0" style="--ws-announce-duration: 78s">
-  <div class="ws-announce-track">
-    <div class="ws-announce-group">
-      <span class="ws-announce-item">Prepaid wallet: add funds and spend on services — leftover deposits cannot be withdrawn.</span>
-      <span class="ws-announce-item">New here? Create an account, then browse Services or read Pricing.</span>
-      <span class="ws-announce-item">Need help? Open the FAQ, send a Contact message, or ask the on-site assistant.</span>
-      <span class="ws-announce-item">Staff sign in at Admin login. Customer passwords cannot open the back office.</span>
-    </div>
-    <div class="ws-announce-group" aria-hidden="true">
-      <span class="ws-announce-item">Prepaid wallet: add funds and spend on services — leftover deposits cannot be withdrawn.</span>
-      <span class="ws-announce-item">New here? Create an account, then browse Services or read Pricing.</span>
-      <span class="ws-announce-item">Need help? Open the FAQ, send a Contact message, or ask the on-site assistant.</span>
-      <span class="ws-announce-item">Staff sign in at Admin login. Customer passwords cannot open the back office.</span>
+<div class="ws-announce" role="region" aria-label="Announcements" tabindex="0" data-announce data-announce-interval="9000">
+  <div class="ws-announce-viewport">
+    <div class="ws-announce-slides">
+      <div class="ws-announce-slide is-active">Prepaid wallet: add funds and spend on services — leftover deposits cannot be withdrawn.</div>
+      <div class="ws-announce-slide">New here? Create an account, then browse Services or read Pricing.</div>
+      <div class="ws-announce-slide">Need help? Open the FAQ, send a Contact message, or ask the on-site assistant.</div>
+      <div class="ws-announce-slide">Staff sign in at Admin login. Customer passwords cannot open the back office.</div>
     </div>
   </div>
+  <div class="ws-announce-dots" data-announce-dots aria-hidden="true"></div>
 </div>
 <nav class="ws-public-nav ws-sticky-below-announce" aria-label="Primary">
   <div class="ws-public-nav-inner">
@@ -93,16 +88,18 @@ function layout(title, desc, body, extra = '') {
         <a class="ws-brand" href="/"><img class="ws-logo" src="/assets/brand/logo.svg" alt="WINDELS PANEL" height="40" width="176"></a>
         <p class="muted mt-2">A prepaid reseller panel for social-media services, Nigerian VTU, virtual numbers, identity checks, gift cards and a platform-owned marketplace.</p>
       </div>
-      <div><h2>Product</h2><ul>
+      <div><h2>Platform</h2><ul>
         <li><a href="/services">Services</a></li><li><a href="/pricing">Pricing</a></li>
-        <li><a href="/api/docs">Reseller API</a></li><li><a href="/design-system">Design system</a></li>
-        <li><a href="/assistant">Site assistant</a></li></ul></div>
+        <li><a href="/faq">FAQ</a></li><li><a href="/api/docs">API documentation</a></li></ul></div>
       <div><h2>Company</h2><ul>
-        <li><a href="/about">About</a></li><li><a href="/faq">FAQ</a></li>
-        <li><a href="/blog">Blog</a></li><li><a href="/contact">Contact</a></li></ul></div>
+        <li><a href="/about">About</a></li><li><a href="/blog">Blog</a></li>
+        <li><a href="/contact">Contact</a></li></ul></div>
+      <div><h2>Support</h2><ul>
+        <li><a href="/faq">Help centre</a></li><li><a href="/dashboard/tickets">Support tickets</a></li>
+        <li><a href="/contact">Contact support</a></li></ul></div>
       <div><h2>Legal</h2><ul>
-        <li><a href="/terms">Terms of Service</a></li><li><a href="/privacy">Privacy Policy</a></li>
-        <li><a href="/refund-policy">Refund Policy</a></li><li><a href="/acceptable-use">Acceptable Use</a></li></ul></div>
+        <li><a href="/terms">Terms of service</a></li><li><a href="/privacy">Privacy policy</a></li>
+        <li><a href="/refund-policy">Refund policy</a></li><li><a href="/acceptable-use">Acceptable use</a></li></ul></div>
     </div>
     <div class="ws-footer-meta">
       <div>© ${new Date().getFullYear()} WINDELS PANEL. Wallet balances are for spending on this platform only.</div>
@@ -181,7 +178,7 @@ const pages = {
       </div>
     </div></section>
     <section class="ws-section-sm" style="background:var(--slate-50)"><div class="container">
-      <h2 class="text-center">Loved by resellers and creators</h2>
+      <h2 class="text-center">Built for resellers, agencies and creators</h2>
       <div class="grid grid-3 mt-4">
         <article class="card"><h3 class="card-title">Agencies</h3><p>One prepaid balance for many orders, with refill and ticket history.</p></article>
         <article class="card"><h3 class="card-title">Resellers</h3><p>The same order engine behind API keys, scopes and IP allowlists.</p></article>
@@ -287,24 +284,6 @@ const pages = {
   '/blog': () => layout('Blog', 'Guides and product updates.',
     `<section class="ws-page-hero"><div class="container text-center"><h1>Blog</h1><p class="muted">Guides, product updates, and reseller tips.</p></div></section>
      <section class="ws-section-sm"><div class="container"><div class="empty-state card"><h2>No posts published yet</h2><p>Staff publish from the admin content tools.</p><a class="btn btn-secondary" href="/faq">Read the FAQ</a></div></div></section>`),
-  '/design-system': () => layout('Design System', 'Brand tokens and components used on the live site.',
-    `<section class="ws-page-hero"><div class="container"><p class="ws-kicker">Product UI</p><h1>WINDELS <span class="gradient-text">Design System</span></h1></div></section>
-     <section class="ws-section-sm"><div class="container stack" style="max-width:900px">
-       <div class="card"><h2 class="card-title">Buttons</h2><div class="row">
-         <button class="btn btn-primary" type="button">Primary</button>
-         <button class="btn btn-secondary" type="button">Secondary</button>
-         <button class="btn btn-ghost" type="button">Ghost</button>
-         <button class="btn btn-danger" type="button" disabled>Disabled</button>
-       </div></div>
-       <div class="card"><h2 class="card-title">Alerts</h2>
-         <div class="alert alert-success">Payment credited to your wallet.</div>
-         <div class="alert alert-danger">Insufficient balance for this order.</div>
-       </div>
-       <div class="card"><h2 class="card-title">Form</h2>
-         <label class="label" for="x">Email</label><input class="input" id="x" placeholder="you@example.com">
-         <label class="switch mt-4"><input type="checkbox" checked><span class="switch-ui"></span> Switch</label>
-       </div>
-     </div></section>`),
   '/login': () => auth('Log in to your account',
     `<form class="stack" method="post" action="/login">
       <label class="label" for="identifier">Email or username</label>
@@ -445,7 +424,7 @@ function assistantReply(message) {
     return ok('I can help with WINDELS PANEL services, pricing, account registration, login, password reset, FAQs, privacy, terms, and navigating the website. I cannot create an account or place an order from this chat.',
       [{label:'View Services', href:'/services'},{label:'Sign up', href:'/register'}]);
   }
-  if (/averion|this website|this site|what can i do here|what is windels|tell me about this/.test(q)) {
+  if (/this website|this site|what can i do here|what is windels|tell me about this/.test(q)) {
     return ok('WINDELS PANEL is a prepaid reseller panel for social-media services, Nigerian VTU, virtual numbers, identity lookups, gift cards and a platform marketplace. You add funds to a wallet and spend that balance here.',
       [{label:'View Services', href:'/services'},{label:'View Pricing', href:'/pricing'}]);
   }
@@ -464,7 +443,7 @@ function assistantReply(message) {
   if (/privacy/.test(q)) return ok('The Privacy Policy describes account data, hashed passwords, session cookies and local assistant processing. We do not sell personal data.', [{label:'Privacy Policy', href:'/privacy'}]);
   if (/\bterms\b/.test(q)) return ok('The Terms of Service cover accounts, prepaid wallet billing and acceptable use. Open the Terms page for the full text.', [{label:'Terms of Service', href:'/terms'}]);
   if (/faq|frequently asked/.test(q)) return ok('The FAQ covers accounts, billing, services and this assistant. Ask a specific question here or open the FAQ page.', [{label:'View FAQ', href:'/faq'}]);
-  if (/design system/.test(q)) return ok('The Design System page documents the live colours, type, buttons, logo and imagery used on this site.', [{label:'Design System', href:'/design-system'}]);
+
   if (/pric|cost|how much|plan|subscription/.test(q)) {
     return ok('There is no public monthly subscription. You add funds to a prepaid wallet and pay the published rate. Volume groups are assigned by staff. Default deposit minimum is ₦500.',
       [{label:'View Pricing', href:'/pricing'}]);

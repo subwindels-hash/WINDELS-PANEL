@@ -1,7 +1,9 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
-// Inside a view $this is CI_Loader (no __get, no $auth), so the controller
-// instance must be fetched explicitly. Fail open during install / CLI.
-$site_name = function_exists('windels_site_name') ? windels_site_name() : 'Averion Commerce';
+// Announcement component: a single-at-a-time rotating carousel (not an endless
+// marquee). One message is visible at a time and it lingers long enough to be
+// read; the previous ticker duplicated its content and scrolled it on a loop,
+// which made each line hard to read.
+$site_name = function_exists('windels_site_name') ? windels_site_name() : 'WINDELS PANEL';
 if (!isset($announcements)) {
     $announcements = array();
     try {
@@ -29,33 +31,21 @@ if (!empty($announcements)) {
 }
 if (empty($items)) {
     $items = array(
-        $site_name.' is a prepaid platform — add funds and spend on services; leftover deposits cannot be withdrawn.',
+        $site_name.' is a prepaid platform — add funds to spend on services.',
         'New here? Create an account, then browse Services or read Pricing.',
-        'Need help? Open the FAQ, send a Contact message, or ask the on-site assistant.',
+        'Need help? Check the FAQ, send a message, or ask the on-site assistant.',
         'Staff sign in at Admin login. Customer passwords cannot open the back office.',
     );
 }
-
-// One visual cycle shows this group. Duration scales with readable characters
-// so a longer announcement stays on screen long enough to read (~6 chars/sec).
-$cycle_chars = 0;
-foreach ($items as $text) {
-    $cycle_chars += (function_exists('mb_strlen') ? mb_strlen($text) : strlen($text)) + 12;
-}
-$seconds = (int) max(55, min(180, $cycle_chars / 6));
 ?>
-<div class="ws-announce" role="region" aria-label="Announcements" aria-live="off" tabindex="0"
-     data-announce style="--ws-announce-duration: <?=$seconds?>s">
-  <div class="ws-announce-track">
-    <div class="ws-announce-group">
+<div class="ws-announce" role="region" aria-label="Announcements" tabindex="0"
+     data-announce data-announce-interval="9000">
+  <div class="ws-announce-viewport">
+    <div class="ws-announce-slides">
       <?php foreach ($items as $text): ?>
-        <span class="ws-announce-item"><?=htmlspecialchars($text)?></span>
-      <?php endforeach; ?>
-    </div>
-    <div class="ws-announce-group" aria-hidden="true">
-      <?php foreach ($items as $text): ?>
-        <span class="ws-announce-item"><?=htmlspecialchars($text)?></span>
+        <div class="ws-announce-slide"><?=htmlspecialchars($text)?></div>
       <?php endforeach; ?>
     </div>
   </div>
+  <div class="ws-announce-dots" data-announce-dots aria-hidden="true"></div>
 </div>

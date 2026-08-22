@@ -1,5 +1,5 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
-$icon_site = function_exists('windels_site_name') ? windels_site_name() : 'Averion Commerce';
+$icon_site = function_exists('windels_site_name') ? windels_site_name() : 'WINDELS PANEL';
 $icon_short = strtok($icon_site, ' ');
 ?>
 <link rel="icon" href="<?=base_url('assets/brand/favicon.svg')?>" type="image/svg+xml">

@@ -4,18 +4,18 @@
  * Near-black #0B0F1A, neon cyan + violet, mono data labels, grid/glow, API focus.
  */
 $providers = array(
-  array('Provider Alpha','healthy','2s ago','$1,204.55'),
-  array('Provider Beta','healthy','4s ago','$840.10'),
-  array('Provider Gamma','degraded','1m ago','$0.00'),
-  array('Provider Delta','healthy','6s ago','$2,910.00'),
-  array('Provider Epsilon','healthy','12s ago','$512.22'),
-  array('Provider Zeta','healthy','30s ago','$175.40'),
+  array('Provider Alpha','healthy','2s ago','₦1,204.55'),
+  array('Provider Beta','healthy','4s ago','₦840.10'),
+  array('Provider Gamma','degraded','1m ago','₦0.00'),
+  array('Provider Delta','healthy','6s ago','₦2,910.00'),
+  array('Provider Epsilon','healthy','12s ago','₦512.22'),
+  array('Provider Zeta','healthy','30s ago','₦175.40'),
 );
 $explorer = array(
-  array('100291','Instagram Followers — HQ','Default','$1.20 / 1k','100 – 100k','Alpha'),
-  array('100312','TikTok Likes — Instant','Instant','$0.45 / 1k','20 – 50k','Beta'),
-  array('100488','YouTube Views — WW','Slow','$2.10 / 1k','100 – 1M','Delta'),
-  array('100512','Spotify Monthly Listeners','Geo','$4.00 / 1k','1k – 50k','Epsilon'),
+  array('100291','Instagram Followers — HQ','Default','₦1.20 / 1k','100 – 100k','Alpha'),
+  array('100312','TikTok Likes — Instant','Instant','₦0.45 / 1k','20 – 50k','Beta'),
+  array('100488','YouTube Views — WW','Slow','₦2.10 / 1k','100 – 1M','Delta'),
+  array('100512','Spotify Monthly Listeners','Geo','₦4.00 / 1k','1k – 50k','Epsilon'),
 );
 $automation = array(
   array('Order sync','CLI cron workers pull provider status with Redis distributed locks — no web cron URLs.'),

@@ -5,16 +5,16 @@
  * All data here is static marketing content; live services arrive in Session 07.
  */
 $popular = array(
-  array('Instagram','Followers','High quality · 0–5 min','1.20','50','100000','refill'),
-  array('TikTok','Likes','Instant · refill guaranteed','0.45','20','50000','instant'),
-  array('YouTube','Views','Non-drop · worldwide','2.10','100','1000000',''),
-  array('Instagram','Story Views','Starts in 1 min','0.30','100','25000','instant'),
-  array('X (Twitter)','Followers','Real-looking profiles','3.40','100','20000','refill'),
-  array('Spotify','Monthly Listeners','Geo-targeted','4.00','1000','50000',''),
+  array('Instagram','Followers','High-quality followers'),
+  array('TikTok','Likes','Instant likes'),
+  array('YouTube','Views','Non-drop views'),
+  array('Instagram','Story views','Quick start'),
+  array('X (Twitter)','Followers','Real-looking profiles'),
+  array('Spotify','Monthly listeners','Geo-targeted'),
 );
 $platforms = array('Instagram','TikTok','YouTube','X','Facebook','Telegram','Spotify','Twitch','LinkedIn','Reddit','Pinterest','Discord');
 $steps = array(
-  array('01','Choose a service','Browse 2,000+ services across every major platform, with transparent pricing and start times.'),
+  array('01','Choose a service','Browse the live catalogue across every major platform, with transparent pricing and start times.'),
   array('02','Place your order','Paste your link, pick a quantity, and pay from your wallet. Pricing is frozen at checkout.'),
   array('03','Track & grow','Watch progress in real time. Refills and partial-delivery refunds are handled automatically.'),
 );
@@ -63,22 +63,15 @@ $testimonials = array(
   <div class="container" style="max-width:1080px">
     <div class="text-center mb-4">
       <h2>Popular services</h2>
-      <p class="muted">Frozen pricing at checkout · refill where shown · start times in minutes.</p>
+      <p class="muted">Live pricing on every service — frozen at checkout, refill where shown.</p>
     </div>
     <div class="grid grid-3 mt-6">
       <?php foreach ($popular as $s): ?>
       <article class="card card-hover">
-        <div class="row justify-between">
-          <span class="badge badge-default"><?=htmlspecialchars($s[0])?></span>
-          <?php if ($s[6]): ?><span class="badge badge-success badge-dot"><?=htmlspecialchars($s[6])?></span><?php endif; ?>
-        </div>
+        <span class="badge badge-default"><?=htmlspecialchars($s[0])?></span>
         <h3 class="card-title mt-2"><?=htmlspecialchars($s[1])?></h3>
         <p class="muted"><?=htmlspecialchars($s[2])?></p>
-        <div class="row justify-between mt-2">
-          <strong style="color:var(--brand-700)">$<?=htmlspecialchars($s[3])?> / 1k</strong>
-          <a class="btn btn-primary btn-sm" href="<?=site_url('register')?>" rel="nofollow">Order</a>
-        </div>
-        <p class="hint">Min <?=number_format((int)$s[4])?> · Max <?=number_format((int)$s[5])?></p>
+        <a class="btn btn-primary btn-sm mt-2" href="<?=site_url('services')?>">View pricing</a>
       </article>
       <?php endforeach; ?>
     </div>
@@ -143,7 +136,7 @@ $testimonials = array(
 
 <section class="py-12" style="background:var(--slate-50)">
   <div class="container" style="max-width:1080px">
-    <h2 class="text-center">Loved by resellers and creators</h2>
+    <h2 class="text-center">Built for resellers, agencies and creators</h2>
     <div class="grid grid-3 mt-6">
       <?php foreach ($testimonials as $t): ?>
       <figure class="card">

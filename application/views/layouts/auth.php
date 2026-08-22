@@ -1,5 +1,5 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
-$auth_site = function_exists('windels_site_name') ? windels_site_name() : 'Averion Commerce';
+$auth_site = function_exists('windels_site_name') ? windels_site_name() : 'WINDELS PANEL';
 ?>
 <!doctype html>
 <html lang="en">

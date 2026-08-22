@@ -1,26 +1,18 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
 // One logo partial used by the public shell, auth shell and authenticated app
-// shell. The public brand favour the "Averion Commerce" asset when present and
-// fall back to the legacy WINDELS asset so an upgrade can't white-screen.
+// shell. Every variant resolves to the WINDELS PANEL mark so the logo can
+// never drift between routes.
 $variant = isset($variant) ? $variant : 'horizontal';
-$site = function_exists('windels_site_name') ? windels_site_name() : 'Averion Commerce';
-$public = array(
-    'icon'       => 'logo-averion-commerce-icon.svg',
-    'dark'       => 'logo-averion-commerce-dark.svg',
-    'horizontal' => 'logo-averion-commerce.svg',
-    'full'       => 'logo-averion-commerce.svg',
-);
-$legacy = array(
+$site = function_exists('windels_site_name') ? windels_site_name() : 'WINDELS PANEL';
+$files = array(
     'icon'       => 'logo-icon.svg',
     'dark'       => 'logo-dark.svg',
     'horizontal' => 'logo-horizontal.svg',
     'full'       => 'logo.svg',
 );
-$file = (isset($force_legacy) && $force_legacy)
-    ? ($legacy[$variant] ?? $legacy['horizontal'])
-    : ($public[$variant] ?? $public['horizontal']);
+$file = $files[$variant] ?? $files['horizontal'];
 if (!is_file(FCPATH.'assets/brand/'.$file)) {
-    $file = $legacy[$variant] ?? $legacy['horizontal'];
+    $file = $files['horizontal'];
 }
 $src = base_url('assets/brand/'.$file);
 $h = isset($height) ? (int)$height : ($variant === 'icon' ? 32 : 36);

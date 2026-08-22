@@ -15,7 +15,7 @@ class Home extends Public_Controller {
         $data = array(
             'active_homepage'=>$active,
             'title'=>'Prepaid SMM, VTU and digital-goods panel',
-            'meta_description'=>'Averion Commerce is a prepaid reseller platform for social-media services, Nigerian VTU, virtual numbers, identity checks, gift cards and a platform marketplace.',
+            'meta_description'=>'WINDELS PANEL is a prepaid reseller platform for social-media services, Nigerian VTU, virtual numbers, identity checks, gift cards and a platform marketplace.',
             'canonical' => '',
         );
         // Single switch — no Node
@@ -41,13 +41,13 @@ class Home extends Public_Controller {
         $this->load->library('SiteOperatorKnowledge');
         $this->load->view('layouts/main', array('content_view'=>'public/pricing','data'=>array(
             'title'=>'Pricing',
-            'meta_description'=>'Prepaid wallet pricing for Averion Commerce. No invented monthly plans — you pay published service rates. Volume groups are assigned by staff.',
+            'meta_description'=>'Prepaid wallet pricing for WINDELS PANEL. No invented monthly plans — you pay published service rates. Volume groups are assigned by staff.',
         )));
     }
     public function about(){
         $this->load->view('layouts/main', array('content_view'=>'public/about','data'=>array(
             'title'=>'About',
-            'meta_description'=>'What Averion Commerce is, who it is for, and what this site will not invent about the operator.',
+            'meta_description'=>'What WINDELS PANEL is, who it is for, and what this site will not invent about the operator.',
         )));
     }
     public function faq(){
@@ -74,7 +74,7 @@ class Home extends Public_Controller {
         }
         $this->load->view('layouts/main', array('content_view'=>'public/faq','data'=>array(
             'title'=>'FAQ',
-            'meta_description'=>'Answers about Averion Commerce accounts, wallet billing, services, security, the reseller API and the on-site assistant.',
+            'meta_description'=>'Answers about WINDELS PANEL accounts, wallet billing, services, security, the reseller API and the on-site assistant.',
             'faqs'=>$faqs,
             'categories'=>$categories,
         )));
@@ -92,7 +92,7 @@ class Home extends Public_Controller {
             'content_view' => 'public/contact',
             'data' => array_merge(array(
                 'title'           => 'Contact',
-                'meta_description'=> 'Contact Averion Commerce support about an order, payment or the reseller API. Signed-in customers get a ticket.',
+                'meta_description'=> 'Contact WINDELS PANEL support about an order, payment or the reseller API. Signed-in customers get a ticket.',
                 'support_email'   => $this->support_email(),
             ), $data),
         ));
@@ -237,28 +237,28 @@ class Home extends Public_Controller {
         $this->load->library('SiteOperatorKnowledge');
         $this->load->view('layouts/main', array('content_view'=>'public/terms','data'=>array(
             'title'=>'Terms of Service',
-            'meta_description'=>'Terms of Service for this Averion Commerce instance, including accounts, wallet billing, acceptable use and the on-site assistant.',
+            'meta_description'=>'Terms of Service for this WINDELS PANEL instance, including accounts, wallet billing, acceptable use and the on-site assistant.',
         )));
     }
     public function privacy(){
         $this->load->library('SiteOperatorKnowledge');
         $this->load->view('layouts/main', array('content_view'=>'public/privacy','data'=>array(
             'title'=>'Privacy Policy',
-            'meta_description'=>'How Averion Commerce handles account, order, payment, identity and assistant data — written from the actual application.',
+            'meta_description'=>'How WINDELS PANEL handles account, order, payment, identity and assistant data — written from the actual application.',
         )));
     }
     public function refund_policy(){
         $this->load->library('SiteOperatorKnowledge');
         $this->load->view('layouts/main', array('content_view'=>'public/refund_policy','data'=>array(
             'title'=>'Refund Policy',
-            'meta_description'=>'When Averion Commerce credits a prepaid wallet for partial deliveries, failed purchases or staff decisions.',
+            'meta_description'=>'When WINDELS PANEL credits a prepaid wallet for partial deliveries, failed purchases or staff decisions.',
         )));
     }
     public function acceptable_use(){
         $this->load->library('SiteOperatorKnowledge');
         $this->load->view('layouts/main', array('content_view'=>'public/acceptable_use','data'=>array(
             'title'=>'Acceptable Use',
-            'meta_description'=>'What you may and may not do with a Averion Commerce account, wallet, API key and catalogue orders.',
+            'meta_description'=>'What you may and may not do with a WINDELS PANEL account, wallet, API key and catalogue orders.',
         )));
     }
 
@@ -268,22 +268,27 @@ class Home extends Public_Controller {
             'content_view' => 'public/not_found',
             'data' => array(
                 'title' => 'Page not found',
-                'meta_description' => 'That address is not a page on Averion Commerce.',
+                'meta_description' => 'That address is not a page on WINDELS PANEL.',
                 'meta_robots' => 'noindex,follow',
             ),
         ));
     }
 
     /**
-     * Living design-system guide (Session 04). Public so designers/reviewers can
-     * see the token/component inventory; renders inside the public shell.
+     * Design-system guide. Staff/reviewers only — it documents internal design
+     * tokens and component classes, so it must never surface in the public nav,
+     * footer or sitemap.
      */
     public function styleguide(){
+        if (!$this->auth || !$this->auth->has_role(array('SUPER_ADMIN','ADMIN','STAFF'))) {
+            show_404();
+        }
         $this->load->view('layouts/main', array(
             'content_view' => 'public/styleguide',
             'data' => array(
                 'title' => 'Design System',
-                'meta_description' => 'Averion Commerce design tokens and component inventory.',
+                'meta_description' => 'WINDELS PANEL design tokens and component inventory.',
+                'meta_robots' => 'noindex,follow',
                 'active_homepage' => $this->active_homepage(),
             ),
         ));
@@ -292,7 +297,7 @@ class Home extends Public_Controller {
         $urls = array(
             '', 'services', 'pricing', 'about', 'faq', 'blog', 'contact',
             'terms', 'privacy', 'refund-policy', 'acceptable-use',
-            'design-system', 'api/docs',
+            'api/docs',
         );
         if ($this->db_ready) {
             try {

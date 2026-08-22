@@ -19,7 +19,7 @@ $show_marketing = !empty($show_marketing);
   <div class="container" style="max-width:800px">
     <p class="ws-kicker">What you can buy</p>
     <h1>One wallet for SMM, bills and digital goods</h1>
-    <p class="ws-lede">Averion Commerce is for creators, agencies and resellers who want prepaid checkout, a live catalogue and a staff-run back office. It solves scattered provider logins and untracked wallet movement — not by promising fake volume numbers.</p>
+    <p class="ws-lede">WINDELS PANEL is for creators, agencies and resellers who want prepaid checkout, a live catalogue and a staff-run back office. It solves scattered provider logins and untracked wallet movement — not by promising fake volume numbers.</p>
     <div class="row" style="margin-top:1.25rem">
       <a class="btn btn-primary" href="<?=site_url('register')?>">Create an account</a>
       <a class="btn btn-secondary" href="#catalogue">Jump to catalogue</a>
@@ -165,10 +165,27 @@ $show_marketing = !empty($show_marketing);
     </form>
 
     <?php if (empty($services)): ?>
+      <?php $has_filter = ($f['q'] !== '' || $f['category'] !== '' || $f['platform'] !== '' || $f['type'] !== ''); ?>
+      <?php if (!$has_filter): ?>
+      <div class="card text-center" style="padding:3.5rem 2rem">
+        <span class="ws-empty-icon"><?php $this->load->view('partials/icon', array('name'=>'shopping-bag','class'=>'w-10 h-10')); ?></span>
+        <h2 style="margin-top:1rem">Services will appear here</h2>
+        <p class="muted" style="max-width:30rem;margin:0 auto">
+          No services have been published yet. As soon as the operator prices and
+          activates services, they show up here with search, filters and live pricing.
+        </p>
+        <p class="hint" style="margin:.75rem 0 0">
+          In the meantime you can read <a href="<?=site_url('pricing')?>">how pricing works</a>
+          or <a href="<?=site_url('faq')?>">browse the FAQ</a>.
+        </p>
+        <a class="btn btn-primary mt-4" href="<?=site_url('register')?>">Create an account</a>
+      </div>
+      <?php else: ?>
       <div class="card text-center" style="padding:3rem">
         <p class="muted">No services match your filters.</p>
         <a class="btn btn-secondary mt-4" href="<?=site_url('services')?>">Clear filters</a>
       </div>
+      <?php endif; ?>
     <?php else: ?>
     <div class="grid grid-4" style="gap:1rem">
       <?php foreach ($services as $s):
