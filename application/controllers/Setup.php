@@ -5,7 +5,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * Setup — the browser stand-in for the installer command that no longer exists.
  *
  * A cPanel deployment is: upload files, create the database, import
- * `database/production.sql`, edit `.env`. That already produces a working
+ * `database/windels_panel.sql`, edit `.env`. That already produces a working
  * panel with a SUPER_ADMIN whose password is printed in the SQL file's header,
  * so this page is not required to deploy. It exists for the two jobs that
  * would otherwise send an operator back to a terminal:
@@ -62,7 +62,7 @@ class Setup extends CI_Controller {
      * Set the administrator's username, email and password.
      *
      * Updates the existing SUPER_ADMIN when there is one (the row that
-     * production.sql imported) and creates one otherwise, so this also
+     * windels_panel.sql imported) and creates one otherwise, so this also
      * recovers a deployment whose only admin account was lost.
      */
     public function admin() {
@@ -260,7 +260,7 @@ class Setup extends CI_Controller {
                 $version > 0 ? 'ok' : 'fail',
                 'Database import',
                 $version > 0 ? 'schema version '.$version : 'no tables found',
-                'cPanel → phpMyAdmin → select the database → Import → database/production.sql.'
+                'cPanel → phpMyAdmin → select the database → Import → database/windels_panel.sql.'
             );
 
             $admins = $version > 0 ? (int)$this->db->where('role', 'SUPER_ADMIN')->where('status', 'ACTIVE')->count_all_results('users') : 0;

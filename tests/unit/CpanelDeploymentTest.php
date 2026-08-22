@@ -5,12 +5,12 @@ use PHPUnit\Framework\TestCase;
  * Portable cPanel deployment (no terminal, no Composer, no CLI installer).
  *
  * The contract these tests defend is one sentence: **upload the files, create
- * the database, import `database/production.sql`, edit `.env`, open the
+ * the database, import `database/windels_panel.sql`, edit `.env`, open the
  * domain.** Everything below is a way that contract has historically been
  * broken —
  *
  *   - a config file reading a value an installer generated rather than `.env`
- *   - a schema change that landed in a migration but never in production.sql,
+ *   - a schema change that landed in a migration but never in windels_panel.sql,
  *     so a fresh import comes up missing a table
  *   - seed data that only exists in the CLI seeder, so a freshly imported
  *     panel has no roles and nobody can log in
@@ -31,7 +31,7 @@ class CpanelDeploymentTest extends TestCase
         if (!defined('APPPATH'))  define('APPPATH', self::$root.'/application/');
         if (!defined('BASEPATH')) define('BASEPATH', self::$root.'/system/');
         require_once self::$root.'/application/core/Env.php';
-        self::$sql = file_get_contents(self::$root.'/database/production.sql');
+        self::$sql = file_get_contents(self::$root.'/database/windels_panel.sql');
     }
 
     /* ===================== .env is the only configuration ================= */
@@ -222,7 +222,7 @@ class CpanelDeploymentTest extends TestCase
             $this->assertMatchesRegularExpression(
                 '/CREATE TABLE(?: IF NOT EXISTS)? `?'.preg_quote($table, '/').'`?/i',
                 self::$sql,
-                "production.sql is missing {$table} — a fresh import would boot into a broken schema");
+                "windels_panel.sql is missing {$table} — a fresh import would boot into a broken schema");
         }
     }
 
@@ -252,19 +252,19 @@ class CpanelDeploymentTest extends TestCase
         foreach (Core_seeder::permission_catalog() as $keys) {
             foreach ($keys as $key) {
                 $this->assertStringContainsString("'{$key}'", self::$sql,
-                    "permission {$key} is defined in the seeder but missing from production.sql");
+                    "permission {$key} is defined in the seeder but missing from windels_panel.sql");
             }
         }
         foreach (Core_seeder::default_settings() as $setting) {
             $this->assertStringContainsString("'{$setting[0]}'", self::$sql,
-                "setting {$setting[0]} is missing from production.sql");
+                "setting {$setting[0]} is missing from windels_panel.sql");
         }
         foreach (array('feature_flags', 'payment_methods', 'email_templates', 'faqs',
                        'currencies', 'price_groups', 'vtu_networks', 'vtu_products',
                        'number_countries', 'number_services', 'identity_products',
                        'giftcard_brands', 'marketplace_categories') as $table) {
             $this->assertStringContainsString("INSERT INTO `{$table}`", self::$sql,
-                "{$table} has no seeded rows in production.sql");
+                "{$table} has no seeded rows in windels_panel.sql");
         }
     }
 
@@ -299,7 +299,7 @@ class CpanelDeploymentTest extends TestCase
         $this->assertFileExists($script);
         $src = file_get_contents($script);
 
-        foreach (array('index.php', 'application', 'assets', 'database/production.sql',
+        foreach (array('index.php', 'application', 'assets', 'database/windels_panel.sql',
                        '.env.example', '.htaccess') as $needed) {
             $this->assertStringContainsString($needed, $src, "the package must contain {$needed}");
         }
@@ -309,7 +309,7 @@ class CpanelDeploymentTest extends TestCase
             'the demo seeder must never ship to a live panel');
         $this->assertStringContainsString('build_production_sql.php', $src);
         $this->assertStringContainsString('--check', $src,
-            'a package built from a stale production.sql is a broken deployment');
+            'a package built from a stale windels_panel.sql is a broken deployment');
     }
 
     public function testTheCommittedPackageIsNotStale()
@@ -325,7 +325,7 @@ class CpanelDeploymentTest extends TestCase
         $this->assertTrue($zip->open($zip_path) === true);
 
         foreach (array('index.php', '.htaccess', '.env.example', 'system/core/CodeIgniter.php',
-                       'database/production.sql', 'README-DEPLOYMENT.txt') as $entry) {
+                       'database/windels_panel.sql', 'README-DEPLOYMENT.txt') as $entry) {
             $this->assertNotFalse($zip->locateName($entry), "the package is missing {$entry}");
         }
         $this->assertFalse($zip->locateName('composer.json'), 'nothing to install on the host');
@@ -466,7 +466,7 @@ class CpanelDeploymentTest extends TestCase
         $this->assertFileExists($guide);
         $text = file_get_contents($guide);
         foreach (array('File Manager', 'MySQL Databases', 'phpMyAdmin',
-                       'database/production.sql', '.env') as $needle) {
+                       'database/windels_panel.sql', '.env') as $needle) {
             $this->assertStringContainsString($needle, $text);
         }
         $this->assertDoesNotMatchRegularExpression('/^\s*composer install/mi', $text,
@@ -479,7 +479,7 @@ class CpanelDeploymentTest extends TestCase
     {
         $ht = file_get_contents(self::$root.'/.htaccess');
         $this->assertMatchesRegularExpression('/\bdatabase\b/', $ht,
-            'database/production.sql contains the schema and the admin hash');
+            'database/windels_panel.sql contains the schema and the admin hash');
         $this->assertStringContainsString('\\.sql', $ht);
         $this->assertStringContainsString('(^|/)\\.', $ht, 'dotfiles, including .env');
     }

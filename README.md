@@ -81,8 +81,8 @@ There are two supported ways to run this panel, and they share one source tree:
 |---|---|---|
 | Who it is for | operators deploying a live panel | developers and self-managed servers |
 | What you run | nothing — File Manager, MySQL Databases, phpMyAdmin, `.env` | `composer`, `npm`, `docker compose`, `migrate`, `seed` |
-| Database setup | import `database/production.sql` once | `php index.php migrate && php index.php seed core` |
-| Guide | **[docs/cpanel-deployment.md](docs/cpanel-deployment.md)** | below |
+| Database setup | import `database/windels_panel.sql` once | `php index.php migrate && php index.php seed core` |
+| Guide | **[INSTALLATION.md](INSTALLATION.md)** — step-by-step · [docs/cpanel-deployment.md](docs/cpanel-deployment.md) — + migration | below |
 
 ### Shared hosting / cPanel (no terminal)
 
@@ -91,22 +91,32 @@ Upload application-deployment.zip   (cPanel → File Manager → Extract)
         ↓
 Create database + user              (cPanel → MySQL Databases)
         ↓
-Import database/production.sql      (cPanel → phpMyAdmin → Import)
+Import database/windels_panel.sql      (cPanel → phpMyAdmin → Import)
         ↓
 Edit .env                           (VP_BASE_URL, VP_DB_*, VP_ENCRYPTION_KEY, VP_AUTH_SECRET)
         ↓
-Open the domain — the panel works
+Open /deploy-verify.php             (one page: PHP, extensions, system path,
+        ↓                              writable dirs, .env, live DB check)
+Delete deploy-verify.php, open the domain — the panel works
 ```
 
 No Composer, no npm, no SSH, no migration command, no seed command, no CLI user
-creation: `database/production.sql` is the complete initialised database
+creation, and **no symlinks**: the CodeIgniter framework ships inside the
+package as real files at *both* locations the front controller auto-detects
+(`system/` first, then `vendor/codeigniter/framework/system`), plus a fallback
+`vendor/autoload.php` so the request path never needs the package manager.
+`database/windels_panel.sql` is the complete initialised database
 (schema, indexes, foreign keys, roles, permissions, settings, catalogues **and**
 the first administrator), `application/core/Env.php` reads `.env` without
 phpdotenv, and the runtime directories are created on the first request.
+`deploy-verify.php` (browser or CLI) checks PHP version, required extensions,
+the framework path, writable directories, `.env` and a live MySQL connection —
+if anything is missing it prints the exact cPanel click-path that fixes it.
 
-The package is committed at the repository root as `application-deployment.zip`
-(and published as a release artifact), so an operator downloads it and never
-builds anything. Maintainers rebuild it with `bash tools/build_deployment_package.sh`
+The package is published as a release artifact — an operator downloads
+`application-deployment.zip` from GitHub Releases and never builds anything.
+(It is a build artifact and deliberately not committed to git.) Maintainers
+rebuild it with `bash tools/build_deployment_package.sh`
 (that script is the only command in the whole story, and it runs on the
 developer's machine, never on the destination host). Full walkthrough,
 including migrating an existing panel to a new cPanel account with its
@@ -291,19 +301,13 @@ referrals) run through `tests/_support/IntegrationHarness.php`.
 
 ## CI/CD
 
-The complete pipeline ships in **`ci.yml.workflow-ready`** (two jobs,
-~31 steps, summarised below). One maintainer action activates it:
-
-```bash
-mkdir -p .github/workflows && git mv ci.yml.workflow-ready .github/workflows/ci.yml
-git commit -m "Enable CI" && git push
-```
-
-> GitHub requires the `workflows` permission on the token that writes
-> `.github/workflows/**`; automation tokens without it are refused at push
-> time, so activation is a deliberate one-time maintainer step (a standard
-> repo push works). Once moved, the workflow runs on every push and pull
-> request.
+The complete pipeline is staged at the repo root as
+**`ci.yml.workflow-ready`** (two jobs, ~31 steps, summarised below). To
+activate it, rename it into `.github/workflows/ci.yml` (the GitHub web UI
+works) — the repository's automation bot intentionally lacks the `workflows`
+permission, so the file ships one rename away from live. The release
+packaging pipeline is staged alongside it as
+`deployment-package.yml.workflow-ready`.
 
 Stages, in order:
 
@@ -458,11 +462,18 @@ cron/crontab.example  15 scheduled jobs (installed by the cron container)
 docker/               php.Dockerfile, nginx + nginx.prod conf, nginx/certs, mysql init
 docker-compose.yml            development stack (MailHog, MinIO, dev creds)
 docker-compose.production.yml production stack (required secrets, TLS, no dev services)
-ci.yml.workflow-ready  the CI pipeline (one `git mv` activates it — see CI/CD)
+ci.yml.workflow-ready / deployment-package.yml.workflow-ready
+                      staged CI + release pipelines (rename into .github/workflows/ to activate)
 docs/                 database.sql (canonical schema), deployment, backups,
                       impersonation, certification reports, session logs
+database/             windels_panel.sql (complete importable database),
+                      schema_verification.php (live DB ↔ SQL audit), README
+deploy-verify.php     browser/CLI deployment diagnostics (ships in the package)
 tests/                unit suite, FakeDb, IntegrationHarness, provider fixtures
-tools/                phpunit_lite (offline runner), export_schema, validate_schema
+tools/                build_deployment_package, verify_deployment_package,
+                      check_installation, verify_database (code↔schema audit),
+                      audit_env (env coverage), build_production_sql,
+                      phpunit_lite (offline runner), export_schema, validate_schema
 index.php             front controller (.env boot + ENVIRONMENT detection)
 ```
 
@@ -470,9 +481,11 @@ index.php             front controller (.env boot + ENVIRONMENT detection)
 
 | Document | Purpose |
 |---|---|
-| `docs/cpanel-deployment.md` | **shared-hosting deployment and migration with no terminal** — upload, create database, import `database/production.sql`, edit `.env` |
+| `INSTALLATION.md` | **step-by-step installation guide** — from downloading the zip to a live, secured panel on cPanel (no terminal) |
+| `docs/cpanel-deployment.md` | **shared-hosting deployment and migration with no terminal** — upload, create database, import `database/windels_panel.sql`, edit `.env` |
 | `docs/deployment.md` | operations runbook for the container/server path: preflight reference, runtime directories, upgrade flow |
-| `database/production.sql` | the complete importable database: schema, migration bookkeeping, all seed data, first administrator (generated by `tools/build_production_sql.php`) |
+| `database/windels_panel.sql` | the complete importable database: schema, migration bookkeeping, all seed data, first administrator (generated by `tools/build_production_sql.php`) |
+| `database/README.md` | the database contract: what ships, how to import it, how to verify it (`tools/verify_database.php`, `database/schema_verification.php`) |
 | `docs/backups.md` | backup & disaster-recovery plan + restore rehearsal |
 | `docs/database.sql` | canonical exported schema (19 migrations) |
 | `docs/certification-audit-2026-08-19.md` | certification audit of the platform |

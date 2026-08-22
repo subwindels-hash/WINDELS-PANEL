@@ -1,6 +1,6 @@
 <?php
 /**
- * build_production_sql.php — render database/production.sql.
+ * build_production_sql.php — render database/windels_panel.sql.
  *
  * One importable file that leaves the database completely initialised:
  * schema, indexes, foreign keys, the applied-migration bookkeeping, all core
@@ -439,14 +439,14 @@ $admin_statements[] = "INSERT INTO `referral_accounts`\n"
  * ----------------------------------------------------------------------- */
 $out = render_file($schema_sections, $seed_statements, $admin_statements, $schema_version, $opts);
 
-$target = $root . '/database/production.sql';
+$target = $root . '/database/windels_panel.sql';
 if ($check) {
     $current = file_exists($target) ? file_get_contents($target) : '';
     if (trim($current) !== trim($out)) {
-        fwrite(STDERR, "database/production.sql is out of date — run: php tools/build_production_sql.php\n");
+        fwrite(STDERR, "database/windels_panel.sql is out of date — run: php tools/build_production_sql.php\n");
         exit(1);
     }
-    echo "database/production.sql is up to date.\n";
+    echo "database/windels_panel.sql is up to date.\n";
     exit(0);
 }
 

@@ -3,10 +3,13 @@
  * link_system.php — materialise the CodeIgniter `system/` directory.
  *
  * CodeIgniter 3.1.13 ships `system/` inside the composer package
- * (vendor/codeigniter/framework/system), but the front controller expects it
- * at the repository root. `system/` is gitignored, so a fresh clone has none
- * — without this link the app exits 503 ("Your system folder path does not
- * appear to be set correctly") before booting.
+ * (vendor/codeigniter/framework/system). The front controller probes the
+ * repository-root `system/` first and the vendor path second, so a fresh
+ * clone boots after this runs. `system/` is gitignored — without it AND
+ * without composer, the app exits 503.
+ *
+ * Symlink preferred; on hosts where symlink() is unavailable it falls back to
+ * copying the tree — a real directory copy, never a failure.
  *
  * Runs automatically from composer post-install-cmd / post-update-cmd, and can
  * be run by hand: php tools/link_system.php
@@ -44,6 +47,39 @@ if (@symlink('vendor/codeigniter/framework/system', $link)) {
     exit(0);
 }
 
-fwrite(STDERR, "link_system: could not create the system symlink.\n"
-    . "Create it manually: ln -s vendor/codeigniter/framework/system system\n");
+// Symlink unavailable (Windows without developer mode, hosting accounts that
+// disable symlink()). A real directory copy satisfies every path the front
+// controller probes — index.php prefers ./system — so this is not a degraded
+// mode, just a duplicated one. Composer update still refreshes the vendor
+// copy; re-running this script after `composer update` re-syncs ./system.
+echo "link_system: symlink() failed — falling back to a real directory copy.\n";
+
+$iterator = new RecursiveIteratorIterator(
+    new RecursiveDirectoryIterator($target, FilesystemIterator::SKIP_DOTS),
+    RecursiveIteratorIterator::SELF_FIRST
+);
+$copied = 0;
+foreach ($iterator as $item) {
+    $dest = $link . DIRECTORY_SEPARATOR . $iterator->getSubPathName();
+    if ($item->isDir()) {
+        if (!is_dir($dest) && !@mkdir($dest, 0775, true)) {
+            fwrite(STDERR, "link_system: could not create directory {$dest}\n");
+            exit(1);
+        }
+    } else {
+        if (!@copy($item->getPathname(), $dest)) {
+            fwrite(STDERR, "link_system: could not copy {$item->getPathname()} -> {$dest}\n");
+            exit(1);
+        }
+        $copied++;
+    }
+}
+
+if (is_file($link . '/core/CodeIgniter.php')) {
+    echo "link_system: copied system/ ({$copied} files) from vendor/codeigniter/framework/system.\n";
+    echo "link_system: after future `composer update` runs, re-run this script to re-sync.\n";
+    exit(0);
+}
+
+fwrite(STDERR, "link_system: copy finished but system/core/CodeIgniter.php is missing — aborting.\n");
 exit(1);

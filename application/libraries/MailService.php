@@ -107,9 +107,13 @@ class MailService {
         try {
             $this->ci->load->library('email');
             $this->ci->email->clear(true);
+            // DB settings win (admin-editable); .env supplies the initial
+            // defaults (VP_MAIL_FROM_ADDRESS / VP_MAIL_FROM_NAME).
+            $from_email = class_exists('Env') ? (string) Env::get('MAIL_FROM_ADDRESS', '') : '';
+            $from_name  = class_exists('Env') ? (string) Env::get('MAIL_FROM_NAME', '') : '';
             $this->ci->email->from(
-                $this->ci->Setting_model->get('mail_from_email', 'no-reply@windels.local'),
-                $this->ci->Setting_model->get('mail_from_name', 'WINDELS PANEL')
+                $this->ci->Setting_model->get('mail_from_email', $from_email !== '' ? $from_email : 'no-reply@windels.local'),
+                $this->ci->Setting_model->get('mail_from_name',  $from_name  !== '' ? $from_name  : 'WINDELS PANEL')
             );
             $this->ci->email->to($mail->to_email);
             $this->ci->email->subject($mail->subject);
