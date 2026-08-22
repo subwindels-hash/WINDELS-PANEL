@@ -1,6 +1,9 @@
 .env
 /vendor/
-/system/
+# No trailing slash: tools/link_system.php creates ./system as a *symlink*,
+# and a trailing slash (/system/) only matches real directories — git would
+# then show the link as untracked noise after every composer install.
+/system
 /node_modules/
 /assets/css/tailwind.css
 
