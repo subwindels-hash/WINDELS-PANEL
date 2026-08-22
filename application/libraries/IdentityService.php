@@ -292,7 +292,13 @@ class IdentityService {
     }
 
     public function retention_days() {
-        $configured = $this->ci->config->item('identity_retention_days');
+        // Wired to the settings table, not config->item(): SettingsService
+        // exposes this key on Admin → Settings and Setting_model is where
+        // every other schema setting is read from. Nothing ever copies DB
+        // settings into the CI config registry, so the previous config->item()
+        // read always returned NULL and silently ignored the operator's value.
+        $this->ci->load->model('Setting_model');
+        $configured = $this->ci->Setting_model->get('identity_retention_days');
         return $configured !== null && $configured !== '' && (int)$configured >= 0
             ? (int)$configured : self::DEFAULT_RETENTION_DAYS;
     }

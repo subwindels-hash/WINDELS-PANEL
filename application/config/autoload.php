@@ -9,6 +9,12 @@ $autoload['packages'] = array();
 $autoload['libraries'] = array('session', 'form_validation', 'encryption');
 $autoload['drivers'] = array();
 $autoload['helper'] = array('url', 'form', 'security', 'windels', 'language');
-$autoload['config'] = array();
+// config/windels.php must be autoloaded, not just present: every reader of
+// its keys (item('windels') for base_currency/homepage, item('upload'),
+// item('rate_limits'), item('cron'), item('provider_http'), …) goes through
+// CI's config registry, and before this line the file was never loaded —
+// each consumer silently ran on its hardcoded fallback, so an operator
+// editing windels.php changed nothing.
+$autoload['config'] = array('windels');
 $autoload['language'] = array();
 $autoload['model'] = array();

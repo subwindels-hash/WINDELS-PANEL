@@ -324,7 +324,15 @@ class Api_v1 extends MY_Controller {
 
     private function enforce_rate_limit() {
         $per_min = (int)($this->key->rate_limit_per_minute ?? 0);
-        if ($per_min <= 0) $per_min = (int)($this->config->item('api_rate_limit_per_minute') ?? 60);
+        if ($per_min <= 0) {
+            // Fall back to the declared platform default. The old key
+            // ('api_rate_limit_per_minute') was defined in no config file, so
+            // it always evaluated NULL and every key without an explicit
+            // limit silently got the hardcoded 60. 'rate_limits.api_global'
+            // in config/windels.php is the intended, tunable source.
+            $limits = $this->config->item('rate_limits');
+            $per_min = max(1, (int)($limits['api_global']['limit'] ?? 60));
+        }
         $r = $this->apiratelimiter->check('key:'.$this->key->id, $per_min, 60);
         header('X-RateLimit-Limit: '.$r['limit']);
         header('X-RateLimit-Remaining: '.$r['remaining']);
