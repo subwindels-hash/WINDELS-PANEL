@@ -12,15 +12,15 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *
  * Two rules shaped it, both learned from auditing what was already seeded.
  *
- * **Only wired settings appear.** A grep showed several seeded rows —
- * `site_tagline`, `currency_display`, `default_theme`, `brand_*`,
- * `order_auto_submit`, `partial_refund_enabled`, `admin_mfa_required`,
- * `api_enabled` — were read by no code at all. Putting them on a form would be
- * worse than omitting them: an operator would switch a toggle on, see it save,
- * and watch nothing happen. Each remaining gap is listed in UNWIRED below with
- * the work it would take to honour it, so the omission is a documented decision
- * rather than an oversight. (`maintenance_mode` was previously one of these and
- * is now wired through MY_Controller.)
+ * **Only wired settings appear.** Several seeded rows — `currency_display`,
+ * `default_theme`, `brand_*`, `order_auto_submit`, `partial_refund_enabled`,
+ * `admin_mfa_required` — were read by no code at all. Putting them on a form
+ * would be worse than omitting them: an operator would switch a toggle on, see
+ * it save, and watch nothing happen. Each remaining gap is listed in UNWIRED
+ * below with the work it would take to honour it, so the omission is a
+ * documented decision rather than an oversight. (`maintenance_mode`,
+ * `site_tagline` and `api_enabled` were previously among these and are now
+ * wired.)
  *
  * **`base_currency` is deliberately read-only.** The row exists, but
  * `windels_base_currency()` reads `config/windels.php`, not this table, and
@@ -43,6 +43,8 @@ class SettingsService {
                 'Shown in the browser title and in every email this panel sends.', 'WINDELS PANEL'),
             'support_email' => array('email', 'general', 'Support email',
                 'The reply-to address on outgoing mail.', 'support@windels.local'),
+            'site_tagline' => array('text', 'general', 'Site tagline',
+                'Fallback meta description and public strapline.', 'Prepaid commerce for social media, VTU, virtual numbers, identity, gift cards and digital goods'),
             'maintenance_mode' => array('bool', 'general', 'Maintenance mode',
                 'On shows a branded holding page to everyone except staff.', false),
             'active_homepage' => array('choice:AURORA|NEXUS|PULSE', 'homepage', 'Active homepage',
@@ -77,6 +79,9 @@ class SettingsService {
             // seller the gross is the revenue — nothing is split or paid out.
             'marketplace_auto_release_hours' => array('int', 'marketplace', 'Escrow auto-release (hours)',
                 'Hours after fulfilment before an undisputed order completes automatically (1–720).', 72),
+
+            'api_enabled' => array('bool', 'api', 'Enable the reseller API',
+                'Off returns a 503 for every /api/v1 call without revoking any keys.', true),
         );
     }
 
@@ -88,13 +93,11 @@ class SettingsService {
      */
     public static function unwired() {
         return array(
-            'site_tagline'           => 'Nothing reads it; the homepages carry their own copy.',
             'default_theme'          => 'No theme switcher exists yet.',
             'currency_display'       => 'windels_money() always prints a symbol.',
             'order_auto_submit'      => 'OrderService always submits to the provider immediately.',
             'partial_refund_enabled' => 'Partial refunds are always on; the state machine has no switch.',
             'admin_mfa_required'     => 'Needs enforcement in Admin_Controller, which would lock out admins without MFA.',
-            'api_enabled'            => 'Needs a gate in Api_Controller.',
         );
     }
 

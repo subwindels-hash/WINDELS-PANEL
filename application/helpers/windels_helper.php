@@ -65,6 +65,11 @@ if (!function_exists('windels_site_tagline')) {
                 }
             }
         }
+        // Admin → Settings `site_tagline` overrides the config default.
+        if (function_exists('windels_brand_setting')) {
+            $setting = windels_brand_setting('site_tagline');
+            if ($setting !== null && $setting !== '') $tagline = (string)$setting;
+        }
         return $tagline;
     }
 }

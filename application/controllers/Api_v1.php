@@ -30,6 +30,16 @@ class Api_v1 extends MY_Controller {
         // point it at this authenticated controller.
         if ($this->is_docs_request()) return;
 
+        // Operator switch: settings `api_enabled` (default on). Turning it off
+        // shuts the reseller API down without revoking any keys.
+        try {
+            $this->load->model('Setting_model');
+            $api_on = $this->Setting_model->get('api_enabled', true);
+            if ($api_on !== null && $api_on !== '' && !in_array(strtolower(trim((string)$api_on)), array('1','true','yes','on'), true)) {
+                $this->fail(503, 'API_DISABLED', 'The reseller API is currently disabled.');
+            }
+        } catch (Throwable $e) { /* settings unavailable — fail open */ }
+
         $this->load->library(array('ApiAuthenticator','ApiRateLimiter'));
         $this->load->model(array(
             'Service_model','Order_model','Order_status_history_model','Refill_model',
