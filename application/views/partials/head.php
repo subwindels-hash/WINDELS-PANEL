@@ -14,6 +14,24 @@ $canonical_url = site_url($canonical);
 ?>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<?php // Theme init — runs before first paint so there is no flash of the wrong
+      // theme. Reads the site default (default_theme: system|light|dark) and a
+      // per-visitor localStorage override, then resolves 'system' against the
+      // OS preference. The toggle lives in the nav; WINDELS.setTheme() updates
+      // both the class and localStorage. ?>
+<script <?=csp_nonce_attr()?>>
+(function(){
+  var saved = null;
+  try { saved = localStorage.getItem('ws-theme'); } catch(e) {}
+  var def = <?=json_encode(function_exists('windels_default_theme') ? windels_default_theme() : 'system')?>;
+  var t = (saved === 'light' || saved === 'dark') ? saved : def;
+  var dark = false;
+  if (t === 'dark') dark = true;
+  else if (t !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) dark = true;
+  document.documentElement.classList.toggle('dark', dark);
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
 <title><?=htmlspecialchars($title)?> · <?=htmlspecialchars($site_name)?></title>
 <meta name="description" content="<?=htmlspecialchars($desc)?>">
 <meta name="robots" content="<?=htmlspecialchars($robots)?>">

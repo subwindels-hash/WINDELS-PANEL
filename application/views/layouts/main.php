@@ -26,7 +26,7 @@ if (!class_exists('SiteOperatorKnowledge', false)) {
     'page_og_image'   => $page_data['og_image'] ?? base_url('assets/images/home/hero.jpg'),
 ))); ?>
 </head>
-<body class="min-h-screen bg-white text-slate-900 antialiased ws-public-shell">
+<body class="min-h-screen bg-surface text-slate-900 antialiased ws-public-shell">
 <?php $this->load->view('partials/header'); ?>
 <main id="main" class="ws-main">
   <?php if ($content !== ''): ?>

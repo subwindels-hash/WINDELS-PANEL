@@ -12,13 +12,12 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *
  * Two rules shaped it, both learned from auditing what was already seeded.
  *
- * **Only wired settings appear.** The `default_theme` row was seeded but read
- * by no code at all. Putting it on a form would be worse than omitting it: an
- * operator would switch the toggle, see it save, and watch nothing happen. It
- * is listed in UNWIRED below, so the omission is a documented decision rather
- * than an oversight. (`maintenance_mode`, `site_tagline`, `api_enabled`,
- * `admin_mfa_required`, `currency_display`, `order_auto_submit` and
- * `partial_refund_enabled` were previously among these and are now wired.)
+ * **Every seeded setting is now wired.** Earlier sessions left several rows
+ * read by no code at all — `maintenance_mode`, `site_tagline`, `api_enabled`,
+ * `admin_mfa_required`, `currency_display`, `order_auto_submit`,
+ * `partial_refund_enabled` and `default_theme`. Each has since been honoured,
+ * so the UNWIRED list below is empty. It is kept (rather than deleted) so any
+ * future seeded-but-unwired setting has an obvious, honest place to be listed.
  *
  * **`base_currency` is deliberately read-only.** The row exists, but
  * `windels_base_currency()` reads `config/windels.php`, not this table, and
@@ -90,6 +89,9 @@ class SettingsService {
 
             'currency_display' => array('choice:symbol|code', 'currency', 'Currency display',
                 'Whether prices render as a symbol (₦1,234.56) or a code (NGN 1,234.56).', 'symbol'),
+
+            'default_theme' => array('choice:system|light|dark', 'branding', 'Default theme',
+                'System follows the visitor\'s OS preference; light and dark force a theme. Visitors can still override it in their browser.', 'system'),
         );
     }
 
@@ -100,9 +102,7 @@ class SettingsService {
      * this list, so an operator can see the switch is missing on purpose.
      */
     public static function unwired() {
-        return array(
-            'default_theme' => 'No theme switcher exists yet.',
-        );
+        return array();
     }
 
     /** Settings shown but not editable, with the reason. */

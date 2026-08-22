@@ -123,6 +123,30 @@ if (!function_exists('windels_brand_setting')) {
     }
 }
 
+if (!function_exists('windels_default_theme')) {
+    /**
+     * The site-wide default theme: 'system', 'light' or 'dark'.
+     *
+     * Reads Admin → Settings `default_theme` (seeded 'system') and falls back to
+     * 'system', which follows the visitor's OS preference. Individual visitors
+     * can override it in their browser (stored in localStorage) via the theme
+     * toggle; the initial paint uses this value so there is no flash.
+     */
+    function windels_default_theme(){
+        static $theme = null;
+        if ($theme !== null) return $theme;
+        $theme = 'system';
+        if (function_exists('windels_brand_setting')) {
+            $v = windels_brand_setting('default_theme');
+            if ($v !== null && $v !== '') {
+                $v = strtolower(trim((string)$v));
+                if (in_array($v, array('system', 'light', 'dark'), true)) $theme = $v;
+            }
+        }
+        return $theme;
+    }
+}
+
 if (!function_exists('windels_base_currency')) {
     /**
      * The panel's base currency code.

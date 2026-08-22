@@ -34,6 +34,10 @@ $active = function ($href) use ($path) {
     </div>
 
     <div class="ws-nav-actions">
+      <button type="button" class="btn btn-ghost btn-sm ws-nav-desktop" data-theme-toggle
+              aria-label="Toggle light or dark theme" title="Toggle theme">
+        <span data-theme-toggle-label>Dark</span>
+      </button>
       <div class="ws-nav-desktop row" style="gap:.4rem">
         <?php if ($cu): ?>
           <a class="btn btn-secondary btn-sm" href="<?=site_url($is_staff ? 'admin' : 'dashboard')?>">

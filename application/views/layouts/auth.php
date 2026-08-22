@@ -14,7 +14,7 @@ $auth_site = function_exists('windels_site_name') ? windels_site_name() : 'WINDE
 <body class="min-h-screen bg-slate-50 text-slate-900 antialiased ws-auth-shell-page">
 <?php $this->load->view('partials/announcement'); ?>
 <div class="min-h-screen flex flex-col">
-  <header class="border-b bg-white">
+  <header class="border-b bg-surface">
     <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
       <a href="<?=site_url()?>" class="ws-brand">
         <?php $this->load->view('partials/brand_logo', array('variant'=>'horizontal','height'=>30)); ?>
@@ -52,7 +52,7 @@ $auth_site = function_exists('windels_site_name') ? windels_site_name() : 'WINDE
         </div>
       <?php endif; ?>
 
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+      <div class="bg-surface rounded-2xl shadow-sm border border-slate-200 p-8">
         <?php
         // Expose every view variable (title, referral, token, error, …) to the partial.
         $this->load->view($content_view, array_diff_key(get_defined_vars(), array_flip(array('content_view'))));

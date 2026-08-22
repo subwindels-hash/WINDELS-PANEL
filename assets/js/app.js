@@ -194,6 +194,27 @@
     return field;
   };
 
+  /* ----------------------------- theme ----------------------------------- */
+  // Theme switch (light | dark | system). 'system' resolves against the OS
+  // preference; the result is stored so the next load picks it up before paint.
+  window.WINDELS.setTheme = function (theme) {
+    var t = (theme === 'light' || theme === 'dark' || theme === 'system') ? theme : 'system';
+    var dark = t === 'dark';
+    if (t === 'system') {
+      dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    document.documentElement.classList.toggle('dark', dark);
+    document.documentElement.setAttribute('data-theme', t);
+    try { localStorage.setItem('ws-theme', t); } catch (e) {}
+    // Keep every theme toggle in the page in sync.
+    var toggles = document.querySelectorAll('[data-theme-toggle]');
+    for (var i = 0; i < toggles.length; i++) {
+      toggles[i].setAttribute('data-theme-current', t);
+      var label = toggles[i].querySelector('[data-theme-toggle-label]');
+      if (label) label.textContent = t === 'dark' ? 'Light' : 'Dark';
+    }
+  };
+
   /* ----------------------------- toast ----------------------------------- */
   // One transient notification component for async feedback:
   //   WINDELS.toast('success', 'Saved') / 'error' / 'warning' / 'info'
@@ -248,6 +269,7 @@
       initSiteOperator();
       initMfa();
       initFormSubmitGuard();
+      initThemeToggle();
     } catch (e) {
       // A broken optional widget must never stop the other global behaviours
       // (CSRF plumbing, mobile nav, FAQ filter, assistant) from running.
@@ -512,6 +534,23 @@
       initial[s].addEventListener('click', function () {
         ask(this.getAttribute('data-suggest') || this.textContent);
       });
+    }
+  }
+
+  function initThemeToggle() {
+    var toggles = document.querySelectorAll('[data-theme-toggle]');
+    for (var i = 0; i < toggles.length; i++) {
+      (function (btn) {
+        var label = btn.querySelector('[data-theme-toggle-label]');
+        var current = document.documentElement.getAttribute('data-theme') || 'system';
+        var dark = document.documentElement.classList.contains('dark');
+        btn.setAttribute('data-theme-current', current);
+        if (label) label.textContent = dark ? 'Light' : 'Dark';
+        btn.addEventListener('click', function () {
+          var isDark = document.documentElement.classList.contains('dark');
+          WINDELS.setTheme(isDark ? 'light' : 'dark');
+        });
+      })(toggles[i]);
     }
   }
 
