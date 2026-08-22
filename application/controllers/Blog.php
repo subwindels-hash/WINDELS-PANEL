@@ -17,7 +17,7 @@ class Blog extends Public_Controller {
         $limit = 9;
         $posts = $this->Blog_post_model->published($category ?: null, $limit, ($page-1)*$limit);
         $total = $this->Blog_post_model->count_published($category ?: null);
-        $this->load->view('layouts/public', array(
+        $this->load->view('layouts/main', array(
             'content_view' => 'public/blog/list',
             'data' => array(
                 'title' => 'Blog',
@@ -26,7 +26,7 @@ class Blog extends Public_Controller {
                 'active_category' => $category,
                 'page' => $page,
                 'total_pages' => max(1, (int)ceil($total / $limit)),
-                'meta_description' => 'Guides, product updates and reseller tips from WINDELS PANEL.',
+                'meta_description' => 'Guides, product updates and reseller tips from Averion Commerce.',
             ),
         ));
     }
@@ -36,7 +36,7 @@ class Blog extends Public_Controller {
         if (!$post) show_404();
         $this->Blog_post_model->increment_views($post->id);
         $related = $this->Blog_post_model->published(null, 3);
-        $this->load->view('layouts/public', array(
+        $this->load->view('layouts/main', array(
             'content_view' => 'public/blog/detail',
             'data' => array(
                 'title' => $post->meta_title ?: $post->title,

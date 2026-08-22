@@ -19,6 +19,74 @@ if (!function_exists('windels_public_id')) {
         return bin2hex(random_bytes(13));
     }
 }
+if (!function_exists('windels_site_name')) {
+    /**
+     * Single source of truth for the public-facing brand name.
+     *
+     * Reads application/config/windels.php -> public_name so a deployment can
+     * change the marketing site without touching dozens of views. Falls back to
+     * the internal product name, then to the codebase default.
+     */
+    function windels_site_name(){
+        static $name = null;
+        if ($name !== null) return $name;
+        $name = 'Averion Commerce';
+        if (function_exists('get_instance')) {
+            $ci = @get_instance();
+            if ($ci && isset($ci->config)) {
+                $cfg = $ci->config->item('windels');
+                if (is_array($cfg) && !empty($cfg['public_name'])) {
+                    $name = (string)$cfg['public_name'];
+                } elseif (is_array($cfg) && !empty($cfg['name'])) {
+                    $name = (string)$cfg['name'];
+                }
+            }
+        }
+        return $name;
+    }
+}
+
+if (!function_exists('windels_site_tagline')) {
+    /**
+     * Public-facing tagline, same config-driven source as windels_site_name().
+     */
+    function windels_site_tagline(){
+        static $tagline = null;
+        if ($tagline !== null) return $tagline;
+        $tagline = 'Prepaid commerce for social media, VTU, virtual numbers, identity, gift cards and digital goods';
+        if (function_exists('get_instance')) {
+            $ci = @get_instance();
+            if ($ci && isset($ci->config)) {
+                $cfg = $ci->config->item('windels');
+                if (is_array($cfg) && !empty($cfg['public_tagline'])) {
+                    $tagline = (string)$cfg['public_tagline'];
+                } elseif (is_array($cfg) && !empty($cfg['tagline'])) {
+                    $tagline = (string)$cfg['tagline'];
+                }
+            }
+        }
+        return $tagline;
+    }
+}
+
+if (!function_exists('windels_brand_logo')) {
+    /**
+     * Public logo with the configured brand name baked in at render time.
+     *
+     * The SVG partial accepts variant/height; this helper keeps the header,
+     * footer and auth shell from each hardcoding a different asset path.
+     */
+    function windels_brand_logo($variant = 'horizontal', $height = 32){
+        $name = strtolower(str_replace(' ', '-', preg_replace('/[^A-Za-z0-9 ]/', '', windels_site_name())));
+        $file = 'logo-'.$name;
+        if ($variant === 'icon') $file = 'logo-'.$name.'-icon';
+        if ($variant === 'dark') $file = 'logo-'.$name.'-dark';
+        $path = FCPATH.'assets/brand/'.$file.'.svg';
+        if ($variant !== 'icon' && !is_file($path)) $path = FCPATH.'assets/brand/logo-'.$name.'.svg';
+        return (is_file($path) ? base_url('assets/brand/'.$file.'.svg') : base_url('assets/brand/logo.svg'));
+    }
+}
+
 if (!function_exists('windels_base_currency')) {
     /**
      * The panel's base currency code.

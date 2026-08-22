@@ -194,18 +194,33 @@
     return field;
   };
 
-  document.addEventListener('DOMContentLoaded', function () {
+  function boot() {
     // A page restored from the back/forward cache carries the token it was
     // rendered with, which may have been retired in the meantime.
     window.addEventListener('pageshow', function (event) {
       if (event.persisted) token(true);
     });
 
-    initPasswordToggles();
-    initMobileNav();
-    initFaqFilter();
-    initSiteOperator();
-  });
+    try {
+      initPasswordToggles();
+      initMobileNav();
+      initFaqFilter();
+      initSiteOperator();
+    } catch (e) {
+      // A broken optional widget must never stop the other global behaviours
+      // (CSRF plumbing, mobile nav, FAQ filter, assistant) from running.
+      if (window.console && console.error) console.error('windels init failed:', e);
+    }
+  }
+
+  // scripts.php loads this at the end of <body>, but being defensive costs
+  // nothing: if the asset is ever deferred or injected after DOMContentLoaded,
+  // the assistant and mobile nav still initialise.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
 
   function initPasswordToggles() {
     var buttons = document.querySelectorAll('[data-password-toggle]');
@@ -280,6 +295,15 @@
 
     if (launch) {
       launch.addEventListener('click', function () { setOpen(root.hidden); });
+    }
+    // Direct links on the full-page /assistant route (or anywhere that calls
+    // for the chat) cannot duplicate the floating button, so they dispatch to
+    // it instead of re-implementing the panel.
+    var openers = document.querySelectorAll('[data-open-assistant]');
+    for (var o = 0; o < openers.length; o++) {
+      openers[o].addEventListener('click', function () {
+        if (launch) launch.click();
+      });
     }
     if (closeBtn) {
       closeBtn.addEventListener('click', function () { setOpen(false); if (launch) launch.focus(); });

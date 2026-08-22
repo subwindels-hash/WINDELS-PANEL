@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Averion Commerce mark">
+  <defs>
+    <linearGradient id="ac-i-mark" x1="8" y1="4" x2="58" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6366F1"/>
+      <stop offset=".55" stop-color="#4F46E5"/>
+      <stop offset="1" stop-color="#C026D3"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#ac-i-mark)"/>
+  <rect x="2.5" y="2.5" width="59" height="59" rx="14.5" fill="none" stroke="#fff" stroke-opacity=".18"/>
+  <path d="M13 46 27 17h6l14 29h-6.4l-3.6-7.4H22.8L19.2 46H13zm11.8-12h11L30 22z" fill="#fff"/>
+  <rect x="43" y="27" width="5.4" height="15" rx="1.4" fill="#fff" opacity=".92"/>
+</svg>

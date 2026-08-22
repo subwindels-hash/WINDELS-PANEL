@@ -5,7 +5,7 @@
       <div>
         <p class="ws-kicker">About</p>
         <h1>A panel for selling digital fulfilment — not a marketing slogan</h1>
-        <p class="ws-lede">WINDELS PANEL is the software that runs this site: wallets, orders, providers, staff tools and a reseller API. It is operated by whoever deployed this instance.</p>
+        <p class="ws-lede">Averion Commerce is the software that runs this site: wallets, orders, providers, staff tools and a reseller API. It is operated by whoever deployed this instance.</p>
       </div>
       <div class="ws-hero-media">
         <img src="<?=base_url('assets/images/home/hero.jpg')?>" alt="Abstract operations hub representing the panel software, not a staged office photograph." width="800" height="600" loading="lazy">
@@ -17,7 +17,7 @@
 <section class="ws-section-sm">
   <div class="container ws-prose">
     <h2>What this product is</h2>
-    <p>WINDELS PANEL is an enterprise reseller platform. One customer account can buy social-media services, Nigerian VTU and bills, virtual numbers, identity lookups, gift cards and platform-owned marketplace listings — when the operator has connected and priced those products.</p>
+    <p>Averion Commerce is an enterprise reseller platform. One customer account can buy social-media services, Nigerian VTU and bills, virtual numbers, identity lookups, gift cards and platform-owned marketplace listings — when the operator has connected and priced those products.</p>
     <p>The wallet is a spending balance. Customers add funds and use that balance inside the panel. There is no customer cash-out of leftover deposits.</p>
 
     <h2>Who it is for</h2>

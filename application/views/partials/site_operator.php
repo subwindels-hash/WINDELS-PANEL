@@ -1,18 +1,20 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
+$site_name = function_exists('windels_site_name') ? windels_site_name() : 'Averion Commerce';
 $suggestions = class_exists('SiteOperatorKnowledge')
     ? SiteOperatorKnowledge::suggested_questions()
     : array('What services can I order?', 'How does pricing work?', 'How do I create an account?');
 $welcome = class_exists('SiteOperatorKnowledge')
     ? SiteOperatorKnowledge::assistant_disclaimer()
-    : 'On-site assistant for WINDELS PANEL.';
+    : 'On-site assistant for '.$site_name.'.';
 ?>
 <button type="button" class="ws-assistant-launch" id="ws-assistant-launch"
-        aria-controls="ws-assistant" aria-expanded="false">
+        aria-controls="ws-assistant" aria-expanded="false"
+        aria-haspopup="dialog" title="Open the <?=htmlspecialchars($site_name)?> assistant">
   <img src="<?=base_url('assets/images/ai/avatar.jpg')?>" alt="" width="28" height="28" class="ws-avatar" style="width:28px;height:28px">
-  Assistant
+  <span>Assistant</span>
 </button>
-<section class="ws-assistant" id="ws-assistant" hidden
-         data-endpoint="<?=htmlspecialchars(site_url('assistant/chat'))?>"
+<section class="ws-assistant" id="ws-assistant" hidden role="dialog" aria-modal="false"
+         data-assistant data-endpoint="<?=htmlspecialchars(site_url('assistant/chat'))?>"
          aria-label="Site assistant">
   <header class="ws-assistant-head">
     <div class="row" style="gap:.7rem">

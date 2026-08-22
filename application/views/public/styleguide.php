@@ -2,7 +2,7 @@
 <section class="ws-page-hero">
   <div class="container" style="max-width:1080px">
     <p class="ws-kicker">Product UI</p>
-    <h1>WINDELS <span class="gradient-text">Design System</span></h1>
+    <h1><?=htmlspecialchars(function_exists('windels_site_name') ? windels_site_name() : 'Averion Commerce')?> <span class="gradient-text">Design System</span></h1>
     <p class="ws-lede">The tokens and component classes the live site uses. Source of truth: <code>assets/css/design-system.css</code>, mirrored in <code>tailwind.config.js</code>. This page is a reference, not a separate visual language.</p>
   </div>
 </section>
@@ -12,18 +12,18 @@
 
   <section class="card" id="logo">
     <h2 class="card-title">Logo</h2>
-    <p class="muted">The mark is a rounded panel with a W and two rising bars. Use the SVG files in <code>assets/brand/</code>. Do not recolour the gradient, add drop shadows, or place the mark on a busy photograph.</p>
+    <p class="muted">The mark is a rounded panel with an A and two rising bars. The public header, footer, auth shell and assistant all load the same assets through <code>partials/brand_logo.php</code>. Do not recolour the gradient, add drop shadows, or place the mark on a busy photograph.</p>
     <div class="grid grid-3 mt-4">
       <div class="card" style="background:#fff">
-        <img src="<?=base_url('assets/brand/logo.svg')?>" alt="Primary logo on light" height="48" width="210">
+        <?php $this->load->view('partials/brand_logo', array('variant'=>'horizontal','height'=>48,'class'=>'ws-logo-lg')); ?>
         <p class="hint">Primary / light</p>
       </div>
       <div class="card" style="background:#0b1020">
-        <img src="<?=base_url('assets/brand/logo-dark.svg')?>" alt="Logo on dark" height="48" width="210">
+        <?php $this->load->view('partials/brand_logo', array('variant'=>'dark','height'=>48,'class'=>'ws-logo-lg')); ?>
         <p class="hint" style="color:#94a3b8">Dark background</p>
       </div>
       <div class="card">
-        <img src="<?=base_url('assets/brand/logo-icon.svg')?>" alt="Icon mark" height="56" width="56">
+        <?php $this->load->view('partials/brand_logo', array('variant'=>'icon','height'=>56,'class'=>'ws-logo-lg')); ?>
         <p class="hint">Icon / favicon</p>
       </div>
     </div>
@@ -246,6 +246,6 @@ $windels = ['panel' =&gt; 'ready'];</code></pre>
     <p>Dashboard and admin navigation use the inline SVG partial <code>partials/icon.php</code> (Lucide-style paths). Public marketing pages prefer text, badges and the brand mark rather than a second icon font.</p>
   </section>
 
-  <p class="text-center muted">Components render without a Tailwind build. Production compiles utilities with <code>npm run build:css</code>.</p>
+  <p class="text-center muted">The compiled utility stylesheet <code>assets/css/tailwind.css</code> ships with the app. Rebuild it with <code>npm run build:css</code> after changing utility classes.</p>
 </div>
 </section>

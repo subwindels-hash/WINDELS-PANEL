@@ -14,20 +14,22 @@ class SiteOperatorKnowledge {
     const UPDATED_DATE   = '22 August 2026';
 
     public static function site_name() {
-        return 'WINDELS PANEL';
+        if (function_exists('windels_site_name')) return windels_site_name();
+        return 'Averion Commerce';
     }
 
     public static function tagline() {
-        return 'Enterprise SMM, VTU and digital-goods reseller platform';
+        if (function_exists('windels_site_tagline')) return windels_site_tagline();
+        return 'Prepaid commerce for social media, VTU, virtual numbers, identity, gift cards and digital goods';
     }
 
     public static function pages() {
         return array(
-            array('path' => '', 'title' => 'Home', 'summary' => 'Public homepage for WINDELS PANEL.', 'keywords' => 'home start welcome'),
+            array('path' => '', 'title' => 'Home', 'summary' => 'Public homepage for '.self::site_name().'.', 'keywords' => 'home start welcome'),
             array('path' => 'services', 'title' => 'Services', 'summary' => 'Browse SMM services and the other product areas the panel sells.', 'keywords' => 'services catalogue smm order'),
             array('path' => 'pricing', 'title' => 'Pricing', 'summary' => 'Prepaid wallet pricing, volume groups and custom rates.', 'keywords' => 'pricing price cost wallet deposit'),
             array('path' => 'faq', 'title' => 'FAQ', 'summary' => 'Answers about accounts, orders, billing, security and the API.', 'keywords' => 'faq questions help'),
-            array('path' => 'about', 'title' => 'About', 'summary' => 'What WINDELS PANEL is and who it is for.', 'keywords' => 'about company who'),
+            array('path' => 'about', 'title' => 'About', 'summary' => 'What '.self::site_name().' is and who it is for.', 'keywords' => 'about company who'),
             array('path' => 'contact', 'title' => 'Contact', 'summary' => 'Contact support or open a ticket if you are signed in.', 'keywords' => 'contact support email ticket'),
             array('path' => 'blog', 'title' => 'Blog', 'summary' => 'Guides and product updates published by staff.', 'keywords' => 'blog news guides'),
             array('path' => 'terms', 'title' => 'Terms of Service', 'summary' => 'Legal terms for using the platform.', 'keywords' => 'terms legal conditions'),
@@ -250,7 +252,7 @@ class SiteOperatorKnowledge {
     public static function faqs() {
         return array(
             // General
-            array('category' => 'General', 'q' => 'What is WINDELS PANEL?', 'a' => 'WINDELS PANEL is a reseller platform for social-media services, Nigerian VTU and bills, virtual numbers, identity lookups, gift cards and a platform-owned marketplace. You add funds to a wallet and spend that balance inside the panel. It does not pay out wallet withdrawals.'),
+            array('category' => 'General', 'q' => 'What is '.self::site_name().'?', 'a' => self::site_name().' is a reseller platform for social-media services, Nigerian VTU and bills, virtual numbers, identity lookups, gift cards and a platform-owned marketplace. You add funds to a wallet and spend that balance inside the panel. It does not pay out wallet withdrawals.'),
             array('category' => 'General', 'q' => 'Who is it for?', 'a' => 'Creators placing occasional orders, agencies running many orders, and resellers who want an API. Staff use a separate admin area to run catalogue, providers, payments and support.'),
             array('category' => 'General', 'q' => 'Do I need a subscription?', 'a' => 'No. Accounts are free to open. You pay for the services and products you order from a prepaid wallet. There is no public monthly SaaS plan.'),
             array('category' => 'General', 'q' => 'Which currency is used?', 'a' => 'The panel’s base currency is Nigerian Naira (₦) unless the operator changes it. Display conversion to other currencies may exist for reference; wallets and charges stay in the base currency.'),
@@ -318,7 +320,7 @@ class SiteOperatorKnowledge {
     }
 
     public static function assistant_disclaimer() {
-        return 'I am WINDELS PANEL’s on-site assistant. I answer from the panel’s built-in knowledge and navigation rules. I am not a cloud generative AI model, I do not call a third-party AI API, and I cannot place orders, move wallet funds, or change account settings.';
+        return 'I am '.self::site_name().'’s on-site assistant. I answer from the platform’s built-in knowledge and navigation rules. I am not a cloud generative AI model, I do not call a third-party AI API, and I cannot place orders, move wallet funds, or change account settings.';
     }
 
     public static function data_inventory() {
