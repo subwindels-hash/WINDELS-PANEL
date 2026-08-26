@@ -33,6 +33,51 @@ class Service_model extends MY_Model {
         return $this->db->order_by('sorting','ASC')->get($this->table)->result();
     }
 
+    /**
+     * Services to showcase on the marketing homepage, with their category.
+     *
+     * Prefers rows an operator has explicitly marked `featured`, then falls
+     * back to the normal catalogue ordering, so the homepage shows real
+     * services at real prices even before anyone has curated a shortlist.
+     * Returns an empty array on a catalogue with nothing active — the caller
+     * renders a "catalogue is being prepared" state rather than invented
+     * placeholder cards.
+     */
+    public function homepage_showcase($limit = 6) {
+        $limit = max(1, min(24, (int)$limit));
+        return $this->db
+            ->select('s.public_id, s.name, s.slug, s.rate, s.min_quantity, s.max_quantity,
+                      s.average_time, s.refill_supported, s.cancel_supported, s.dripfeed_supported,
+                      c.name AS category_name, c.slug AS category_slug', false)
+            ->from($this->table.' s')
+            ->join('service_categories c', 'c.id = s.category_id', 'left')
+            ->where('s.status', 'ACTIVE')
+            ->order_by('s.featured', 'DESC')
+            ->order_by('s.sorting', 'ASC')
+            ->limit($limit)
+            ->get()->result();
+    }
+
+    /**
+     * Active categories that actually contain something buyable, with counts.
+     *
+     * A category with no active services is a dead end for a visitor, so the
+     * homepage and the catalogue nav only offer categories that can be
+     * ordered from.
+     */
+    public function categories_with_counts($limit = 12) {
+        $limit = max(1, min(50, (int)$limit));
+        return $this->db
+            ->select('c.name, c.slug, c.icon, COUNT(s.id) AS service_count, MIN(s.rate) AS from_rate', false)
+            ->from('service_categories c')
+            ->join($this->table.' s', "s.category_id = c.id AND s.status = 'ACTIVE'", 'inner')
+            ->where('c.is_active', 1)
+            ->group_by('c.id, c.name, c.slug, c.icon, c.sorting')
+            ->order_by('c.sorting', 'ASC')
+            ->limit($limit)
+            ->get()->result();
+    }
+
     /** Active services in a category, counted for pagination. */
     public function count_active($category_id=NULL){
         $this->db->where('status','ACTIVE');

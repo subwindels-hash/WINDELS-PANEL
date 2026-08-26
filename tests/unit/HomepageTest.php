@@ -24,12 +24,27 @@ class HomepageTest extends TestCase
     {
         $html = $this->view('aurora');
         foreach (array(
-            'Popular services', 'How it works', 'Every major platform',
+            'Services on the panel', 'How it works',
             'Browse by category', 'Frequently asked questions',
-            'Loved by resellers', 'Ready to scale?',
+            'Why choose MarvySocials', 'Ready to get started?',
         ) as $section) {
             $this->assertStringContainsString($section, $html, "AURORA missing section: {$section}");
         }
+
+        // The catalogue sections must come from the database, not a literal
+        // array in the view. Hard-coded service names and prices on a
+        // marketing page are a promise the panel cannot keep.
+        $this->assertStringContainsString('$showcase', $html,
+            'the services section must render live catalogue rows');
+        $this->assertStringContainsString('$categories', $html,
+            'the category section must render live categories');
+        $this->assertStringContainsString('catalogue is being prepared', $html,
+            'an empty catalogue needs an honest empty state, not placeholder cards');
+
+        // No invented social proof: testimonials we cannot attribute are the
+        // easiest thing on this page to fake.
+        $this->assertStringNotContainsString('Loved by resellers', $html);
+        $this->assertStringNotContainsString('here is what they say', $html);
         // Three ordered steps per wireframe, rendered by a foreach loop.
         $this->assertSame(3, substr_count($html, "'01'") + substr_count($html, "'02'") + substr_count($html, "'03'"));
         // Must link into the product.

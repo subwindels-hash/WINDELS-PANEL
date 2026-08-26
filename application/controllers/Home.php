@@ -14,10 +14,28 @@ class Home extends Public_Controller {
         }
         $data = array(
             'active_homepage'=>$active,
-            'title'=>'Prepaid SMM, VTU and digital-goods panel',
-            'meta_description'=>'MarvySocials is a prepaid reseller platform for social-media services, Nigerian VTU, virtual numbers, identity checks, gift cards and a platform marketplace.',
+            'title'=>'Grow and manage your social presence',
+            'meta_description'=>'MarvySocials is a prepaid panel for social media growth services, Nigerian VTU and bills, virtual numbers, identity checks and gift cards. Add funds, place an order, track it from one dashboard.',
             'canonical' => '',
         );
+
+        // The homepage advertises the *live* catalogue: real service names,
+        // real rates, real categories. An empty catalogue renders an honest
+        // "being prepared" state rather than invented placeholder cards, so
+        // the site never promises something the operator cannot deliver.
+        $data['showcase'] = array();
+        $data['categories'] = array();
+        $data['catalogue_size'] = 0;
+        if ($this->db_ready) {
+            try {
+                $this->load->model(array('Service_model', 'Service_category_model'));
+                $data['showcase'] = $this->Service_model->homepage_showcase(6);
+                $data['categories'] = $this->Service_model->categories_with_counts(8);
+                $data['catalogue_size'] = $this->Service_model->count_active();
+            } catch (Throwable $e) {
+                log_message('error', 'homepage catalogue unavailable: '.$e->getMessage());
+            }
+        }
         // Single switch — no Node
         $view = 'homepages/'.strtolower($active).'/index';
         // Fallback if template missing. CI_Loader has no view-exists helper, so
