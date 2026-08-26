@@ -23,7 +23,7 @@
         <td class="mono text-xs"><?=htmlspecialchars(substr($d->public_id,0,12))?>…</td>
         <td><?=htmlspecialchars($svc->name ?? 'Service #'.$d->service_id)?></td>
         <td class="mono"><?=(int)$d->runs_completed?>/<?=(int)$d->runs?></td>
-        <td><?=windels_money($d->charge)?></td>
+        <td><?=marvy_money($d->charge)?></td>
         <td class="text-xs muted"><?=$d->next_run_at ? date('M j, H:i', strtotime($d->next_run_at)) : '—'?></td>
         <td><span class="badge <?=($d->status==='ACTIVE'?'badge-success':($d->status==='PAUSED'?'badge-warning':'badge-default'))?>"><?=htmlspecialchars($d->status)?></span></td>
         <td><a class="btn btn-ghost btn-sm" href="<?=site_url('dashboard/drip-feed/'.$d->public_id)?>">Manage →</a></td>

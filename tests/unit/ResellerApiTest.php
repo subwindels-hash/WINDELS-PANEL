@@ -17,7 +17,7 @@ class ResellerApiTest extends TestCase
         if (!class_exists('CI_Model')) eval('class CI_Model {}');
         if (!function_exists('get_instance')) eval('function &get_instance(){ return $GLOBALS["__fake_ci"]; }');
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
-        if (!function_exists('windels_public_id')) require_once self::$root.'/application/helpers/windels_helper.php';
+        if (!function_exists('marvy_public_id')) require_once self::$root.'/application/helpers/marvy_helper.php';
         require_once self::$root.'/application/libraries/ApiRateLimiter.php';
     }
 
@@ -25,7 +25,7 @@ class ResellerApiTest extends TestCase
 
     public function testRateLimiterAllowsUpToLimit()
     {
-        $dir = sys_get_temp_dir().'/windels_rl_'.bin2hex(random_bytes(4));
+        $dir = sys_get_temp_dir().'/marvy_rl_'.bin2hex(random_bytes(4));
         @mkdir($dir, 0700, true);
         $rl = new ReflectionClass('ApiRateLimiter');
         $limiter = $rl->newInstance();
@@ -43,7 +43,7 @@ class ResellerApiTest extends TestCase
 
     public function testRateLimiterResetsAfterWindow()
     {
-        $dir = sys_get_temp_dir().'/windels_rl_'.bin2hex(random_bytes(4));
+        $dir = sys_get_temp_dir().'/marvy_rl_'.bin2hex(random_bytes(4));
         @mkdir($dir, 0700, true);
         $rl = new ReflectionClass('ApiRateLimiter');
         $limiter = $rl->newInstance();

@@ -8,7 +8,7 @@ if (!class_exists('SiteOperatorKnowledge', false)) {
   <div class="container" style="max-width:760px">
     <p class="ws-kicker">Legal</p>
     <h1>Acceptable Use Policy</h1>
-    <p class="ws-lede">Rules for using this WINDELS PANEL instance. Breaking them can mean a refused order, a locked account, or a report to a provider or authority.</p>
+    <p class="ws-lede">Rules for using this MarvySocials instance. Breaking them can mean a refused order, a locked account, or a report to a provider or authority.</p>
     <p class="hint">Effective <?=htmlspecialchars(SiteOperatorKnowledge::EFFECTIVE_DATE)?> · Last updated <?=htmlspecialchars(SiteOperatorKnowledge::UPDATED_DATE)?></p>
   </div>
 </section>

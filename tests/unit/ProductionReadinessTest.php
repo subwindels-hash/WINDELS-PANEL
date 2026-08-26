@@ -19,7 +19,7 @@ class ProductionReadinessTest extends TestCase
         if (!defined('BASEPATH')) define('BASEPATH', self::$root.'/system/');
         if (!defined('APPPATH')) define('APPPATH', self::$root.'/application/');
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
-        require_once self::$root.'/application/helpers/windels_helper.php';
+        require_once self::$root.'/application/helpers/marvy_helper.php';
         require_once self::$root.'/application/libraries/EncryptionService.php';
         require_once self::$root.'/application/libraries/Preflight.php';
     }
@@ -201,7 +201,7 @@ class ProductionReadinessTest extends TestCase
 
     public function testPreflightRejectsTheDefaultDatabasePasswordInProduction()
     {
-        putenv('DB_PASSWORD=windels_secret');
+        putenv('DB_PASSWORD=marvy_secret');
         $this->assertSame(Preflight::FAIL,
             $this->named($this->preflight()->run('production'), 'db_password')['status']);
 
@@ -309,7 +309,7 @@ class ProductionReadinessTest extends TestCase
         $this->assertStringContainsString('DB_NAME', $check['detail']);
 
         putenv('APP_KEY=A'.str_repeat('b', 31));
-        putenv('DB_NAME=windels'); putenv('DB_USER=windels');
+        putenv('DB_NAME=marvy'); putenv('DB_USER=marvy');
         $this->assertSame(Preflight::OK,
             $this->named($this->preflight()->run('production'), 'required_secrets')['status']);
     }
@@ -389,8 +389,8 @@ class ProductionReadinessTest extends TestCase
     public function testEveryCronJobIsScheduled()
     {
         $crontab = file_get_contents(self::$root.'/cron/crontab.example');
-        require_once self::$root.'/application/config/windels.php';
-        // windels.php populates $config; re-read it directly for the job list.
+        require_once self::$root.'/application/config/marvy.php';
+        // marvy.php populates $config; re-read it directly for the job list.
         $jobs = array('dripfeed', 'order_status', 'subscriptions', 'provider_health',
                       'refill_status', 'payment_reconciliation', 'email_queue',
                       'analytics', 'provider_sync', 'affiliate_payouts');

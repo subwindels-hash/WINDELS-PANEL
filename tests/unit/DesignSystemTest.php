@@ -111,7 +111,7 @@ class DesignSystemTest extends TestCase
             'tailwind.css must be the compiled output, not the source');
         // The tracked-file check needs a git binary; the WASM offline runner has
         // none. CI runs this test with git and enforces it.
-        $is_wasm = function_exists('windels_runtime_is_wasm') && windels_runtime_is_wasm();
+        $is_wasm = function_exists('marvy_runtime_is_wasm') && marvy_runtime_is_wasm();
         if (function_exists('exec') && !$is_wasm) {
             exec('git -C '.escapeshellarg(self::$root).' ls-files --error-unmatch assets/css/tailwind.css 2>/dev/null', $out, $rc);
             $this->assertSame(0, $rc, 'assets/css/tailwind.css must be tracked in git');

@@ -121,7 +121,7 @@ class JobRunner {
     private function lock_dir() {
         $configured = $this->ci->config->item('cron_lock_dir');
         if ($configured) return rtrim($configured, '/');
-        return rtrim(sys_get_temp_dir(), '/').'/windels-locks';
+        return rtrim(sys_get_temp_dir(), '/').'/marvy-locks';
     }
 
     /* ---------------------------- run records ---------------------------- */

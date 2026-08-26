@@ -75,9 +75,9 @@ $qs = function (array $over = array()) use ($filters, $page) {
           </td>
           <td><span class="<?=DashboardStats::status_badge($r['status'])?>"><?=htmlspecialchars($r['status'])?></span></td>
           <td class="text-right mono">
-            <?=windels_money($r['amount'], $r['currency'])?>
+            <?=marvy_money($r['amount'], $r['currency'])?>
             <?php if (bccomp($r['refunded'], '0', 8) > 0): ?>
-              <div class="text-xs muted">refunded <?=windels_money($r['refunded'], $r['currency'])?></div>
+              <div class="text-xs muted">refunded <?=marvy_money($r['refunded'], $r['currency'])?></div>
             <?php endif; ?>
           </td>
           <td class="text-right">

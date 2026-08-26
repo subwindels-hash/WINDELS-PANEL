@@ -1,4 +1,4 @@
-# WINDELS PANEL — Artifact 3 (REVISED): Module / Feature Dependency Map — CodeIgniter 3.x
+# MarvySocials — Artifact 3 (REVISED): Module / Feature Dependency Map — CodeIgniter 3.x
 
 > Revised 2026-08-16 | PHP MVC mapping. Supersedes Node module map.
 
@@ -167,7 +167,7 @@ Preview in Admin → Appearance → Homepage: iframe loading `/?preview=PULSE` (
 | Provider Adapter | `ProviderAdapterInterface` | new `libraries/*Adapter.php` + register in `config/providers.php` |
 | Notification Channel | `NotificationService::registerChannel()` | implement `send()` in library |
 | Service Type | `ServiceTypeEngine::definitions` | add entry: required/optional fields, validation, price calc, payload map |
-| Homepage Template | PHP view folder | new `views/homepages/<name>/` + register in `config/windels.php` + `Home.php` switch |
+| Homepage Template | PHP view folder | new `views/homepages/<name>/` + register in `config/marvy.php` + `Home.php` switch |
 
 Extensions are deployed code, not admin uploads.
 

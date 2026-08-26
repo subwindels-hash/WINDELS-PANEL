@@ -38,7 +38,7 @@ $current_type = $filters['service_type'] ?? ($filters['id_type'] ?? ($filters['d
     <h2 class="mb-0" style="font-size:1.4rem;font-weight:600">Catalogue</h2>
     <p class="muted text-sm">
       <?=number_format((int)$total)?> <?=htmlspecialchars(strtolower(CatalogueService::label($domain)))?>
-      matching this view. Prices are in <?=htmlspecialchars(windels_base_currency())?>.
+      matching this view. Prices are in <?=htmlspecialchars(marvy_base_currency())?>.
     </p>
   </div>
   <?php if ($can_price): ?>
@@ -188,17 +188,17 @@ $current_type = $filters['service_type'] ?? ($filters['id_type'] ?? ($filters['d
             <?php elseif ($r->price === null): ?>
               <span class="badge badge-warning">no price</span>
             <?php else: ?>
-              <?=windels_money($r->price)?>
+              <?=marvy_money($r->price)?>
             <?php endif; ?>
           </td>
           <td class="text-right mono text-sm muted">
-            <?=$r->provider_cost === null ? '—' : windels_money($r->provider_cost)?>
+            <?=$r->provider_cost === null ? '—' : marvy_money($r->provider_cost)?>
           </td>
           <td class="text-right mono text-sm">
             <?php if ($margin === null): ?>
               <span class="muted">—</span>
             <?php else: ?>
-              <span class="<?=bccomp($margin, '0', 8) < 0 ? 'badge badge-danger' : ''?>"><?=windels_money($margin)?></span>
+              <span class="<?=bccomp($margin, '0', 8) < 0 ? 'badge badge-danger' : ''?>"><?=marvy_money($margin)?></span>
             <?php endif; ?>
           </td>
           <td>

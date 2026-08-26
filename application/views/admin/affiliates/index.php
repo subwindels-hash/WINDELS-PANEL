@@ -7,7 +7,7 @@ $fmt = function ($v) { return rtrim(rtrim(number_format((float)$v, 4, '.', ''), 
     <h2 class="mb-0" style="font-size:1.4rem;font-weight:600">Affiliate program</h2>
     <p class="muted text-sm">Default <?=htmlspecialchars($fmt($settings['percent']))?>% ·
       <?=(int)$settings['hold_hours']?>h hold ·
-      min payout <?=windels_money($settings['min_payout'])?> ·
+      min payout <?=marvy_money($settings['min_payout'])?> ·
       scope <?=htmlspecialchars($settings['scope'])?>
       <?php if (empty($settings['enabled'])): ?><span class="badge badge-warning">disabled</span><?php endif; ?>
     </p>
@@ -28,13 +28,13 @@ $fmt = function ($v) { return rtrim(rtrim(number_format((float)$v, 4, '.', ''), 
   </div>
   <div class="card">
     <div class="muted text-sm">Pending commissions</div>
-    <div class="text-2xl font-bold"><?=windels_money($totals['pending'])?></div>
+    <div class="text-2xl font-bold"><?=marvy_money($totals['pending'])?></div>
     <div class="hint"><?=number_format((int)$totals['commissions'])?> rows accrued</div>
   </div>
   <div class="card">
     <div class="muted text-sm">Paid out</div>
-    <div class="text-2xl font-bold"><?=windels_money($totals['paid'])?></div>
-    <div class="hint">of <?=windels_money($totals['accrued'])?> accrued</div>
+    <div class="text-2xl font-bold"><?=marvy_money($totals['paid'])?></div>
+    <div class="hint">of <?=marvy_money($totals['accrued'])?> accrued</div>
   </div>
 </div>
 
@@ -58,8 +58,8 @@ $fmt = function ($v) { return rtrim(rtrim(number_format((float)$v, 4, '.', ''), 
           <td class="mono text-xs"><?=htmlspecialchars($a->code)?></td>
           <td class="mono"><?=htmlspecialchars($fmt($a->commission_percent))?>%</td>
           <td><?=number_format((int)$a->total_referred)?></td>
-          <td class="text-right mono"><?=windels_money($a->total_earned)?></td>
-          <td class="text-right mono muted"><?=windels_money($a->total_paid)?></td>
+          <td class="text-right mono"><?=marvy_money($a->total_earned)?></td>
+          <td class="text-right mono muted"><?=marvy_money($a->total_paid)?></td>
           <?php if ($can_manage): ?>
           <td>
             <form method="post" action="<?=site_url('admin/affiliates/'.(int)$a->id.'/rate')?>" class="row" style="gap:.35rem">

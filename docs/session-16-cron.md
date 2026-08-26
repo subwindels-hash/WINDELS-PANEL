@@ -1,6 +1,6 @@
 # Session 16 — Cron workers
 
-The panel had nine scheduled jobs declared in `config/windels.php` and listed in
+The panel had nine scheduled jobs declared in `config/marvy.php` and listed in
 `cron/crontab.example`, but eight of them were empty stubs in
 `application/controllers/Cron.php`. Drip-feed schedules never fired, order
 statuses never came back from providers, and queued email never left the table.
@@ -34,7 +34,7 @@ public function dripfeed() {
 1. **A job never overlaps itself.** Cron fires on a fixed schedule whether or
    not the previous run finished. A slow provider sync would otherwise stack up
    and double-submit orders. The lock is a non-blocking `flock()` on a file in
-   `$config['cron_lock_dir']` (default `sys_get_temp_dir().'/windels-locks'`);
+   `$config['cron_lock_dir']` (default `sys_get_temp_dir().'/marvy-locks'`);
    a run that cannot take the lock is *skipped*, not queued. The OS releases the
    handle even if the process is killed, so a crash cannot wedge a job
    permanently. §66 wants Redis `SET NX` for multi-host deployments — swap

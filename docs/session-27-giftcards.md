@@ -204,7 +204,7 @@ directly in the database, as with VTU, numbers and identity.
 **Modified:** `Provider_manager` (GIFTCARD family), `ProviderSyncService`
 (gift card adapter/test/sync, Reloadly credential blob),
 `Service_transaction_model::admin_projection()`, `CronWorkers::giftcard_codes()`,
-`controllers/Cron.php`, both seeders, `config/{routes,migration,windels}.php`,
+`controllers/Cron.php`, both seeders, `config/{routes,migration,marvy}.php`,
 nav + `gift-card` icon, `.env.example`, `cron/crontab.example`,
 `views/admin/providers/index.php` (client-secret field),
 `IntegrationHarness::seed_giftcards()`, `SecurityHardeningTest` (two new

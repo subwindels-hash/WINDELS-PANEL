@@ -314,7 +314,7 @@ class Auth extends MY_Controller {
             $this->send_verification_email($result['user']);
             $this->session->set_flashdata('success', 'Account created. Please verify your email — we sent a link.');
         } else {
-            $this->session->set_flashdata('success', 'Welcome to WINDELS PANEL.');
+            $this->session->set_flashdata('success', 'Welcome to MarvySocials.');
         }
         redirect('dashboard');
     }

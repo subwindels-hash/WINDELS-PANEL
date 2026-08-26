@@ -40,7 +40,7 @@ class IdentityTest extends TestCase
         }
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         require_once self::$root.'/application/core/MY_Model.php';
-        require_once self::$root.'/application/helpers/windels_helper.php';
+        require_once self::$root.'/application/helpers/marvy_helper.php';
         require_once self::$root.'/application/libraries/DojahAdapter.php';
         require_once self::$root.'/application/libraries/MockIdentityAdapter.php';
     }
@@ -1270,7 +1270,7 @@ class IdentityTest extends TestCase
      */
     public function testThePurgeWorkerIsScheduledAndWired()
     {
-        $config = file_get_contents(self::$root.'/application/config/windels.php');
+        $config = file_get_contents(self::$root.'/application/config/marvy.php');
         $this->assertStringContainsString("'identity_purge'", $config,
             'the retention sweep must have a schedule');
 

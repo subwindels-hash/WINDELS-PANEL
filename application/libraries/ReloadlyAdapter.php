@@ -307,7 +307,7 @@ class ReloadlyAdapter implements GiftcardProviderInterface {
         return array(
             'ok'       => true,
             'balance'  => number_format((float)$data['balance'], 8, '.', ''),
-            'currency' => strtoupper((string)($data['currencyCode'] ?? windels_base_currency())),
+            'currency' => strtoupper((string)($data['currencyCode'] ?? marvy_base_currency())),
         );
     }
 
@@ -326,7 +326,7 @@ class ReloadlyAdapter implements GiftcardProviderInterface {
     private function denominations(array $row) {
         $type = strtoupper((string)($row['denominationType'] ?? 'FIXED'));
         $sender_currency = strtoupper((string)($row['senderCurrencyCode'] ?? ''));
-        $base = strtoupper(windels_base_currency());
+        $base = strtoupper(marvy_base_currency());
 
         $common = array(
             'provider_product_id' => (string)$row['productId'],
@@ -456,7 +456,7 @@ class ReloadlyAdapter implements GiftcardProviderInterface {
      */
     private function cost_from($data) {
         if (!is_array($data)) return null;
-        $base = strtoupper(windels_base_currency());
+        $base = strtoupper(marvy_base_currency());
 
         if (isset($data['balanceInfo']) && is_array($data['balanceInfo'])) {
             $info = $data['balanceInfo'];
@@ -692,7 +692,7 @@ class ReloadlyAdapter implements GiftcardProviderInterface {
         if ($name !== '') return mb_substr($name, 0, 60);
         $cfg = $this->config_blob();
         if (!empty($cfg['sender_name'])) return mb_substr((string)$cfg['sender_name'], 0, 60);
-        return 'WINDELS PANEL';
+        return 'MarvySocials';
     }
 
     private function number($v) {

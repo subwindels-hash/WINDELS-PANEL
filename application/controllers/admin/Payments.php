@@ -96,7 +96,7 @@ class Payments extends Admin_Controller {
             'wallet_transaction_id' => $confirmed->wallet_transaction_id ?? null,
         ));
         $this->session->set_flashdata('success',
-            'Deposit approved — '.windels_money($tx->credited_amount).' credited to '.$tx->username.'.');
+            'Deposit approved — '.marvy_money($tx->credited_amount).' credited to '.$tx->username.'.');
         redirect('admin/payments/'.$tx->public_id);
     }
 

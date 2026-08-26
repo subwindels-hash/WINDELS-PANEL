@@ -1,12 +1,12 @@
 # Averion Commerce — architecture-level frontend & chatbot fix report
 
 > **Superseded note (brand):** the "Averion Commerce" public brand described in
-> this report was later reverted. The public-facing name is now **WINDELS PANEL**
-> (`config/windels.php` → `public_name`), and the "Averion" logo assets were
+> this report was later reverted. The public-facing name is now **MarvySocials**
+> (`config/marvy.php` → `public_name`), and the "Averion" logo assets were
 > removed. This report is retained as a historical record of the earlier
 > frontend/chatbot work only.
 
-Branch: `arena/01a0292e-windels-panel`
+Branch: `arena/01a0292e-marvysocials`
 Commit: `a27b7f3`
 
 ---
@@ -92,7 +92,7 @@ All `/dashboard/*` and `/admin/*` routes.
 ### 3.4 Header / navbar
 - Single `partials/navbar.php`; active page gets `.is-active` + `aria-current`.
 - Consistent logo height, nav height, spacing, button styles and mobile menu.
-- Public brand is config-driven: `config/windels.php` → `public_name => Averion Commerce`. Admin/internal product name is left unchanged.
+- Public brand is config-driven: `config/marvy.php` → `public_name => Averion Commerce`. Admin/internal product name is left unchanged.
 - New public-brand SVG assets (light / dark / icon) plus updated `site.webmanifest`.
 
 ### 3.5 Announcement bar

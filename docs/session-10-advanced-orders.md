@@ -1,4 +1,4 @@
-# WINDELS PANEL — Session 10: Advanced Orders
+# MarvySocials — Session 10: Advanced Orders
 
 > Refills, drip-feed schedules and subscriptions on top of the Session 09
 > order engine. All money movement stays in `LedgerService`; every state change

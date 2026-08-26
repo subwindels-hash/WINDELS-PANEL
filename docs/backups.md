@@ -15,15 +15,15 @@ this repository.
 ## 1. Nightly logical dumps
 
 ```bash
-# /opt/windels/bin/backup-db.sh — cron: 0 2 * * *
+# /opt/marvy/bin/backup-db.sh — cron: 0 2 * * *
 #!/bin/sh
 set -eu
 ts=$(date +%Y%m%d-%H%M%S)
 docker compose -f docker-compose.production.yml exec -T mysql \
   mysqldump -u root -p"$MYSQL_ROOT_PASSWORD" \
     --single-transaction --quick --routines --triggers --events \
-    windels_panel | gzip > "/backups/db/windels_panel-$ts.sql.gz"
-find /backups/db -name 'windels_panel-*.sql.gz' -mtime +14 -delete
+    marvysocials | gzip > "/backups/db/marvysocials-$ts.sql.gz"
+find /backups/db -name 'marvysocials-*.sql.gz' -mtime +14 -delete
 ```
 
 `--single-transaction` keeps the dump consistent without blocking writes —
@@ -38,7 +38,7 @@ second:
 ```bash
 docker compose -f docker-compose.production.yml exec -T mysql \
   mysqlbinlog --start-datetime="2026-08-19 02:00:00" \
-  /var/lib/mysql/binlog.00000N | mysql -u root -p windels_panel
+  /var/lib/mysql/binlog.00000N | mysql -u root -p marvysocials
 ```
 
 Ship binlogs off-box hourly (`mysqlbinlog --read-from-remote-server`) if the
@@ -48,7 +48,7 @@ backups + PITR and skip this section.
 ## 3. Object storage
 
 ```bash
-aws s3 sync s3://windels-panel-prod s3://windels-panel-backup/prod/ \
+aws s3 sync s3://marvysocials-prod s3://marvysocials-backup/prod/ \
   --storage-class GLACIER_IR
 ```
 
@@ -65,7 +65,7 @@ from the host it encrypts.
 ## 5. Restore rehearsal (do this, then schedule it quarterly)
 
 1. Fresh host: `git clone`, `cp .env.production.example .env`, fill values.
-2. `mysql < windels_panel-<ts>.sql.gz` into a clean database.
+2. `mysql < marvysocials-<ts>.sql.gz` into a clean database.
 3. `php index.php migrate` — catches schema drift between dump and code.
 4. `php index.php deploy check` — must exit 0.
 5. `curl -fsS localhost:8080/health/ready` — must answer `ready`.

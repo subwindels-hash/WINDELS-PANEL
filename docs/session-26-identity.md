@@ -205,7 +205,7 @@ on an adapter that has no such method.
 (IDENTITY family), `ProviderSyncService` (identity adapter/test/sync, Dojah
 credential blob), `Service_transaction_model::admin_projection()`,
 `CronWorkers::identity_purge()`, `controllers/Cron.php`, both seeders,
-`config/{routes,migration,windels,providers}.php`, nav + icon, `.env.example`,
+`config/{routes,migration,marvy,providers}.php`, nav + icon, `.env.example`,
 `cron/crontab.example`, `IntegrationHarness::seed_identity()`,
 `SecurityHardeningTest` (three new identity-data gates).
 

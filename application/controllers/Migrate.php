@@ -21,7 +21,7 @@ class Migrate extends Cron_Controller {
     public function index() { $this->latest(); }
 
     public function latest() {
-        $this->line('Migrating to latest ('.windels_migration_item('migration_version', 0).') ...');
+        $this->line('Migrating to latest ('.marvy_migration_item('migration_version', 0).') ...');
         if ($this->migration->latest() === FALSE) {
             $this->fail($this->migration->error_string());
         }
@@ -61,7 +61,7 @@ class Migrate extends Cron_Controller {
         // 0, tables: 1" on a database it has just built correctly.
         $this->db->data_cache = array();
         $current = $this->current_version();
-        $target  = (int)windels_migration_item('migration_version', 0);
+        $target  = (int)marvy_migration_item('migration_version', 0);
         $this->line('');
         $this->line('  current version : '.$current);
         $this->line('  target version  : '.$target);
@@ -77,7 +77,7 @@ class Migrate extends Cron_Controller {
 
     private function migration_files() {
         $out = array();
-        foreach (glob(windels_migration_item('migration_path', APPPATH.'migrations/').'*.php') as $path) {
+        foreach (glob(marvy_migration_item('migration_path', APPPATH.'migrations/').'*.php') as $path) {
             $name = basename($path);
             if (preg_match('/^(\d+)_/', $name, $m)) $out[(int)$m[1]] = $name;
         }
@@ -86,7 +86,7 @@ class Migrate extends Cron_Controller {
     }
 
     private function current_version() {
-        $table = windels_migration_item('migration_table', 'migrations');
+        $table = marvy_migration_item('migration_table', 'migrations');
         if (!$this->db->table_exists($table)) return 0;
         $row = $this->db->get($table)->row();
         return $row ? (int)$row->version : 0;

@@ -5,7 +5,7 @@
   <?php $this->load->view('dashboard/vtu/_flash'); ?>
 
   <p class="muted text-sm mb-4">Wallet balance:
-    <strong><?=windels_money($wallet->balance)?></strong></p>
+    <strong><?=marvy_money($wallet->balance)?></strong></p>
 
   <?php if (empty($networks)): ?>
     <p class="muted">No networks are configured yet.</p>

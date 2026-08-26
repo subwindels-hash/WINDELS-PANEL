@@ -58,9 +58,9 @@ $remaining = $expires ? $expires - time() : null;
           <span class="badge <?=($number && $number->status === 'RECEIVED') ? 'badge-success' : 'badge-muted'?>">
             <?=$number ? htmlspecialchars($number->status) : '—'?></span>
         </td></tr>
-        <tr><th>Paid</th><td><?=windels_money($tx->amount)?></td></tr>
+        <tr><th>Paid</th><td><?=marvy_money($tx->amount)?></td></tr>
         <?php if (bccomp((string)$tx->refunded_amount, '0', 8) > 0): ?>
-          <tr><th>Refunded</th><td><?=windels_money($tx->refunded_amount)?></td></tr>
+          <tr><th>Refunded</th><td><?=marvy_money($tx->refunded_amount)?></td></tr>
         <?php endif; ?>
         <?php if ($number && $number->operator): ?>
           <tr><th>Operator</th><td><?=htmlspecialchars($number->operator)?></td></tr>
@@ -122,7 +122,7 @@ $remaining = $expires ? $expires - time() : null;
           onsubmit="return confirm('Cancel this reservation and get your money back?')">
       <?=$csrf()?>
       <p class="hint mb-2">No code coming? Cancel and
-        <?=windels_money($tx->amount)?> goes straight back to your wallet.</p>
+        <?=marvy_money($tx->amount)?> goes straight back to your wallet.</p>
       <button class="btn btn-secondary btn-sm" type="submit">Cancel and refund</button>
     </form>
 

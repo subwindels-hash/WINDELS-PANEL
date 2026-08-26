@@ -1,4 +1,4 @@
-# WINDELS PANEL — Session 07: Services
+# MarvySocials — Session 07: Services
 
 > Public service catalog and customer favorites, built on the Session 02 schema
 > (`services`, `service_categories`, `service_prices`, `user_service_prices`,

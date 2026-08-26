@@ -44,7 +44,7 @@ $faqs = array(
         <div class="ws-flow-node ws-flow-customer">Customer</div>
         <div class="ws-flow-arrow">↓</div>
         <div class="ws-flow-node ws-flow-core">
-          <span>WINDELS PANEL</span>
+          <span>MarvySocials</span>
           <small>Queue · Ledger · State machine</small>
         </div>
         <div class="ws-flow-arrow">↓</div>

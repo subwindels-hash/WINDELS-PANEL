@@ -1,5 +1,5 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
-$site_name = function_exists('windels_site_name') ? windels_site_name() : 'WINDELS PANEL';
+$site_name = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials';
 $year = date('Y');
 ?>
 <footer class="ws-footer">

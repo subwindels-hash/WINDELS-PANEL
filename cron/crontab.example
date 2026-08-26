@@ -1,4 +1,4 @@
-# WINDELS PANEL — Cron (CLI only, no web URLs). Install: crontab cron/crontab.example
+# MarvySocials — Cron (CLI only, no web URLs). Install: crontab cron/crontab.example
 # Requires: php-cli, .env with DB/Redis, CodeIgniter index.php cron controller
 
 * * * * * cd /var/www/html && php index.php cron dripfeed >> storage/logs/cron.log 2>&1

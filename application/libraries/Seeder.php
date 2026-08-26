@@ -33,7 +33,7 @@ abstract class Seeder {
 
     protected function now() { return gmdate('Y-m-d H:i:s'); }
 
-    protected function pid() { return windels_public_id(); }
+    protected function pid() { return marvy_public_id(); }
 
     /** Insert only when no row matches $unique. Returns the row id. */
     protected function insert_once($table, array $unique, array $data = array()) {

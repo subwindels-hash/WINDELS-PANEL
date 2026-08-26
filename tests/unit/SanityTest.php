@@ -3,7 +3,7 @@ use PHPUnit\Framework\TestCase;
 class SanityTest extends TestCase {
     public function testTrue(){ $this->assertTrue(true); }
     public function testNoLicenseKeys(){
-        $content = file_get_contents(__DIR__.'/../../application/config/windels.php');
+        $content = file_get_contents(__DIR__.'/../../application/config/marvy.php');
         $this->assertStringNotContainsString('PURCHASE_CODE', $content);
         $this->assertStringNotContainsString('LICENSE_SERVER', $content);
     }

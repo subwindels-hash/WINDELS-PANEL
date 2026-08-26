@@ -91,8 +91,8 @@ $status_badge = function ($s) {
           <td class="text-xs"><?=htmlspecialchars((string)$u->role)?></td>
           <td><span class="badge <?=$status_badge($u->status)?>"><?=htmlspecialchars((string)$u->status)?></span></td>
           <td class="text-xs muted"><?=htmlspecialchars((string)($u->price_group_name ?? '—'))?></td>
-          <td class="text-right mono"><?=windels_money($u->balance ?? '0', $u->currency ?? null)?></td>
-          <td class="text-right mono muted"><?=windels_money($u->total_spent ?? '0', $u->currency ?? null)?></td>
+          <td class="text-right mono"><?=marvy_money($u->balance ?? '0', $u->currency ?? null)?></td>
+          <td class="text-right mono muted"><?=marvy_money($u->total_spent ?? '0', $u->currency ?? null)?></td>
           <td class="text-xs muted whitespace-nowrap">
             <?=$u->last_login_at ? date('M j, H:i', strtotime($u->last_login_at)) : 'never'?>
           </td>

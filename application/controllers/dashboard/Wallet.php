@@ -56,7 +56,7 @@ class Wallet extends Auth_Controller {
             'methods' => $methods,
             'min_deposit' => $this->Setting_model->get('min_deposit', '500.00000000'),
             'max_deposit' => $this->Setting_model->get('max_deposit', '5000000.00000000'),
-            'base_currency' => windels_base_currency(),
+            'base_currency' => marvy_base_currency(),
         ));
     }
 
@@ -72,7 +72,7 @@ class Wallet extends Auth_Controller {
         $res = $this->paymentservice->deposit($this->current_user, array(
             'payment_method' => $this->input->post('payment_method', true),
             'amount' => $this->input->post('amount'),
-            'currency' => windels_base_currency(),
+            'currency' => marvy_base_currency(),
         ));
         if (empty($res['ok'])) {
             $this->session->set_flashdata('error', $res['error'] ?? 'Could not initiate payment');

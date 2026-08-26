@@ -50,7 +50,7 @@ $total_pages = max(1, (int)ceil($total / $per_page));
         <tr>
           <td class="mono text-xs"><?=htmlspecialchars(substr($t->public_id,0,12))?>…</td>
           <td><?=htmlspecialchars($t->service_type)?></td>
-          <td><?=windels_money($t->amount)?></td>
+          <td><?=marvy_money($t->amount)?></td>
           <td><span class="badge <?=$badge[$t->status] ?? 'badge-muted'?>">
             <?=htmlspecialchars($t->status)?></span></td>
           <td class="text-sm muted"><?=htmlspecialchars($t->created_at)?></td>

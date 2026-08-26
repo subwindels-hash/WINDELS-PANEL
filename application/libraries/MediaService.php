@@ -6,7 +6,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *
  * Nothing in this build accepted a file before now: `media` was created in
  * migration 008 and never written to, and the `upload` config in
- * `config/windels.php` had no reader. That means this class introduces a
+ * `config/marvy.php` had no reader. That means this class introduces a
  * capability the application did not previously have, and an upload endpoint
  * is the single most reliably exploited feature in a PHP admin panel.
  *

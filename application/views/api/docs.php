@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Reseller API — WINDELS PANEL</title>
+<title>Reseller API — MarvySocials</title>
 <link rel="stylesheet" href="<?=base_url('assets/css/design-system.css')?>">
 <style>
   body{background:var(--slate-50);padding:2rem 1rem}

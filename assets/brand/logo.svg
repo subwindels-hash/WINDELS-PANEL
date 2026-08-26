@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 64" role="img" aria-label="WINDELS PANEL">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 64" role="img" aria-label="MarvySocials">
   <defs>
     <linearGradient id="wp-h-mark" x1="8" y1="4" x2="58" y2="60" gradientUnits="userSpaceOnUse">
       <stop stop-color="#6366F1"/>
@@ -11,6 +11,6 @@
   <path d="M16 42V24.5L24.2 38h3.1L35.6 24.5V42h4.4V22h-6.2L25.8 35.4 17.8 22H11.5v20H16z" fill="#fff"/>
   <rect x="42" y="28" width="5.2" height="14" rx="1.4" fill="#fff" opacity=".92"/>
   <rect x="48.6" y="22" width="5.2" height="20" rx="1.4" fill="#fff" opacity=".75"/>
-  <text x="80" y="32" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="700" letter-spacing="-0.6" fill="#0F172A">WINDELS</text>
+  <text x="80" y="32" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="700" letter-spacing="-0.6" fill="#0F172A">MARVYSOCIALS</text>
   <text x="80" y="50" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="600" letter-spacing="3.2" fill="#64748B">PANEL</text>
 </svg>

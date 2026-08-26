@@ -1,4 +1,4 @@
--- WINDELS PANEL — complete production database
+-- MarvySocials — complete production database
 --
 -- GENERATED FILE — do not edit by hand.
 -- Sources: application/migrations/*.php  +  application/seeds/Core_seeder.php
@@ -2177,13 +2177,13 @@ VALUES ('BRL', 'R$', 'Brazilian Real', 2, '0.00348387', 0, 1);
 
 -- settings
 INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
-VALUES ('site_name', '{"value":"WINDELS PANEL"}', 'general', 1);
+VALUES ('site_name', '{"value":"MarvySocials"}', 'general', 1);
 
 INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
 VALUES ('site_tagline', '{"value":"Enterprise SMM Reseller Platform"}', 'general', 1);
 
 INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
-VALUES ('support_email', '{"value":"support@windels.local"}', 'general', 1);
+VALUES ('support_email', '{"value":"support@marvy.local"}', 'general', 1);
 
 INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
 VALUES ('maintenance_mode', '{"value":false}', 'general', 1);
@@ -2249,7 +2249,7 @@ INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
 VALUES ('identity_retention_days', '{"value":30}', 'identity', 0);
 
 INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
-VALUES ('giftcard_sender_name', '{"value":"WINDELS PANEL"}', 'giftcards', 0);
+VALUES ('giftcard_sender_name', '{"value":"MarvySocials"}', 'giftcards', 0);
 
 INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
 VALUES ('marketplace_auto_release_hours', '{"value":72}', 'marketplace', 0);

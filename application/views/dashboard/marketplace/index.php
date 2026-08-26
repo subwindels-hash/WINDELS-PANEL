@@ -14,9 +14,9 @@ $effective = function ($item) {
 };
 $price_badges = function ($item) use ($effective) {
     list($now, $was) = $effective($item);
-    $html = '<strong>'.windels_money($now).'</strong>';
+    $html = '<strong>'.marvy_money($now).'</strong>';
     if ($was !== null) {
-        $html .= ' <span class="text-xs muted" style="text-decoration:line-through">'.windels_money($was).'</span> <span class="badge badge-warning">Promo</span>';
+        $html .= ' <span class="text-xs muted" style="text-decoration:line-through">'.marvy_money($was).'</span> <span class="badge badge-warning">Promo</span>';
     }
     return $html;
 };
@@ -24,7 +24,7 @@ $price_badges = function ($item) use ($effective) {
 <div class="row justify-between mb-4" style="align-items:flex-start;flex-wrap:wrap;gap:.75rem">
   <div>
     <h2 class="card-title mb-0">Digital marketplace</h2>
-    <p class="muted text-sm">Official WINDELS catalogue — the platform curates, prices and fulfils every product. Payment stays in escrow until delivery is accepted.</p>
+    <p class="muted text-sm">Official MARVYSOCIALS catalogue — the platform curates, prices and fulfils every product. Payment stays in escrow until delivery is accepted.</p>
   </div>
   <div class="row" style="gap:.5rem">
     <a class="btn btn-ghost btn-sm" href="<?=site_url('dashboard/marketplace/orders')?>">My purchases</a>

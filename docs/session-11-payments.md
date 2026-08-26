@@ -1,4 +1,4 @@
-# WINDELS PANEL — Session 11: Payments
+# MarvySocials — Session 11: Payments
 
 > Wallet deposits with a gateway interface, fee/bonus handling, idempotent
 > transaction lifecycle, and signature-verified webhook reconciliation. The

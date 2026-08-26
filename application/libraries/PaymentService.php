@@ -62,7 +62,7 @@ class PaymentService {
         if ($method->max_amount !== null && bccomp($amount, (string)$method->max_amount, 8) > 0)
             return array('ok'=>false,'error'=>'Maximum is '.$method->max_amount,'code'=>'AMOUNT_TOO_HIGH');
 
-        $currency = strtoupper($input['currency'] ?? windels_base_currency());
+        $currency = strtoupper($input['currency'] ?? marvy_base_currency());
         if (!preg_match('/^[A-Z]{3}$/', $currency)) return array('ok'=>false,'error'=>'Bad currency','code'=>'BAD_CURRENCY');
 
         $idem = $this->normalise_idem($input['idempotency_key'] ?? null, $user);
@@ -76,7 +76,7 @@ class PaymentService {
         $credited = bcadd(bcsub($amount, $fee, 8), $bonus, 8);
 
         $tx = $this->persist_transaction(array(
-            'public_id'          => windels_public_id(),
+            'public_id'          => marvy_public_id(),
             'user_id'            => $user->id,
             'payment_method_id'  => $method->id,
             'amount'             => $amount,
@@ -321,7 +321,7 @@ class PaymentService {
         if ($sig === null || $sig === '') return false;
 
         $secret = $this->ci->Setting_model->get('payments.'.$gateway_type.'.webhook_secret');
-        if (!$secret) $secret = getenv('WINDELS_'.strtoupper($gateway_type).'_WEBHOOK_SECRET') ?: null;
+        if (!$secret) $secret = getenv('MARVYSOCIALS_'.strtoupper($gateway_type).'_WEBHOOK_SECRET') ?: null;
         if (!$secret) return null;
 
         $expected = hash_hmac('sha256', (string)$raw_body, (string)$secret);
@@ -362,7 +362,7 @@ class PaymentService {
     }
 
     private function normalise_idem($key, $user) {
-        if (!$key) return 'deposit:'.$user->id.':'.windels_public_id();
+        if (!$key) return 'deposit:'.$user->id.':'.marvy_public_id();
         $clean = preg_replace('/[^a-zA-Z0-9._\-]/', '', (string)$key);
         return substr(self::IDEM_SCOPE.':'.$clean, 0, 128);
     }

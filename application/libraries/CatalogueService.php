@@ -288,7 +288,7 @@ class CatalogueService {
 
         if ($price !== null && $cost !== null && bccomp((string)$price, (string)$cost, 8) < 0) {
             $out[] = 'Heads up: this sells below the vendor cost ('
-                .windels_money($price).' against '.windels_money($cost).').';
+                .marvy_money($price).' against '.marvy_money($cost).').';
         }
         if ($domain === 'giftcards') {
             if (isset($fields['denomination_type']) && $fields['denomination_type'] === 'RANGE') {

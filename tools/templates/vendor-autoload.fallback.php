@@ -5,8 +5,8 @@
  * run (upload-only cPanel installs ship this file inside the package).
  *
  * Provided rules (identical to composer.json):
- *   - psr-4:    Windels\  -> application/libraries/
- *   - files:    application/helpers/windels_helper.php
+ *   - psr-4:    Marvy\  -> application/libraries/
+ *   - files:    application/helpers/marvy_helper.php
  *   - classmap: application/libraries/Seeder.php
  *
  * The remaining composer packages (predis, ramsey/uuid, ulid, aws-sdk-php,
@@ -22,9 +22,9 @@
 
 $root = dirname(__DIR__);
 
-/* psr-4: Windels\ -> application/libraries/ */
+/* psr-4: Marvy\ -> application/libraries/ */
 spl_autoload_register(function ($class) use ($root) {
-    $prefix = 'Windels\\';
+    $prefix = 'Marvy\\';
     if (strncmp($class, $prefix, strlen($prefix)) !== 0) {
         return;
     }
@@ -44,6 +44,6 @@ spl_autoload_register(function ($class) use ($root) {
 });
 
 /* files: helpers */
-if (is_file($root . '/application/helpers/windels_helper.php')) {
-    require_once $root . '/application/helpers/windels_helper.php';
+if (is_file($root . '/application/helpers/marvy_helper.php')) {
+    require_once $root . '/application/helpers/marvy_helper.php';
 }

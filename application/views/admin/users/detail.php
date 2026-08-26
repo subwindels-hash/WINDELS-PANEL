@@ -35,7 +35,7 @@ $nonce = bin2hex(random_bytes(8));
   <div class="text-right">
     <div class="muted text-xs">Wallet balance</div>
     <div style="font-size:1.5rem;font-weight:600" class="mono">
-      <?=windels_money($user->wallet->balance, $user->wallet->currency)?>
+      <?=marvy_money($user->wallet->balance, $user->wallet->currency)?>
     </div>
   </div>
 </div>
@@ -54,11 +54,11 @@ $nonce = bin2hex(random_bytes(8));
 <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:.75rem" class="mb-4">
   <div class="card">
     <div class="muted text-xs">Lifetime deposited</div>
-    <div class="mono" style="font-size:1.1rem"><?=windels_money($user->wallet->total_deposited, $user->wallet->currency)?></div>
+    <div class="mono" style="font-size:1.1rem"><?=marvy_money($user->wallet->total_deposited, $user->wallet->currency)?></div>
   </div>
   <div class="card">
     <div class="muted text-xs">Lifetime spent</div>
-    <div class="mono" style="font-size:1.1rem"><?=windels_money($user->wallet->total_spent, $user->wallet->currency)?></div>
+    <div class="mono" style="font-size:1.1rem"><?=marvy_money($user->wallet->total_spent, $user->wallet->currency)?></div>
   </div>
   <div class="card">
     <div class="muted text-xs">Role</div>
@@ -169,7 +169,7 @@ $nonce = bin2hex(random_bytes(8));
         <option value="DEBIT">Debit — take funds back</option>
       </select>
     </label>
-    <label class="field"><span class="label">Amount (<?=htmlspecialchars(windels_base_currency())?>)</span>
+    <label class="field"><span class="label">Amount (<?=htmlspecialchars(marvy_base_currency())?>)</span>
       <input class="input mono" type="number" name="amount" step="0.01" min="0.01" required
              placeholder="0.00" style="max-width:9rem">
     </label>
@@ -197,9 +197,9 @@ $nonce = bin2hex(random_bytes(8));
           <td class="text-xs muted whitespace-nowrap"><?=htmlspecialchars(date('M j, H:i', strtotime($m->created_at)))?></td>
           <td class="text-xs"><?=htmlspecialchars(DashboardStats::transaction_label($m))?></td>
           <td class="text-right mono <?=$m->direction === 'CREDIT' ? 'text-green-600' : ''?>">
-            <?=$m->direction === 'CREDIT' ? '+' : '−'?><?=windels_money($m->amount, $m->currency)?>
+            <?=$m->direction === 'CREDIT' ? '+' : '−'?><?=marvy_money($m->amount, $m->currency)?>
           </td>
-          <td class="text-right mono muted"><?=windels_money($m->balance_after, $m->currency)?></td>
+          <td class="text-right mono muted"><?=marvy_money($m->balance_after, $m->currency)?></td>
           <td class="text-xs muted"><?=htmlspecialchars((string)($m->note ?? ''))?></td>
         </tr>
       <?php endforeach; ?>
@@ -221,7 +221,7 @@ $nonce = bin2hex(random_bytes(8));
           <tr>
             <td><a class="mono text-xs" href="<?=site_url('admin/orders/'.$o->public_id)?>"><?=htmlspecialchars($o->public_id)?></a></td>
             <td class="text-xs"><?=htmlspecialchars((string)($o->service_name ?? ''))?></td>
-            <td class="text-right mono text-xs"><?=windels_money($o->charge, $o->currency ?? null)?></td>
+            <td class="text-right mono text-xs"><?=marvy_money($o->charge, $o->currency ?? null)?></td>
             <td><span class="<?=DashboardStats::status_badge($o->status)?>"><?=htmlspecialchars($o->status)?></span></td>
           </tr>
         <?php endforeach; ?>
@@ -241,7 +241,7 @@ $nonce = bin2hex(random_bytes(8));
           <tr>
             <td class="mono text-xs"><?=htmlspecialchars($s->public_id)?></td>
             <td class="text-xs"><?=htmlspecialchars((string)$s->service_domain)?> · <?=htmlspecialchars((string)$s->service_type)?></td>
-            <td class="text-right mono text-xs"><?=windels_money($s->amount, $s->currency ?? null)?></td>
+            <td class="text-right mono text-xs"><?=marvy_money($s->amount, $s->currency ?? null)?></td>
             <td><span class="<?=DashboardStats::status_badge($s->status)?>"><?=htmlspecialchars($s->status)?></span></td>
           </tr>
         <?php endforeach; ?>

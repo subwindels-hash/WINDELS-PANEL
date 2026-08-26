@@ -274,7 +274,7 @@ class SmmServiceAdminService {
             $id = $existing->id;
         } else {
             $before = null;
-            $row['public_id'] = windels_public_id();
+            $row['public_id'] = marvy_public_id();
             $row['created_at'] = gmdate('Y-m-d H:i:s');
             $this->ci->db->insert('services', $row);
             $id = $this->ci->db->insert_id();

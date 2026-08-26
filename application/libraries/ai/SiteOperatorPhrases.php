@@ -58,12 +58,14 @@ class SiteOperatorPhrases {
                 'help me', 'i need assistance',
             ),
             'about' => array(
-                'what does windels panel do', 'what is windels panel',
-                'tell me about windels', 'what is windels',
+                'what does marvysocials do', 'what is marvysocials',
+                'tell me about marvysocials', 'what does marvy do',
+                'what is marvy', 'tell me about marvy',
                 'what does this site do', 'what is this website for',
                 'what is this website', 'tell me about this website',
                 'what can i do here', 'what is this site',
-                'what is this panel', 'tell me about windels panel',
+                'what is this panel', 'what does this panel do',
+                'who are you', 'what do you sell', 'what do you offer',
             ),
             'register' => array(
                 'help me create an account', 'i want to create an account',

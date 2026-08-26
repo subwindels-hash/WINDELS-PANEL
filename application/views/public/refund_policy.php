@@ -8,7 +8,7 @@ if (!class_exists('SiteOperatorKnowledge', false)) {
   <div class="container" style="max-width:760px">
     <p class="ws-kicker">Legal</p>
     <h1>Refund Policy</h1>
-    <p class="ws-lede">Refunds on WINDELS PANEL return value to the prepaid wallet. They are not bank payouts. This page follows what the order engines actually do.</p>
+    <p class="ws-lede">Refunds on MarvySocials return value to the prepaid wallet. They are not bank payouts. This page follows what the order engines actually do.</p>
     <p class="hint">Effective <?=htmlspecialchars(SiteOperatorKnowledge::EFFECTIVE_DATE)?> · Last updated <?=htmlspecialchars(SiteOperatorKnowledge::UPDATED_DATE)?></p>
   </div>
 </section>

@@ -59,7 +59,7 @@ $badges = array(
             <?php foreach ($related as $r): ?>
               <a class="card card-hover" href="<?=site_url('services/'.$r->slug)?>" style="margin:0">
                 <h3 class="card-title" style="font-size:1rem"><?=htmlspecialchars($r->name)?></h3>
-                <strong style="color:var(--brand-700)"><?=windels_money($r->rate)?> / 1k</strong>
+                <strong style="color:var(--brand-700)"><?=marvy_money($r->rate)?> / 1k</strong>
               </a>
             <?php endforeach; ?>
           </div>
@@ -71,13 +71,13 @@ $badges = array(
         <div class="card ws-pricecard">
           <div class="muted text-xs">Price</div>
           <div class="text-4xl font-bold" style="font-family:var(--font-display);color:var(--brand-700)">
-            <?=windels_money($u->rate)?>
+            <?=marvy_money($u->rate)?>
           </div>
           <div class="muted text-sm mb-4">per <?=htmlspecialchars($unit_label)?></div>
 
           <?php if ($user_price !== null && bccomp($user_price, $guest_price, 8) < 0): ?>
             <div class="alert alert-success mb-3" style="padding:.6rem">
-              <strong>Your price:</strong> <?=windels_money($user_price)?> per 1k
+              <strong>Your price:</strong> <?=marvy_money($user_price)?> per 1k
             </div>
           <?php endif; ?>
 
@@ -93,7 +93,7 @@ $badges = array(
             </label>
             <div class="row justify-between" style="border-top:1px dashed var(--slate-200);padding-top:.75rem">
               <span class="muted">Total</span>
-              <strong id="ws-total" style="font-size:1.25rem"><?=windels_money($u->rate)?></strong>
+              <strong id="ws-total" style="font-size:1.25rem"><?=marvy_money($u->rate)?></strong>
             </div>
             <button class="btn btn-primary btn-block" type="submit" <?=!empty($current_user) ? '' : 'disabled'?>>
               <?=!empty($current_user) ? 'Continue to order →' : 'Log in to order'?>
@@ -116,7 +116,7 @@ $badges = array(
         </div>
 
         <div class="card">
-          <h3 class="card-title">Why <?=htmlspecialchars(function_exists('windels_site_name') ? windels_site_name() : 'this platform')?></h3>
+          <h3 class="card-title">Why <?=htmlspecialchars(function_exists('marvy_site_name') ? marvy_site_name() : 'this platform')?></h3>
           <ul class="stack" style="gap:.5rem;padding-left:1.1rem">
             <li>Pricing frozen at checkout — no surprise charges</li>
             <li>Double-entry wallet ledger, refunds handled automatically</li>
@@ -136,7 +136,7 @@ $badges = array(
   var perUnit=parseFloat(<?=json_encode($per_unit, JSON_PRESERVE_ZERO_FRACTION)?>);
   var isPackage=<?=json_encode($u->service_type === 'PACKAGE')?>;
   // Currency symbol from the server so live totals match server-rendered prices.
-  var sym=<?=json_encode(trim(str_replace(array('0','.',','), '', windels_money(0))))?>;
+  var sym=<?=json_encode(trim(str_replace(array('0','.',','), '', marvy_money(0))))?>;
   function fmt(v){return sym+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
   function recalc(){
     var q=parseInt(qty.value,10)||0;

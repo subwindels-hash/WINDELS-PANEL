@@ -32,7 +32,7 @@ class CsrfAndContactTest extends TestCase
         if (!class_exists('CI_Security')) {
             eval('class CI_Security {
                 public function get_csrf_hash(){ return "stub-hash"; }
-                public function get_csrf_token_name(){ return "csrf_windels"; }
+                public function get_csrf_token_name(){ return "csrf_marvy"; }
                 public function csrf_verify(){ return $this; }
             }');
         }
@@ -160,7 +160,7 @@ class CsrfAndContactTest extends TestCase
         $this->assertStringContainsString('window.fetch', $js, 'same-origin fetch() posts carry the token');
         $this->assertStringContainsString('XMLHttpRequest.prototype.send', $js, 'and so do XHR posts');
         $this->assertStringContainsString('419', $js, 'an expired token is retried, not surfaced');
-        $this->assertStringContainsString('WINDELS.csrf', $js,
+        $this->assertStringContainsString('MARVYSOCIALS.csrf', $js,
             'third-party widgets need a supported way to get the token');
         $this->assertStringContainsString('sameOrigin', $js,
             'the token must never be attached to a cross-origin request');

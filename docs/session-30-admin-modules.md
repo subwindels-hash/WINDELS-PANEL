@@ -81,7 +81,7 @@ A grep found eleven settings seeded in session 02 that no code reads.
 `SettingsService` renders none of them as controls and lists them instead,
 each with the work it would take to honour it. `testEveryEditableSettingIs
 ActuallyReadSomewhere` fails if an editable key has no consumer. `base_currency`
-is shown read-only: `windels_base_currency()` reads config, so a form would
+is shown read-only: `marvy_base_currency()` reads config, so a form would
 change nothing, and a form that worked would reinterpret every stored amount.
 
 When the branding screen made `brand_primary_color`, `brand_logo_url` and

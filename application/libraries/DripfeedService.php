@@ -61,7 +61,7 @@ class DripfeedService {
         $charge = $this->ci->pricingservice->charge_for_quantity($rate, $total);
 
         $wallet = $this->ci->Wallet_model->for_user($user->id);
-        $idem = 'dripfeed:'.$user->id.':'.windels_public_id();
+        $idem = 'dripfeed:'.$user->id.':'.marvy_public_id();
         $charged = $this->ci->ledgerservice->charge($wallet->id, $charge, 'DRIPFEED', null, $idem);
         if (empty($charged['ok'])) {
             $code = ($charged['error'] ?? '') === 'INSUFFICIENT_BALANCE' ? 'INSUFFICIENT_BALANCE' : 'CHARGE_FAILED';
@@ -72,7 +72,7 @@ class DripfeedService {
         $next_run_at = date('Y-m-d H:i:s', strtotime($start_at.' +'.$interval.' minutes'));
 
         $this->ci->db->trans_start();
-        $public_id = windels_public_id();
+        $public_id = marvy_public_id();
         $this->ci->db->insert('dripfeed_orders', array(
             'public_id' => $public_id,
             'user_id' => $user->id,
@@ -84,7 +84,7 @@ class DripfeedService {
             'runs_completed' => 0,
             'interval_minutes' => $interval,
             'charge' => $charge,
-            'currency' => windels_base_currency(),
+            'currency' => marvy_base_currency(),
             'fields' => !empty($input['fields']) ? json_encode($input['fields']) : null,
             'start_at' => $start_at,
             'next_run_at' => $next_run_at,

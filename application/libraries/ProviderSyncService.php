@@ -139,7 +139,7 @@ class ProviderSyncService {
         $data = $res['data'] ?? array();
         // Standard SMM panel returns {balance, currency}; mock returns the same shape.
         $balance = isset($data['balance']) ? (string)$data['balance'] : null;
-        $currency = $data['currency'] ?? ($provider->currency ?? windels_base_currency());
+        $currency = $data['currency'] ?? ($provider->currency ?? marvy_base_currency());
 
         $this->ci->db->trans_start();
         $this->ci->Provider_model->record_health($provider->id, 'ONLINE', $latency, null);
@@ -185,7 +185,7 @@ class ProviderSyncService {
         }
 
         $balance  = isset($res['balance']) ? (string)$res['balance'] : null;
-        $currency = $res['currency'] ?? ($provider->currency ?? windels_base_currency());
+        $currency = $res['currency'] ?? ($provider->currency ?? marvy_base_currency());
 
         $this->ci->db->trans_start();
         $this->ci->Provider_model->record_health($provider->id, 'ONLINE', $latency, null);
@@ -227,7 +227,7 @@ class ProviderSyncService {
         }
 
         $balance  = isset($res['balance']) ? (string)$res['balance'] : null;
-        $currency = $res['currency'] ?? ($provider->currency ?? windels_base_currency());
+        $currency = $res['currency'] ?? ($provider->currency ?? marvy_base_currency());
 
         $this->ci->db->trans_start();
         $this->ci->Provider_model->record_health($provider->id, 'ONLINE', $latency, null);
@@ -271,7 +271,7 @@ class ProviderSyncService {
         }
 
         $balance  = isset($res['balance']) ? (string)$res['balance'] : null;
-        $currency = $res['currency'] ?? ($provider->currency ?? windels_base_currency());
+        $currency = $res['currency'] ?? ($provider->currency ?? marvy_base_currency());
 
         $this->ci->db->trans_start();
         $this->ci->Provider_model->record_health($provider->id, 'ONLINE', $latency, null);
@@ -316,7 +316,7 @@ class ProviderSyncService {
         }
 
         $balance  = isset($res['balance']) ? (string)$res['balance'] : null;
-        $currency = $res['currency'] ?? ($provider->currency ?? windels_base_currency());
+        $currency = $res['currency'] ?? ($provider->currency ?? marvy_base_currency());
 
         $this->ci->db->trans_start();
         $this->ci->Provider_model->record_health($provider->id, 'ONLINE', $latency, null);
@@ -768,13 +768,13 @@ class ProviderSyncService {
         if ($errors) return array('ok' => false, 'errors' => $errors);
 
         $data = array(
-            'public_id'         => windels_public_id(),
+            'public_id'         => marvy_public_id(),
             'name'              => trim($input['name']),
             'api_url'           => rtrim(trim($input['api_url']), '/'),
             'api_key_encrypted' => $this->ci->encryptionservice->encrypt($this->credential_payload($input)),
             'api_type'          => strtoupper($input['api_type'] ?? 'STANDARD_SMM'),
             'status'            => $input['status'] ?? 'ACTIVE',
-            'currency'          => $input['currency'] ?? windels_base_currency(),
+            'currency'          => $input['currency'] ?? marvy_base_currency(),
             'timeout_ms'        => (int)($input['timeout_ms'] ?? 15000),
             'sync_interval_minutes' => max(1, (int)($input['sync_interval_minutes'] ?? 60)),
             'rate_multiplier'   => number_format((float)($input['rate_multiplier'] ?? 1.0), 8, '.', ''),

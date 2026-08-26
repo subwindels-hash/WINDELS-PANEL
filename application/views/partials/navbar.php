@@ -4,7 +4,7 @@
 $cu = $current_user ?? null;
 $is_staff = $cu && in_array($cu->role, array('SUPER_ADMIN','ADMIN','STAFF'), true);
 $path = isset($this->uri) ? trim((string)$this->uri->uri_string(), '/') : '';
-$site = function_exists('windels_site_name') ? windels_site_name() : 'WINDELS PANEL';
+$site = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials';
 $links = array(
     array('services', 'Services'),
     array('pricing', 'Pricing'),

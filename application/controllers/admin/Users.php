@@ -173,7 +173,7 @@ class Users extends Admin_Controller {
 
         $this->audit('wallet.adjusted', $user, $res['before'], $res['after']);
         $this->done($user, 'Wallet adjusted. New balance '
-            .windels_money($res['wallet']->balance, $res['wallet']->currency).'.');
+            .marvy_money($res['wallet']->balance, $res['wallet']->currency).'.');
     }
 
     /**

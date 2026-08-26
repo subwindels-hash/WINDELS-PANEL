@@ -11,16 +11,16 @@ $healthy = (int)($health['HEALTHY'] ?? 0);
 <div class="grid grid-4 mb-4" style="gap:1rem">
   <div class="card">
     <div class="muted text-sm">Net revenue today</div>
-    <div class="text-2xl font-bold"><?=windels_money($today['net'])?></div>
+    <div class="text-2xl font-bold"><?=marvy_money($today['net'])?></div>
     <div class="hint"><?=number_format((int)$today['orders'])?> order<?=$today['orders'] == 1 ? '' : 's'?>
       <?php if (bccomp((string)$today['refunded'], '0', 8) > 0): ?>
-        · <?=windels_money($today['refunded'])?> refunded
+        · <?=marvy_money($today['refunded'])?> refunded
       <?php endif; ?>
     </div>
   </div>
   <div class="card">
     <div class="muted text-sm">Net revenue · 30 days</div>
-    <div class="text-2xl font-bold"><?=windels_money($month['net'])?></div>
+    <div class="text-2xl font-bold"><?=marvy_money($month['net'])?></div>
     <div class="hint"><?=number_format((int)$month['orders'])?> orders</div>
   </div>
   <div class="card">
@@ -112,7 +112,7 @@ $healthy = (int)($health['HEALTHY'] ?? 0);
               </div>
             </td>
             <td class="text-sm"><?=htmlspecialchars((string)$r['username'])?></td>
-            <td class="text-right mono"><?=windels_money($r['amount'], $r['currency'])?></td>
+            <td class="text-right mono"><?=marvy_money($r['amount'], $r['currency'])?></td>
             <td><span class="<?=DashboardStats::status_badge($r['status'])?>"><?=htmlspecialchars($r['status'])?></span></td>
           </tr>
         <?php endforeach; ?>
@@ -140,9 +140,9 @@ $healthy = (int)($health['HEALTHY'] ?? 0);
         <tr>
           <td><?=htmlspecialchars($domain)?></td>
           <td class="text-right mono"><?=number_format((int)$d['sales'])?></td>
-          <td class="text-right mono"><?=windels_money($d['net'])?></td>
+          <td class="text-right mono"><?=marvy_money($d['net'])?></td>
           <td class="text-right mono">
-            <?=$d['margin'] === null ? '<span class="muted">—</span>' : windels_money($d['margin'])?>
+            <?=$d['margin'] === null ? '<span class="muted">—</span>' : marvy_money($d['margin'])?>
           </td>
         </tr>
       <?php endforeach; ?>

@@ -81,7 +81,7 @@ class Identity_product_model extends MY_Model {
     }
 
     public function create(array $data){
-        if (empty($data['public_id'])) $data['public_id'] = windels_public_id();
+        if (empty($data['public_id'])) $data['public_id'] = marvy_public_id();
         $now = $this->now_utc();
         $data += array('created_at'=>$now, 'updated_at'=>$now);
         $this->db->insert($this->table, $data);

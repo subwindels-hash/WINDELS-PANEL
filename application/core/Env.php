@@ -2,7 +2,7 @@
 /**
  * Env — the one place server-specific configuration comes from.
  *
- * WINDELS PANEL is deployed two ways, and both have to work from the same
+ * MarvySocials is deployed two ways, and both have to work from the same
  * tree: a container stack where the orchestrator injects real environment
  * variables, and a shared cPanel account where the only thing an operator can
  * edit is a `.env` file next to `index.php`. This class is what makes the

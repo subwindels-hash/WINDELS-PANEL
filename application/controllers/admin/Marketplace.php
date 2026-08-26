@@ -151,7 +151,7 @@ class Marketplace extends Admin_Controller {
                 return redirect('admin/marketplace/categories');
             }
             $id = $this->Marketplace_category_model->create(array(
-                'public_id' => windels_public_id(),
+                'public_id' => marvy_public_id(),
                 'name' => $name, 'slug' => $slug, 'status' => 'ACTIVE',
                 'sort_order' => (int)$this->input->post('sort_order', true),
                 'created_at' => gmdate('Y-m-d H:i:s'),
@@ -245,7 +245,7 @@ class Marketplace extends Admin_Controller {
             $this->current_user->id, $action, 'marketplace_category', (string)$resource_id,
             $before, $after,
             $this->input->ip_address(), $this->input->user_agent(),
-            function_exists('windels_request_id') ? windels_request_id() : null
+            function_exists('marvy_request_id') ? marvy_request_id() : null
         );
     }
 

@@ -272,7 +272,7 @@ class Api_v1 extends MY_Controller {
         $wallet = $this->db->where('user_id', $this->user->id)->get('wallets')->row();
         $this->ok(array(
             'balance'  => $wallet ? (string)$wallet->balance : '0.00000000',
-            'currency' => $wallet ? $wallet->currency : windels_base_currency(),
+            'currency' => $wallet ? $wallet->currency : marvy_base_currency(),
         ));
     }
 
@@ -293,7 +293,7 @@ class Api_v1 extends MY_Controller {
             'earned'    => (string)$stats['earned'],
             'pending'   => (string)$stats['pending'],
             'paid'      => (string)$stats['paid'],
-            'currency'  => windels_base_currency(),
+            'currency'  => marvy_base_currency(),
         ));
     }
 
@@ -308,7 +308,7 @@ class Api_v1 extends MY_Controller {
     /** GET /api/docs/json — machine-readable endpoint list */
     public function docs_json() {
         $this->ok(array(
-            'name' => 'WINDELS PANEL Reseller API',
+            'name' => 'MarvySocials Reseller API',
             'version' => 'v1',
             'auth' => 'Send your key as `X-Api-Key: wind_...`.',
             'envelope' => '{ success:bool, data?:mixed, error?:{code,message}, meta?:object, requestId:string }',
@@ -339,7 +339,7 @@ class Api_v1 extends MY_Controller {
             // ('api_rate_limit_per_minute') was defined in no config file, so
             // it always evaluated NULL and every key without an explicit
             // limit silently got the hardcoded 60. 'rate_limits.api_global'
-            // in config/windels.php is the intended, tunable source.
+            // in config/marvy.php is the intended, tunable source.
             $limits = $this->config->item('rate_limits');
             $per_min = max(1, (int)($limits['api_global']['limit'] ?? 60));
         }
@@ -485,7 +485,7 @@ class Api_v1 extends MY_Controller {
     }
 
     private function ok($data, $meta = null, $code = 200) {
-        $out = array('success'=>true,'data'=>$data,'requestId'=>windels_request_id());
+        $out = array('success'=>true,'data'=>$data,'requestId'=>marvy_request_id());
         if ($meta !== null) $out['meta'] = $meta;
         $this->log_usage($code);
         $this->output->set_status_header($code)->set_output(json_encode($out));
@@ -497,7 +497,7 @@ class Api_v1 extends MY_Controller {
         $this->output->set_status_header($http)->set_output(json_encode(array(
             'success'=>false,
             'error'=>array('code'=>$code,'message'=>$message),
-            'requestId'=>windels_request_id(),
+            'requestId'=>marvy_request_id(),
         )));
         exit;
     }

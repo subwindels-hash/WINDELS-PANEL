@@ -25,8 +25,8 @@ class AuthRbacTest extends TestCase
         // models IntegrationTest loads in the same process, and whichever test
         // file ran first won. AuthRbacFakeLoader maps the real names to these.
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
-        if (!function_exists('windels_public_id')) {
-            require_once self::$root.'/application/helpers/windels_helper.php';
+        if (!function_exists('marvy_public_id')) {
+            require_once self::$root.'/application/helpers/marvy_helper.php';
         }
         require_once self::$root.'/application/libraries/SignedToken.php';
         require_once self::$root.'/application/libraries/Totp.php';
@@ -154,7 +154,7 @@ class AuthRbacTest extends TestCase
         // RateLimiter aliases $this->ci =& get_instance(), so the fake CI's db
         // IS the counter store. Point it at the attempts fake before
         // constructing (reflection afterwards would write through the alias
-        // and replace the global used by windels_load_database()).
+        // and replace the global used by marvy_load_database()).
         $ci->rate_db = new AuthRbacFakeRateDb();
         $ci->db = $ci->rate_db;
         $rl = new RateLimiter();
@@ -257,7 +257,7 @@ class AuthRbacFakeInput {
 }
 
 class AuthRbacFakeDb {
-    public $conn_id = 'fake'; // windels_load_database() accepts an open connection
+    public $conn_id = 'fake'; // marvy_load_database() accepts an open connection
     public function insert($t,$d){ return true; }
     public function where($k,$v=null){ return $this; }
 }
@@ -273,7 +273,7 @@ class AuthRbacFakePermModel {
 }
 
 class AuthRbacFakeRateDb {
-    public $conn_id = 'fake'; // mirrors a live connection for windels_load_database()
+    public $conn_id = 'fake'; // mirrors a live connection for marvy_load_database()
     public $attempts = array();
     public function insert($t, $d) { $this->attempts[] = $d; return $this; }
     public function where($k, $v = null) { return $this; }

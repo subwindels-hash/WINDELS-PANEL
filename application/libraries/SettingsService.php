@@ -20,7 +20,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * future seeded-but-unwired setting has an obvious, honest place to be listed.
  *
  * **`base_currency` is deliberately read-only.** The row exists, but
- * `windels_base_currency()` reads `config/windels.php`, not this table, and
+ * `marvy_base_currency()` reads `config/marvy.php`, not this table, and
  * every priced row, wallet and ledger entry is denominated in whatever it
  * returned at the time. A form that edited the row would change nothing; a
  * form that actually switched the currency would silently reinterpret every
@@ -37,9 +37,9 @@ class SettingsService {
     public static function schema() {
         return array(
             'site_name' => array('text', 'general', 'Site name',
-                'Shown in the browser title and in every email this panel sends.', 'WINDELS PANEL'),
+                'Shown in the browser title and in every email this panel sends.', 'MarvySocials'),
             'support_email' => array('email', 'general', 'Support email',
-                'The reply-to address on outgoing mail.', 'support@windels.local'),
+                'The reply-to address on outgoing mail.', 'support@marvy.local'),
             'site_tagline' => array('text', 'general', 'Site tagline',
                 'Fallback meta description and public strapline.', 'Prepaid commerce for social media, VTU, virtual numbers, identity, gift cards and digital goods'),
             'maintenance_mode' => array('bool', 'general', 'Maintenance mode',
@@ -77,7 +77,7 @@ class SettingsService {
                 'How long an encrypted NIN/BVN result is kept before the purge worker deletes it. '
                 .'A legal answer, not an engineering one — check your jurisdiction.', 30),
             'giftcard_sender_name' => array('text', 'giftcards', 'Gift card sender name',
-                'The “from” name the recipient sees on a delivered card.', 'WINDELS PANEL'),
+                'The “from” name the recipient sees on a delivered card.', 'MarvySocials'),
 
             // There is NO marketplace fee setting: with the platform as sole
             // seller the gross is the revenue — nothing is split or paid out.

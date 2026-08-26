@@ -84,8 +84,8 @@ $has = function ($permission) use ($permissions) {
               <td class="mono text-xs"><?=htmlspecialchars($s->service_type)?></td>
               <td class="mono text-xs"><?=htmlspecialchars((string)$s->provider_code)?></td>
               <td><?=htmlspecialchars($s->name)?></td>
-              <td class="mono"><?=$s->provider_cost !== null ? windels_money($s->provider_cost) : '—'?></td>
-              <td class="mono"><?=$s->price !== null ? windels_money($s->price) : '—'?></td>
+              <td class="mono"><?=$s->provider_cost !== null ? marvy_money($s->provider_cost) : '—'?></td>
+              <td class="mono"><?=$s->price !== null ? marvy_money($s->price) : '—'?></td>
               <td>
                 <span class="badge <?=(int)$s->is_active ? 'badge-success' : 'badge-default'?>">
                   <?=(int)$s->is_active ? 'ACTIVE' : 'INACTIVE'?>

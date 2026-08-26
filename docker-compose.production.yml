@@ -1,4 +1,4 @@
-# WINDELS PANEL — PRODUCTION stack.
+# MarvySocials — PRODUCTION stack.
 #
 #   docker compose -f docker-compose.production.yml up -d
 #
@@ -17,15 +17,15 @@
 # You will typically still replace mysql/redis with managed services; if you
 # do, delete the service blocks and point DB_HOST / REDIS_HOST at them.
 
-name: windels-panel-prod
+name: marvysocials-prod
 
 services:
   app:
     build:
       context: .
       dockerfile: docker/php.Dockerfile
-    image: windels-panel:php
-    container_name: windels_app
+    image: marvysocials:php
+    container_name: marvy_app
     restart: unless-stopped
     working_dir: /var/www/html
     environment:
@@ -50,7 +50,7 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - windels
+      - marvy
     healthcheck:
       test: ["CMD-SHELL", "php -r 'exit(@fsockopen(\"127.0.0.1\", 9000) ? 0 : 1);'"]
       interval: 30s
@@ -67,8 +67,8 @@ services:
     build:
       context: .
       dockerfile: docker/php.Dockerfile
-    image: windels-panel:php
-    container_name: windels_cron
+    image: marvysocials:php
+    container_name: marvy_cron
     restart: unless-stopped
     working_dir: /var/www/html
     environment:
@@ -91,7 +91,7 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - windels
+      - marvy
     logging:
       driver: json-file
       options:
@@ -100,7 +100,7 @@ services:
 
   nginx:
     image: nginx:1.25-alpine
-    container_name: windels_nginx
+    container_name: marvy_nginx
     restart: unless-stopped
     ports:
       - "80:80"
@@ -115,7 +115,7 @@ services:
       app:
         condition: service_healthy
     networks:
-      - windels
+      - marvy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health/live"]
       interval: 30s
@@ -129,7 +129,7 @@ services:
 
   mysql:
     image: mysql:8.0
-    container_name: windels_mysql
+    container_name: marvy_mysql
     restart: unless-stopped
     command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --binlog_expire_logs_seconds=604800
     environment:
@@ -147,7 +147,7 @@ services:
       timeout: 5s
       retries: 12
     networks:
-      - windels
+      - marvy
     logging:
       driver: json-file
       options:
@@ -156,7 +156,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: windels_redis
+    container_name: marvy_redis
     restart: unless-stopped
     # No `ports:` — internal only.
     command: >
@@ -171,7 +171,7 @@ services:
       timeout: 3s
       retries: 12
     networks:
-      - windels
+      - marvy
     logging:
       driver: json-file
       options:
@@ -184,5 +184,5 @@ volumes:
   app_storage:
 
 networks:
-  windels:
+  marvy:
     driver: bridge

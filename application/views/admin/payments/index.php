@@ -22,11 +22,11 @@ $tabs = array('PENDING'=>'Awaiting review', 'SUCCESS'=>'Credited', 'FAILED'=>'Re
   <div class="card">
     <div class="muted text-sm">Awaiting review</div>
     <div class="text-2xl font-bold"><?=number_format((int)$totals['pending_count'])?></div>
-    <div class="hint"><?=windels_money($totals['pending_amount'])?> held</div>
+    <div class="hint"><?=marvy_money($totals['pending_amount'])?> held</div>
   </div>
   <div class="card">
     <div class="muted text-sm">Total credited</div>
-    <div class="text-2xl font-bold"><?=windels_money($totals['credited'])?></div>
+    <div class="text-2xl font-bold"><?=marvy_money($totals['credited'])?></div>
   </div>
   <div class="card">
     <div class="muted text-sm">Deposits recorded</div>
@@ -61,8 +61,8 @@ $tabs = array('PENDING'=>'Awaiting review', 'SUCCESS'=>'Credited', 'FAILED'=>'Re
           </td>
           <td><?=htmlspecialchars((string)$t->method_name)?>
             <span class="badge badge-default"><?=htmlspecialchars((string)$t->method_type)?></span></td>
-          <td class="text-right mono"><?=windels_money($t->amount)?></td>
-          <td class="text-right mono"><?=windels_money($t->credited_amount ?? $t->amount)?></td>
+          <td class="text-right mono"><?=marvy_money($t->amount)?></td>
+          <td class="text-right mono"><?=marvy_money($t->credited_amount ?? $t->amount)?></td>
           <td><span class="<?=$badge($t->status)?>"><?=htmlspecialchars($t->status)?></span></td>
           <td class="text-xs muted"><?=htmlspecialchars((string)$t->created_at)?></td>
         </tr>

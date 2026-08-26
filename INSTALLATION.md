@@ -1,4 +1,4 @@
-# WINDELS PANEL — Step-by-Step Installation Guide
+# MarvySocials — Step-by-Step Installation Guide
 
 This is the complete, click-by-click installation walkthrough for a **cPanel
 shared host** — the platform's primary deployment target. It assumes **no
@@ -25,7 +25,7 @@ web interface and your browser.
 The zip already contains everything: `index.php`, `application/`, the
 CodeIgniter framework as real files at `system/` **and**
 `vendor/codeigniter/framework/system` (no symlinks, no `composer install`),
-pre-built CSS in `assets/`, `storage/`, `cron/`, `database/windels_panel.sql`
+pre-built CSS in `assets/`, `storage/`, `cron/`, `database/marvysocials.sql`
 (the complete initialised database) and `.env.example`.
 
 ---
@@ -60,9 +60,9 @@ pre-built CSS in `assets/`, `storage/`, `cron/`, `database/windels_panel.sql`
 1. **cPanel → phpMyAdmin**.
 2. In the left sidebar, click the database you just created.
 3. Open the **Import** tab → **Choose File** → select
-   `database/windels_panel.sql`.
+   `database/marvysocials.sql`.
    *Tip: in File Manager you can right-click the file → Download to get a
-   local copy, or compress it to `windels_panel.sql.zip` — phpMyAdmin imports
+   local copy, or compress it to `marvysocials.sql.zip` — phpMyAdmin imports
    zipped SQL directly (useful if your host's upload limit is small).*
 4. Leave all settings at their defaults → press **Go**.
 5. Wait for the green success banner: *"Import has been successfully
@@ -153,7 +153,7 @@ The SQL seeds one SUPER_ADMIN:
 Email:    admin
 Password: ChangeMe!Admin2026
 ```
-*(also printed in the header comment at the top of `windels_panel.sql`)*
+*(also printed in the header comment at the top of `marvysocials.sql`)*
 
 **Do one of the following immediately:**
 
@@ -178,7 +178,7 @@ Once `deploy-verify.php` is green, take it off the internet — either:
 - add `VP_VERIFY_DISABLE=1` to `.env` (the file stays but answers nothing), or
 - delete `deploy-verify.php` in File Manager.
 
-Keep `database/schema_verification.php` and `database/windels_panel.sql`
+Keep `database/schema_verification.php` and `database/marvysocials.sql`
 (they are inert server-side), or delete them too if you prefer a minimal docroot.
 
 ## Step 8 — Cron jobs (background workers)
@@ -237,7 +237,7 @@ secrets live in `.env`:
 - **Payment gateways** (Dashboard → Payment Methods, keys in `.env` as
   documented per provider): Paystack (`PAYSTACK_SECRET_KEY`,
   `PAYSTACK_PUBLIC_KEY`), Flutterwave, Stripe, PayPal, Razorpay,
-  CoinPayments — plus the `WINDELS_<GATEWAY>_WEBHOOK_SECRET` values for
+  CoinPayments — plus the `MARVYSOCIALS_<GATEWAY>_WEBHOOK_SECRET` values for
   signed webhooks. Manual funding works out of the box.
 - **SMM/VTU providers** (Dashboard → Providers): VTpass, 5sim, Dojah,
   Reloadly — paste API credentials; their `.env` counterparts are annotated
@@ -261,7 +261,7 @@ moves it (the cron log at `storage/logs/cron.log` shows each run).
 | Blank page / HTTP 500 | Open `deploy-verify.php` — it names the failing layer. Most often: wrong PHP version (`Select PHP Version` → 8.1+) or a mistyped `.env` line. |
 | "Database connection failed" | `VP_DB_*` values don't match Step 2 (prefix missing?), or user not added to DB with ALL PRIVILEGES. |
 | Login works but sessions drop | `storage/cache/sessions` not writable (File Manager → select → *Permissions* → `755`, or `775`/`777` if the host runs PHP as another user) — or switch to database sessions: `VP_SESSION_DRIVER=database` (uses the shipped `user_sessions` table). |
-| phpMyAdmin: file too large | Upload `windels_panel.sql.zip` instead; phpMyAdmin decompresses it. |
+| phpMyAdmin: file too large | Upload `marvysocials.sql.zip` instead; phpMyAdmin decompresses it. |
 | Emails never arrive | SMTP values missing — the `email_queue` cron row in `storage/logs/cron.log` shows the SMTP error. |
 | Orders stuck on PENDING | Cron not installed or running an old PHP — check `storage/logs/cron.log` timestamps and `/setup` (while token is set) → job health. |
 | Re-import to repair | The SQL is idempotent: importing again fixes partial imports/corruption without duplicating rows. |
@@ -271,7 +271,7 @@ moves it (the cron log at `storage/logs/cron.log` shows each run).
 Upload and extract the new `application-deployment.zip` the same way
 (overwrite), **keeping** your `.env` and `assets/uploads/` (they are not in
 the zip). If the release notes mention schema changes, import the new
-`windels_panel.sql` (idempotent) or activate the CI workflow that applies
+`marvysocials.sql` (idempotent) or activate the CI workflow that applies
 migrations. Your encryption key must stay the same forever — data encrypted
 with it is unreadable otherwise (the migration guide in
 `docs/cpanel-deployment.md` explains how to carry it between hosts).

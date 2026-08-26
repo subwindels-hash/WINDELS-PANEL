@@ -43,20 +43,20 @@ $outstanding = bcsub((string)$tx->amount, (string)$tx->refunded_amount, 8);
         <tr><th>Product code</th><td class="mono text-xs"><?=htmlspecialchars((string)$detail->variation_code)?></td></tr>
         <?php endif; ?>
         <?php if ($detail->face_value !== null): ?>
-        <tr><th>Face value</th><td class="mono"><?=windels_money($detail->face_value, $tx->currency)?></td></tr>
+        <tr><th>Face value</th><td class="mono"><?=marvy_money($detail->face_value, $tx->currency)?></td></tr>
         <?php endif; ?>
         <?php if ($detail->token): ?>
         <tr><th>Token / PIN</th><td class="mono"><?=htmlspecialchars((string)$detail->token)?>
             <?php if ($detail->units): ?><span class="muted text-xs"><?=htmlspecialchars((string)$detail->units)?> units</span><?php endif; ?></td></tr>
         <?php endif; ?>
         <?php endif; ?>
-        <tr><th>Charged</th><td class="mono"><?=windels_money($tx->amount, $tx->currency)?></td></tr>
+        <tr><th>Charged</th><td class="mono"><?=marvy_money($tx->amount, $tx->currency)?></td></tr>
         <?php if ($tx->provider_cost !== null): ?>
-        <tr><th>Provider cost</th><td class="mono"><?=windels_money($tx->provider_cost, $tx->currency)?>
-            <span class="muted text-xs">margin <?=windels_money(bcsub((string)$tx->amount, (string)$tx->provider_cost, 8), $tx->currency)?></span></td></tr>
+        <tr><th>Provider cost</th><td class="mono"><?=marvy_money($tx->provider_cost, $tx->currency)?>
+            <span class="muted text-xs">margin <?=marvy_money(bcsub((string)$tx->amount, (string)$tx->provider_cost, 8), $tx->currency)?></span></td></tr>
         <?php endif; ?>
         <?php if (bccomp((string)$tx->refunded_amount, '0', 8) > 0): ?>
-        <tr><th>Refunded</th><td class="mono"><?=windels_money($tx->refunded_amount, $tx->currency)?></td></tr>
+        <tr><th>Refunded</th><td class="mono"><?=marvy_money($tx->refunded_amount, $tx->currency)?></td></tr>
         <?php endif; ?>
         <tr><th>Provider</th><td>
           <?=$tx->provider_name ? htmlspecialchars($tx->provider_name) : '<span class="muted">— none</span>'?>
@@ -98,11 +98,11 @@ $outstanding = bcsub((string)$tx->amount, (string)$tx->refunded_amount, 8);
 
       <?php if ($has('vtu.refund') && $can_refund): ?>
       <form method="post" action="<?=site_url('admin/vtu/'.$tx->public_id.'/refund')?>"
-            onsubmit="return confirm('Refund <?=htmlspecialchars(windels_money($outstanding, $tx->currency))?> to this customer\'s wallet?')">
+            onsubmit="return confirm('Refund <?=htmlspecialchars(marvy_money($outstanding, $tx->currency))?> to this customer\'s wallet?')">
         <?=$csrf()?>
         <label class="text-sm font-medium" for="reason">Refund reason</label>
         <input class="input mb-2" id="reason" name="reason" placeholder="Recorded in the status history">
-        <p class="hint mb-2">Returns <?=windels_money($outstanding, $tx->currency)?> — the charge less anything already refunded.</p>
+        <p class="hint mb-2">Returns <?=marvy_money($outstanding, $tx->currency)?> — the charge less anything already refunded.</p>
         <button class="btn btn-secondary btn-sm" type="submit">Refund purchase</button>
       </form>
       <?php elseif ($has('vtu.refund')): ?>

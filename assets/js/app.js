@@ -1,5 +1,5 @@
 /**
- * WINDELS PANEL — vanilla JS (no framework).
+ * MarvySocials — vanilla JS (no framework).
  *
  * Its one job today is CSRF plumbing, because that is what silently breaks
  * every page that posts more than once.
@@ -19,9 +19,9 @@
  *
  * Third-party widgets that do their own posting can use the public API:
  *
- *   await WINDELS.csrf()          // current token, refreshed if stale
- *   WINDELS.csrfHeader()          // { 'X-CSRF-TOKEN': '...' } to spread into headers
- *   WINDELS.csrfField()           // { csrf_windels: '...' } for form bodies
+ *   await MARVYSOCIALS.csrf()          // current token, refreshed if stale
+ *   MARVYSOCIALS.csrfHeader()          // { 'X-CSRF-TOKEN': '...' } to spread into headers
+ *   MARVYSOCIALS.csrfField()           // { csrf_marvy: '...' } for form bodies
  */
 (function () {
   'use strict';
@@ -35,7 +35,7 @@
   }
 
   var state = {
-    name: meta('csrf-name') || 'csrf_windels',
+    name: meta('csrf-name') || 'csrf_marvy',
     hash: meta('csrf-token') || null,
     endpoint: (meta('csrf-endpoint') || '/csrf')
   };
@@ -154,12 +154,12 @@
   var send = XMLHttpRequest.prototype.send;
 
   XMLHttpRequest.prototype.open = function (method, url) {
-    this.__windels = { method: method, url: url };
+    this.__marvy = { method: method, url: url };
     return open.apply(this, arguments);
   };
 
   XMLHttpRequest.prototype.send = function (body) {
-    var info = this.__windels;
+    var info = this.__marvy;
     var xhr = this;
     if (info && UNSAFE.test(info.method || '') && sameOrigin(info.url || '')) {
       if (state.hash) {
@@ -181,14 +181,14 @@
 
   /* ----------------------------- public API ------------------------------ */
 
-  window.WINDELS = window.WINDELS || {};
-  window.WINDELS.csrf = function (force) { return token(!!force); };
-  window.WINDELS.csrfHeader = function () {
+  window.MARVYSOCIALS = window.MARVYSOCIALS || {};
+  window.MARVYSOCIALS.csrf = function (force) { return token(!!force); };
+  window.MARVYSOCIALS.csrfHeader = function () {
     var headers = {};
     if (state.hash) headers[TOKEN_HEADER] = state.hash;
     return headers;
   };
-  window.WINDELS.csrfField = function () {
+  window.MARVYSOCIALS.csrfField = function () {
     var field = {};
     if (state.hash) field[state.name] = state.hash;
     return field;
@@ -197,7 +197,7 @@
   /* ----------------------------- theme ----------------------------------- */
   // Theme switch (light | dark | system). 'system' resolves against the OS
   // preference; the result is stored so the next load picks it up before paint.
-  window.WINDELS.setTheme = function (theme) {
+  window.MARVYSOCIALS.setTheme = function (theme) {
     var t = (theme === 'light' || theme === 'dark' || theme === 'system') ? theme : 'system';
     var dark = t === 'dark';
     if (t === 'system') {
@@ -217,8 +217,8 @@
 
   /* ----------------------------- toast ----------------------------------- */
   // One transient notification component for async feedback:
-  //   WINDELS.toast('success', 'Saved') / 'error' / 'warning' / 'info'
-  window.WINDELS.toast = function (type, message) {
+  //   MARVYSOCIALS.toast('success', 'Saved') / 'error' / 'warning' / 'info'
+  window.MARVYSOCIALS.toast = function (type, message) {
     var host = document.getElementById('ws-toast-host');
     if (!host) {
       host = document.createElement('div');
@@ -274,7 +274,7 @@
     } catch (e) {
       // A broken optional widget must never stop the other global behaviours
       // (CSRF plumbing, mobile nav, FAQ filter, assistant) from running.
-      if (window.console && console.error) console.error('windels init failed:', e);
+      if (window.console && console.error) console.error('marvy init failed:', e);
     }
   }
 
@@ -581,7 +581,7 @@
         if (label) label.textContent = dark ? 'Light' : 'Dark';
         btn.addEventListener('click', function () {
           var isDark = document.documentElement.classList.contains('dark');
-          WINDELS.setTheme(isDark ? 'light' : 'dark');
+          MARVYSOCIALS.setTheme(isDark ? 'light' : 'dark');
         });
       })(toggles[i]);
     }

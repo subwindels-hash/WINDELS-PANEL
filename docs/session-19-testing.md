@@ -48,7 +48,7 @@ The harness exposes the small vocabulary the tests need: `seed_minimal()`,
 `OrderStateMachine` is a plain static utility, not a CI library. It is used at
 four points in `OrderService` (`:182`, `:215`, `:284`, `:445`) — and it was
 never loaded. Not in `autoload.php`, not via `load->library()`, not by
-Composer's PSR-4 map (which is namespaced `Windels\`, and this class is global),
+Composer's PSR-4 map (which is namespaced `Marvy\`, and this class is global),
 not by a `require` anywhere in `application/`.
 
 Every single order placement fataled with `Class "OrderStateMachine" not found`

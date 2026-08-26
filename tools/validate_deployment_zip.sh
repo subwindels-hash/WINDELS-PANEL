@@ -49,7 +49,7 @@ REQUIRED=(
   application/core/Env.php
   application/config/config.php
   application/config/database.php
-  database/windels_panel.sql
+  database/marvysocials.sql
   system/core/CodeIgniter.php
   vendor/autoload.php
   vendor/codeigniter/framework/system/core/CodeIgniter.php
@@ -101,7 +101,7 @@ required = [
     "vendor/codeigniter/framework/system/core/CodeIgniter.php",
     "index.php",
     "deploy-verify.php",
-    "database/windels_panel.sql",
+    "database/marvysocials.sql",
 ]
 # Unix symlink: S_IFLNK = 0o120000 in the upper 16 bits of external_attr.
 S_IFMT = 0o170000

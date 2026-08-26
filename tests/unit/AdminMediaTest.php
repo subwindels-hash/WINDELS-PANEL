@@ -28,7 +28,7 @@ class AdminMediaTest extends TestCase
     {
         self::$root = dirname(dirname(__DIR__));
         if (!defined('BASEPATH')) define('BASEPATH', self::$root.'/system/');
-        if (!defined('FCPATH')) define('FCPATH', sys_get_temp_dir().'/windels_media_test/');
+        if (!defined('FCPATH')) define('FCPATH', sys_get_temp_dir().'/marvy_media_test/');
         if (!class_exists('CI_Model')) {
             eval('#[AllowDynamicProperties] class CI_Model { public $db; }');
         }
@@ -40,7 +40,7 @@ class AdminMediaTest extends TestCase
             eval('function base_url($p = ""){ return "https://panel.test/".ltrim($p, "/"); }');
         }
         require_once self::$root.'/application/core/MY_Model.php';
-        require_once self::$root.'/application/helpers/windels_helper.php';
+        require_once self::$root.'/application/helpers/marvy_helper.php';
     }
 
     protected function setUp(): void

@@ -191,7 +191,7 @@ class AffiliateService {
             'referral_id' => $referral->id,
             'order_id'    => $order->id,
             'amount'      => $amount,
-            'currency'    => $order->currency ?? windels_base_currency(),
+            'currency'    => $order->currency ?? marvy_base_currency(),
             'status'      => Referral_commission_model::STATUS_PENDING,
             'created_at'  => gmdate('Y-m-d H:i:s'),
         ));
@@ -416,7 +416,7 @@ class AffiliateService {
     private function notify($user_id, $commission) {
         try {
             $this->ci->db->insert('notifications', array(
-                'public_id' => windels_public_id(),
+                'public_id' => marvy_public_id(),
                 'user_id'   => $user_id,
                 'type'      => 'referral.commission',
                 'channel'   => 'IN_APP',

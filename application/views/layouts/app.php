@@ -80,7 +80,7 @@ try {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title><?=htmlspecialchars($title ?? 'WINDELS PANEL')?></title>
+<title><?=htmlspecialchars($title ?? 'MarvySocials')?></title>
 <?php if (!empty($brand['brand_favicon_url'])): ?>
 <link rel="icon" href="<?=htmlspecialchars($brand['brand_favicon_url'])?>">
 <?php else: ?>
@@ -140,11 +140,11 @@ try {
     <div class="h-16 flex items-center px-6 border-b">
       <a href="<?=site_url()?>" class="ws-brand">
         <?php if (!empty($brand['brand_logo_url'])): ?>
-          <img src="<?=htmlspecialchars($brand['brand_logo_url'])?>" alt="WINDELS PANEL"
+          <img src="<?=htmlspecialchars($brand['brand_logo_url'])?>" alt="MarvySocials"
                style="max-height:2rem;max-width:10rem">
         <?php else: ?>
           <?php $this->load->view('partials/brand_logo', array('variant'=>'icon','height'=>32,'force_legacy'=>true)); ?>
-          <span class="font-bold tracking-tight">WINDELS</span>
+          <span class="font-bold tracking-tight">MARVYSOCIALS</span>
         <?php endif; ?>
       </a>
     </div>

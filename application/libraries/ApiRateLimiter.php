@@ -15,7 +15,7 @@ class ApiRateLimiter {
 
     public function __construct() {
         $this->ci =& get_instance();
-        $this->dir = rtrim(sys_get_temp_dir(), '/').'/windels_ratelimit';
+        $this->dir = rtrim(sys_get_temp_dir(), '/').'/marvy_ratelimit';
         if (!is_dir($this->dir)) @mkdir($this->dir, 0700, true);
     }
 

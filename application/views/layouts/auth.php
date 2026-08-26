@@ -1,5 +1,5 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
-$auth_site = function_exists('windels_site_name') ? windels_site_name() : 'WINDELS PANEL';
+$auth_site = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials';
 ?>
 <!doctype html>
 <html lang="en">

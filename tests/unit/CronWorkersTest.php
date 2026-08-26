@@ -21,14 +21,14 @@ class CronWorkersTest extends TestCase
         if (!class_exists('CI_Model')) eval('class CI_Model {}');
         if (!function_exists('get_instance')) eval('function &get_instance(){ return $GLOBALS["__fake_ci"]; }');
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
-        if (!function_exists('windels_public_id')) require_once self::$root.'/application/helpers/windels_helper.php';
+        if (!function_exists('marvy_public_id')) require_once self::$root.'/application/helpers/marvy_helper.php';
         require_once self::$root.'/application/libraries/JobRunner.php';
         require_once self::$root.'/application/libraries/CronWorkers.php';
     }
 
     protected function tearDown(): void
     {
-        foreach (glob(sys_get_temp_dir().'/windels-test-locks/*.lock') as $f) @unlink($f);
+        foreach (glob(sys_get_temp_dir().'/marvy-test-locks/*.lock') as $f) @unlink($f);
     }
 
     /* ============================== JobRunner ============================= */
@@ -69,7 +69,7 @@ class CronWorkersTest extends TestCase
 
     public function testAJobCannotOverlapItself()
     {
-        if (function_exists('windels_runtime_is_wasm') && windels_runtime_is_wasm()) {
+        if (function_exists('marvy_runtime_is_wasm') && marvy_runtime_is_wasm()) {
             // This check exists to pin one specific kernel primitive: a second
             // PHP run of the same cron job must find LOCK_EX|LOCK_NB already
             // held and skip. The WASM/emscripten PHP build used by the offline
@@ -302,7 +302,7 @@ class CronWorkersTest extends TestCase
     public function testEveryScheduledJobExistsAndIsWiredToTheHarness()
     {
         $src = file_get_contents(self::$root.'/application/controllers/Cron.php');
-        $config = file_get_contents(self::$root.'/application/config/windels.php');
+        $config = file_get_contents(self::$root.'/application/config/marvy.php');
         preg_match("~\\\$config\['cron'\]\s*=\s*array\((.*?)\);~s", $config, $m);
         $this->assertNotEmpty($m, 'cron schedule map not found');
         preg_match_all("~'([a-z_]+)'\s*=>~", $m[1], $jobs);
@@ -318,7 +318,7 @@ class CronWorkersTest extends TestCase
     public function testEveryScheduledJobIsInTheCrontab()
     {
         $crontab = file_get_contents(self::$root.'/cron/crontab.example');
-        $config  = file_get_contents(self::$root.'/application/config/windels.php');
+        $config  = file_get_contents(self::$root.'/application/config/marvy.php');
         preg_match("~\\\$config\['cron'\]\s*=\s*array\((.*?)\);~s", $config, $m);
         preg_match_all("~'([a-z_]+)'\s*=>~", $m[1], $jobs);
 
@@ -475,7 +475,7 @@ class CronFakeInput { function ip_address(){return '127.0.0.1';} function user_a
 class CronFakeConfig {
     function item($k){
         // Keep test locks out of the real lock directory.
-        if ($k === 'cron_lock_dir') return sys_get_temp_dir().'/windels-test-locks';
+        if ($k === 'cron_lock_dir') return sys_get_temp_dir().'/marvy-test-locks';
         return null;
     }
 }

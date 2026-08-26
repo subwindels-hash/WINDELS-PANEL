@@ -53,7 +53,7 @@ class Health extends MY_Controller {
 
     private function check_database() {
         try {
-            if (!windels_load_database()) return 'fail';
+            if (!marvy_load_database()) return 'fail';
             $this->db->query('SELECT 1');
             return 'ok';
         } catch (Exception $e) {

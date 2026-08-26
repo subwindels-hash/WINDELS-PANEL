@@ -34,7 +34,7 @@ class MY_Controller extends CI_Controller {
         @date_default_timezone_set(($tz === null || $tz === '') ? 'UTC' : $tz);
         $this->send_security_headers();
 
-        $this->db_ready = windels_load_database();
+        $this->db_ready = marvy_load_database();
 
         // AuthService is available to every controller but loaded defensively:
         // CLI maintenance flows (migrate/seed) run before the schema exists.
@@ -60,7 +60,7 @@ class MY_Controller extends CI_Controller {
     /**
      * Maintenance gate.
      *
-     * Enabled by config `windels.maintenance` (bool) or the DB setting
+     * Enabled by config `marvy.maintenance` (bool) or the DB setting
      * `maintenance_mode`. Staff (SUPER_ADMIN/ADMIN/STAFF) pass through so they
      * can keep operating; the login/health/status routes stay reachable so a
      * staff member can authenticate and load balancers keep getting a healthy
@@ -70,7 +70,7 @@ class MY_Controller extends CI_Controller {
         if (!isset($this->input) || $this->input->is_cli_request()) return;
 
         $enabled = false;
-        $cfg = $this->config->item('windels');
+        $cfg = $this->config->item('marvy');
         if (is_array($cfg) && !empty($cfg['maintenance'])) $enabled = true;
 
         if (!$enabled && $this->db_ready) {
@@ -146,7 +146,7 @@ class MY_Controller extends CI_Controller {
         $this->csp_nonce = base64_encode(random_bytes(16));
         // Expose it to views via the helper, which does not depend on knowing
         // which controller rendered the page.
-        $GLOBALS['__windels_csp_nonce'] = $this->csp_nonce;
+        $GLOBALS['__marvy_csp_nonce'] = $this->csp_nonce;
 
         $csp = array(
             "default-src 'self'",

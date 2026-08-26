@@ -62,7 +62,7 @@ $cancellable = array('PENDING','PROCESSING','IN_PROGRESS');
           </td>
           <td class="text-xs"><?=htmlspecialchars((string)($o->username ?? '—'))?></td>
           <td class="text-xs muted"><?=htmlspecialchars((string)($o->service_name ?? '—'))?></td>
-          <td class="text-right mono"><?=windels_money($o->charge, $o->currency ?? null)?></td>
+          <td class="text-right mono"><?=marvy_money($o->charge, $o->currency ?? null)?></td>
           <td><span class="<?=DashboardStats::status_badge($o->status)?>"><?=htmlspecialchars($o->status)?></span></td>
           <td class="text-xs muted whitespace-nowrap">
             <?=htmlspecialchars(date('M j, H:i', strtotime($o->created_at)))?>
@@ -96,7 +96,7 @@ $cancellable = array('PENDING','PROCESSING','IN_PROGRESS');
         <td class="mono text-xs"><?=htmlspecialchars((string)$r->public_id)?></td>
         <td class="mono text-xs"><?=htmlspecialchars((string)$r->order_id)?></td>
         <td><span class="<?=DashboardStats::status_badge($r->status)?>"><?=htmlspecialchars((string)$r->status)?></span></td>
-        <td class="text-right mono"><?=$r->refund_amount !== null ? windels_money($r->refund_amount) : '—'?></td>
+        <td class="text-right mono"><?=$r->refund_amount !== null ? marvy_money($r->refund_amount) : '—'?></td>
         <td class="text-xs muted"><?=htmlspecialchars(date('M j, H:i', strtotime($r->created_at)))?></td>
       </tr>
     <?php endforeach; ?>

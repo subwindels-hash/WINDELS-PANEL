@@ -1,6 +1,6 @@
 <?php
 /**
- * WINDELS PANEL — Front Controller (CodeIgniter 3.x)
+ * MarvySocials — Front Controller (CodeIgniter 3.x)
  *
  * Boot order matters and is deliberate:
  *
@@ -118,7 +118,7 @@ if (!is_dir($system_path) || !is_file($system_path . 'core' . DIRECTORY_SEPARATO
     foreach ($system_candidates as $candidate) {
         $probed[] = rtrim((string) $candidate, '/\\') . '/core/CodeIgniter.php';
     }
-    echo '<!doctype html><html><head><meta charset="utf-8"><title>WINDELS PANEL — framework missing</title>'
+    echo '<!doctype html><html><head><meta charset="utf-8"><title>MarvySocials — framework missing</title>'
         . '<style>body{font:16px/1.5 system-ui,sans-serif;margin:2em auto;max-width:44em;padding:0 1em;color:#222}'
         . 'code{background:#f3f3f3;padding:1px 5px;border-radius:4px}li{margin:.25em 0}</style></head><body>'
         . '<h1>CodeIgniter framework files are missing</h1>'

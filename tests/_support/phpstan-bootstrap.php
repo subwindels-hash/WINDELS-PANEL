@@ -2,7 +2,7 @@
 /**
  * Symbols CodeIgniter provides at runtime, shimmed so static analysis of the
  * plain-domain classes resolves them without booting the framework. The app
- * autoloads application/helpers/windels_helper.php via composer "files", so
+ * autoloads application/helpers/marvy_helper.php via composer "files", so
  * only true CI3 runtime symbols belong here.
  */
 if (!function_exists('get_instance')) {

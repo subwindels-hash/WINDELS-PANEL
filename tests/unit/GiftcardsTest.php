@@ -41,7 +41,7 @@ class GiftcardsTest extends TestCase
         }
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         require_once self::$root.'/application/core/MY_Model.php';
-        require_once self::$root.'/application/helpers/windels_helper.php';
+        require_once self::$root.'/application/helpers/marvy_helper.php';
         require_once self::$root.'/application/libraries/ReloadlyAdapter.php';
         require_once self::$root.'/application/libraries/MockGiftcardAdapter.php';
     }
@@ -778,10 +778,10 @@ class GiftcardsTest extends TestCase
     {
         list($adapter, $http) = $this->adapter(array(self::ok(self::fixture('order_placed.json'))));
         $adapter->order(array('product_id' => '11', 'quantity' => 2,
-                              'unit_price' => '25.00', 'reference' => '01JWINDELSTX'));
+                              'unit_price' => '25.00', 'reference' => '01JMARVYSOCIALSTX'));
 
         $body = json_decode($http->calls[0]['body'], true);
-        $this->assertSame('01JWINDELSTX', $body['customIdentifier'],
+        $this->assertSame('01JMARVYSOCIALSTX', $body['customIdentifier'],
             'a timeout on the way out must not become two purchases');
         $this->assertSame(11, $body['productId']);
         $this->assertSame(2, $body['quantity']);
@@ -1456,7 +1456,7 @@ class GiftcardsTest extends TestCase
 
     public function testTheSweepIsScheduledEverywhereItHasToBe()
     {
-        $config = file_get_contents(self::$root.'/application/config/windels.php');
+        $config = file_get_contents(self::$root.'/application/config/marvy.php');
         $this->assertMatchesRegularExpression("~'giftcard_codes'\s*=>~", $config);
 
         $cron = file_get_contents(self::$root.'/application/controllers/Cron.php');

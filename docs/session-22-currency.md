@@ -81,20 +81,20 @@ have capped deposits at ₦10,000. Re-priced in `Core_seeder` and in 011:
 | `payment_methods.min_amount` / `max_amount` | 5 / 10000 | 500 / 5000000 |
 | `payment_methods.currencies` | `["USD"]` | `["NGN"]` |
 
-## One source of truth: `windels_base_currency()`
+## One source of truth: `marvy_base_currency()`
 
 The literal `'USD'` appeared as a fallback in ~20 places across libraries,
 controllers, models, seeds and views (`$wallet->currency ?? 'USD'`,
 `'currency' => 'USD'`, …). Swapping each for `'NGN'` would have reproduced the
 same problem one redenomination later.
 
-Instead `windels_base_currency()` was added to `windels_helper.php`. It reads
-`config/windels.php`, memoises, and falls back to `NGN` when there is no CI
+Instead `marvy_base_currency()` was added to `marvy_helper.php`. It reads
+`config/marvy.php`, memoises, and falls back to `NGN` when there is no CI
 instance (CLI tools, seeders, early bootstrap) rather than guessing a foreign
-currency. Every one of those fallbacks now calls it, and `windels_money()`
+currency. Every one of those fallbacks now calls it, and `marvy_money()`
 defaults its `$currency` argument to it.
 
-`windels_money()` also gained `INR` and `BRL` symbols — it previously fell
+`marvy_money()` also gained `INR` and `BRL` symbols — it previously fell
 through to the bare code for two currencies it was already seeding.
 
 ## Bugs found and fixed on the way

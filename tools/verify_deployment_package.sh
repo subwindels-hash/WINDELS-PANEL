@@ -23,9 +23,9 @@
 #   · the runtime directories are created on first boot and are guarded
 #   · encryption and token signing work with the keys carried in .env, and
 #     ciphertext written on the "old server" still decrypts on the "new" one
-#   · the administrator hash in database/windels_panel.sql verifies with the
+#   · the administrator hash in database/marvysocials.sql verifies with the
 #     documented password
-#   · windels_panel.sql is complete (delegates to validate_production_sql.py)
+#   · marvysocials.sql is complete (delegates to validate_production_sql.py)
 #
 # What it cannot prove here: Apache rewriting and live MySQL queries. Those
 # need a real host; docs/cpanel-deployment.md documents the checks for them and
@@ -91,7 +91,7 @@ if [[ -z "$(find "${SITE}" -type l -print -quit)" ]]; then
 else
   bad "no symlinks anywhere in the package"
 fi
-check "database/windels_panel.sql is in the package"    "[[ -f '${SITE}/database/windels_panel.sql' ]]"
+check "database/marvysocials.sql is in the package"    "[[ -f '${SITE}/database/marvysocials.sql' ]]"
 check "schema_verification.php ships for post-import audits" "[[ -f '${SITE}/database/schema_verification.php' ]]"
 check "database/README.md ships"                        "[[ -f '${SITE}/database/README.md' ]]"
 check ".env.example is in the package"               "[[ -f '${SITE}/.env.example' ]]"
@@ -223,11 +223,11 @@ $token = $signer->issue(1, 'password_reset');
 $claims = $signer->verify(is_array($token) ? $token['token'] : $token, 'password_reset');
 want('password-reset tokens sign and verify with VP_AUTH_SECRET', !empty($claims));
 
-// --- the administrator in windels_panel.sql can actually log in ----------------
-$sql = file_get_contents($site . '/database/windels_panel.sql');
+// --- the administrator in marvysocials.sql can actually log in ----------------
+$sql = file_get_contents($site . '/database/marvysocials.sql');
 preg_match('/--\s+password:\s+(\S+)/', $sql, $pw);
 preg_match('/(\$2y\$\d\d\$[.\/A-Za-z0-9]{53})/', $sql, $hash);
-want('windels_panel.sql documents the first-login password', !empty($pw[1]), $pw[1] ?? '');
+want('marvysocials.sql documents the first-login password', !empty($pw[1]), $pw[1] ?? '');
 want('that password verifies against the seeded bcrypt hash',
      !empty($hash[1]) && password_verify($pw[1], $hash[1]));
 
@@ -254,10 +254,10 @@ fi
 echo
 echo "5. The imported database is complete"
 if command -v python3 >/dev/null 2>&1 && python3 -c 'import sqlglot' >/dev/null 2>&1; then
-  if python3 "${ROOT}/tools/validate_production_sql.py" "${SITE}/database/windels_panel.sql" >/dev/null 2>&1; then
-    ok "database/windels_panel.sql validates (schema + seed + admin + bookkeeping)"
+  if python3 "${ROOT}/tools/validate_production_sql.py" "${SITE}/database/marvysocials.sql" >/dev/null 2>&1; then
+    ok "database/marvysocials.sql validates (schema + seed + admin + bookkeeping)"
   else
-    bad "database/windels_panel.sql failed validation — run tools/validate_production_sql.py"
+    bad "database/marvysocials.sql failed validation — run tools/validate_production_sql.py"
   fi
 else
   echo "  --   skipped: python3 with sqlglot not available"
@@ -268,13 +268,13 @@ echo
 echo "6. Clean-install boot (deploy-verify.php + CodeIgniter front controller)"
 # Optional live MySQL: import the packaged SQL into a throwaway database and
 # run the same checks an operator runs in the browser. Credentials come from
-# WINDELS_VERIFY_DB_* so they cannot leak into the .env-resolution checks
+# MARVY_VERIFY_DB_* so they cannot leak into the .env-resolution checks
 # above (Env never overwrites a real process environment).
-DB_HOST="${WINDELS_VERIFY_DB_HOST:-127.0.0.1}"
-DB_PORT="${WINDELS_VERIFY_DB_PORT:-3306}"
-DB_USER="${WINDELS_VERIFY_DB_USER:-root}"
-DB_PASS="${WINDELS_VERIFY_DB_PASS:-}"
-DB_NAME="windels_pkg_$$"
+DB_HOST="${MARVY_VERIFY_DB_HOST:-127.0.0.1}"
+DB_PORT="${MARVY_VERIFY_DB_PORT:-3306}"
+DB_USER="${MARVY_VERIFY_DB_USER:-root}"
+DB_PASS="${MARVY_VERIFY_DB_PASS:-}"
+DB_NAME="marvy_pkg_$$"
 MYSQL_OK=0
 if "${PHP_BIN}" -r 'exit(extension_loaded("mysqli") ? 0 : 1);'; then
   if "${PHP_BIN}" -r '
@@ -306,8 +306,8 @@ if [[ "${MYSQL_OK}" -eq 1 ]]; then
     if (mysqli_errno($l)) { fwrite(STDERR, mysqli_error($l)."\n"); exit(1); }
     $t = mysqli_query($l, "SHOW TABLES");
     echo $t ? mysqli_num_rows($t) : 0;
-  ' "${DB_HOST}" "${DB_USER}" "${DB_PASS}" "${DB_PORT}" "${DB_NAME}" "${SITE}/database/windels_panel.sql")"; then
-    ok "imported database/windels_panel.sql (${TABLES} tables)"
+  ' "${DB_HOST}" "${DB_USER}" "${DB_PASS}" "${DB_PORT}" "${DB_NAME}" "${SITE}/database/marvysocials.sql")"; then
+    ok "imported database/marvysocials.sql (${TABLES} tables)"
     cat > "${SITE}/.env" <<ENVFILE
 CI_ENV=production
 VP_BASE_URL=https://newdomain.example
@@ -331,7 +331,7 @@ ENVFILE
       if ($l) mysqli_query($l, "DROP DATABASE `".$argv[5]."`");
     ' "${DB_HOST}" "${DB_USER}" "${DB_PASS}" "${DB_PORT}" "${DB_NAME}" >/dev/null 2>&1 || true
   else
-    bad "could not import database/windels_panel.sql into a throwaway database"
+    bad "could not import database/marvysocials.sql into a throwaway database"
   fi
 else
   echo "  --   skipped live import: no MySQL reachable at ${DB_HOST}:${DB_PORT}"

@@ -1,4 +1,4 @@
-# WINDELS PANEL — Artifact 5 (REVISED): Three Homepage Wireframes — PHP Views (CodeIgniter 3.x)
+# MarvySocials — Artifact 5 (REVISED): Three Homepage Wireframes — PHP Views (CodeIgniter 3.x)
 
 > Revised 2026-08-16 | Rendered as **CI3 PHP views** via `Home.php` → `views/homepages/{aurora,nexus,pulse}/*`. Supersedes Node wireframes.
 
@@ -29,7 +29,7 @@
 ├──────────────────────────────────────────────────────────┤
 │ hero.php (2-col desktop, stacked mobile)                 │
 │  Left: eyebrow "Trusted by 50k+ marketers"               │
-│   h1 "Grow Your Social Presence / With WINDELS PANEL"    │
+│   h1 "Grow Your Social Presence / With MarvySocials"    │
 │   sub "One platform. 2,000+ services..."                 │
 │   [Start Ordering → /register] [View Services →/services]│
 │   trust: ★★★★★ 4.9 · 2M+ orders                         │
@@ -89,7 +89,7 @@ Mobile: hero stacked, stats 2×2, services horizontal swipe, steps vertical.
 │  sub "Aggregate providers. Route orders. Sync status..."  │
 │  [Launch Dashboard] [View API Docs → /api/docs]          │
 │  Right — flow diagram (CSS + JS animation):              │
-│   Customer ↓ WINDELS PANEL (Queue·Ledger·State Machine) │
+│   Customer ↓ MarvySocials (Queue·Ledger·State Machine) │
 │            ↓ Provider Network (4 nodes, health dots)    │
 │            ↓ Fulfillment ✓                               │
 ├──────────────────────────────────────────────────────────┤

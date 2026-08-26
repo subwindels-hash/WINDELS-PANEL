@@ -71,21 +71,21 @@ echo "Building the cPanel deployment package"
 
 # ---------------------------------------------------------------------------
 # 1. The database file has to exist and has to be current, because it *is* the
-#    installer now. A stale windels_panel.sql is a deployment that boots into a
+#    installer now. A stale marvysocials.sql is a deployment that boots into a
 #    half-migrated database with no terminal available to fix it.
 # ---------------------------------------------------------------------------
 if command -v php >/dev/null 2>&1; then
-  say "checking database/windels_panel.sql is current"
+  say "checking database/marvysocials.sql is current"
   if ! php "${ROOT}/tools/build_production_sql.php" --check >/dev/null; then
-    echo "  ! database/windels_panel.sql is out of date." >&2
+    echo "  ! database/marvysocials.sql is out of date." >&2
     echo "    Run: php tools/build_production_sql.php" >&2
     exit 1
   fi
 else
-  say "php not found — skipping the windels_panel.sql freshness check"
+  say "php not found — skipping the marvysocials.sql freshness check"
 fi
-if [[ ! -f "${ROOT}/database/windels_panel.sql" ]]; then
-  echo "  ! database/windels_panel.sql is missing — run: php tools/build_production_sql.php" >&2
+if [[ ! -f "${ROOT}/database/marvysocials.sql" ]]; then
+  echo "  ! database/marvysocials.sql is missing — run: php tools/build_production_sql.php" >&2
   exit 1
 fi
 
@@ -138,7 +138,7 @@ copy deploy-verify.php
 copy application
 copy assets
 copy cron
-copy database/windels_panel.sql
+copy database/marvysocials.sql
 copy database/schema_verification.php
 copy database/README.md
 copy docs/cpanel-deployment.md
@@ -233,7 +233,7 @@ rm -rf "${STAGE}/application/seeds"
 # 5. A README the operator sees first
 # ---------------------------------------------------------------------------
 cat > "${STAGE}/README-DEPLOYMENT.txt" <<'TXT'
-WINDELS PANEL — cPanel deployment
+MarvySocials — cPanel deployment
 =================================
 
 Six steps, no terminal, no Composer, no npm, no symlinks.
@@ -253,7 +253,7 @@ Six steps, no terminal, no Composer, no npm, no symlinks.
 
 3. IMPORT THE DATABASE
    cPanel -> phpMyAdmin -> select the new database -> Import ->
-   choose database/windels_panel.sql -> Go.
+   choose database/marvysocials.sql -> Go.
    This creates every table and all the data the panel needs. Nothing else has
    to run afterwards.
 
@@ -280,7 +280,7 @@ Six steps, no terminal, no Composer, no npm, no symlinks.
    https://yourdomain.com
 
 FIRST LOGIN
-   The credentials are printed at the top of database/windels_panel.sql.
+   The credentials are printed at the top of database/marvysocials.sql.
    Change the password immediately, or set your own before the first login by
    putting VP_SETUP_TOKEN=<32 random characters> in .env and visiting
    https://yourdomain.com/setup?token=<that value>. Remove the line afterwards.
@@ -338,7 +338,7 @@ echo "  ${SIZE}, ${FILES} files"
 echo
 echo "  Contents: index.php .htaccess .env.example deploy-verify.php application/"
 echo "            system/ (real files) vendor/ (framework + autoloader) assets/"
-echo "            storage/ database/windels_panel.sql cron/ README-DEPLOYMENT.txt"
+echo "            storage/ database/marvysocials.sql cron/ README-DEPLOYMENT.txt"
 echo
 echo "  Upload it through cPanel File Manager and extract. Nothing else to run."
 echo "  Post-deploy check: open /deploy-verify.php in the browser (then delete it)."

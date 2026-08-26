@@ -121,7 +121,7 @@ class TransactionEngine {
         //    without something durable to attribute it to.
         $now = gmdate('Y-m-d H:i:s');
         $tx_id = $this->ci->Service_transaction_model->create(array(
-            'public_id'       => windels_public_id(),
+            'public_id'       => marvy_public_id(),
             'user_id'         => $user_id,
             'service_domain'  => $spec['service_domain'],
             'service_type'    => $spec['service_type'],
@@ -131,7 +131,7 @@ class TransactionEngine {
             'amount'          => $amount,
             'provider_cost'   => isset($spec['provider_cost']) && $spec['provider_cost'] !== null
                                     ? $this->money($spec['provider_cost']) : null,
-            'currency'        => isset($wallet->currency) ? $wallet->currency : windels_base_currency(),
+            'currency'        => isset($wallet->currency) ? $wallet->currency : marvy_base_currency(),
             'idempotency_key' => $idem,
             'source'          => isset($spec['source']) ? $spec['source'] : 'WEB',
             'metadata'        => isset($spec['metadata']) ? json_encode($spec['metadata']) : null,

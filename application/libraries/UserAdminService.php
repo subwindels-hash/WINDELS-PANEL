@@ -190,7 +190,7 @@ class UserAdminService {
         // enough balance" rather than a generic ledger error.
         if ($direction === 'DEBIT' && bccomp((string)$wallet->balance, $amount, 8) < 0) {
             return $this->err('INSUFFICIENT',
-                'That is more than the customer holds ('.windels_money($wallet->balance, $wallet->currency).').');
+                'That is more than the customer holds ('.marvy_money($wallet->balance, $wallet->currency).').');
         }
 
         $res = $this->ci->ledgerservice->adjust(

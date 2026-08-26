@@ -5,7 +5,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * Setup — the browser stand-in for the installer command that no longer exists.
  *
  * A cPanel deployment is: upload files, create the database, import
- * `database/windels_panel.sql`, edit `.env`. That already produces a working
+ * `database/marvysocials.sql`, edit `.env`. That already produces a working
  * panel with a SUPER_ADMIN whose password is printed in the SQL file's header,
  * so this page is not required to deploy. It exists for the two jobs that
  * would otherwise send an operator back to a terminal:
@@ -42,9 +42,9 @@ class Setup extends CI_Controller {
         parent::__construct();
         date_default_timezone_set('UTC');
         require_once APPPATH.'core/Env.php';
-        $this->load->helper(array('form', 'url', 'windels'));
+        $this->load->helper(array('form', 'url', 'marvy'));
         // RateLimiter writes login_attempts — only load it when MySQL is up.
-        if (windels_load_database()) {
+        if (marvy_load_database()) {
             $this->load->library('RateLimiter');
         }
     }
@@ -62,7 +62,7 @@ class Setup extends CI_Controller {
      * Set the administrator's username, email and password.
      *
      * Updates the existing SUPER_ADMIN when there is one (the row that
-     * windels_panel.sql imported) and creates one otherwise, so this also
+     * marvysocials.sql imported) and creates one otherwise, so this also
      * recovers a deployment whose only admin account was lost.
      */
     public function admin() {
@@ -120,7 +120,7 @@ class Setup extends CI_Controller {
         } else {
             $group = $this->db->where('is_default', 1)->limit(1)->get('price_groups')->row();
             $this->db->insert('users', array(
-                'public_id'         => windels_public_id(),
+                'public_id'         => marvy_public_id(),
                 'username'          => $username,
                 'email'             => $email,
                 'password_hash'     => $hash,
@@ -139,10 +139,10 @@ class Setup extends CI_Controller {
             // Every account carries a wallet in the base currency, including
             // this one — the admin screens join against it.
             $this->db->insert('wallets', array(
-                'public_id'  => windels_public_id(),
+                'public_id'  => marvy_public_id(),
                 'user_id'    => $user_id,
                 'balance'    => '0.00000000',
-                'currency'   => windels_base_currency(),
+                'currency'   => marvy_base_currency(),
                 'created_at' => $now,
                 'updated_at' => $now,
             ));
@@ -260,7 +260,7 @@ class Setup extends CI_Controller {
                 $version > 0 ? 'ok' : 'fail',
                 'Database import',
                 $version > 0 ? 'schema version '.$version : 'no tables found',
-                'cPanel → phpMyAdmin → select the database → Import → database/windels_panel.sql.'
+                'cPanel → phpMyAdmin → select the database → Import → database/marvysocials.sql.'
             );
 
             $admins = $version > 0 ? (int)$this->db->where('role', 'SUPER_ADMIN')->where('status', 'ACTIVE')->count_all_results('users') : 0;
@@ -280,7 +280,7 @@ class Setup extends CI_Controller {
 
     private function database_ready() {
         try {
-            if (!windels_load_database()) {
+            if (!marvy_load_database()) {
                 return false;
             }
             $this->db->query('SELECT 1');

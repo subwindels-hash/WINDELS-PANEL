@@ -35,18 +35,18 @@ $has_series = bccomp($peak, '0', 8) > 0;
 <div class="grid grid-4 mb-4" style="gap:1rem">
   <div class="card">
     <div class="muted text-sm">Net revenue</div>
-    <div class="text-2xl font-bold"><?=windels_money($summary['net'])?></div>
+    <div class="text-2xl font-bold"><?=marvy_money($summary['net'])?></div>
     <div class="hint"><?=number_format((int)$summary['orders'])?> sale<?=$summary['orders'] == 1 ? '' : 's'?></div>
   </div>
   <div class="card">
     <div class="muted text-sm">Gross</div>
-    <div class="text-2xl font-bold"><?=windels_money($summary['gross'])?></div>
-    <div class="hint"><?=windels_money($summary['refunded'])?> refunded</div>
+    <div class="text-2xl font-bold"><?=marvy_money($summary['gross'])?></div>
+    <div class="hint"><?=marvy_money($summary['refunded'])?> refunded</div>
   </div>
   <div class="card">
     <div class="muted text-sm">Margin</div>
     <div class="text-2xl font-bold">
-      <?=$totals['margin'] === null ? '—' : windels_money($totals['margin'])?>
+      <?=$totals['margin'] === null ? '—' : marvy_money($totals['margin'])?>
     </div>
     <div class="hint">
       <?php if ($totals['margin'] === null): ?>
@@ -74,14 +74,14 @@ $has_series = bccomp($peak, '0', 8) > 0;
         $h   = max(2, (int)round($pct));
       ?>
         <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%"
-             title="<?=htmlspecialchars($day)?> — <?=htmlspecialchars(windels_money($point['net']))?> from <?=(int)$point['sales']?> sale(s)">
+             title="<?=htmlspecialchars($day)?> — <?=htmlspecialchars(marvy_money($point['net']))?> from <?=(int)$point['sales']?> sale(s)">
           <div style="height:<?=$h?>%;background:var(--brand-500,#6366f1);border-radius:2px 2px 0 0"></div>
         </div>
       <?php endforeach; ?>
     </div>
     <div class="row justify-between mt-2">
       <span class="text-xs muted"><?=htmlspecialchars((string)array_key_first($series))?></span>
-      <span class="text-xs muted">peak <?=windels_money($peak)?></span>
+      <span class="text-xs muted">peak <?=marvy_money($peak)?></span>
       <span class="text-xs muted"><?=htmlspecialchars((string)array_key_last($series))?></span>
     </div>
   <?php endif; ?>
@@ -105,18 +105,18 @@ $has_series = bccomp($peak, '0', 8) > 0;
         <tr>
           <td><strong><?=htmlspecialchars($labels[$domain] ?? $domain)?></strong></td>
           <td class="text-right mono"><?=number_format((int)$d['sales'])?></td>
-          <td class="text-right mono"><?=windels_money($d['gross'])?></td>
+          <td class="text-right mono"><?=marvy_money($d['gross'])?></td>
           <td class="text-right mono <?=bccomp($d['refunded'], '0', 8) > 0 ? '' : 'muted'?>">
-            <?=windels_money($d['refunded'])?></td>
-          <td class="text-right mono font-semibold"><?=windels_money($d['net'])?></td>
+            <?=marvy_money($d['refunded'])?></td>
+          <td class="text-right mono font-semibold"><?=marvy_money($d['net'])?></td>
           <td class="text-right mono muted">
-            <?=(int)$d['costed'] > 0 ? windels_money($d['cost']) : '—'?>
+            <?=(int)$d['costed'] > 0 ? marvy_money($d['cost']) : '—'?>
           </td>
           <td class="text-right mono">
             <?php if ($d['margin'] === null): ?>
               <span class="muted" title="This vendor does not report a per-sale cost">—</span>
             <?php else: ?>
-              <?=windels_money($d['margin'])?>
+              <?=marvy_money($d['margin'])?>
               <?php if ((int)$d['costed'] < (int)$d['sales']): ?>
                 <div class="text-xs muted"><?=number_format((int)$d['costed'])?> of <?=number_format((int)$d['sales'])?> costed</div>
               <?php endif; ?>
@@ -134,12 +134,12 @@ $has_series = bccomp($peak, '0', 8) > 0;
         <tr>
           <th>Total</th>
           <th class="text-right mono"><?=number_format((int)$totals['sales'])?></th>
-          <th class="text-right mono"><?=windels_money($totals['gross'])?></th>
-          <th class="text-right mono"><?=windels_money($totals['refunded'])?></th>
-          <th class="text-right mono"><?=windels_money($totals['net'])?></th>
+          <th class="text-right mono"><?=marvy_money($totals['gross'])?></th>
+          <th class="text-right mono"><?=marvy_money($totals['refunded'])?></th>
+          <th class="text-right mono"><?=marvy_money($totals['net'])?></th>
           <th></th>
           <th class="text-right mono">
-            <?=$totals['margin'] === null ? '—' : windels_money($totals['margin'])?>
+            <?=$totals['margin'] === null ? '—' : marvy_money($totals['margin'])?>
           </th>
           <th></th>
         </tr>

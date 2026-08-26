@@ -107,7 +107,7 @@ class Number_product_model extends MY_Model {
     }
 
     public function create(array $data){
-        if (empty($data['public_id'])) $data['public_id'] = windels_public_id();
+        if (empty($data['public_id'])) $data['public_id'] = marvy_public_id();
         $now = $this->now_utc();
         $data += array('created_at'=>$now, 'updated_at'=>$now);
         $this->db->insert($this->table, $data);
@@ -156,7 +156,7 @@ class Number_product_model extends MY_Model {
 
         if (!$existing) {
             $this->db->insert($this->table, array(
-                'public_id'         => windels_public_id(),
+                'public_id'         => marvy_public_id(),
                 'country_id'        => $country_id,
                 'service_id'        => $service_id,
                 'provider_id'       => $provider_id,

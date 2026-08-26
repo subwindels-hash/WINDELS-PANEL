@@ -1,8 +1,8 @@
-# WINDELS PANEL — deployment package build
+# MarvySocials — deployment package build
 #
 # Produces `application-deployment.zip`: the terminal-free cPanel package
 # (index.php, .htaccess, .env.example, application/, system/, assets/,
-# storage/, cron/, database/windels_panel.sql). Attach it to a release and an
+# storage/, cron/, database/marvysocials.sql). Attach it to a release and an
 # operator's whole deployment is: download, upload through File Manager,
 # extract, create the database, import the SQL, edit .env.
 #

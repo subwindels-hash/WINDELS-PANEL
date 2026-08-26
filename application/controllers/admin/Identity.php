@@ -114,7 +114,7 @@ class Identity extends Admin_Controller {
         $this->audit('identity.refunded', $tx, $before,
             array('status' => 'REFUNDED', 'refunded' => $refunded, 'reason' => $reason));
         $this->session->set_flashdata('success', $refunded
-            ? 'Check refunded — '.windels_money($refunded).' returned to the wallet.'
+            ? 'Check refunded — '.marvy_money($refunded).' returned to the wallet.'
             : 'Check marked refunded. No money moved: nothing was charged.');
         redirect('admin/identity/'.$tx->public_id);
     }

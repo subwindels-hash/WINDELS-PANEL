@@ -207,7 +207,7 @@ class SecurityHardeningTest extends TestCase
         $client = $this->http_client(true);
         $this->assertNull($this->reject($client, 'http://10.0.0.5/internal'));
 
-        $config = file_get_contents(self::$root.'/application/config/windels.php');
+        $config = file_get_contents(self::$root.'/application/config/marvy.php');
         $this->assertStringContainsString('http_allow_private_hosts', $config);
         // Read from the environment (via env_bool, which treats the string
         // "false" as false — a plain (bool) cast does not), never hardcoded on.
@@ -703,7 +703,7 @@ class SecurityHardeningTest extends TestCase
         $db = new SecFakeAttemptDb();
         // RateLimiter aliases $this->ci =& get_instance(), so the fake CI's db
         // IS the counter store. Make it the attempts fake (with a conn_id so
-        // windels_load_database() accepts it) BEFORE constructing — reflection
+        // marvy_load_database() accepts it) BEFORE constructing — reflection
         // afterwards would write through the alias and replace the global.
         $fake = new stdClass();
         $fake->db = $db;
@@ -760,7 +760,7 @@ class SecurityHardeningTest extends TestCase
  * so the per-bucket separation is genuinely exercised rather than assumed.
  */
 class SecFakeAttemptDb {
-    public $conn_id = 'fake'; // mirrors a live connection for windels_load_database()
+    public $conn_id = 'fake'; // mirrors a live connection for marvy_load_database()
     public $rows = array();
     private $w = array(), $since = null, $order_desc = false, $limit = null;
 

@@ -1,4 +1,4 @@
-# WINDELS PANEL — Session 09: Order Engine
+# MarvySocials — Session 09: Order Engine
 
 > End-to-end order placement: validation → pricing → wallet charge → order
 > persistence → state history → provider submission, with idempotency and

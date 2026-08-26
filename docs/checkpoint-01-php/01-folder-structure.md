@@ -1,4 +1,4 @@
-# WINDELS PANEL — Artifact 1 (REVISED): Complete Folder Structure — PHP MVC / CodeIgniter 3.x
+# MarvySocials — Artifact 1 (REVISED): Complete Folder Structure — PHP MVC / CodeIgniter 3.x
 
 > Checkpoint 01 — Revised 2026-08-16
 > Stack correction: **CodeIgniter 3.x + MySQL/MariaDB + PHP 7.4/8.1 + Redis + S3-compatible storage**
@@ -12,7 +12,7 @@ This is a **traditional PHP MVC SMM panel** — not a Node app. Controller → M
 ## 1. Repository Root
 
 ```
-windels-panel/                          # repo root
+marvysocials/                          # repo root
 ├── application/
 │   ├── cache/                          # CI cache (gitignored, writable)
 │   ├── config/
@@ -28,7 +28,7 @@ windels-panel/                          # repo root
 │   │   ├── redis.php                   # host/port/prefix for cache/queue
 │   │   ├── routes.php                  # see §6
 │   │   ├── storage.php                 # S3/R2 bucket, region (keys via .env)
-│   │   └── windels.php                 # app-level: branding, homepage, currency, maintenance
+│   │   └── marvy.php                 # app-level: branding, homepage, currency, maintenance
 │   ├── controllers/
 │   │   ├── Home.php                    # public site + homepage router (AURORA/NEXUS/PULSE)
 │   │   ├── Auth.php                    # login/register/logout/forgot/verify
@@ -78,14 +78,14 @@ windels-panel/                          # repo root
 │   │   ├── MY_Model.php                # BaseModel (public_id helpers, timestamps UTC, decimal helpers)
 │   │   └── MY_Loader.php               # (if needed)
 │   ├── helpers/
-│   │   ├── windels_helper.php          # public_id, money_format, uuid/ulid
+│   │   ├── marvy_helper.php          # public_id, money_format, uuid/ulid
 │   │   ├── currency_helper.php
 │   │   └── audit_helper.php
 │   ├── hooks/
 │   │   └── AuditHook.php               # post_controller_constructor for audit on sensitive routes
 │   ├── language/
 │   │   ├── english/
-│   │   │   ├── windels_lang.php        # all UI strings (i18n-ready, per §95)
+│   │   │   ├── marvy_lang.php        # all UI strings (i18n-ready, per §95)
 │   │   │   ├── validation_lang.php
 │   │   │   └── email_lang.php
 │   │   └── _template/                  # fr, ar, es skeletons
@@ -306,7 +306,7 @@ APP_URL, APP_ENV=development|staging|production|demo
 ```
 
 * `.env` gitignored; `.env.example` committed. CI3 reads env via `$_ENV` / `getenv()` in `config/*.php`.
-* No `WINDELS_LICENSE_KEY`, `PURCHASE_CODE`, `LICENSE_SERVER` — installer has no license step (§81).
+* No `MARVYSOCIALS_LICENSE_KEY`, `PURCHASE_CODE`, `LICENSE_SERVER` — installer has no license step (§81).
 
 ## 3. Frontend Build
 

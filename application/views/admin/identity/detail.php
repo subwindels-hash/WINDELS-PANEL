@@ -63,13 +63,13 @@ $readable    = $check && $check->status === 'VERIFIED' && !$purged && !empty($ch
             <?=$check->consent_ip ? 'from '.htmlspecialchars((string)$check->consent_ip) : ''?>
           <?php else: ?><span class="muted">not recorded</span><?php endif; ?>
         </td></tr>
-        <tr><th>Charged</th><td class="mono"><?=windels_money($tx->amount, $tx->currency)?></td></tr>
+        <tr><th>Charged</th><td class="mono"><?=marvy_money($tx->amount, $tx->currency)?></td></tr>
         <?php if ($tx->provider_cost !== null): ?>
-        <tr><th>Vendor cost</th><td class="mono"><?=windels_money($tx->provider_cost, $tx->currency)?>
-            <span class="muted text-xs">margin <?=windels_money(bcsub((string)$tx->amount, (string)$tx->provider_cost, 8), $tx->currency)?></span></td></tr>
+        <tr><th>Vendor cost</th><td class="mono"><?=marvy_money($tx->provider_cost, $tx->currency)?>
+            <span class="muted text-xs">margin <?=marvy_money(bcsub((string)$tx->amount, (string)$tx->provider_cost, 8), $tx->currency)?></span></td></tr>
         <?php endif; ?>
         <?php if (bccomp((string)$tx->refunded_amount, '0', 8) > 0): ?>
-        <tr><th>Refunded</th><td class="mono"><?=windels_money($tx->refunded_amount, $tx->currency)?></td></tr>
+        <tr><th>Refunded</th><td class="mono"><?=marvy_money($tx->refunded_amount, $tx->currency)?></td></tr>
         <?php endif; ?>
         <tr><th>Vendor</th><td>
           <?=$tx->provider_name ? htmlspecialchars($tx->provider_name) : '<span class="muted">— none</span>'?>
@@ -147,11 +147,11 @@ $readable    = $check && $check->status === 'VERIFIED' && !$purged && !empty($ch
 
     <?php if ($has('identity.refund') && $can_refund): ?>
     <form method="post" action="<?=site_url('admin/identity/'.$tx->public_id.'/refund')?>" class="mb-4"
-          onsubmit="return confirm('Refund <?=htmlspecialchars(windels_money($outstanding, $tx->currency))?> to this customer\'s wallet?')">
+          onsubmit="return confirm('Refund <?=htmlspecialchars(marvy_money($outstanding, $tx->currency))?> to this customer\'s wallet?')">
       <?=$csrf()?>
       <label class="text-sm font-medium" for="reason">Refund reason</label>
       <input class="input mb-2" id="reason" name="reason" placeholder="Recorded in the status history">
-      <p class="hint mb-2">Returns <?=windels_money($outstanding, $tx->currency)?> — the charge less anything already refunded.</p>
+      <p class="hint mb-2">Returns <?=marvy_money($outstanding, $tx->currency)?> — the charge less anything already refunded.</p>
       <button class="btn btn-secondary btn-sm" type="submit">Refund check</button>
     </form>
     <?php elseif ($has('identity.refund')): ?>

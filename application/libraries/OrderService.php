@@ -131,7 +131,7 @@ class OrderService {
         // A prepaid child order (drip-feed / subscription run) skips this: its
         // parent already reserved the full charge.
         $wallet = $this->ci->Wallet_model->for_user($user->id);
-        $charge_idem = $idem ?: ('order:charge:'.$user->id.':'.windels_public_id());
+        $charge_idem = $idem ?: ('order:charge:'.$user->id.':'.marvy_public_id());
         if (!$prepaid) {
             $charged = $this->ci->ledgerservice->charge(
                 $wallet->id, $charge, 'ORDER', null, $charge_idem
@@ -416,7 +416,7 @@ class OrderService {
         // Persist inside a transaction; the wallet charge already committed in
         // the ledger, but we still want the order + history atomically.
         $this->ci->db->trans_start();
-        $public_id = windels_public_id();
+        $public_id = marvy_public_id();
         $this->ci->db->insert('orders', array(
             'public_id'         => $public_id,
             'user_id'           => $user->id,
@@ -429,7 +429,7 @@ class OrderService {
             'charge'            => $ctx['charge'],
             'rate_at_order'     => $ctx['rate'],
             'provider_charge'   => $ctx['provider_charge'],
-            'currency'          => windels_base_currency(),
+            'currency'          => marvy_base_currency(),
             'fields'            => !empty($ctx['input']['fields']) ? json_encode($ctx['input']['fields']) : null,
             'source'            => $ctx['input']['source'] ?? 'WEB',
             'note'              => $ctx['input']['note'] ?? null,
@@ -569,7 +569,7 @@ class OrderService {
         try {
             $this->ci->load->model('Notification_model');
             $this->ci->db->insert('notifications', array(
-                'public_id' => windels_public_id(),
+                'public_id' => marvy_public_id(),
                 'user_id'   => $user->id,
                 'type'      => 'order.created',
                 'channel'   => 'IN_APP',

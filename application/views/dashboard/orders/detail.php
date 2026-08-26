@@ -12,8 +12,8 @@
 
       <dl class="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4">
         <div><dt class="muted text-xs">Quantity</dt><dd class="font-semibold"><?=number_format($order->quantity)?></dd></div>
-        <div><dt class="muted text-xs">Charge</dt><dd class="font-semibold"><?=windels_money($order->charge, $order->currency)?></dd></div>
-        <div><dt class="muted text-xs">Rate / 1k</dt><dd class="font-semibold"><?=windels_money($order->rate_at_order, $order->currency)?></dd></div>
+        <div><dt class="muted text-xs">Charge</dt><dd class="font-semibold"><?=marvy_money($order->charge, $order->currency)?></dd></div>
+        <div><dt class="muted text-xs">Rate / 1k</dt><dd class="font-semibold"><?=marvy_money($order->rate_at_order, $order->currency)?></dd></div>
         <div><dt class="muted text-xs">Source</dt><dd class="font-semibold"><?=htmlspecialchars($order->source)?></dd></div>
         <div><dt class="muted text-xs">Start count</dt><dd class="font-semibold"><?=$order->start_count!==null ? number_format($order->start_count) : '—'?></dd></div>
         <div><dt class="muted text-xs">Remains</dt><dd class="font-semibold"><?=$order->remains!==null ? number_format($order->remains) : '—'?></dd></div>
@@ -26,7 +26,7 @@
 
       <?php if ($order->refunded_amount && bccomp($order->refunded_amount,'0',8)>0): ?>
         <div class="alert alert-warning mt-4 mb-0">
-          Refunded <?=windels_money($order->refunded_amount, $order->currency)?> for the undelivered portion.
+          Refunded <?=marvy_money($order->refunded_amount, $order->currency)?> for the undelivered portion.
         </div>
       <?php endif; ?>
     </div>

@@ -102,7 +102,7 @@ $value = function ($key) use ($form) {
         <div class="card">
           <h2 class="card-title">Email</h2>
           <p class="muted">Prefer a mailbox?
-            <a href="mailto:<?=htmlspecialchars($support_email ?? 'support@windels.local')?>"><?=htmlspecialchars($support_email ?? 'support@windels.local')?></a>
+            <a href="mailto:<?=htmlspecialchars($support_email ?? 'support@marvy.local')?>"><?=htmlspecialchars($support_email ?? 'support@marvy.local')?></a>
           </p>
         </div>
         <div class="card">

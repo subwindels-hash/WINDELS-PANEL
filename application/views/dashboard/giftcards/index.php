@@ -14,7 +14,7 @@ ksort($by_brand);
   <?php $this->load->view('dashboard/giftcards/_flash'); ?>
 
   <p class="muted text-sm mb-4">Wallet balance:
-    <strong><?=windels_money($wallet->balance)?></strong></p>
+    <strong><?=marvy_money($wallet->balance)?></strong></p>
 
   <?php if (empty($products)): ?>
     <?php $this->load->view('partials/empty_state', array(
@@ -37,7 +37,7 @@ ksort($by_brand);
           <option value="<?=htmlspecialchars($p->code)?>"
                   <?=($selected === $p->code) ? 'selected' : ''?>>
             <?=htmlspecialchars($p->name)?>
-            — <?=windels_money($p->price)?>
+            — <?=marvy_money($p->price)?>
           </option>
         <?php endforeach; ?>
         </optgroup>

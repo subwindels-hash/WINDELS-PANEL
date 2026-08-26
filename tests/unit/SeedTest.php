@@ -21,8 +21,8 @@ class SeedTest extends TestCase
                 eval('function &get_instance() { static $i; if (!$i) $i = new stdClass(); return $i; }');
             }
             if (!function_exists('log_message')) { eval('function log_message($l, $m) {}'); }
-            if (!function_exists('windels_public_id')) {
-                require_once self::$root.'/application/helpers/windels_helper.php';
+            if (!function_exists('marvy_public_id')) {
+                require_once self::$root.'/application/helpers/marvy_helper.php';
             }
             require_once self::$root.'/application/libraries/Seeder.php';
         }

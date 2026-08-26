@@ -1,4 +1,4 @@
-# WINDELS PANEL — Session 03: Auth & RBAC
+# MarvySocials — Session 03: Auth & RBAC
 
 > Implements Checkpoint 01 / Artifact 4 §3 (Auth) and the access-control
 > boundary for the customer dashboard and admin areas.

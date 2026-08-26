@@ -171,7 +171,7 @@ class Vtu extends Admin_Controller {
         $this->audit('vtu.refunded', $tx, $before,
             array('status' => 'REFUNDED', 'refunded' => $refunded, 'reason' => $reason));
         $this->session->set_flashdata('success', $refunded
-            ? 'Purchase refunded — '.windels_money($refunded).' returned to the wallet.'
+            ? 'Purchase refunded — '.marvy_money($refunded).' returned to the wallet.'
             : 'Purchase marked refunded. No money moved: nothing was charged.');
         redirect('admin/vtu/'.$tx->public_id);
     }

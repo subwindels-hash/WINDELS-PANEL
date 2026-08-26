@@ -92,7 +92,7 @@ class Affiliates extends Admin_Controller {
         } else {
             $this->session->set_flashdata('success', sprintf(
                 'Paid %d commission(s) totalling %s. %d skipped.',
-                $result['paid'], windels_money($result['amount']), $result['skipped']
+                $result['paid'], marvy_money($result['amount']), $result['skipped']
             ));
         }
         redirect('admin/affiliates');

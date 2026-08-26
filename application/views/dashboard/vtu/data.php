@@ -5,7 +5,7 @@
   <?php $this->load->view('dashboard/vtu/_flash'); ?>
 
   <p class="muted text-sm mb-4">Wallet balance:
-    <strong><?=windels_money($wallet->balance)?></strong></p>
+    <strong><?=marvy_money($wallet->balance)?></strong></p>
 
   <?php if (empty($networks)): ?>
     <p class="muted">No data networks are configured yet.</p>
@@ -27,7 +27,7 @@
       <?php foreach ($products as $p): ?>
         <option value="<?=htmlspecialchars($p->code)?>">
           <?=htmlspecialchars($p->name)?>
-          <?php if ($p->price !== null): ?> — <?=windels_money($p->price)?><?php endif; ?>
+          <?php if ($p->price !== null): ?> — <?=marvy_money($p->price)?><?php endif; ?>
         </option>
       <?php endforeach; ?>
     </select>

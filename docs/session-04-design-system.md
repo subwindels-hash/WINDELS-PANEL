@@ -1,4 +1,4 @@
-# WINDELS PANEL — Session 04: Design System
+# MarvySocials — Session 04: Design System
 
 > Establishes the visual language shared by the public site, auth pages, customer
 > dashboard and admin area. Tailwind-based, but renders **without a Node build**.

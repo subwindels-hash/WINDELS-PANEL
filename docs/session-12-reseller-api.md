@@ -1,4 +1,4 @@
-# WINDELS PANEL — Reseller API
+# MarvySocials — Reseller API
 
 > JSON API at `/api/v1` for placing and tracking orders, authenticated by
 > `X-Api-Key` (SHA-256 verifier at rest) with per-key scopes, rate limiting,

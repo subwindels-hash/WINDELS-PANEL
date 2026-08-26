@@ -62,7 +62,7 @@ $d = $dripfeed;
   <aside class="card">
     <h3 class="card-title">Schedule</h3>
     <dl class="stack" style="gap:.5rem">
-      <div class="row justify-between"><span class="muted">Charge reserved</span><strong><?=windels_money($d->charge)?></strong></div>
+      <div class="row justify-between"><span class="muted">Charge reserved</span><strong><?=marvy_money($d->charge)?></strong></div>
       <div class="row justify-between"><span class="muted">Starts</span><span class="text-sm"><?=date('M j, H:i', strtotime($d->start_at))?> UTC</span></div>
       <div class="row justify-between"><span class="muted">Next run</span><span class="text-sm"><?=$d->next_run_at?date('M j, H:i',strtotime($d->next_run_at)):'—'?></span></div>
     </dl>

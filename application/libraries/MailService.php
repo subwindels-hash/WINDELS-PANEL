@@ -112,8 +112,8 @@ class MailService {
             $from_email = class_exists('Env') ? (string) Env::get('MAIL_FROM_ADDRESS', '') : '';
             $from_name  = class_exists('Env') ? (string) Env::get('MAIL_FROM_NAME', '') : '';
             $this->ci->email->from(
-                $this->ci->Setting_model->get('mail_from_email', $from_email !== '' ? $from_email : 'no-reply@windels.local'),
-                $this->ci->Setting_model->get('mail_from_name',  $from_name  !== '' ? $from_name  : 'WINDELS PANEL')
+                $this->ci->Setting_model->get('mail_from_email', $from_email !== '' ? $from_email : 'no-reply@marvy.local'),
+                $this->ci->Setting_model->get('mail_from_name',  $from_name  !== '' ? $from_name  : 'MarvySocials')
             );
             $this->ci->email->to($mail->to_email);
             $this->ci->email->subject($mail->subject);
@@ -134,9 +134,9 @@ class MailService {
 
     private function global_variables() {
         return array(
-            'site_name'     => $this->ci->Setting_model->get('site_name', 'WINDELS PANEL'),
+            'site_name'     => $this->ci->Setting_model->get('site_name', 'MarvySocials'),
             'site_url'      => rtrim(base_url(), '/'),
-            'support_email' => $this->ci->Setting_model->get('support_email', 'support@windels.local'),
+            'support_email' => $this->ci->Setting_model->get('support_email', 'support@marvy.local'),
             'year'          => gmdate('Y'),
         );
     }

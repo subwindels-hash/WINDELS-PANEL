@@ -1,4 +1,4 @@
--- WINDELS PANEL — MySQL / MariaDB schema
+-- MarvySocials — MySQL / MariaDB schema
 --
 -- GENERATED FILE — do not edit by hand.
 -- Source of truth: application/migrations/*.php

@@ -1,5 +1,5 @@
 /**
- * WINDELS PANEL — Tailwind config (design tokens, Session 04)
+ * MarvySocials — Tailwind config (design tokens, Session 04)
  *
  * The brand palette lives here as the source of truth for the Tailwind BUILD
  * (`npm run build:css` -> assets/css/tailwind.css, git-ignored). The same tokens
@@ -24,7 +24,7 @@ const stateSafelist = [
   'border-indigo-500', 'font-medium',
 ];
 
-const windelsTokens = {
+const marvyTokens = {
   brand: {
     50:  '#eef2ff',
     100: '#e0e7ff',
@@ -67,12 +67,12 @@ module.exports = {
         // ADDITIVE brand tokens — Tailwind's default palette (indigo, rose,
         // cyan, gray, ...) stays intact, so existing utility classes in the
         // homepages/auth views keep compiling.
-        brand: windelsTokens.brand,
-        accent: windelsTokens.accent,
-        success: windelsTokens.success,
-        warning: windelsTokens.warning,
-        danger: windelsTokens.danger,
-        info: windelsTokens.info,
+        brand: marvyTokens.brand,
+        accent: marvyTokens.accent,
+        success: marvyTokens.success,
+        warning: marvyTokens.warning,
+        danger: marvyTokens.danger,
+        info: marvyTokens.info,
         // Themeable neutrals. `slate` and `surface` are driven by CSS
         // variables (--ws-slate-*, --ws-surface) defined in
         // assets/css/design-system.css, so a single `.dark` class on <html>
@@ -123,4 +123,4 @@ module.exports = {
   plugins: [],
 };
 
-module.exports.windelsTokens = windelsTokens;
+module.exports.marvyTokens = marvyTokens;

@@ -3,7 +3,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 
 // Config is parsed before helpers are autoloaded, so pull in env_bool()/env_str()
 // directly. Both are no-ops if the helper is already loaded.
-require_once APPPATH.'helpers/windels_helper.php';
+require_once APPPATH.'helpers/marvy_helper.php';
 
 // Every server-specific value below comes from .env through Env, which also
 // understands the portable VP_* spellings used by the cPanel deployment guide.
@@ -11,7 +11,7 @@ require_once APPPATH.'helpers/windels_helper.php';
 // working for tests and CLI tools that boot CodeIgniter directly.
 require_once APPPATH.'core/Env.php';
 Env::bootstrap(rtrim(realpath(APPPATH.'..'), DIRECTORY_SEPARATOR));
-$windels_paths = Env::writable_paths();
+$marvy_paths = Env::writable_paths();
 
 /* Base URL — VP_BASE_URL (or APP_URL). Auto-detected from the request when
    unset, so a freshly uploaded panel still links to itself correctly.
@@ -20,8 +20,8 @@ $windels_paths = Env::writable_paths();
    those requests then hit the front controller and come back as HTML, so the
    browser silently drops the stylesheets. CI3 only auto-detects when the
    value is the empty string. */
-$windels_base_url = trim((string) Env::get('APP_URL', ''));
-$config['base_url'] = $windels_base_url === '' ? '' : rtrim($windels_base_url, '/').'/';
+$marvy_base_url = trim((string) Env::get('APP_URL', ''));
+$config['base_url'] = $marvy_base_url === '' ? '' : rtrim($marvy_base_url, '/').'/';
 $config['index_page'] = '';
 $config['uri_protocol'] = 'REQUEST_URI';
 $config['url_suffix'] = '';
@@ -38,12 +38,12 @@ $config['function_trigger'] = 'm';
 $config['directory_trigger'] = 'd';
 
 $config['log_threshold'] = env_bool('APP_DEBUG') ? 2 : 1;
-$config['log_path'] = $windels_paths['logs'].'/';
+$config['log_path'] = $marvy_paths['logs'].'/';
 $config['log_file_extension'] = '';
 $config['log_file_permissions'] = 0644;
 $config['log_date_format'] = 'Y-m-d H:i:s';
 $config['error_views_path'] = '';
-$config['cache_path'] = $windels_paths['ci_cache'].'/';
+$config['cache_path'] = $marvy_paths['ci_cache'].'/';
 $config['cache_query_string'] = FALSE;
 // No placeholder fallback: EncryptionService::resolve_key() refuses to boot
 // production with an unset or example key, and supplies a clearly-labelled
@@ -55,10 +55,10 @@ $config['encryption_key'] = EncryptionService::resolve_key();
 // in. Set VP_SESSION_DRIVER=redis (or database) where the infrastructure is
 // actually there.
 $config['sess_driver'] = Env::get('SESS_DRIVER', 'files');
-$config['sess_cookie_name'] = Env::get('SESS_COOKIE_NAME', 'windels_session');
+$config['sess_cookie_name'] = Env::get('SESS_COOKIE_NAME', 'marvy_session');
 $config['sess_expiration'] = Env::get_int('SESS_EXPIRATION', 7200);
 $config['sess_save_path'] = $config['sess_driver'] === 'files'
-    ? Env::get('SESS_SAVE_PATH', $windels_paths['sessions'].'/')
+    ? Env::get('SESS_SAVE_PATH', $marvy_paths['sessions'].'/')
     : Env::get('SESS_SAVE_PATH', 'ci_sessions');
 $config['sess_match_ip'] = FALSE;
 $config['sess_time_to_update'] = 300;
@@ -83,8 +83,8 @@ $config['global_xss_filtering'] = FALSE;
 
 /* CSRF — enabled for cookie-mutating POSTs */
 $config['csrf_protection'] = TRUE;
-$config['csrf_token_name'] = 'csrf_windels';
-$config['csrf_cookie_name'] = 'csrf_cookie_windels';
+$config['csrf_token_name'] = 'csrf_marvy';
+$config['csrf_cookie_name'] = 'csrf_cookie_marvy';
 $config['csrf_expire'] = Env::get_int('CSRF_EXPIRE', 7200);
 // Rotating the token on every POST breaks any page that posts twice without
 // re-rendering — an AJAX reply box, a support/chat widget, a second tab, the

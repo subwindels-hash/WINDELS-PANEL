@@ -2,7 +2,7 @@
 // Bounds and currency are supplied by the controller from the settings table.
 $min = (float)($min_deposit ?? 500);
 $max = (float)($max_deposit ?? 5000000);
-$cur = $base_currency ?? windels_base_currency();
+$cur = $base_currency ?? marvy_base_currency();
 // A naira default deposit is a round hundreds figure, not 25.00.
 $suggested = min($max, max($min, 5000));
 ?>
@@ -10,14 +10,14 @@ $suggested = min($max, max($min, 5000));
   <div class="lg:col-span-2 space-y-6">
     <div class="card">
       <h2 class="card-title">Add funds to your wallet</h2>
-      <p class="muted">Wallet balance is held in <strong><?=html_escape($cur)?></strong> and used to pay for orders. Deposits between <?=windels_money($min, $cur)?> and <?=windels_money($max, $cur)?>.</p>
-      <p class="muted text-sm mt-2">Your WINDELS wallet is a platform spending balance: it pays for services, orders and other supported purchases inside WINDELS PANEL. Wallet funds are for spending within the platform and stay inside it.</p>
+      <p class="muted">Wallet balance is held in <strong><?=html_escape($cur)?></strong> and used to pay for orders. Deposits between <?=marvy_money($min, $cur)?> and <?=marvy_money($max, $cur)?>.</p>
+      <p class="muted text-sm mt-2">Your MARVYSOCIALS wallet is a platform spending balance: it pays for services, orders and other supported purchases inside MarvySocials. Wallet funds are for spending within the platform and stay inside it.</p>
 
       <?=form_open('dashboard/wallet/deposit', array('class'=>'mt-4 stack'))?>
         <label class="field">
           <span class="label">Amount (<?=html_escape($cur)?>)</span>
           <input id="ws-amount" class="input" name="amount" type="number" min="<?=$min?>" max="<?=$max?>" step="0.01" value="<?=number_format($suggested, 2, '.', '')?>" inputmode="decimal" required>
-          <span class="hint">Minimum <?=windels_money($min, $cur)?>, maximum <?=windels_money($max, $cur)?>.</span>
+          <span class="hint">Minimum <?=marvy_money($min, $cur)?>, maximum <?=marvy_money($max, $cur)?>.</span>
         </label>
 
         <div>
@@ -59,8 +59,8 @@ $suggested = min($max, max($min, 5000));
             <tr>
               <td class="mono text-xs"><?=htmlspecialchars(substr($d->public_id,0,12))?>…</td>
               <td><?=htmlspecialchars($d->payment_method_id)?></td>
-              <td class="mono"><?=windels_money($d->amount, $d->currency)?></td>
-              <td class="mono"><?=$d->credited_amount!==null ? windels_money($d->credited_amount, $d->currency) : '—'?></td>
+              <td class="mono"><?=marvy_money($d->amount, $d->currency)?></td>
+              <td class="mono"><?=$d->credited_amount!==null ? marvy_money($d->credited_amount, $d->currency) : '—'?></td>
               <td><span class="badge <?=$d->status==='SUCCESS'?'badge-success':($d->status==='FAILED'?'badge-danger':'badge-warning')?>"><?=htmlspecialchars($d->status)?></span></td>
               <td class="text-xs muted"><?=date('M j, H:i', strtotime($d->created_at))?></td>
             </tr>
@@ -76,9 +76,9 @@ $suggested = min($max, max($min, 5000));
     <div class="card">
       <h3 class="card-title">Summary</h3>
       <dl class="mt-3 stack" style="gap:.5rem">
-        <div class="row justify-between"><span class="muted">Current balance</span><strong><?=windels_money($wallet->balance ?? '0', $cur)?></strong></div>
-        <div class="row justify-between"><span class="muted">Deposit</span><strong id="ws-deposit"><?=windels_money($suggested, $cur)?></strong></div>
-        <div class="row justify-between border-t pt-2" style="border-color:var(--slate-200)"><span>New balance</span><strong id="ws-newbal"><?=windels_money(($wallet->balance ?? 0)+$suggested, $cur)?></strong></div>
+        <div class="row justify-between"><span class="muted">Current balance</span><strong><?=marvy_money($wallet->balance ?? '0', $cur)?></strong></div>
+        <div class="row justify-between"><span class="muted">Deposit</span><strong id="ws-deposit"><?=marvy_money($suggested, $cur)?></strong></div>
+        <div class="row justify-between border-t pt-2" style="border-color:var(--slate-200)"><span>New balance</span><strong id="ws-newbal"><?=marvy_money(($wallet->balance ?? 0)+$suggested, $cur)?></strong></div>
       </dl>
       <p class="hint mt-3">Funds are credited after confirmation. No card data touches this server for hosted-gateway methods.</p>
     </div>
@@ -95,7 +95,7 @@ $suggested = min($max, max($min, 5000));
   var base=parseFloat(<?=json_encode((float)($wallet->balance ?? 0))?>);
   // Symbol comes from the server so the running total matches the rest of the
   // page in whatever the base currency happens to be.
-  var sym=<?=json_encode(trim(str_replace(array('0','.',','), '', windels_money(0, $cur))))?>;
+  var sym=<?=json_encode(trim(str_replace(array('0','.',','), '', marvy_money(0, $cur))))?>;
   function fmt(v){return sym+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
   function recalc(){var v=parseFloat(amt.value)||0;dep.textContent=fmt(v);nb.textContent=fmt(base+v);}
   amt.addEventListener('input',recalc);recalc();

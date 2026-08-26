@@ -39,7 +39,7 @@ $testimonials = array(
     <div class="ws-hero-split">
       <div>
         <span class="badge badge-brand">Prepaid reseller panel</span>
-        <h1 class="mt-4">Grow your social presence<br><span class="gradient-text">with WINDELS PANEL</span></h1>
+        <h1 class="mt-4">Grow your social presence<br><span class="gradient-text">with MarvySocials</span></h1>
         <p class="ws-lead" style="margin-left:0">One platform for SMM, VTU and digital goods — automated fulfilment when providers are connected, and a wallet ledger you can audit. Catalogue size is whatever this operator has published.</p>
         <div class="row" style="margin-top:1.5rem">
           <a class="btn btn-primary btn-lg" href="<?=site_url('register')?>">Start ordering →</a>

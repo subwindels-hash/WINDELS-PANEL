@@ -68,7 +68,7 @@ on that runtime). The test therefore reports a **visible
 instead of training reviewers to tolerate one permanent red — and retains
 full force on native PHP, where CI runs the entire suite against real MySQL
 on every push. The skip condition is a runtime probe
-(`windels_runtime_is_wasm()` in `tests/bootstrap.php`: sapi `wasm` /
+(`marvy_runtime_is_wasm()` in `tests/bootstrap.php`: sapi `wasm` /
 uname `Emscripten`/`wasm32`), not an environment guess, and the runtime
 contract is also documented at the lock site in `JobRunner`.
 
@@ -197,7 +197,7 @@ bucket sync + key escrow + quarterly restore rehearsal).
 required — CI proves boot fails without them), no MailHog/MinIO, MySQL/Redis
 not host-published, Redis `--requirepass`, TLS at nginx, log rotation.
 `.env.production.example` is the operator template; secret-manager usage is
-documented. Weak defaults (`root`/`windels_secret`/`minioadmin`) exist only
+documented. Weak defaults (`root`/`marvy_secret`/`minioadmin`) exist only
 in the dev compose, overridden by `.env`, and preflight FAILS production on
 the known default DB password.
 

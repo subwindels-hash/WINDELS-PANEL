@@ -70,7 +70,7 @@ class AuthService {
 
         $this->ci->db->trans_start();
         $this->ci->db->insert('users', array(
-            'public_id'         => windels_public_id(),
+            'public_id'         => marvy_public_id(),
             'username'          => $username,
             'email'             => $email,
             'password_hash'     => $this->hash_password($data['password']),
@@ -90,10 +90,10 @@ class AuthService {
 
         // Every customer has a wallet in the panel's base currency (§24).
         $this->ci->db->insert('wallets', array(
-            'public_id'  => windels_public_id(),
+            'public_id'  => marvy_public_id(),
             'user_id'    => $user_id,
             'balance'    => '0.00000000',
-            'currency'   => windels_base_currency(),
+            'currency'   => marvy_base_currency(),
             'created_at' => gmdate('Y-m-d H:i:s'),
             'updated_at' => gmdate('Y-m-d H:i:s'),
         ));
@@ -282,7 +282,7 @@ class AuthService {
         if ($cached !== null && (int)$cached->id === (int)$uid) {
             return $cached;
         }
-        if (!windels_load_database()) {
+        if (!marvy_load_database()) {
             return null;
         }
         try {
@@ -566,7 +566,7 @@ class AuthService {
      */
     public function create_api_key($user_id, $name = null, array $opts = array()) {
         $raw = 'wind_' . bin2hex(random_bytes(24));
-        $public_id = windels_public_id();
+        $public_id = marvy_public_id();
         $this->ci->db->insert('api_keys', array(
             'public_id'              => $public_id,
             'user_id'                => $user_id,

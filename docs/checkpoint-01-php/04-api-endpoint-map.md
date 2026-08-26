@@ -1,4 +1,4 @@
-# WINDELS PANEL — Artifact 4 (REVISED): Complete API / Route Map — PHP MVC (CodeIgniter 3.x)
+# MarvySocials — Artifact 4 (REVISED): Complete API / Route Map — PHP MVC (CodeIgniter 3.x)
 
 > Revised 2026-08-16 | Base: CI3 `config/routes.php` | Reseller API: `/api/v1` via `Api_v1` controller
 > Auth: CI session cookie (web) + `X-Api-Key` (reseller). Standard error shape (§73). CSRF on cookie-mutating POSTs; JWT not used (CI session).

@@ -1,7 +1,7 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
-$icon_site = function_exists('windels_site_name') ? windels_site_name() : 'WINDELS PANEL';
+$icon_site = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials';
 $icon_short = strtok($icon_site, ' ');
-$custom_fav = function_exists('windels_brand_setting') ? windels_brand_setting('brand_favicon_url') : null;
+$custom_fav = function_exists('marvy_brand_setting') ? marvy_brand_setting('brand_favicon_url') : null;
 ?>
 <?php if (!empty($custom_fav)): ?>
 <link rel="icon" href="<?=htmlspecialchars($custom_fav)?>">

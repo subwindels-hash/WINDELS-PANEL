@@ -40,16 +40,16 @@ class PerformanceTest extends TestCase
     {
         $db = new PerfCountingDb(array(
             'settings' => array(
-                (object)array('setting_key'=>'site_name',      'setting_value'=>'{"value":"WINDELS"}', 'category'=>'general', 'is_public'=>1),
+                (object)array('setting_key'=>'site_name',      'setting_value'=>'{"value":"MARVYSOCIALS"}', 'category'=>'general', 'is_public'=>1),
                 (object)array('setting_key'=>'mail_transport', 'setting_value'=>'{"value":"log"}',     'category'=>'mail',    'is_public'=>0),
             ),
         ));
         $m = $this->model('Setting_model', $db);
 
         // Sending one email reads several settings; placing an order reads more.
-        $this->assertSame('WINDELS', $m->get('site_name'));
+        $this->assertSame('MARVYSOCIALS', $m->get('site_name'));
         $this->assertSame('log', $m->get('mail_transport'));
-        $this->assertSame('WINDELS', $m->get('site_name'));
+        $this->assertSame('MARVYSOCIALS', $m->get('site_name'));
         $m->get('missing_key', 'fallback');
 
         $this->assertSame(1, $db->count('settings'),

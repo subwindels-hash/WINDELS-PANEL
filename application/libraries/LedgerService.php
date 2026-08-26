@@ -57,7 +57,7 @@ class LedgerService {
         } else {
             $bal_after = bcadd($bal_before, $amt, 8);
         }
-        $public_id = windels_public_id();
+        $public_id = marvy_public_id();
         $row = array(
             'public_id'=>$public_id,
             'wallet_id'=>$wallet_id,

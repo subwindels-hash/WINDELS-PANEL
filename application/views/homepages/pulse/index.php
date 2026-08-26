@@ -207,7 +207,7 @@ $faqs = array(
   var qty=document.getElementById('ws-qty'), total=document.getElementById('ws-total');
   if(!qty||!total) return;
   // Currency symbol from the server so live totals match server-rendered prices.
-  var sym=<?=json_encode(trim(str_replace(array('0','.',','), '', windels_money(0))))?>;
+  var sym=<?=json_encode(trim(str_replace(array('0','.',','), '', marvy_money(0))))?>;
   function fmt(v){return sym+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
   function recalc(){
     var q=Math.max(50,parseInt(qty.value||'0',10)||0);
