@@ -334,12 +334,7 @@ class OrderService {
      * (settings `partial_refund_enabled`, default on).
      */
     private function partial_refund_enabled() {
-        try {
-            $this->ci->load->model('Setting_model');
-            $v = $this->ci->Setting_model->get('partial_refund_enabled', true);
-        } catch (Throwable $e) { return true; }
-        if ($v === null || $v === '') return true;
-        return in_array(strtolower(trim((string)$v)), array('1','true','yes','on'), true);
+        return $this->setting_flag('partial_refund_enabled');
     }
 
     /**
@@ -455,11 +450,32 @@ class OrderService {
      * default on). Fail open so an unreadable setting never strands orders.
      */
     private function auto_submit_enabled() {
+        return $this->setting_flag('order_auto_submit');
+    }
+
+    /**
+     * Read a boolean setting, defaulting to on.
+     *
+     * load->model() succeeding does not guarantee the property exists — under
+     * a test double, or a loader that resolved the model onto a different
+     * name, reading $this->ci->Setting_model raises "Undefined property"
+     * rather than throwing, so a try/catch never fires and the warning leaks
+     * into output. Check the property before touching it.
+     *
+     * Fails open: an unreadable setting must never strand orders.
+     */
+    private function setting_flag($key) {
         try {
             $this->ci->load->model('Setting_model');
-            $v = $this->ci->Setting_model->get('order_auto_submit', true);
-        } catch (Throwable $e) { return true; }
+            if (!isset($this->ci->Setting_model) || !is_object($this->ci->Setting_model)) {
+                return true;
+            }
+            $v = $this->ci->Setting_model->get($key, true);
+        } catch (Throwable $e) {
+            return true;
+        }
         if ($v === null || $v === '') return true;
+        if (is_bool($v)) return $v;
         return in_array(strtolower(trim((string)$v)), array('1','true','yes','on'), true);
     }
 
