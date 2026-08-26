@@ -169,6 +169,13 @@ if (!isset($view_folder[0]) && is_dir($application_folder . DIRECTORY_SEPARATOR 
 
 define('SELF', pathinfo(__FILE__, PATHINFO_BASENAME));
 define('BASEPATH', $system_path);
+// The front-controller directory — i.e. the web root, the directory this file
+// lives in. Stock CodeIgniter defines it here and application code relies on
+// it for anything that touches a file served over HTTP: the brand logo
+// partial, MediaService uploads, the favicon probe. It was missing from this
+// front controller, so every one of those call sites raised
+// "Undefined constant FCPATH" and took the page down with it.
+define('FCPATH', __DIR__ . DIRECTORY_SEPARATOR);
 define('APPPATH', $application_folder . DIRECTORY_SEPARATOR);
 define('VIEWPATH', $view_folder . DIRECTORY_SEPARATOR);
 

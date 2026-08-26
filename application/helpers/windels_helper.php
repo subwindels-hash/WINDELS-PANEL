@@ -324,3 +324,50 @@ if (!function_exists('env_str')) {
         return $raw === '' ? $default : $raw;
     }
 }
+
+if (!function_exists('windels_migration_config')) {
+    /**
+     * The contents of application/config/migration.php as an array.
+     *
+     * `migration.php` is not in the autoloaded config set, and CI3 loads it
+     * *into the Migration library*, not into the global config registry — so
+     * `$this->config->item('migration_version')` reads NULL from a controller
+     * unless the file has been explicitly loaded into its own index first.
+     * Anything that needs the expected schema version (the migrate CLI, the
+     * readiness probe, deploy preflight) has to go through here or it silently
+     * compares against 0.
+     *
+     * @return array
+     */
+    function windels_migration_config() {
+        static $cache = null;
+        if ($cache !== null) return $cache;
+
+        $cache = array();
+        if (function_exists('get_instance')) {
+            $ci =& get_instance();
+            if ($ci && isset($ci->config) && is_object($ci->config)) {
+                try {
+                    $ci->config->load('migration', TRUE, TRUE);
+                    $loaded = $ci->config->item('migration');
+                    if (is_array($loaded)) $cache = $loaded;
+                } catch (Throwable $e) { /* fall through to the file read */ }
+            }
+        }
+
+        if (!$cache && defined('APPPATH') && is_file(APPPATH.'config/migration.php')) {
+            $config = array();
+            include APPPATH.'config/migration.php';
+            if (is_array($config)) $cache = $config;
+        }
+        return $cache;
+    }
+}
+
+if (!function_exists('windels_migration_item')) {
+    /** One key from the migration config, with a fallback. */
+    function windels_migration_item($key, $default = null) {
+        $cfg = windels_migration_config();
+        return array_key_exists($key, $cfg) ? $cfg[$key] : $default;
+    }
+}

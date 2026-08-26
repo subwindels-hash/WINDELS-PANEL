@@ -12,11 +12,30 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 require_once APPPATH.'core/Env.php';
 Env::bootstrap(rtrim(realpath(APPPATH.'..'), DIRECTORY_SEPARATOR));
 
+if (!function_exists('windels_db_stricton')) {
+    /**
+     * Resolve VP_DB_STRICT into the value CI3's drivers expect.
+     *
+     * Returning NULL (rather than TRUE/FALSE) makes CI3 skip the sql_mode
+     * connection init command entirely — the only way to connect to a server
+     * that refuses session-level SET.
+     *
+     * @return bool|null
+     */
+    function windels_db_stricton() {
+        $raw = Env::get('DB_STRICT', null);
+        if ($raw === null || $raw === '') return TRUE;
+        $norm = strtolower(trim((string) $raw));
+        if (in_array($norm, array('inherit', 'server', 'none', 'skip'), TRUE)) return NULL;
+        return !in_array($norm, array('0', 'false', 'off', 'no'), TRUE);
+    }
+}
+
 $active_group = 'default';
 $query_builder = TRUE;
 
 $db['default'] = array(
-    'dsn'      => '',
+    'dsn'      => Env::get('DB_DSN', ''),
     // localhost, not a container hostname: on shared hosting MySQL is always
     // local, and a default of "mysql" makes the first page load a DNS failure.
     'hostname' => Env::get('DB_HOST', 'localhost'),
@@ -41,7 +60,18 @@ $db['default'] = array(
     // Shared hosting runs whatever sql_mode the host chose. STRICT_ALL_TABLES
     // stays on because the schema relies on it (a truncated DECIMAL(20,8) is a
     // money bug), but it is switchable for hosts that refuse the SET.
-    'stricton' => Env::get_bool('DB_STRICT', TRUE),
+    //
+    // Three states, because "on" and "off" are not the only useful answers:
+    //   true  (default) — force STRICT_ALL_TABLES on every connection
+    //   false           — actively strip strict mode from the session
+    //   "inherit"       — send no sql_mode statement at all and use whatever
+    //                     the server is configured with. CI3 issues its
+    //                     sql_mode change as a *connection init command*;
+    //                     managed MySQL instances and proxies that disallow
+    //                     session-level SET then fail the connect outright
+    //                     rather than the query. Leaving stricton unset is the
+    //                     documented CI3 way to skip it.
+    'stricton' => windels_db_stricton(),
     'failover' => array(),
     'save_queries' => TRUE
 );

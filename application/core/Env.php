@@ -59,6 +59,10 @@ class Env
 
         // Database
         'VP_DB_DRIVER'          => array('DB_DRIVER'),
+        // Full PDO DSN. Optional and empty by default: hosts that need a
+        // socket path, a non-default charset or a PDO subdriver can set it
+        // instead of the discrete host/port pair, and CI3 uses it verbatim.
+        'VP_DB_DSN'             => array('DB_DSN'),
         'VP_DB_HOST'            => array('DB_HOST'),
         'VP_DB_PORT'            => array('DB_PORT'),
         'VP_DB_NAME'            => array('DB_NAME'),

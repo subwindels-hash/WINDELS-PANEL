@@ -327,8 +327,11 @@ class Preflight {
             || !is_object($this->ci->config) || !method_exists($this->ci->config, 'item')) {
             return $this->result('schema', self::WARN, 'no database connection to check');
         }
-        $expected = (int)$this->ci->config->item('migration_version');
-        $table = $this->ci->config->item('migration_table') ?: 'migrations';
+        // Read through the helper: migration.php lives outside the autoloaded
+        // config set, so config->item() returns NULL here and preflight would
+        // compare the live schema against version 0 and always fail.
+        $expected = (int)windels_migration_item('migration_version', 0);
+        $table = windels_migration_item('migration_table', 'migrations') ?: 'migrations';
         try {
             if (!$this->ci->db->table_exists($table)) {
                 return $this->result('schema', self::FAIL, 'no migrations table',
