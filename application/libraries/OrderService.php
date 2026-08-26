@@ -581,7 +581,29 @@ class OrderService {
         return $row ? (int)$row->$flag === 1 : false;
     }
 
+    /**
+     * Tell the referral system this customer placed an order.
+     *
+     * FIRST_ORDER is the default qualifying event, so this is the hook that
+     * turns most referrals into earnings. Never fatal: the order is already
+     * placed and paid for.
+     */
+    private function referral_first_order($user) {
+        try {
+            $this->ci->load->library('ReferralService');
+            // load->library() succeeding does not guarantee the property
+            // exists under a test double; reading it blind raises a warning
+            // that a try/catch cannot see. This method returns nothing, so an
+            // early return here is safe.
+            if (!isset($this->ci->referralservice)) return;
+            $this->ci->referralservice->record_event($user->id, 'FIRST_ORDER');
+        } catch (Throwable $e) {
+            log_message('error', 'referral FIRST_ORDER hook failed: '.$e->getMessage());
+        }
+    }
+
     private function notify($user, $order) {
+        $this->referral_first_order($user);
         try {
             $this->ci->load->model('Notification_model');
             $this->ci->db->insert('notifications', array(

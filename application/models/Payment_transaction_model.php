@@ -15,6 +15,23 @@ class Payment_transaction_model extends MY_Model {
         return $this->db->where('idempotency_key',$key)->get($this->table)->row();
     }
     public function find_by_id($id){ return $this->db->where('id',$id)->get($this->table)->row(); }
+    /**
+     * One payment belonging to this customer, by either reference form.
+     *
+     * Always scoped by user_id: a guessed reference that belongs to someone
+     * else must return nothing rather than another customer's payment. Accepts
+     * the internal_reference (what the provider and support quote) or the
+     * public_id (what older links carry).
+     */
+    public function for_user_reference($user_id, $reference){
+        return $this->db->where('user_id', (int)$user_id)
+                        ->group_start()
+                            ->where('internal_reference', $reference)
+                            ->or_where('public_id', $reference)
+                        ->group_end()
+                        ->get($this->table)->row();
+    }
+
     public function find_public_for_user($public_id, $user_id){
         return $this->db->where('public_id',$public_id)->where('user_id',$user_id)->get($this->table)->row();
     }

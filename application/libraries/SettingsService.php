@@ -115,6 +115,40 @@ class SettingsService {
             'blockonomics_timeout_minutes' => array('int', 'crypto', 'Address validity (minutes)',
                 'How long a quoted BTC amount stays valid before the deposit is treated as expired.', 60),
 
+            // --- Fundsvera (bank transfer collections) -------------------
+            'fundsvera_enabled' => array('bool', 'fundsvera', 'Accept bank transfers via Fundsvera',
+                'Shows the bank-transfer option on Add funds. Requires the keys below; the gateway '
+                .'refuses to take a payment it cannot confirm.', false),
+            'fundsvera_public_key' => array('secret', 'fundsvera', 'Fundsvera public key',
+                'From your Fundsvera business dashboard. Sent as the Public-Key header.', ''),
+            'fundsvera_secret_key' => array('secret', 'fundsvera', 'Fundsvera secret key',
+                'Authenticates API calls and signs webhooks. Never leaves the server.', ''),
+            'fundsvera_webhook_secret' => array('secret', 'fundsvera', 'Webhook secret (optional)',
+                'Only set this if Fundsvera issued a separate webhook secret. Left blank, webhook '
+                .'signatures are verified with the secret key, which is what their documentation specifies.', ''),
+            'fundsvera_base_url' => array('text', 'fundsvera', 'API base URL',
+                'Change only if Fundsvera give you a different endpoint.', 'https://fundsvera.co/api/v1'),
+
+            // --- Referrals, earnings and payouts -------------------------
+            'referral_signup_reward' => array('money', 'referrals', 'Referral reward',
+                'Paid to the referrer when a referred account completes the qualifying event below. '
+                .'Zero disables personal referral rewards without switching the system off.', '0.00000000'),
+            'referral_qualify_event' => array('choice:REGISTERED|EMAIL_VERIFIED|FIRST_DEPOSIT|FIRST_ORDER',
+                'referrals', 'Qualifying event',
+                'What a referred user must do before the referrer earns. A click never qualifies.', 'FIRST_ORDER'),
+            'referral_max_per_user' => array('int', 'referrals', 'Maximum referrals per user',
+                'Zero means unlimited. Referrals past the cap are flagged for review rather than paid.', 0),
+            'referral_max_per_ip_day' => array('int', 'referrals', 'Signups per device per day',
+                'More than this many referred signups from one device in 24 hours are flagged for review.', 3),
+            'earnings_hold_hours' => array('int', 'referrals', 'Earnings holding period (hours)',
+                'How long an earning stays pending before it can be withdrawn. This is the window in '
+                .'which fraud is usually discovered, so zero is rarely wise.', 72),
+            'earnings_min_payout' => array('money', 'referrals', 'Minimum payout',
+                'The smallest cash payout the platform will process.', '1000.00000000'),
+            'earnings_payouts_enabled' => array('bool', 'referrals', 'Allow cash payouts',
+                'Off still lets users convert earnings into wallet credit. Confirm your licensing, KYC '
+                .'and tax obligations before turning cash payouts on.', false),
+
             'api_enabled' => array('bool', 'api', 'Enable the reseller API',
                 'Off returns a 503 for every /api/v1 call without revoking any keys.', true),
 

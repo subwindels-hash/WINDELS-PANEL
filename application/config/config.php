@@ -98,7 +98,25 @@ $config['csrf_regenerate'] = Env::get_bool('CSRF_REGENERATE', FALSE);
 // exempt any future route merely starting with "health". Webhooks and the API
 // are exempt because they authenticate by HMAC signature and API key
 // respectively, not by session cookie, so CSRF does not apply.
-$config['csrf_exclude_uris'] = array('webhook/.+', 'api/v1/.+', 'health(/.+)?');
+// Server-to-server endpoints have no browser session and therefore no CSRF
+// token to present; they authenticate by signature or API key instead.
+// api/payments/webhooks/.+ is listed explicitly: a provider callback that gets
+// a 419 looks to them like an outage and to us like a payment that never
+// arrived. The signed-payload check in MY_Security/the gateway adapters is what
+// protects these paths.
+$config['csrf_exclude_uris'] = array(
+    'webhook/.+',
+    'api/payments/webhooks/.+',
+    'api/v1/.+',
+    'health(/.+)?',
+    // Referral-code lookup runs before the visitor has an account, and often
+    // before any page of ours has rendered a token (a landing page, an app).
+    // It is safe to exempt because it is strictly read-only — it changes
+    // nothing and returns only "does this code exist" plus the referrer's
+    // display name — and it is IP rate-limited to stop it being used to
+    // enumerate codes.
+    'api/referrals/validate',
+);
 
 $config['compress_output'] = FALSE;
 $config['time_reference'] = 'UTC';

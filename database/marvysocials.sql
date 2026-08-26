@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 21), roles,
+-- foreign keys, migration bookkeeping (version 23), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first administrator. No migration,
 -- seed or installer command has to run afterwards.
@@ -1634,6 +1634,226 @@ CREATE TABLE IF NOT EXISTS managed_pages (
     REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ---------------------------------------------------------------------
+-- migration 022_fundsvera_payments
+-- ---------------------------------------------------------------------
+
+ALTER TABLE payment_transactions
+ADD COLUMN internal_reference VARCHAR(64) NULL COMMENT 'our reference sent to the provider as request_id';
+
+ALTER TABLE payment_transactions
+ADD COLUMN provider VARCHAR(32) NULL COMMENT 'gateway code that owns this transaction';
+
+ALTER TABLE payment_transactions
+ADD COLUMN payment_method VARCHAR(32) NULL COMMENT 'bank_transfer|virtual_account|manual|...';
+
+ALTER TABLE payment_transactions
+ADD COLUMN initiated_at DATETIME NULL;
+
+ALTER TABLE payment_transactions
+ADD COLUMN paid_at DATETIME NULL;
+
+ALTER TABLE payment_transactions
+ADD COLUMN failed_at DATETIME NULL;
+
+CREATE TABLE IF NOT EXISTS fundsvera_virtual_accounts (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  user_id BIGINT UNSIGNED NOT NULL UNIQUE,
+  account_number VARCHAR(32) NOT NULL,
+  account_name VARCHAR(160) NOT NULL,
+  bank_name VARCHAR(120) NOT NULL,
+  bank_code VARCHAR(16) NOT NULL,
+  account_status VARCHAR(24) NOT NULL DEFAULT 'Active',
+  customer_email VARCHAR(255) NOT NULL,
+  customer_phone VARCHAR(32) NULL,
+  raw_response MEDIUMTEXT NULL COMMENT 'provider payload, for support',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_fva_account (account_number, bank_code),
+  CONSTRAINT fk_fva_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS fundsvera_checkouts (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  payment_transaction_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  request_id VARCHAR(64) NOT NULL UNIQUE COMMENT 'sent to Fundsvera; >= 20 chars',
+  trx_ref VARCHAR(128) NULL COMMENT 'provider reference returned at initiation',
+  expected_amount DECIMAL(20,8) NOT NULL COMMENT 'what the webhook must match',
+  currency CHAR(3) NOT NULL DEFAULT 'NGN',
+  account_number VARCHAR(32) NULL,
+  account_name VARCHAR(160) NULL,
+  bank_name VARCHAR(120) NULL,
+  checkout_url VARCHAR(512) NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING|PAID|EXPIRED|FAILED',
+  amount_paid DECIMAL(20,8) NULL,
+  settlement_amount DECIMAL(20,8) NULL,
+  provider_fee DECIMAL(20,8) NULL,
+  expires_at DATETIME NULL,
+  paid_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_fvc_status (status, created_at),
+  INDEX idx_fvc_user (user_id, created_at),
+  INDEX idx_fvc_trx (trx_ref),
+  CONSTRAINT fk_fvc_tx FOREIGN KEY (payment_transaction_id) REFERENCES payment_transactions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_fvc_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- migration 023_referral_earnings_payouts
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS referral_codes (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  user_id BIGINT UNSIGNED NULL COMMENT 'NULL for a platform/campaign code',
+  code VARCHAR(32) NOT NULL,
+  label VARCHAR(120) NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  total_visits INT UNSIGNED NOT NULL DEFAULT 0,
+  total_signups INT UNSIGNED NOT NULL DEFAULT 0,
+  total_qualified INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_referral_code (code),
+  INDEX idx_rc_user (user_id, is_active),
+  CONSTRAINT fk_refcode_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS referral_campaigns (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  name VARCHAR(160) NOT NULL,
+  code VARCHAR(32) NOT NULL UNIQUE,
+  source VARCHAR(64) NULL COMMENT 'facebook|instagram|tiktok|influencer|partner',
+  campaign_type VARCHAR(32) NOT NULL DEFAULT 'ACQUISITION',
+  reward_amount DECIMAL(20,8) NOT NULL DEFAULT 0.00000000,
+  reward_percent DECIMAL(10,4) NOT NULL DEFAULT 0.0000,
+  qualify_event VARCHAR(32) NOT NULL DEFAULT 'FIRST_ORDER'
+    COMMENT 'REGISTERED|EMAIL_VERIFIED|FIRST_DEPOSIT|FIRST_ORDER',
+  hold_hours INT UNSIGNED NOT NULL DEFAULT 72,
+  max_rewards INT UNSIGNED NULL COMMENT 'NULL = unlimited',
+  budget DECIMAL(20,8) NULL COMMENT 'NULL = uncapped',
+  spent DECIMAL(20,8) NOT NULL DEFAULT 0.00000000,
+  cost DECIMAL(20,8) NULL COMMENT 'what the advert itself cost, for ROI',
+  geo_allow VARCHAR(255) NULL COMMENT 'comma-separated ISO-2, NULL = anywhere',
+  starts_at DATETIME NULL,
+  ends_at DATETIME NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE|PAUSED|ENDED',
+  total_visits INT UNSIGNED NOT NULL DEFAULT 0,
+  total_signups INT UNSIGNED NOT NULL DEFAULT 0,
+  total_qualified INT UNSIGNED NOT NULL DEFAULT 0,
+  created_by_id BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_camp_status (status, starts_at, ends_at),
+  CONSTRAINT fk_camp_creator FOREIGN KEY (created_by_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS referral_visits (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(32) NOT NULL,
+  referral_code_id BIGINT UNSIGNED NULL,
+  campaign_id BIGINT UNSIGNED NULL,
+  visitor_hash CHAR(64) NOT NULL COMMENT 'salted hash of IP+UA; never the raw IP',
+  landing_path VARCHAR(255) NULL,
+  converted_user_id BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_visit_code_created (code, created_at),
+  INDEX idx_visit_campaign (campaign_id, created_at),
+  INDEX idx_visit_hash (visitor_hash, created_at),
+  CONSTRAINT fk_visit_code FOREIGN KEY (referral_code_id) REFERENCES referral_codes(id) ON DELETE SET NULL,
+  CONSTRAINT fk_visit_campaign FOREIGN KEY (campaign_id) REFERENCES referral_campaigns(id) ON DELETE SET NULL,
+  CONSTRAINT fk_visit_user FOREIGN KEY (converted_user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS referral_signups (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  referrer_user_id BIGINT UNSIGNED NULL COMMENT 'NULL for a pure campaign signup',
+  referred_user_id BIGINT UNSIGNED NOT NULL UNIQUE COMMENT 'one attribution per account, ever',
+  referral_code VARCHAR(32) NOT NULL,
+  referral_code_id BIGINT UNSIGNED NULL,
+  campaign_id BIGINT UNSIGNED NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING'
+    COMMENT 'PENDING|QUALIFIED|REWARDED|REJECTED|FRAUD_REVIEW',
+  fraud_flags VARCHAR(255) NULL,
+  signup_ip_hash CHAR(64) NULL,
+  qualified_at DATETIME NULL,
+  rewarded_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_signup_referrer (referrer_user_id, status),
+  INDEX idx_signup_campaign (campaign_id, status),
+  INDEX idx_signup_status (status, created_at),
+  CONSTRAINT fk_signup_referrer FOREIGN KEY (referrer_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_signup_referred FOREIGN KEY (referred_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_signup_code FOREIGN KEY (referral_code_id) REFERENCES referral_codes(id) ON DELETE SET NULL,
+  CONSTRAINT fk_signup_campaign FOREIGN KEY (campaign_id) REFERENCES referral_campaigns(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS earnings (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  user_id BIGINT UNSIGNED NOT NULL,
+  source VARCHAR(32) NOT NULL COMMENT 'REFERRAL|CAMPAIGN|PARTNER|AFFILIATE|MANUAL|REVERSAL',
+  referral_signup_id BIGINT UNSIGNED NULL,
+  campaign_id BIGINT UNSIGNED NULL,
+  amount DECIMAL(20,8) NOT NULL COMMENT 'negative for a reversal',
+  currency CHAR(3) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING'
+    COMMENT 'PENDING|AVAILABLE|LOCKED|PAID|REVERSED',
+  description VARCHAR(255) NULL,
+  idempotency_key VARCHAR(160) NOT NULL UNIQUE
+    COMMENT 'the duplicate-earning guard; one key per earning event',
+  payout_request_id BIGINT UNSIGNED NULL,
+  available_at DATETIME NULL COMMENT 'end of the holding period',
+  paid_out_at DATETIME NULL,
+  reversed_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_earn_user_status (user_id, status),
+  INDEX idx_earn_release (status, available_at),
+  INDEX idx_earn_campaign (campaign_id),
+  CONSTRAINT fk_earn_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_earn_signup FOREIGN KEY (referral_signup_id) REFERENCES referral_signups(id) ON DELETE SET NULL,
+  CONSTRAINT fk_earn_campaign FOREIGN KEY (campaign_id) REFERENCES referral_campaigns(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS payout_requests (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  user_id BIGINT UNSIGNED NOT NULL,
+  amount DECIMAL(20,8) NOT NULL,
+  currency CHAR(3) NOT NULL,
+  method VARCHAR(32) NOT NULL DEFAULT 'BANK_TRANSFER'
+    COMMENT 'BANK_TRANSFER (manual) | WALLET_CREDIT (spend on the panel)',
+  destination VARCHAR(255) NULL COMMENT 'bank account, masked in views',
+  destination_name VARCHAR(160) NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'REQUESTED'
+    COMMENT 'REQUESTED|APPROVED|REJECTED|PAID|CANCELLED',
+  idempotency_key VARCHAR(160) NOT NULL UNIQUE,
+  reviewed_by_id BIGINT UNSIGNED NULL,
+  review_note VARCHAR(500) NULL,
+  payout_reference VARCHAR(160) NULL COMMENT 'bank/provider reference, recorded on payment',
+  requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  reviewed_at DATETIME NULL,
+  paid_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_payout_status (status, requested_at),
+  INDEX idx_payout_user (user_id, status),
+  CONSTRAINT fk_payout_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_payout_reviewer FOREIGN KEY (reviewed_by_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE earnings
+ADD CONSTRAINT fk_earn_payout FOREIGN KEY (payout_request_id)
+REFERENCES payout_requests(id) ON DELETE SET NULL;
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -1648,7 +1868,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (21);
+INSERT INTO migrations (version) VALUES (23);
 
 -- ======================================================================
 -- CORE DATA
@@ -1814,25 +2034,34 @@ INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
 VALUES (47, 'content.pages', 'content', 'Content pages');
 
 INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
-VALUES (48, 'affiliates.view', 'affiliates', 'Affiliates view');
+VALUES (48, 'earnings.view', 'earnings', 'Earnings view');
 
 INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
-VALUES (49, 'affiliates.manage', 'affiliates', 'Affiliates manage');
+VALUES (49, 'earnings.manage', 'earnings', 'Earnings manage');
 
 INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
-VALUES (50, 'settings.manage', 'system', 'Settings manage');
+VALUES (50, 'payouts.review', 'earnings', 'Payouts review');
 
 INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
-VALUES (51, 'appearance.manage', 'system', 'Appearance manage');
+VALUES (51, 'affiliates.view', 'affiliates', 'Affiliates view');
 
 INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
-VALUES (52, 'audit.view', 'system', 'Audit view');
+VALUES (52, 'affiliates.manage', 'affiliates', 'Affiliates manage');
 
 INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
-VALUES (53, 'blacklist.manage', 'system', 'Blacklist manage');
+VALUES (53, 'settings.manage', 'system', 'Settings manage');
 
 INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
-VALUES (54, 'api.manage', 'system', 'Api manage');
+VALUES (54, 'appearance.manage', 'system', 'Appearance manage');
+
+INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
+VALUES (55, 'audit.view', 'system', 'Audit view');
+
+INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
+VALUES (56, 'blacklist.manage', 'system', 'Blacklist manage');
+
+INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
+VALUES (57, 'api.manage', 'system', 'Api manage');
 
 -- role_permissions
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
@@ -1998,6 +2227,15 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 VALUES (1, 54);
 
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
+VALUES (1, 55);
+
+INSERT INTO `role_permissions` (`role_id`, `permission_id`)
+VALUES (1, 56);
+
+INSERT INTO `role_permissions` (`role_id`, `permission_id`)
+VALUES (1, 57);
+
+INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 VALUES (2, 1);
 
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
@@ -2136,6 +2374,12 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 VALUES (2, 47);
 
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
+VALUES (2, 51);
+
+INSERT INTO `role_permissions` (`role_id`, `permission_id`)
+VALUES (2, 52);
+
+INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 VALUES (2, 48);
 
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
@@ -2145,16 +2389,19 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 VALUES (2, 50);
 
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
-VALUES (2, 51);
-
-INSERT INTO `role_permissions` (`role_id`, `permission_id`)
-VALUES (2, 52);
-
-INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 VALUES (2, 53);
 
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 VALUES (2, 54);
+
+INSERT INTO `role_permissions` (`role_id`, `permission_id`)
+VALUES (2, 55);
+
+INSERT INTO `role_permissions` (`role_id`, `permission_id`)
+VALUES (2, 56);
+
+INSERT INTO `role_permissions` (`role_id`, `permission_id`)
+VALUES (2, 57);
 
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 VALUES (3, 1);
@@ -2208,7 +2455,7 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 VALUES (3, 41);
 
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
-VALUES (3, 48);
+VALUES (3, 51);
 
 -- price_groups
 INSERT INTO `price_groups` (`id`, `name`, `description`, `is_default`)
@@ -2374,6 +2621,9 @@ VALUES (7, 'coinpayments', 'WE7GPKYE0H9MYTABVJMGA3VQJE', 'CoinPayments', 'COINPA
 INSERT INTO `payment_methods` (`id`, `code`, `public_id`, `name`, `type`, `is_active`, `sorting`, `min_amount`, `max_amount`, `currencies`)
 VALUES (8, 'blockonomics', 'HHXBAZVJKQ7SHFNA7MTGZSDZWB', 'Bitcoin (BTC)', 'BLOCKONOMICS', 0, 15, '500.00000000', '5000000.00000000', '["NGN"]');
 
+INSERT INTO `payment_methods` (`id`, `code`, `public_id`, `name`, `type`, `is_active`, `sorting`, `min_amount`, `max_amount`, `currencies`)
+VALUES (9, 'fundsvera', 'GRJ1X0NJS18KH9YZXBKXVPDTFT', 'Bank Transfer', 'FUNDSVERA', 0, 12, '500.00000000', '5000000.00000000', '["NGN"]');
+
 -- email_templates
 INSERT INTO `email_templates` (`id`, `template_key`, `subject`, `body_html`, `body_text`, `variables`, `is_active`)
 VALUES (1, 'auth.verify_email', 'Verify your {{site_name}} account', '<p>Hi {{username}},</p><p>Confirm your email to activate your account:</p><p><a href="{{verify_url}}">Verify email</a></p>', 'Hi {{username}},\nConfirm your email to activate your account:\nVerify email', '["site_name","username","verify_url"]', 1);
@@ -2426,187 +2676,187 @@ VALUES (10, 'Where do staff sign in?', 'Use /admin/login. Customer accounts are 
 
 -- vtu_networks
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (1, 'MTN', 'GRJ1X0NJS18KH9YZXBKXVPDTFT', 'MTN', 'AIRTIME', '0803,0806,0810,0813,0814,0816,0903,0906,0913,0916', 1, 0);
+VALUES (1, 'MTN', '2CX15CMNEPJMWDX9E4NK746QHB', 'MTN', 'AIRTIME', '0803,0806,0810,0813,0814,0816,0903,0906,0913,0916', 1, 0);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (2, 'GLO', '2CX15CMNEPJMWDX9E4NK746QHB', 'Glo', 'AIRTIME', '0805,0807,0811,0815,0705,0905,0915', 1, 1);
+VALUES (2, 'GLO', 'B1J98TJ6Q70J1MSJF1NJT0H1ZM', 'Glo', 'AIRTIME', '0805,0807,0811,0815,0705,0905,0915', 1, 1);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (3, 'AIRTEL', 'B1J98TJ6Q70J1MSJF1NJT0H1ZM', 'Airtel', 'AIRTIME', '0802,0808,0812,0701,0708,0902,0907,0901,0912', 1, 2);
+VALUES (3, 'AIRTEL', 'T8XHRTYE3MHZ34BK7N7BYVY739', 'Airtel', 'AIRTIME', '0802,0808,0812,0701,0708,0902,0907,0901,0912', 1, 2);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (4, '9MOBILE', 'T8XHRTYE3MHZ34BK7N7BYVY739', '9mobile', 'AIRTIME', '0809,0817,0818,0908,0909', 1, 3);
+VALUES (4, '9MOBILE', '675EVKVKFM2REH0DKA1N9MG3VF', '9mobile', 'AIRTIME', '0809,0817,0818,0908,0909', 1, 3);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (5, 'MTN-DATA', '675EVKVKFM2REH0DKA1N9MG3VF', 'MTN Data', 'DATA', NULL, 1, 4);
+VALUES (5, 'MTN-DATA', 'FYMAPP7X5XRNY2VE5MY7GY3RHG', 'MTN Data', 'DATA', NULL, 1, 4);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (6, 'GLO-DATA', 'FYMAPP7X5XRNY2VE5MY7GY3RHG', 'Glo Data', 'DATA', NULL, 1, 5);
+VALUES (6, 'GLO-DATA', 'GWEWQSGGKSZG0VE8PJYEPE6F8F', 'Glo Data', 'DATA', NULL, 1, 5);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (7, 'AIRTEL-DATA', 'GWEWQSGGKSZG0VE8PJYEPE6F8F', 'Airtel Data', 'DATA', NULL, 1, 6);
+VALUES (7, 'AIRTEL-DATA', 'CY9YX6NPMGSYD4KCDEGE95W74Z', 'Airtel Data', 'DATA', NULL, 1, 6);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (8, '9MOBILE-DATA', 'CY9YX6NPMGSYD4KCDEGE95W74Z', '9mobile Data', 'DATA', NULL, 1, 7);
+VALUES (8, '9MOBILE-DATA', 'Q3BCKG4Q6K50SGKEPZ80Q5YFB7', '9mobile Data', 'DATA', NULL, 1, 7);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (9, 'DSTV', 'Q3BCKG4Q6K50SGKEPZ80Q5YFB7', 'DSTV', 'CABLE', NULL, 1, 8);
+VALUES (9, 'DSTV', '4Z21TQQWT6SZ9ZV6547QPM0CEF', 'DSTV', 'CABLE', NULL, 1, 8);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (10, 'GOTV', '4Z21TQQWT6SZ9ZV6547QPM0CEF', 'GOtv', 'CABLE', NULL, 1, 9);
+VALUES (10, 'GOTV', 'EQMQ3Q5WZ0ZSHDZRBFBG5XJJ2Z', 'GOtv', 'CABLE', NULL, 1, 9);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (11, 'STARTIMES', 'EQMQ3Q5WZ0ZSHDZRBFBG5XJJ2Z', 'StarTimes', 'CABLE', NULL, 1, 10);
+VALUES (11, 'STARTIMES', 'JK42PW8KCZZKWZE75FC8ZJCWCY', 'StarTimes', 'CABLE', NULL, 1, 10);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (12, 'IKEDC', 'JK42PW8KCZZKWZE75FC8ZJCWCY', 'Ikeja Electric', 'ELECTRICITY', NULL, 1, 11);
+VALUES (12, 'IKEDC', 'D8921PN6TZ0506WNPKTSKXKHRX', 'Ikeja Electric', 'ELECTRICITY', NULL, 1, 11);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (13, 'EKEDC', 'D8921PN6TZ0506WNPKTSKXKHRX', 'Eko Electric', 'ELECTRICITY', NULL, 1, 12);
+VALUES (13, 'EKEDC', 'H5GMQRWZH6SF505YDWC5GVFTMX', 'Eko Electric', 'ELECTRICITY', NULL, 1, 12);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (14, 'AEDC', 'H5GMQRWZH6SF505YDWC5GVFTMX', 'Abuja Electric', 'ELECTRICITY', NULL, 1, 13);
+VALUES (14, 'AEDC', 'Z64RZTJ9D6C6GK3MRVG5A0Y896', 'Abuja Electric', 'ELECTRICITY', NULL, 1, 13);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (15, 'PHED', 'Z64RZTJ9D6C6GK3MRVG5A0Y896', 'Port Harcourt Electric', 'ELECTRICITY', NULL, 1, 14);
+VALUES (15, 'PHED', '3K7DSGCM226ZX2YJVP96C3GD88', 'Port Harcourt Electric', 'ELECTRICITY', NULL, 1, 14);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (16, 'WAEC', '3K7DSGCM226ZX2YJVP96C3GD88', 'WAEC', 'EXAM_PIN', NULL, 1, 15);
+VALUES (16, 'WAEC', 'E9VJ40TSZEABDZA6HRM5GHHV41', 'WAEC', 'EXAM_PIN', NULL, 1, 15);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (17, 'NECO', 'E9VJ40TSZEABDZA6HRM5GHHV41', 'NECO', 'EXAM_PIN', NULL, 1, 16);
+VALUES (17, 'NECO', 'GZSVFBNFWY7PYF72EXFRZHHH54', 'NECO', 'EXAM_PIN', NULL, 1, 16);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (18, 'JAMB', 'GZSVFBNFWY7PYF72EXFRZHHH54', 'JAMB', 'EXAM_PIN', NULL, 1, 17);
+VALUES (18, 'JAMB', 'XCAD567DZS1101T3NEWDQ3NT6S', 'JAMB', 'EXAM_PIN', NULL, 1, 17);
 
 -- vtu_products
 INSERT INTO `vtu_products` (`id`, `network_id`, `service_type`, `code`, `public_id`, `name`, `discount_percent`, `min_amount`, `max_amount`, `is_active`)
-VALUES (1, 1, 'AIRTIME', 'MTN-AIRTIME', 'XCAD567DZS1101T3NEWDQ3NT6S', 'MTN Airtime', '2.0000', '50.00000000', '50000.00000000', 1);
+VALUES (1, 1, 'AIRTIME', 'MTN-AIRTIME', 'F65XYZH2KE9AD22T9N500SP5BP', 'MTN Airtime', '2.0000', '50.00000000', '50000.00000000', 1);
 
 INSERT INTO `vtu_products` (`id`, `network_id`, `service_type`, `code`, `public_id`, `name`, `discount_percent`, `min_amount`, `max_amount`, `is_active`)
-VALUES (2, 2, 'AIRTIME', 'GLO-AIRTIME', 'F65XYZH2KE9AD22T9N500SP5BP', 'Glo Airtime', '2.0000', '50.00000000', '50000.00000000', 1);
+VALUES (2, 2, 'AIRTIME', 'GLO-AIRTIME', 'X5N86006JNQA256BGDFVF6MFX4', 'Glo Airtime', '2.0000', '50.00000000', '50000.00000000', 1);
 
 INSERT INTO `vtu_products` (`id`, `network_id`, `service_type`, `code`, `public_id`, `name`, `discount_percent`, `min_amount`, `max_amount`, `is_active`)
-VALUES (3, 3, 'AIRTIME', 'AIRTEL-AIRTIME', 'X5N86006JNQA256BGDFVF6MFX4', 'Airtel Airtime', '2.0000', '50.00000000', '50000.00000000', 1);
+VALUES (3, 3, 'AIRTIME', 'AIRTEL-AIRTIME', '8T94HRZB8VHAYEAA9AW2MSJJC1', 'Airtel Airtime', '2.0000', '50.00000000', '50000.00000000', 1);
 
 INSERT INTO `vtu_products` (`id`, `network_id`, `service_type`, `code`, `public_id`, `name`, `discount_percent`, `min_amount`, `max_amount`, `is_active`)
-VALUES (4, 4, 'AIRTIME', '9MOBILE-AIRTIME', '8T94HRZB8VHAYEAA9AW2MSJJC1', '9mobile Airtime', '2.0000', '50.00000000', '50000.00000000', 1);
+VALUES (4, 4, 'AIRTIME', '9MOBILE-AIRTIME', 'RABR9YZCAF9FAH8VT1353G0JYE', '9mobile Airtime', '2.0000', '50.00000000', '50000.00000000', 1);
 
 INSERT INTO `vtu_products` (`id`, `network_id`, `service_type`, `code`, `public_id`, `name`, `discount_percent`, `min_amount`, `max_amount`, `is_active`)
-VALUES (5, 12, 'ELECTRICITY', 'IKEDC-ELECTRICITY', 'RABR9YZCAF9FAH8VT1353G0JYE', 'Ikeja Electric Units', '1.0000', '500.00000000', '100000.00000000', 1);
+VALUES (5, 12, 'ELECTRICITY', 'IKEDC-ELECTRICITY', 'HM8WDQ931HC1Y3FMVDSZTY21VX', 'Ikeja Electric Units', '1.0000', '500.00000000', '100000.00000000', 1);
 
 INSERT INTO `vtu_products` (`id`, `network_id`, `service_type`, `code`, `public_id`, `name`, `discount_percent`, `min_amount`, `max_amount`, `is_active`)
-VALUES (6, 13, 'ELECTRICITY', 'EKEDC-ELECTRICITY', 'HM8WDQ931HC1Y3FMVDSZTY21VX', 'Eko Electric Units', '1.0000', '500.00000000', '100000.00000000', 1);
+VALUES (6, 13, 'ELECTRICITY', 'EKEDC-ELECTRICITY', 'VRYZ5BCT00XH2ZE9NPFXW3T0ED', 'Eko Electric Units', '1.0000', '500.00000000', '100000.00000000', 1);
 
 INSERT INTO `vtu_products` (`id`, `network_id`, `service_type`, `code`, `public_id`, `name`, `discount_percent`, `min_amount`, `max_amount`, `is_active`)
-VALUES (7, 14, 'ELECTRICITY', 'AEDC-ELECTRICITY', 'VRYZ5BCT00XH2ZE9NPFXW3T0ED', 'Abuja Electric Units', '1.0000', '500.00000000', '100000.00000000', 1);
+VALUES (7, 14, 'ELECTRICITY', 'AEDC-ELECTRICITY', '1W3WVMVM6XA7CMNHBDD0SQJSDQ', 'Abuja Electric Units', '1.0000', '500.00000000', '100000.00000000', 1);
 
 INSERT INTO `vtu_products` (`id`, `network_id`, `service_type`, `code`, `public_id`, `name`, `discount_percent`, `min_amount`, `max_amount`, `is_active`)
-VALUES (8, 15, 'ELECTRICITY', 'PHED-ELECTRICITY', '1W3WVMVM6XA7CMNHBDD0SQJSDQ', 'Port Harcourt Electric Units', '1.0000', '500.00000000', '100000.00000000', 1);
+VALUES (8, 15, 'ELECTRICITY', 'PHED-ELECTRICITY', 'NR08B5F1ZF6T6XV5WDC78J6XQZ', 'Port Harcourt Electric Units', '1.0000', '500.00000000', '100000.00000000', 1);
 
 -- number_countries
 INSERT INTO `number_countries` (`id`, `code`, `public_id`, `name`, `dial_prefix`, `flag_emoji`, `is_active`, `sorting`)
-VALUES (1, 'NG', 'NR08B5F1ZF6T6XV5WDC78J6XQZ', 'Nigeria', '+234', '🇳🇬', 1, 0);
+VALUES (1, 'NG', 'FRFER6J96ATZS48MESPTN98PP0', 'Nigeria', '+234', '🇳🇬', 1, 0);
 
 INSERT INTO `number_countries` (`id`, `code`, `public_id`, `name`, `dial_prefix`, `flag_emoji`, `is_active`, `sorting`)
-VALUES (2, 'GH', 'FRFER6J96ATZS48MESPTN98PP0', 'Ghana', '+233', '🇬🇭', 1, 1);
+VALUES (2, 'GH', '7PCC1YYDM8JADFM47FW3J1VS31', 'Ghana', '+233', '🇬🇭', 1, 1);
 
 INSERT INTO `number_countries` (`id`, `code`, `public_id`, `name`, `dial_prefix`, `flag_emoji`, `is_active`, `sorting`)
-VALUES (3, 'KE', '7PCC1YYDM8JADFM47FW3J1VS31', 'Kenya', '+254', '🇰🇪', 1, 2);
+VALUES (3, 'KE', 'JE8RRGJZQGVZHMMHVYHKQFVFPY', 'Kenya', '+254', '🇰🇪', 1, 2);
 
 INSERT INTO `number_countries` (`id`, `code`, `public_id`, `name`, `dial_prefix`, `flag_emoji`, `is_active`, `sorting`)
-VALUES (4, 'ZA', 'JE8RRGJZQGVZHMMHVYHKQFVFPY', 'South Africa', '+27', '🇿🇦', 1, 3);
+VALUES (4, 'ZA', '0JTBYY70SB01V9NCB69HV6RBFT', 'South Africa', '+27', '🇿🇦', 1, 3);
 
 INSERT INTO `number_countries` (`id`, `code`, `public_id`, `name`, `dial_prefix`, `flag_emoji`, `is_active`, `sorting`)
-VALUES (5, 'GB', '0JTBYY70SB01V9NCB69HV6RBFT', 'United Kingdom', '+44', '🇬🇧', 1, 4);
+VALUES (5, 'GB', 'BN4WM230NAHY8VTA0A1DEA4TC6', 'United Kingdom', '+44', '🇬🇧', 1, 4);
 
 INSERT INTO `number_countries` (`id`, `code`, `public_id`, `name`, `dial_prefix`, `flag_emoji`, `is_active`, `sorting`)
-VALUES (6, 'US', 'BN4WM230NAHY8VTA0A1DEA4TC6', 'United States', '+1', '🇺🇸', 1, 5);
+VALUES (6, 'US', 'T83PGYFVY8ETJ98CP0C0GCA3XF', 'United States', '+1', '🇺🇸', 1, 5);
 
 INSERT INTO `number_countries` (`id`, `code`, `public_id`, `name`, `dial_prefix`, `flag_emoji`, `is_active`, `sorting`)
-VALUES (7, 'IN', 'T83PGYFVY8ETJ98CP0C0GCA3XF', 'India', '+91', '🇮🇳', 1, 6);
+VALUES (7, 'IN', 'Z2Q5BZNHQNT42C44CHYSARRN2N', 'India', '+91', '🇮🇳', 1, 6);
 
 -- number_services
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (1, 'WHATSAPP', 'Z2Q5BZNHQNT42C44CHYSARRN2N', 'WhatsApp', 1, 0);
+VALUES (1, 'WHATSAPP', 'ZZ0QJXKWSHW48R9BVEM2X94PM7', 'WhatsApp', 1, 0);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (2, 'TELEGRAM', 'ZZ0QJXKWSHW48R9BVEM2X94PM7', 'Telegram', 1, 1);
+VALUES (2, 'TELEGRAM', 'TWEWAFNJBTGTC8T5MC51DKJ3DV', 'Telegram', 1, 1);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (3, 'FACEBOOK', 'TWEWAFNJBTGTC8T5MC51DKJ3DV', 'Facebook', 1, 2);
+VALUES (3, 'FACEBOOK', 'R4YTH5VZDV55AFA1E8JQQV364Y', 'Facebook', 1, 2);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (4, 'INSTAGRAM', 'R4YTH5VZDV55AFA1E8JQQV364Y', 'Instagram', 1, 3);
+VALUES (4, 'INSTAGRAM', 'EPESDH4A1ZHVBEZ2S76XH6HYSN', 'Instagram', 1, 3);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (5, 'GOOGLE', 'EPESDH4A1ZHVBEZ2S76XH6HYSN', 'Google', 1, 4);
+VALUES (5, 'GOOGLE', 'JRPDS36ZXWPFTNF76BAP644Y95', 'Google', 1, 4);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (6, 'TWITTER', 'JRPDS36ZXWPFTNF76BAP644Y95', 'X (Twitter)', 1, 5);
+VALUES (6, 'TWITTER', 'JGKQHKW5MRZ1SV6TCQBF65CY60', 'X (Twitter)', 1, 5);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (7, 'TIKTOK', 'JGKQHKW5MRZ1SV6TCQBF65CY60', 'TikTok', 1, 6);
+VALUES (7, 'TIKTOK', 'DRPXBS4AC7X4PEDXYKTZRB7YZ6', 'TikTok', 1, 6);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (8, 'DISCORD', 'DRPXBS4AC7X4PEDXYKTZRB7YZ6', 'Discord', 1, 7);
+VALUES (8, 'DISCORD', 'GKM9H4VQFYTBZCTB81Q8D9HKG4', 'Discord', 1, 7);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (9, 'UBER', 'GKM9H4VQFYTBZCTB81Q8D9HKG4', 'Uber', 1, 8);
+VALUES (9, 'UBER', '9JASA1P83C1FMDKYXXBWDJXVSR', 'Uber', 1, 8);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (10, 'AMAZON', '9JASA1P83C1FMDKYXXBWDJXVSR', 'Amazon', 1, 9);
+VALUES (10, 'AMAZON', 'N3MRR94DDE3DVBMYKVWJVT7JE5', 'Amazon', 1, 9);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (11, 'OTHER', 'N3MRR94DDE3DVBMYKVWJVT7JE5', 'Any other service', 1, 10);
+VALUES (11, 'OTHER', '7J6PTRNSKY4G69ZA7DVZDRH9CQ', 'Any other service', 1, 10);
 
 -- identity_products
 INSERT INTO `identity_products` (`id`, `code`, `public_id`, `name`, `id_type`, `lookup_field`, `provider_code`, `description`, `is_active`, `sorting`)
-VALUES (1, 'NIN_BASIC', '7J6PTRNSKY4G69ZA7DVZDRH9CQ', 'NIN verification', 'NIN', 'IDENTIFIER', 'kyc/nin', 'Confirm a National Identification Number and return the registered name, date of birth and gender.', 0, 0);
+VALUES (1, 'NIN_BASIC', 'S5GZXRTRCTW5DZKH1Q9AEA79HW', 'NIN verification', 'NIN', 'IDENTIFIER', 'kyc/nin', 'Confirm a National Identification Number and return the registered name, date of birth and gender.', 0, 0);
 
 INSERT INTO `identity_products` (`id`, `code`, `public_id`, `name`, `id_type`, `lookup_field`, `provider_code`, `description`, `is_active`, `sorting`)
-VALUES (2, 'BVN_BASIC', 'S5GZXRTRCTW5DZKH1Q9AEA79HW', 'BVN verification', 'BVN', 'IDENTIFIER', 'kyc/bvn', 'Confirm a Bank Verification Number against the NIBSS record.', 0, 1);
+VALUES (2, 'BVN_BASIC', '8CKPAEEPWT3BXV0P36F77FR5W8', 'BVN verification', 'BVN', 'IDENTIFIER', 'kyc/bvn', 'Confirm a Bank Verification Number against the NIBSS record.', 0, 1);
 
 INSERT INTO `identity_products` (`id`, `code`, `public_id`, `name`, `id_type`, `lookup_field`, `provider_code`, `description`, `is_active`, `sorting`)
-VALUES (3, 'NIN_PHONE', '8CKPAEEPWT3BXV0P36F77FR5W8', 'NIN by phone number', 'NIN', 'PHONE', 'kyc/nin/phone_number', 'Find the NIN record linked to a Nigerian phone number.', 0, 2);
+VALUES (3, 'NIN_PHONE', '3ZVMSKBXHRP4Z9T5PW4SY2KTKS', 'NIN by phone number', 'NIN', 'PHONE', 'kyc/nin/phone_number', 'Find the NIN record linked to a Nigerian phone number.', 0, 2);
 
 -- giftcard_brands
 INSERT INTO `giftcard_brands` (`id`, `code`, `public_id`, `name`, `redeem_instructions`, `is_active`, `sorting`)
-VALUES (1, 'AMAZON', '3ZVMSKBXHRP4Z9T5PW4SY2KTKS', 'Amazon', 'Go to amazon.com/redeem and enter the claim code to add it to your Amazon balance.', 1, 0);
+VALUES (1, 'AMAZON', 'C7HRMJJ9XF2FMMGMWDVSAW65QV', 'Amazon', 'Go to amazon.com/redeem and enter the claim code to add it to your Amazon balance.', 1, 0);
 
 INSERT INTO `giftcard_brands` (`id`, `code`, `public_id`, `name`, `redeem_instructions`, `is_active`, `sorting`)
-VALUES (2, 'APPLE', 'C7HRMJJ9XF2FMMGMWDVSAW65QV', 'App Store & iTunes', 'Go to apple.com/redeem, or open the App Store, tap your profile and choose Redeem Gift Card.', 1, 1);
+VALUES (2, 'APPLE', '1JS2VPDW6PCQKE5JR7ENKKRG9F', 'App Store & iTunes', 'Go to apple.com/redeem, or open the App Store, tap your profile and choose Redeem Gift Card.', 1, 1);
 
 INSERT INTO `giftcard_brands` (`id`, `code`, `public_id`, `name`, `redeem_instructions`, `is_active`, `sorting`)
-VALUES (3, 'GOOGLE_PLAY', '1JS2VPDW6PCQKE5JR7ENKKRG9F', 'Google Play', 'Open the Google Play Store, tap your profile, choose Payments & subscriptions, then Redeem code.', 1, 2);
+VALUES (3, 'GOOGLE_PLAY', '635S11DQ63CRMJ7VWPTBFG0RW0', 'Google Play', 'Open the Google Play Store, tap your profile, choose Payments & subscriptions, then Redeem code.', 1, 2);
 
 INSERT INTO `giftcard_brands` (`id`, `code`, `public_id`, `name`, `redeem_instructions`, `is_active`, `sorting`)
-VALUES (4, 'STEAM', '635S11DQ63CRMJ7VWPTBFG0RW0', 'Steam', 'Open Steam, choose Games then Redeem a Steam Wallet Code, and enter the code.', 1, 3);
+VALUES (4, 'STEAM', 'S53AP93A411HX6WXRWR6K3S1W8', 'Steam', 'Open Steam, choose Games then Redeem a Steam Wallet Code, and enter the code.', 1, 3);
 
 INSERT INTO `giftcard_brands` (`id`, `code`, `public_id`, `name`, `redeem_instructions`, `is_active`, `sorting`)
-VALUES (5, 'NETFLIX', 'S53AP93A411HX6WXRWR6K3S1W8', 'Netflix', 'Go to netflix.com/redeem and enter the code to add it to your Netflix account.', 1, 4);
+VALUES (5, 'NETFLIX', 'G7EQ5MYB2PF1K63KMK9H305XZD', 'Netflix', 'Go to netflix.com/redeem and enter the code to add it to your Netflix account.', 1, 4);
 
 INSERT INTO `giftcard_brands` (`id`, `code`, `public_id`, `name`, `redeem_instructions`, `is_active`, `sorting`)
-VALUES (6, 'SPOTIFY', 'G7EQ5MYB2PF1K63KMK9H305XZD', 'Spotify', 'Go to spotify.com/redeem and enter the code to add Premium time to your account.', 1, 5);
+VALUES (6, 'SPOTIFY', '4R4E28C82BE3TY0H0A33FP7E0Z', 'Spotify', 'Go to spotify.com/redeem and enter the code to add Premium time to your account.', 1, 5);
 
 INSERT INTO `giftcard_brands` (`id`, `code`, `public_id`, `name`, `redeem_instructions`, `is_active`, `sorting`)
-VALUES (7, 'XBOX', '4R4E28C82BE3TY0H0A33FP7E0Z', 'Xbox', 'Sign in at redeem.microsoft.com and enter the 25-character code.', 1, 6);
+VALUES (7, 'XBOX', 'XXV2CKB8XKEAFSD3HQ6VMD1FM5', 'Xbox', 'Sign in at redeem.microsoft.com and enter the 25-character code.', 1, 6);
 
 INSERT INTO `giftcard_brands` (`id`, `code`, `public_id`, `name`, `redeem_instructions`, `is_active`, `sorting`)
-VALUES (8, 'PLAYSTATION', 'XXV2CKB8XKEAFSD3HQ6VMD1FM5', 'PlayStation Store', 'Sign in to PlayStation Store, choose Redeem Codes, and enter the 12-digit code.', 1, 7);
+VALUES (8, 'PLAYSTATION', '4R11BMVKNX9BQTR9JR8TWSM1T8', 'PlayStation Store', 'Sign in to PlayStation Store, choose Redeem Codes, and enter the 12-digit code.', 1, 7);
 
 -- marketplace_categories
 INSERT INTO `marketplace_categories` (`id`, `slug`, `public_id`, `name`, `status`, `sort_order`, `created_at`, `updated_at`)
-VALUES (1, 'DIGITAL_GOODS', '4R11BMVKNX9BQTR9JR8TWSM1T8', 'Digital goods', 'ACTIVE', 0, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+VALUES (1, 'DIGITAL_GOODS', 'JZ1KFGEPYVGKBBCP0P7N4ZSH2Q', 'Digital goods', 'ACTIVE', 0, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
 
 INSERT INTO `marketplace_categories` (`id`, `slug`, `public_id`, `name`, `status`, `sort_order`, `created_at`, `updated_at`)
-VALUES (2, 'GAMING', 'JZ1KFGEPYVGKBBCP0P7N4ZSH2Q', 'Gaming', 'ACTIVE', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+VALUES (2, 'GAMING', '1SVDKX325AMTAH6STHM0SEFQQZ', 'Gaming', 'ACTIVE', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
 
 INSERT INTO `marketplace_categories` (`id`, `slug`, `public_id`, `name`, `status`, `sort_order`, `created_at`, `updated_at`)
-VALUES (3, 'ACCOUNTS', '1SVDKX325AMTAH6STHM0SEFQQZ', 'Accounts', 'ACTIVE', 2, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+VALUES (3, 'ACCOUNTS', 'W7EPWGDQAP28DA0QA3K1ZGH7DM', 'Accounts', 'ACTIVE', 2, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
 
 INSERT INTO `marketplace_categories` (`id`, `slug`, `public_id`, `name`, `status`, `sort_order`, `created_at`, `updated_at`)
-VALUES (4, 'SOFTWARE_KEYS', 'W7EPWGDQAP28DA0QA3K1ZGH7DM', 'Software & keys', 'ACTIVE', 3, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+VALUES (4, 'SOFTWARE_KEYS', '2558ZS4XH6J8JXA5GRXK83CEEK', 'Software & keys', 'ACTIVE', 3, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
 
 -- ======================================================================
 -- FIRST ADMINISTRATOR
@@ -2621,13 +2871,13 @@ INSERT INTO `users`
   (`id`, `public_id`, `username`, `email`, `password_hash`, `first_name`, `last_name`,
    `status`, `role`, `price_group_id`, `referral_code`, `timezone`, `locale`,
    `email_verified_at`, `mfa_enabled`, `created_at`, `updated_at`)
-VALUES (1, '2558ZS4XH6J8JXA5GRXK83CEEK', 'admin', 'admin@example.com', '$2y$12$cAi15LwaQtqC1UEXIYVgUe0sEWTJVST0L6v/I/m425ACk9ZUWiAui', 'Panel', 'Administrator',
+VALUES (1, 'D3S1VPTVKCTA5A65AGTZ39ZMRT', 'admin', 'admin@example.com', '$2y$12$cAi15LwaQtqC1UEXIYVgUe0sEWTJVST0L6v/I/m425ACk9ZUWiAui', 'Panel', 'Administrator',
         'ACTIVE', 'SUPER_ADMIN', 1, 'ADMIN-0001', 'UTC', 'en',
         '2026-01-01 00:00:00', 0, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
 
 INSERT INTO `wallets`
   (`public_id`, `user_id`, `balance`, `currency`, `created_at`, `updated_at`)
-VALUES ('D3S1VPTVKCTA5A65AGTZ39ZMRT', 1, '0.00000000', 'NGN', '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+VALUES ('8S14SFNTREEFFYJSGF922BG7CH', 1, '0.00000000', 'NGN', '2026-01-01 00:00:00', '2026-01-01 00:00:00');
 
 INSERT INTO `referral_accounts`
   (`user_id`, `code`, `commission_percent`, `created_at`, `updated_at`)

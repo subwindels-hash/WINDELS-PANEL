@@ -62,6 +62,9 @@ class Core_seeder extends Seeder {
             // trusted to write a blog post is not the same as being trusted to
             // rewrite the Terms of Service.
             'content'    => array('blog.manage','faq.manage','announcements.manage','media.manage','content.pages'),
+            // Money-adjacent: reviewing payouts and reversing earnings are
+            // separate grants from ordinary affiliate reporting.
+            'earnings'   => array('earnings.view','earnings.manage','payouts.review'),
             'affiliates' => array('affiliates.view','affiliates.manage'),
             'system'     => array('settings.manage','appearance.manage','audit.view','blacklist.manage','api.manage'),
         );
@@ -88,6 +91,7 @@ class Core_seeder extends Seeder {
                 'tickets.view','tickets.reply','tickets.manage',
                 'blog.manage','faq.manage','announcements.manage','media.manage','content.pages',
                 'affiliates.view','affiliates.manage',
+                'earnings.view','earnings.manage','payouts.review',
                 'settings.manage','appearance.manage','audit.view','blacklist.manage','api.manage',
             ),
             'STAFF'       => array(
@@ -507,6 +511,9 @@ class Core_seeder extends Seeder {
             // without them, so activating it early cannot take a payment it
             // has no way to confirm.
             array('blockonomics','Bitcoin (BTC)','BLOCKONOMICS',0,15),
+            // Nigerian bank transfer via Fundsvera. Inactive until the operator
+            // supplies API keys; the adapter refuses to initiate without them.
+            array('fundsvera','Bank Transfer','FUNDSVERA',0,12),
         );
         foreach ($methods as $m) {
             $this->insert_once('payment_methods', array('code'=>$m[0]), array(

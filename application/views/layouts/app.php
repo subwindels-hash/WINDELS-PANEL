@@ -20,6 +20,7 @@ $nav = $is_admin ? array(
     array('admin/payments',     'Payments',   'payments.view',   'credit-card'),
     array('admin/tickets',      'Tickets',    'tickets.view',    'message-square'),
     array('admin/affiliates',   'Affiliates', 'affiliates.view', 'gift'),
+    array('admin/payouts',      'Payouts',    'payouts.review',  'wallet'),
     array('admin/blog',         'Content',    'blog.manage',     'list'),
     array('admin/pages',        'Website pages','content.pages', 'globe'),
     array('admin/staff',        'Staff',      'staff.manage',    'shield'),
@@ -46,6 +47,7 @@ $nav = $is_admin ? array(
     array('dashboard/transactions','Transactions', null, 'list'),
     array('dashboard/tickets',   'Support',    null, 'message-square'),
     array('dashboard/referrals', 'Referrals',  null, 'gift'),
+    array('dashboard/earnings',  'Earnings',   null, 'wallet'),
     array('dashboard/api',       'API',        null, 'key'),
     array('dashboard/security',  'Security',   null, 'shield'),
 );

@@ -44,6 +44,9 @@ class PaymentService {
         if (!class_exists('BlockonomicsGateway', false)) {
             require_once APPPATH.'libraries/BlockonomicsGateway.php';
         }
+        if (!class_exists('FundsveraGateway', false)) {
+            require_once APPPATH.'libraries/FundsveraGateway.php';
+        }
     }
 
     /**
@@ -78,8 +81,16 @@ class PaymentService {
         $bonus = $this->calculate_bonus($method, $amount);
         $credited = bcadd(bcsub($amount, $fee, 8), $bonus, 8);
 
+        $public_id = marvy_public_id();
         $tx = $this->persist_transaction(array(
-            'public_id'          => marvy_public_id(),
+            'public_id'          => $public_id,
+            // Fundsvera requires a >= 20-character reference that is unique per
+            // business; every provider gets the same stable value so support
+            // can search one column regardless of gateway.
+            'internal_reference' => 'MVS-'.strtoupper($public_id),
+            'provider'           => $method->code,
+            'payment_method'     => $method->type ? strtolower((string)$method->type) : null,
+            'initiated_at'       => gmdate('Y-m-d H:i:s'),
             'user_id'            => $user->id,
             'payment_method_id'  => $method->id,
             'amount'             => $amount,
@@ -144,19 +155,45 @@ class PaymentService {
             'status' => self::STATUS_SUCCESS,
             'wallet_transaction_id' => $wt ? $wt->id : null,
             'verified_at' => gmdate('Y-m-d H:i:s'),
+            'paid_at' => gmdate('Y-m-d H:i:s'),
         );
         if ($provider_tx_id) $update['provider_tx_id'] = substr((string)$provider_tx_id, 0, 128);
         $this->ci->Payment_transaction_model->update_status($tx->id, $update);
         $this->transition($tx->id, $tx->status, self::STATUS_SUCCESS, $source, 'Confirmed');
         $this->ci->db->trans_complete();
 
+        // A confirmed deposit may be the event that qualifies a referral.
+        // Outside the transaction and never fatal: the deposit has already
+        // succeeded, and a referral bookkeeping problem must not roll it back.
+        $this->referral_event($tx->user_id, 'FIRST_DEPOSIT');
+
         return array('ok'=>true,'transaction'=>$this->ci->Payment_transaction_model->find_by_id($tx->id));
+    }
+
+    /**
+     * Notify the referral system, without ever affecting the caller.
+     *
+     * Its own method so an early return here cannot skip the calling method's
+     * return value. load->library() succeeding does not guarantee the property
+     * exists — under a test double, or a loader that resolved it under another
+     * name, reading it blind raises a warning a try/catch cannot see.
+     */
+    private function referral_event($user_id, $event) {
+        try {
+            $this->ci->load->library('ReferralService');
+            if (!isset($this->ci->referralservice)) return;
+            $this->ci->referralservice->record_event($user_id, $event);
+        } catch (Throwable $e) {
+            log_message('error', 'referral '.$event.' hook failed: '.$e->getMessage());
+        }
     }
 
     /** Mark a transaction failed (terminal). */
     public function mark_failed($tx_id, $reason = null) {
         $tx = $this->ci->Payment_transaction_model->find_by_id($tx_id);
         if (!$tx || in_array($tx->status, array(self::STATUS_SUCCESS, self::STATUS_FAILED), true)) return;
+        $this->ci->Payment_transaction_model->update_status($tx->id,
+            array('failed_at' => gmdate('Y-m-d H:i:s')));
         $this->transition($tx->id, $tx->status, self::STATUS_FAILED, 'SYSTEM', $reason);
     }
 
@@ -217,6 +254,18 @@ class PaymentService {
         }
 
         $terminal = strtolower($event['status'] ?? '');
+
+        // A confirmed-but-short payment is a real event that must be visible to
+        // staff, and must never credit as though it were complete.
+        if ($terminal === 'underpaid') {
+            $this->ci->db->where('id', $id)->update('payment_webhooks', array(
+                'processed' => 1,
+                'processed_at' => gmdate('Y-m-d H:i:s'),
+                'error' => 'underpaid: amount received is less than the amount quoted',
+            ));
+            return array('ok'=>true,'underpaid'=>true);
+        }
+
         if (!in_array($terminal, array('success','succeeded','completed','paid','approved'), true)) {
             $this->ci->db->where('id', $id)->update('payment_webhooks', array('processed'=>1,'processed_at'=>gmdate('Y-m-d H:i:s')));
             return array('ok'=>true,'ignored'=>true);
@@ -311,6 +360,8 @@ class PaymentService {
             case 'blockonomics':
             case 'btc':
                 return new BlockonomicsGateway($method_row);
+            case 'fundsvera':
+                return new FundsveraGateway($method_row);
             case 'manual':
             default:
                 return new ManualGateway($method_row);
@@ -319,7 +370,7 @@ class PaymentService {
 
     /** Payment-method codes that have a real, wired adapter. */
     public function implemented_gateways() {
-        return array('manual', 'blockonomics');
+        return array('manual', 'blockonomics', 'fundsvera');
     }
 
     private function persist_transaction(array $data) {

@@ -30,7 +30,19 @@ class WithdrawalRemovalTest extends TestCase
     public function testNoWithdrawalRoutesSurvive()
     {
         $routes = file_get_contents(self::$root.'/application/config/routes.php');
-        $this->assertStringNotContainsStringIgnoringCase('withdrawal', $routes);
+
+        // What must not exist is a route that cashes out the *deposit wallet*.
+        // /api/withdrawals pays out the separate earnings ledger and is a
+        // different feature entirely — see EarningsPayoutIsolationTest, which
+        // proves it cannot reach a wallet balance.
+        foreach (array(
+            'dashboard/withdraw', 'dashboard/withdrawals', 'wallet/withdraw',
+            'admin/withdrawals', 'api/v1/withdrawals', 'withdrawal_requests',
+        ) as $forbidden) {
+            $this->assertStringNotContainsStringIgnoringCase($forbidden, $routes,
+                "route {$forbidden} would reintroduce wallet withdrawals");
+        }
+
         // The wallet routes customers still need are present.
         $this->assertStringContainsString('dashboard/add-funds', $routes);
         $this->assertStringContainsString('dashboard/wallet/deposit', $routes);
@@ -114,6 +126,28 @@ class WithdrawalRemovalTest extends TestCase
             'application/views/public/styleguide.php',
             'application/views/public/pricing.php',
         );
+
+        // The *earnings* payout feature is a different thing from the removed
+        // wallet withdrawal, and is allowed to use the word. What 018 removed
+        // was cashing out a topped-up deposit balance; paying a referral
+        // commission the platform owes is ordinary settlement. The structural
+        // separation between the two is pinned by
+        // EarningsPayoutIsolationTest, which fails if a payout can ever reach
+        // the deposit wallet — that is the guarantee that matters, not the
+        // absence of a string.
+        $earnings_payouts = array(
+            'application/controllers/Referral_api.php',
+            'application/controllers/admin/Payouts.php',
+            'application/controllers/dashboard/Earnings.php',
+            'application/libraries/PayoutService.php',
+            'application/libraries/EarningsService.php',
+            'application/models/Payout_request_model.php',
+            'application/views/dashboard/earnings/index.php',
+            'application/views/admin/payouts/index.php',
+            // Declares /api/withdrawals and /admin/payouts, both earnings-only.
+            'application/config/routes.php',
+        );
+        $copy_only = array_merge($copy_only, $earnings_payouts);
         $clean = array(
             'application/controllers', 'application/core', 'application/libraries',
             'application/models', 'application/seeds', 'application/views',

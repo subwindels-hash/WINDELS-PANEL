@@ -354,6 +354,41 @@ $route['api/docs/json'] = 'api_v1/docs_json';
 // not be verb-restricted here — the controller enforces the per-gateway rule.
 $route['webhook/(:any)'] = 'webhooks/index/$1';
 
+// Fundsvera's configured callback URL. Same handler as /webhook/fundsvera —
+// this is the path the provider profile points at, kept explicit so the URL an
+// operator pastes into their Fundsvera dashboard is stable and greppable.
+$route['api/payments/webhooks/fundsvera'] = 'webhooks/index/fundsvera';
+$route['api/payments/fundsvera/initialize'] = 'payments/initialize';
+$route['api/payments/history'] = 'payments/history';
+$route['api/payments/(:any)'] = 'payments/show/$1';
+
+// Referral, earnings and withdrawal APIs (session-authenticated; the reseller
+// API with its own key auth stays under /api/v1).
+$route['api/referrals/my-code'] = 'referral_api/my_code';
+$route['api/referrals/validate'] = 'referral_api/validate';
+$route['api/referrals/dashboard'] = 'referral_api/dashboard';
+$route['api/referrals/history'] = 'referral_api/history';
+$route['api/earnings'] = 'referral_api/earnings';
+$route['api/earnings/history'] = 'referral_api/earnings_history';
+$route['api/withdrawals'] = 'referral_api/withdrawals';
+$route['api/withdrawals/history'] = 'referral_api/withdrawals_history';
+
+// Customer earnings dashboard.
+$route['dashboard/earnings'] = 'dashboard/earnings/index';
+$route['dashboard/earnings/history'] = 'dashboard/earnings/history';
+$route['dashboard/earnings/withdraw'] = 'dashboard/earnings/withdraw';
+$route['dashboard/earnings/payouts/(:any)/cancel'] = 'dashboard/earnings/cancel_payout/$1';
+
+// Admin: payouts, the earnings ledger and referral review.
+$route['admin/payouts'] = 'admin/payouts/index';
+$route['admin/payouts/(:any)/approve'] = 'admin/payouts/approve/$1';
+$route['admin/payouts/(:any)/reject'] = 'admin/payouts/reject/$1';
+$route['admin/payouts/(:any)/paid'] = 'admin/payouts/paid/$1';
+$route['admin/earnings'] = 'admin/payouts/earnings';
+$route['admin/earnings/(:any)/reverse'] = 'admin/payouts/reverse_earning/$1';
+$route['admin/referrals'] = 'admin/payouts/referrals';
+$route['admin/referrals/(:any)/review'] = 'admin/payouts/review_signup/$1';
+
 // No web installer: provisioning is CLI-only (preflight / migrate / seed),
 // so /install intentionally falls through to 404.
 
