@@ -14,6 +14,13 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  */
 class Webhooks extends MY_Controller {
 
+    /**
+     * Gateways whose callback is an authenticated GET rather than a signed
+     * POST body. Kept as an explicit allowlist so no other gateway can be
+     * driven by a URL a browser (or a crawler) might follow.
+     */
+    const GET_CALLBACK_GATEWAYS = array('blockonomics');
+
     public function __construct() {
         parent::__construct();
         $this->load->library('PaymentService');
@@ -25,7 +32,17 @@ class Webhooks extends MY_Controller {
      * POST /webhook/(:gateway)
      */
     public function index($gateway = null) {
-        if ($this->input->method(true) !== 'POST') {
+        // Most gateways POST a signed JSON body. Blockonomics is different by
+        // design: it is a non-custodial address service that pings a GET
+        // callback carrying ?status=&addr=&value=&txid=, with a shared secret
+        // embedded in the URL. Refusing GET here would mean its confirmations
+        // never arrived and crypto deposits silently never credited.
+        $method = $this->input->method(true);
+        $allowed = in_array($gateway, self::GET_CALLBACK_GATEWAYS, true)
+            ? array('GET', 'POST')
+            : array('POST');
+
+        if (!in_array($method, $allowed, true)) {
             return $this->respond(405, array('ok'=>false,'error'=>'method not allowed'));
         }
         if (!$gateway || !preg_match('/^[a-z0-9_\-]+$/i', $gateway)) {

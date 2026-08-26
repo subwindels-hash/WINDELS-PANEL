@@ -342,6 +342,9 @@ $route['api/docs'] = 'api_v1/docs';
 $route['api/docs/json'] = 'api_v1/docs_json';
 
 // Webhooks
+// Gateway callbacks. POST for signed-body gateways; Blockonomics uses an
+// authenticated GET (see Webhooks::GET_CALLBACK_GATEWAYS), so the route must
+// not be verb-restricted here — the controller enforces the per-gateway rule.
 $route['webhook/(:any)'] = 'webhooks/index/$1';
 
 // No web installer: provisioning is CLI-only (preflight / migrate / seed),
