@@ -58,7 +58,10 @@ class Core_seeder extends Seeder {
                                   'marketplace.moderate_listings','marketplace.resolve','marketplace.reveal'),
             'payments'   => array('payments.view','payments.manage','wallets.adjust'),
             'support'    => array('tickets.view','tickets.reply','tickets.manage'),
-            'content'    => array('blog.manage','faq.manage','announcements.manage','media.manage'),
+            // content.pages is separate from blog.manage on purpose: being
+            // trusted to write a blog post is not the same as being trusted to
+            // rewrite the Terms of Service.
+            'content'    => array('blog.manage','faq.manage','announcements.manage','media.manage','content.pages'),
             'affiliates' => array('affiliates.view','affiliates.manage'),
             'system'     => array('settings.manage','appearance.manage','audit.view','blacklist.manage','api.manage'),
         );
@@ -83,7 +86,7 @@ class Core_seeder extends Seeder {
                 'marketplace.resolve','marketplace.reveal',
                 'payments.view','payments.manage','wallets.adjust',
                 'tickets.view','tickets.reply','tickets.manage',
-                'blog.manage','faq.manage','announcements.manage','media.manage',
+                'blog.manage','faq.manage','announcements.manage','media.manage','content.pages',
                 'affiliates.view','affiliates.manage',
                 'settings.manage','appearance.manage','audit.view','blacklist.manage','api.manage',
             ),

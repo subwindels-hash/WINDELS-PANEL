@@ -1589,4 +1589,24 @@ CREATE TABLE IF NOT EXISTS blockonomics_addresses (
   CONSTRAINT fk_blk_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ---------------------------------------------------------------------
+-- migration 021_managed_pages
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS managed_pages (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  page_key VARCHAR(64) NOT NULL UNIQUE COMMENT 'terms|privacy|refund-policy|acceptable-use|about',
+  title VARCHAR(160) NOT NULL,
+  body_html MEDIUMTEXT NOT NULL COMMENT 'sanitised on write by ContentService',
+  meta_description VARCHAR(320) NULL,
+  is_published TINYINT(1) NOT NULL DEFAULT 1,
+  updated_by_id BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_managed_pages_published (is_published),
+  CONSTRAINT fk_managed_pages_author FOREIGN KEY (updated_by_id)
+    REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;

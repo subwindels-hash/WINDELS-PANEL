@@ -222,19 +222,23 @@ class PaymentService {
             return array('ok'=>true,'ignored'=>true);
         }
 
+        // Resolution order matters. An adapter that can name the transaction
+        // directly (a crypto callback resolves it from the receive address it
+        // issued) is authoritative and is tried first: matching on
+        // provider_tx_id alone can land on a *different, older* transaction
+        // that happens to carry the same id, and silently no-op because that
+        // one is already SUCCESS.
         $tx = null;
-        if (!empty($event['provider_tx_id'])) {
+        if (!empty($event['metadata']['payment_transaction_id'])) {
+            $tx = $this->ci->Payment_transaction_model->find_by_id(
+                (int) $event['metadata']['payment_transaction_id']
+            );
+        }
+        if (!$tx && !empty($event['provider_tx_id'])) {
             $tx = $this->ci->Payment_transaction_model->find_by_provider_tx($event['provider_tx_id']);
         }
         if (!$tx && !empty($event['metadata']['idempotency_key'])) {
             $tx = $this->ci->Payment_transaction_model->find_by_idempotency_key($event['metadata']['idempotency_key']);
-        }
-        // Crypto callbacks identify the payment by the receive address, not by
-        // a provider transaction id we issued.
-        if (!$tx && !empty($event['metadata']['payment_transaction_id'])) {
-            $tx = $this->ci->Payment_transaction_model->find_by_id(
-                (int) $event['metadata']['payment_transaction_id']
-            );
         }
         if (!$tx) {
             // Accepted and logged, but there is nothing to reconcile — the

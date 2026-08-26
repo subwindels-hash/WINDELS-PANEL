@@ -21,6 +21,7 @@ $nav = $is_admin ? array(
     array('admin/tickets',      'Tickets',    'tickets.view',    'message-square'),
     array('admin/affiliates',   'Affiliates', 'affiliates.view', 'gift'),
     array('admin/blog',         'Content',    'blog.manage',     'list'),
+    array('admin/pages',        'Website pages','content.pages', 'globe'),
     array('admin/staff',        'Staff',      'staff.manage',    'shield'),
     array('admin/media',        'Media',      'media.manage',    'star'),
     array('admin/categories',   'System',     'audit.view',      'globe'),

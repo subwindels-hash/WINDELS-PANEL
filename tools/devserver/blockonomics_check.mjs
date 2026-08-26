@@ -69,6 +69,10 @@ db.prepare(
 const txId = db.prepare('SELECT id FROM payment_transactions WHERE public_id = ?').get(txPublic).id;
 
 const address = 'bc1qe2e' + crypto.randomBytes(8).toString('hex');
+// Unique per run: a bitcoin txid is globally unique in reality, and reusing a
+// literal across runs makes the second run match the first run's transaction.
+const TXID1 = 'e2e-' + crypto.randomBytes(6).toString('hex');
+const TXID2 = 'e2e-' + crypto.randomBytes(6).toString('hex');
 db.prepare(
   `INSERT INTO blockonomics_addresses
    (public_id, payment_transaction_id, user_id, crypto, address, expected_crypto_amount,
@@ -91,24 +95,24 @@ const txStatus = () => db.prepare('SELECT status FROM payment_transactions WHERE
 
 // --- wrong secret --------------------------------------------------------
 console.log('\n── Blockonomics · verification');
-let r = await callback({ status: 2, addr: address, value: 50000, txid: 'e2e-tx-1', secret: 'wrong' });
+let r = await callback({ status: 2, addr: address, value: 50000, txid: TXID1, secret: 'wrong' });
 check('a callback with the wrong secret is refused', r.status === 401, `status=${r.status}`);
 check('no credit from a forged callback', balance() === startBalance, `balance moved to ${balance()}`);
 
 // --- unconfirmed ---------------------------------------------------------
-r = await callback({ status: 0, addr: address, value: 50000, txid: 'e2e-tx-1', secret: SECRET });
+r = await callback({ status: 0, addr: address, value: 50000, txid: TXID1, secret: SECRET });
 check('an unconfirmed callback is accepted', r.status === 200, `status=${r.status}`);
 check('unconfirmed does not credit the wallet', balance() === startBalance, `balance=${balance()}`);
 check('the address row tracks progress',
   db.prepare('SELECT status FROM blockonomics_addresses WHERE address = ?').get(address).status === 'CONFIRMING');
 
 // --- underpaid + confirmed ----------------------------------------------
-r = await callback({ status: 2, addr: address, value: 20000, txid: 'e2e-tx-1', secret: SECRET });
+r = await callback({ status: 2, addr: address, value: 20000, txid: TXID1, secret: SECRET });
 check('a confirmed underpayment is accepted but not credited',
   r.status === 200 && balance() === startBalance, `balance=${balance()}`);
 
 // --- fully paid + confirmed ---------------------------------------------
-r = await callback({ status: 2, addr: address, value: 50000, txid: 'e2e-tx-2', secret: SECRET });
+r = await callback({ status: 2, addr: address, value: 50000, txid: TXID2, secret: SECRET });
 check('a confirmed full payment is accepted', r.status === 200, `status=${r.status} ${r.body}`);
 const credited = balance();
 check('the wallet is credited', credited > startBalance, `balance ${startBalance} -> ${credited}`);
@@ -116,12 +120,12 @@ check('the deposit is marked successful', txStatus() === 'SUCCESS', `status=${tx
 
 // --- replay --------------------------------------------------------------
 console.log('\n── Blockonomics · idempotency');
-r = await callback({ status: 2, addr: address, value: 50000, txid: 'e2e-tx-2', secret: SECRET });
+r = await callback({ status: 2, addr: address, value: 50000, txid: TXID2, secret: SECRET });
 check('replaying the same confirmation is a duplicate', r.status === 200, `status=${r.status}`);
 check('a replay does not credit twice', balance() === credited, `balance moved to ${balance()}`);
 
 // --- unknown address -----------------------------------------------------
-r = await callback({ status: 2, addr: 'bc1qnever-issued', value: 999999, txid: 'e2e-tx-3', secret: SECRET });
+r = await callback({ status: 2, addr: 'bc1qnever-issued', value: 999999, txid: 'e2e-' + crypto.randomBytes(6).toString('hex'), secret: SECRET });
 check('a callback for an unissued address never credits', balance() === credited, `balance=${balance()}`);
 
 const failed = results.filter((x) => !x.ok);

@@ -63,10 +63,8 @@ class Home extends Public_Controller {
         )));
     }
     public function about(){
-        $this->load->view('layouts/main', array('content_view'=>'public/about','data'=>array(
-            'title'=>'About',
-            'meta_description'=>'What MarvySocials is, who it is for, and what this site will not invent about the operator.',
-        )));
+        $this->render_page('about', 'public/about', 'About',
+            'What MarvySocials is, who it is for, and what this site will not invent about the operator.');
     }
     public function faq(){
         $this->load->library('SiteOperatorKnowledge');
@@ -254,32 +252,60 @@ class Home extends Public_Controller {
         return $cfg['support_email'] ?? 'support@marvy.local';
     }
     public function terms(){
-        $this->load->library('SiteOperatorKnowledge');
-        $this->load->view('layouts/main', array('content_view'=>'public/terms','data'=>array(
-            'title'=>'Terms of Service',
-            'meta_description'=>'Terms of Service for this MarvySocials instance, including accounts, wallet billing, acceptable use and the on-site assistant.',
-        )));
+        $this->render_page('terms', 'public/terms', 'Terms of Service',
+            'Terms of Service for this MarvySocials instance, including accounts, wallet billing, acceptable use and the on-site assistant.');
     }
     public function privacy(){
-        $this->load->library('SiteOperatorKnowledge');
-        $this->load->view('layouts/main', array('content_view'=>'public/privacy','data'=>array(
-            'title'=>'Privacy Policy',
-            'meta_description'=>'How MarvySocials handles account, order, payment, identity and assistant data — written from the actual application.',
-        )));
+        $this->render_page('privacy', 'public/privacy', 'Privacy Policy',
+            'How MarvySocials handles account, order, payment, identity and assistant data — written from the actual application.');
     }
     public function refund_policy(){
-        $this->load->library('SiteOperatorKnowledge');
-        $this->load->view('layouts/main', array('content_view'=>'public/refund_policy','data'=>array(
-            'title'=>'Refund Policy',
-            'meta_description'=>'When MarvySocials credits a prepaid wallet for partial deliveries, failed purchases or staff decisions.',
-        )));
+        $this->render_page('refund-policy', 'public/refund_policy', 'Refund Policy',
+            'When MarvySocials credits a prepaid wallet for partial deliveries, failed purchases or staff decisions.');
     }
     public function acceptable_use(){
+        $this->render_page('acceptable-use', 'public/acceptable_use', 'Acceptable Use',
+            'What you may and may not do with a MarvySocials account, wallet, API key and catalogue orders.');
+    }
+
+    /**
+     * Render a policy/marketing page, preferring an administrator override.
+     *
+     * These pages change for legal reasons, on legal timescales, decided by
+     * people who do not deploy code — so their text must be editable from
+     * Admin -> Website content without touching a PHP file. When no override
+     * exists the bundled view still renders, which keeps a fresh install
+     * complete and makes "clear the override" a real undo rather than a way to
+     * blank a legal page.
+     */
+    private function render_page($key, $fallback_view, $title, $meta) {
         $this->load->library('SiteOperatorKnowledge');
-        $this->load->view('layouts/main', array('content_view'=>'public/acceptable_use','data'=>array(
-            'title'=>'Acceptable Use',
-            'meta_description'=>'What you may and may not do with a MarvySocials account, wallet, API key and catalogue orders.',
-        )));
+
+        $override = null;
+        if ($this->db_ready) {
+            try {
+                $this->load->model('Managed_page_model');
+                $override = $this->Managed_page_model->published($key);
+            } catch (Throwable $e) {
+                log_message('error', 'managed page lookup failed for '.$key.': '.$e->getMessage());
+            }
+        }
+
+        if ($override) {
+            return $this->load->view('layouts/main', array(
+                'content_view' => 'public/managed_page',
+                'data' => array(
+                    'title' => $override->title ?: $title,
+                    'meta_description' => $override->meta_description ?: $meta,
+                    'page' => $override,
+                ),
+            ));
+        }
+
+        $this->load->view('layouts/main', array(
+            'content_view' => $fallback_view,
+            'data' => array('title' => $title, 'meta_description' => $meta),
+        ));
     }
 
     public function not_found(){

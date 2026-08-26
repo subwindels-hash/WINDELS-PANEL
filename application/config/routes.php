@@ -316,6 +316,13 @@ $route['admin/staff/permissions/(:any)'] = 'admin/staff/save_permissions/$1';
 $route['admin/audit-logs'] = 'admin/system/audit_logs';
 $route['admin/appearance'] = 'admin/media/appearance';
 $route['admin/appearance/save'] = 'admin/media/save_appearance';
+// Administrator-managed public pages (Terms, Privacy, Refund, About, ...).
+// These exist so policy text can change without a code deploy.
+$route['admin/pages'] = 'admin/content/pages';
+$route['admin/pages/(:any)/reset'] = 'admin/content/page_reset/$1';
+$route['admin/pages/(:any)/save'] = 'admin/content/page_save/$1';
+$route['admin/pages/(:any)'] = 'admin/content/page_edit/$1';
+
 $route['admin/settings'] = 'admin/settings/index';
 $route['admin/settings/save'] = 'admin/settings/save';
 $route['admin/blacklist'] = 'admin/system/blacklist';

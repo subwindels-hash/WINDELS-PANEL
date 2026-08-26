@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 20), roles,
+-- foreign keys, migration bookkeeping (version 21), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first administrator. No migration,
 -- seed or installer command has to run afterwards.
@@ -1614,6 +1614,26 @@ CREATE TABLE IF NOT EXISTS blockonomics_addresses (
   CONSTRAINT fk_blk_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ---------------------------------------------------------------------
+-- migration 021_managed_pages
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS managed_pages (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  page_key VARCHAR(64) NOT NULL UNIQUE COMMENT 'terms|privacy|refund-policy|acceptable-use|about',
+  title VARCHAR(160) NOT NULL,
+  body_html MEDIUMTEXT NOT NULL COMMENT 'sanitised on write by ContentService',
+  meta_description VARCHAR(320) NULL,
+  is_published TINYINT(1) NOT NULL DEFAULT 1,
+  updated_by_id BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_managed_pages_published (is_published),
+  CONSTRAINT fk_managed_pages_author FOREIGN KEY (updated_by_id)
+    REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -1628,7 +1648,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (20);
+INSERT INTO migrations (version) VALUES (21);
 
 -- ======================================================================
 -- CORE DATA
@@ -1791,25 +1811,28 @@ INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
 VALUES (46, 'media.manage', 'content', 'Media manage');
 
 INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
-VALUES (47, 'affiliates.view', 'affiliates', 'Affiliates view');
+VALUES (47, 'content.pages', 'content', 'Content pages');
 
 INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
-VALUES (48, 'affiliates.manage', 'affiliates', 'Affiliates manage');
+VALUES (48, 'affiliates.view', 'affiliates', 'Affiliates view');
 
 INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
-VALUES (49, 'settings.manage', 'system', 'Settings manage');
+VALUES (49, 'affiliates.manage', 'affiliates', 'Affiliates manage');
 
 INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
-VALUES (50, 'appearance.manage', 'system', 'Appearance manage');
+VALUES (50, 'settings.manage', 'system', 'Settings manage');
 
 INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
-VALUES (51, 'audit.view', 'system', 'Audit view');
+VALUES (51, 'appearance.manage', 'system', 'Appearance manage');
 
 INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
-VALUES (52, 'blacklist.manage', 'system', 'Blacklist manage');
+VALUES (52, 'audit.view', 'system', 'Audit view');
 
 INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
-VALUES (53, 'api.manage', 'system', 'Api manage');
+VALUES (53, 'blacklist.manage', 'system', 'Blacklist manage');
+
+INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
+VALUES (54, 'api.manage', 'system', 'Api manage');
 
 -- role_permissions
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
@@ -1972,6 +1995,9 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 VALUES (1, 53);
 
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
+VALUES (1, 54);
+
+INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 VALUES (2, 1);
 
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
@@ -2128,6 +2154,9 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 VALUES (2, 53);
 
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
+VALUES (2, 54);
+
+INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 VALUES (3, 1);
 
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
@@ -2179,7 +2208,7 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 VALUES (3, 41);
 
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
-VALUES (3, 47);
+VALUES (3, 48);
 
 -- price_groups
 INSERT INTO `price_groups` (`id`, `name`, `description`, `is_default`)
