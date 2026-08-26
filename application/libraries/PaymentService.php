@@ -41,6 +41,9 @@ class PaymentService {
         if (!class_exists('ManualGateway', false)) {
             require_once APPPATH.'libraries/ManualGateway.php';
         }
+        if (!class_exists('BlockonomicsGateway', false)) {
+            require_once APPPATH.'libraries/BlockonomicsGateway.php';
+        }
     }
 
     /**
@@ -163,16 +166,27 @@ class PaymentService {
      * @return array{ok:bool, already_seen?:bool, transaction?:object, error?:string}
      */
     public function record_webhook($gateway_type, $raw_body, array $headers) {
-        // Only 'manual' has a real adapter today. Anything else is handled by
-        // the generic HMAC/JSON envelope below until its adapter ships, so an
-        // unconfigured gateway can never silently accept a forged callback.
-        $gateway = $gateway_type === 'manual' ? new ManualGateway() : null;
+        // Gateways with a real adapter verify and parse their own callbacks.
+        // Anything else goes through the generic HMAC envelope, which is
+        // fail-closed: no configured secret means the event is stored but no
+        // money moves.
+        $gateway = in_array($gateway_type, $this->implemented_gateways(), true)
+            ? $this->gateway_for_code($gateway_type)
+            : null;
+
         $sig_ok = $gateway
             ? $gateway->verify_webhook($raw_body, $headers)
             : $this->verify_generic_signature($gateway_type, $raw_body, $headers);
-        $event = $gateway
-            ? $gateway->parse_event($raw_body)
-            : $this->parse_generic_event($raw_body);
+
+        if ($gateway instanceof BlockonomicsGateway) {
+            // Blockonomics reports progress in the query string, so its parser
+            // needs the headers too.
+            $event = $gateway->parse_event($raw_body, $headers);
+        } elseif ($gateway) {
+            $event = $gateway->parse_event($raw_body);
+        } else {
+            $event = $this->parse_generic_event($raw_body);
+        }
 
         $id = $this->ci->Payment_webhook_model->record_once(
             $gateway_type,
@@ -214,6 +228,13 @@ class PaymentService {
         }
         if (!$tx && !empty($event['metadata']['idempotency_key'])) {
             $tx = $this->ci->Payment_transaction_model->find_by_idempotency_key($event['metadata']['idempotency_key']);
+        }
+        // Crypto callbacks identify the payment by the receive address, not by
+        // a provider transaction id we issued.
+        if (!$tx && !empty($event['metadata']['payment_transaction_id'])) {
+            $tx = $this->ci->Payment_transaction_model->find_by_id(
+                (int) $event['metadata']['payment_transaction_id']
+            );
         }
         if (!$tx) {
             // Accepted and logged, but there is nothing to reconcile — the
@@ -273,12 +294,28 @@ class PaymentService {
         return $this->gateway_for_code($method->code, $method);
     }
 
+    /**
+     * The adapter that handles a payment-method code.
+     *
+     * Only adapters that are actually implemented and wired are routed here.
+     * Everything else falls back to ManualGateway, which marks the deposit
+     * PENDING for admin review — a deposit that waits for a human is always
+     * safer than one handed to an untested integration.
+     */
     private function gateway_for_code($code, $method_row = null) {
-        if ($code === 'manual') return new ManualGateway($method_row);
-        // External gateways (stripe/paypal/...) ship with their own adapters in
-        // later iterations; fall back to a safe "unconfigured" manual adapter
-        // so the code path never calls an undefined class.
-        return new ManualGateway($method_row);
+        switch ($code) {
+            case 'blockonomics':
+            case 'btc':
+                return new BlockonomicsGateway($method_row);
+            case 'manual':
+            default:
+                return new ManualGateway($method_row);
+        }
+    }
+
+    /** Payment-method codes that have a real, wired adapter. */
+    public function implemented_gateways() {
+        return array('manual', 'blockonomics');
     }
 
     private function persist_transaction(array $data) {

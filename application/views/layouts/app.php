@@ -116,7 +116,9 @@ try {
 <div role="alert" aria-live="assertive" style="position:sticky;top:var(--ws-announce-h);z-index:1000;background:#7f1d1d;color:#fff;border-bottom:4px solid #fbbf24;padding:.75rem 1rem;box-shadow:0 4px 12px rgba(0,0,0,.3)">
   <div class="row justify-between" style="align-items:center;gap:1rem;flex-wrap:wrap;max-width:90rem;margin:0 auto">
     <div>
-      <strong style="display:block;letter-spacing:.03em">IMPERSONATING CUSTOMER — READ-ONLY SUPPORT SESSION</strong>
+      <strong style="display:block;letter-spacing:.03em">
+        Administrator Mode — You are currently viewing this account as an administrator.
+      </strong>
       <span class="text-sm">
         Staff: <?=htmlspecialchars((string)($__imp_actor->username ?? 'staff'))?> ·
         Customer: <?=htmlspecialchars((string)($current_user->username ?? 'customer'))?> ·
@@ -128,7 +130,7 @@ try {
       <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>"
              value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
       <button class="btn btn-sm" type="submit" style="background:#fff;color:#7f1d1d;border:2px solid #fff;font-weight:700;white-space:nowrap">
-        End impersonation and return to staff
+        Return to Admin Dashboard
       </button>
     </form>
   </div>

@@ -389,6 +389,23 @@ class Demo_seeder extends Seeder {
                 'timezone'          => 'UTC',
                 'locale'            => 'en',
             ));
+
+            // Allocated after the upsert and only when missing: re-running the
+            // seed must not hand an existing demo account a different account
+            // number every time.
+            if ($ids[$username]) {
+                $row = $this->ci->db->where('id', $ids[$username])->get('users')->row();
+                if ($row && empty($row->user_code)) {
+                    // Allocate first, then build the UPDATE: the allocator runs
+                    // its own query, which would otherwise consume the pending
+                    // where('id') and update every row in the table.
+                    $code = marvy_allocate_user_code($this->ci->db);
+                    if ($code !== null) {
+                        $this->ci->db->where('id', $ids[$username])
+                            ->update('users', array('user_code' => $code));
+                    }
+                }
+            }
         }
 
         // referral: reseller was referred by demo

@@ -1551,4 +1551,42 @@ ADD COLUMN product_type VARCHAR(16) NOT NULL DEFAULT 'DIGITAL' COMMENT 'DIGITAL|
 -- migration 019_remove_marketplace_vendors
 -- ---------------------------------------------------------------------
 
+-- ---------------------------------------------------------------------
+-- migration 020_user_code_pin_blockonomics
+-- ---------------------------------------------------------------------
+
+ALTER TABLE users
+ADD COLUMN user_code CHAR(6) NULL COMMENT 'human-facing six-digit account number';
+
+ALTER TABLE users
+ADD COLUMN pin_hash VARCHAR(255) NULL COMMENT 'password_hash of the 4-digit PIN; never reversible',
+ADD COLUMN pin_set_at DATETIME NULL,
+ADD COLUMN pin_failed_attempts INT UNSIGNED NOT NULL DEFAULT 0,
+ADD COLUMN pin_locked_until DATETIME NULL;
+
+CREATE TABLE IF NOT EXISTS blockonomics_addresses (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  payment_transaction_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  crypto VARCHAR(8) NOT NULL DEFAULT 'BTC' COMMENT 'BTC|USDT',
+  address VARCHAR(128) NOT NULL UNIQUE,
+  expected_crypto_amount DECIMAL(20,8) NULL COMMENT 'quoted at initiation',
+  received_crypto_amount DECIMAL(20,8) NOT NULL DEFAULT 0.00000000,
+  fiat_amount DECIMAL(20,8) NOT NULL,
+  fiat_currency CHAR(3) NOT NULL,
+  rate_used DECIMAL(20,8) NULL COMMENT 'fiat per 1 crypto unit at initiation',
+  confirmations INT NOT NULL DEFAULT 0,
+  required_confirmations INT NOT NULL DEFAULT 2,
+  txid VARCHAR(128) NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'AWAITING' COMMENT 'AWAITING|PARTIAL|CONFIRMING|PAID|EXPIRED',
+  expires_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_blk_status (status, created_at),
+  INDEX idx_blk_user (user_id, created_at),
+  CONSTRAINT fk_blk_tx FOREIGN KEY (payment_transaction_id) REFERENCES payment_transactions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_blk_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;

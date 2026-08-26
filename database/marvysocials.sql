@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 19), roles,
+-- foreign keys, migration bookkeeping (version 20), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first administrator. No migration,
 -- seed or installer command has to run afterwards.
@@ -1576,6 +1576,44 @@ ADD COLUMN product_type VARCHAR(16) NOT NULL DEFAULT 'DIGITAL' COMMENT 'DIGITAL|
 -- migration 019_remove_marketplace_vendors
 -- ---------------------------------------------------------------------
 
+-- ---------------------------------------------------------------------
+-- migration 020_user_code_pin_blockonomics
+-- ---------------------------------------------------------------------
+
+ALTER TABLE users
+ADD COLUMN user_code CHAR(6) NULL COMMENT 'human-facing six-digit account number';
+
+ALTER TABLE users
+ADD COLUMN pin_hash VARCHAR(255) NULL COMMENT 'password_hash of the 4-digit PIN; never reversible',
+ADD COLUMN pin_set_at DATETIME NULL,
+ADD COLUMN pin_failed_attempts INT UNSIGNED NOT NULL DEFAULT 0,
+ADD COLUMN pin_locked_until DATETIME NULL;
+
+CREATE TABLE IF NOT EXISTS blockonomics_addresses (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  payment_transaction_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  crypto VARCHAR(8) NOT NULL DEFAULT 'BTC' COMMENT 'BTC|USDT',
+  address VARCHAR(128) NOT NULL UNIQUE,
+  expected_crypto_amount DECIMAL(20,8) NULL COMMENT 'quoted at initiation',
+  received_crypto_amount DECIMAL(20,8) NOT NULL DEFAULT 0.00000000,
+  fiat_amount DECIMAL(20,8) NOT NULL,
+  fiat_currency CHAR(3) NOT NULL,
+  rate_used DECIMAL(20,8) NULL COMMENT 'fiat per 1 crypto unit at initiation',
+  confirmations INT NOT NULL DEFAULT 0,
+  required_confirmations INT NOT NULL DEFAULT 2,
+  txid VARCHAR(128) NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'AWAITING' COMMENT 'AWAITING|PARTIAL|CONFIRMING|PAID|EXPIRED',
+  expires_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_blk_status (status, created_at),
+  INDEX idx_blk_user (user_id, created_at),
+  CONSTRAINT fk_blk_tx FOREIGN KEY (payment_transaction_id) REFERENCES payment_transactions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_blk_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -1590,7 +1628,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (19);
+INSERT INTO migrations (version) VALUES (20);
 
 -- ======================================================================
 -- CORE DATA
@@ -2284,25 +2322,28 @@ VALUES ('blog', 1, 'Public blog');
 
 -- payment_methods
 INSERT INTO `payment_methods` (`id`, `code`, `public_id`, `name`, `type`, `is_active`, `sorting`, `min_amount`, `max_amount`, `currencies`)
-VALUES (1, 'manual', '8XH1MC7CNM2CY02784DP790NEY', 'Manual / Bank Transfer', 'MANUAL', 1, 10, '500.00000000', '5000000.00000000', '["NGN"]');
+VALUES (1, 'manual', 'A9YR4C1W4Y2RCAPBGC3KHTTC2R', 'Manual / Bank Transfer', 'MANUAL', 1, 10, '500.00000000', '5000000.00000000', '["NGN"]');
 
 INSERT INTO `payment_methods` (`id`, `code`, `public_id`, `name`, `type`, `is_active`, `sorting`, `min_amount`, `max_amount`, `currencies`)
-VALUES (2, 'stripe', 'K4YJJDH9TKEDT6E6BTZ8PP50GB', 'Stripe', 'STRIPE', 0, 20, '500.00000000', '5000000.00000000', '["NGN"]');
+VALUES (2, 'stripe', 'DKWFXB3AMVGV7V3KD2TSJG3P3S', 'Stripe', 'STRIPE', 0, 20, '500.00000000', '5000000.00000000', '["NGN"]');
 
 INSERT INTO `payment_methods` (`id`, `code`, `public_id`, `name`, `type`, `is_active`, `sorting`, `min_amount`, `max_amount`, `currencies`)
-VALUES (3, 'paypal', '9JT5HE2HGA3RRJTWRWDDATS4PD', 'PayPal', 'PAYPAL', 0, 30, '500.00000000', '5000000.00000000', '["NGN"]');
+VALUES (3, 'paypal', 'Q94FZMXHWMCQWX47HFZMQZDRC7', 'PayPal', 'PAYPAL', 0, 30, '500.00000000', '5000000.00000000', '["NGN"]');
 
 INSERT INTO `payment_methods` (`id`, `code`, `public_id`, `name`, `type`, `is_active`, `sorting`, `min_amount`, `max_amount`, `currencies`)
-VALUES (4, 'paystack', '6JH8JKRQGMWYEMMPNMJ3SRZEN5', 'Paystack', 'PAYSTACK', 0, 40, '500.00000000', '5000000.00000000', '["NGN"]');
+VALUES (4, 'paystack', 'WBBR962ZV9F60K8Y9N6TZ5BPK6', 'Paystack', 'PAYSTACK', 0, 40, '500.00000000', '5000000.00000000', '["NGN"]');
 
 INSERT INTO `payment_methods` (`id`, `code`, `public_id`, `name`, `type`, `is_active`, `sorting`, `min_amount`, `max_amount`, `currencies`)
-VALUES (5, 'flutterwave', 'KWZNGAKY2KEMFNECBSAKD0K15A', 'Flutterwave', 'FLUTTERWAVE', 0, 50, '500.00000000', '5000000.00000000', '["NGN"]');
+VALUES (5, 'flutterwave', 'M2NM1GWC2351EZEHDZ3ZT0RAKE', 'Flutterwave', 'FLUTTERWAVE', 0, 50, '500.00000000', '5000000.00000000', '["NGN"]');
 
 INSERT INTO `payment_methods` (`id`, `code`, `public_id`, `name`, `type`, `is_active`, `sorting`, `min_amount`, `max_amount`, `currencies`)
-VALUES (6, 'razorpay', '758H4H1BMTNWKS68QAW4QCYTQ6', 'Razorpay', 'RAZORPAY', 0, 60, '500.00000000', '5000000.00000000', '["NGN"]');
+VALUES (6, 'razorpay', '516VTN4SDE4KD7G4E5FGP504YG', 'Razorpay', 'RAZORPAY', 0, 60, '500.00000000', '5000000.00000000', '["NGN"]');
 
 INSERT INTO `payment_methods` (`id`, `code`, `public_id`, `name`, `type`, `is_active`, `sorting`, `min_amount`, `max_amount`, `currencies`)
-VALUES (7, 'coinpayments', 'BPD6QQ7ETM72CZXPKWVPQQR1MA', 'CoinPayments', 'COINPAYMENTS', 0, 70, '500.00000000', '5000000.00000000', '["NGN"]');
+VALUES (7, 'coinpayments', 'WE7GPKYE0H9MYTABVJMGA3VQJE', 'CoinPayments', 'COINPAYMENTS', 0, 70, '500.00000000', '5000000.00000000', '["NGN"]');
+
+INSERT INTO `payment_methods` (`id`, `code`, `public_id`, `name`, `type`, `is_active`, `sorting`, `min_amount`, `max_amount`, `currencies`)
+VALUES (8, 'blockonomics', 'HHXBAZVJKQ7SHFNA7MTGZSDZWB', 'Bitcoin (BTC)', 'BLOCKONOMICS', 0, 15, '500.00000000', '5000000.00000000', '["NGN"]');
 
 -- email_templates
 INSERT INTO `email_templates` (`id`, `template_key`, `subject`, `body_html`, `body_text`, `variables`, `is_active`)
@@ -2325,13 +2366,13 @@ VALUES (6, 'ticket.replied', 'Support ticket {{ticket_id}} updated', '<p>Our tea
 
 -- faqs
 INSERT INTO `faqs` (`id`, `question`, `answer`, `category`, `sorting`, `is_active`)
-VALUES (1, 'How fast are orders delivered?', 'Most services start within minutes. Each service card shows its average start time; drip-feed orders follow the interval you choose.', 'orders', 10, 1);
+VALUES (1, 'How fast are orders delivered?', 'Most services start within minutes. Each service card shows its average start time; drip-feed orders follow the interval you choose. The panel does not guarantee a completion time.', 'orders', 10, 1);
 
 INSERT INTO `faqs` (`id`, `question`, `answer`, `category`, `sorting`, `is_active`)
-VALUES (2, 'How do I add funds?', 'Open Dashboard → Add Funds, pick a payment method and follow the checkout. Your wallet is credited automatically once the payment is verified.', 'payments', 20, 1);
+VALUES (2, 'How do I add funds?', 'Open Dashboard → Add Funds, pick a payment method the operator has enabled, and follow checkout. Your wallet is credited after the payment is verified. Funds stay in your panel spending balance — there is no cash-out.', 'payments', 20, 1);
 
 INSERT INTO `faqs` (`id`, `question`, `answer`, `category`, `sorting`, `is_active`)
-VALUES (3, 'What is a partial order?', 'If a provider delivers only part of the quantity, the order is marked PARTIAL and the undelivered portion is refunded to your wallet automatically.', 'orders', 30, 1);
+VALUES (3, 'What is a partial order?', 'If a provider delivers only part of the quantity, the order is marked PARTIAL and the undelivered portion is refunded to your wallet when partial refunds are enabled.', 'orders', 30, 1);
 
 INSERT INTO `faqs` (`id`, `question`, `answer`, `category`, `sorting`, `is_active`)
 VALUES (4, 'Do you offer an API for resellers?', 'Yes. Create an API key in Dashboard → API and call /api/v1 with the X-Api-Key header. Full docs are at /api/docs.', 'api', 40, 1);
@@ -2339,189 +2380,204 @@ VALUES (4, 'Do you offer an API for resellers?', 'Yes. Create an API key in Dash
 INSERT INTO `faqs` (`id`, `question`, `answer`, `category`, `sorting`, `is_active`)
 VALUES (5, 'Can I get a refill?', 'Services marked "Refill" support refill requests from the order detail page within the refill window.', 'orders', 50, 1);
 
+INSERT INTO `faqs` (`id`, `question`, `answer`, `category`, `sorting`, `is_active`)
+VALUES (6, 'What is MarvySocials?', 'A prepaid reseller platform for SMM services, Nigerian VTU, virtual numbers, identity lookups, gift cards and a platform-owned marketplace.', 'general', 5, 1);
+
+INSERT INTO `faqs` (`id`, `question`, `answer`, `category`, `sorting`, `is_active`)
+VALUES (7, 'Can I withdraw wallet funds?', 'No. The wallet is a spending balance for purchases on this panel.', 'payments', 25, 1);
+
+INSERT INTO `faqs` (`id`, `question`, `answer`, `category`, `sorting`, `is_active`)
+VALUES (8, 'How do I contact support?', 'Signed-in customers should open a ticket. Visitors can use the contact form. Include the public order ID.', 'support', 60, 1);
+
+INSERT INTO `faqs` (`id`, `question`, `answer`, `category`, `sorting`, `is_active`)
+VALUES (9, 'Is the site assistant a cloud AI?', 'No. It is an embedded operational engine. It does not call a third-party AI API and cannot place orders for you.', 'general', 70, 1);
+
+INSERT INTO `faqs` (`id`, `question`, `answer`, `category`, `sorting`, `is_active`)
+VALUES (10, 'Where do staff sign in?', 'Use /admin/login. Customer accounts are refused after the password check.', 'general', 80, 1);
+
 -- vtu_networks
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (1, 'MTN', '9TACSBMKRQ1BE328XKNZ2P4KNG', 'MTN', 'AIRTIME', '0803,0806,0810,0813,0814,0816,0903,0906,0913,0916', 1, 0);
+VALUES (1, 'MTN', 'GRJ1X0NJS18KH9YZXBKXVPDTFT', 'MTN', 'AIRTIME', '0803,0806,0810,0813,0814,0816,0903,0906,0913,0916', 1, 0);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (2, 'GLO', '7FZ21RMFYPEA08MNA85H1XG376', 'Glo', 'AIRTIME', '0805,0807,0811,0815,0705,0905,0915', 1, 1);
+VALUES (2, 'GLO', '2CX15CMNEPJMWDX9E4NK746QHB', 'Glo', 'AIRTIME', '0805,0807,0811,0815,0705,0905,0915', 1, 1);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (3, 'AIRTEL', 'A5C2K3CJMBXH6K3M9RG02GD2ST', 'Airtel', 'AIRTIME', '0802,0808,0812,0701,0708,0902,0907,0901,0912', 1, 2);
+VALUES (3, 'AIRTEL', 'B1J98TJ6Q70J1MSJF1NJT0H1ZM', 'Airtel', 'AIRTIME', '0802,0808,0812,0701,0708,0902,0907,0901,0912', 1, 2);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (4, '9MOBILE', '61M4AQEN66ZFQ8TR66R7TS8ZZQ', '9mobile', 'AIRTIME', '0809,0817,0818,0908,0909', 1, 3);
+VALUES (4, '9MOBILE', 'T8XHRTYE3MHZ34BK7N7BYVY739', '9mobile', 'AIRTIME', '0809,0817,0818,0908,0909', 1, 3);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (5, 'MTN-DATA', 'NBTR37Y1K97Q91W31W0D9TA8NH', 'MTN Data', 'DATA', NULL, 1, 4);
+VALUES (5, 'MTN-DATA', '675EVKVKFM2REH0DKA1N9MG3VF', 'MTN Data', 'DATA', NULL, 1, 4);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (6, 'GLO-DATA', 'AXX9DYP2VJRC4YY86WQTKDF32N', 'Glo Data', 'DATA', NULL, 1, 5);
+VALUES (6, 'GLO-DATA', 'FYMAPP7X5XRNY2VE5MY7GY3RHG', 'Glo Data', 'DATA', NULL, 1, 5);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (7, 'AIRTEL-DATA', 'THWWX3WYZH7ZZ7ST5ADAP26897', 'Airtel Data', 'DATA', NULL, 1, 6);
+VALUES (7, 'AIRTEL-DATA', 'GWEWQSGGKSZG0VE8PJYEPE6F8F', 'Airtel Data', 'DATA', NULL, 1, 6);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (8, '9MOBILE-DATA', '6YMCA8JZZG62PVNYB4B803JZQN', '9mobile Data', 'DATA', NULL, 1, 7);
+VALUES (8, '9MOBILE-DATA', 'CY9YX6NPMGSYD4KCDEGE95W74Z', '9mobile Data', 'DATA', NULL, 1, 7);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (9, 'DSTV', '04EPFSZRGH66J335PCDP5YG3Y3', 'DSTV', 'CABLE', NULL, 1, 8);
+VALUES (9, 'DSTV', 'Q3BCKG4Q6K50SGKEPZ80Q5YFB7', 'DSTV', 'CABLE', NULL, 1, 8);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (10, 'GOTV', 'MP5S4XKHWYE40DX1ADNKECX7FF', 'GOtv', 'CABLE', NULL, 1, 9);
+VALUES (10, 'GOTV', '4Z21TQQWT6SZ9ZV6547QPM0CEF', 'GOtv', 'CABLE', NULL, 1, 9);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (11, 'STARTIMES', '1881TYKYT4KWHY66CZ5Z7D71B2', 'StarTimes', 'CABLE', NULL, 1, 10);
+VALUES (11, 'STARTIMES', 'EQMQ3Q5WZ0ZSHDZRBFBG5XJJ2Z', 'StarTimes', 'CABLE', NULL, 1, 10);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (12, 'IKEDC', 'THJVXAN1AZAME03AMW8Z38TZ8S', 'Ikeja Electric', 'ELECTRICITY', NULL, 1, 11);
+VALUES (12, 'IKEDC', 'JK42PW8KCZZKWZE75FC8ZJCWCY', 'Ikeja Electric', 'ELECTRICITY', NULL, 1, 11);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (13, 'EKEDC', '0BTBJGCFCMSHP5YDP5HMXCT2P0', 'Eko Electric', 'ELECTRICITY', NULL, 1, 12);
+VALUES (13, 'EKEDC', 'D8921PN6TZ0506WNPKTSKXKHRX', 'Eko Electric', 'ELECTRICITY', NULL, 1, 12);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (14, 'AEDC', 'KN3G441YYEGQANGRZYE2M1JFQZ', 'Abuja Electric', 'ELECTRICITY', NULL, 1, 13);
+VALUES (14, 'AEDC', 'H5GMQRWZH6SF505YDWC5GVFTMX', 'Abuja Electric', 'ELECTRICITY', NULL, 1, 13);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (15, 'PHED', '9G0103ZC7RKSDGC0DYZKV870BK', 'Port Harcourt Electric', 'ELECTRICITY', NULL, 1, 14);
+VALUES (15, 'PHED', 'Z64RZTJ9D6C6GK3MRVG5A0Y896', 'Port Harcourt Electric', 'ELECTRICITY', NULL, 1, 14);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (16, 'WAEC', 'BSGKEKNXKB0CE86GPQP0N5CT8M', 'WAEC', 'EXAM_PIN', NULL, 1, 15);
+VALUES (16, 'WAEC', '3K7DSGCM226ZX2YJVP96C3GD88', 'WAEC', 'EXAM_PIN', NULL, 1, 15);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (17, 'NECO', 'C720V6HHDAKX9KSYXH000Q8V0X', 'NECO', 'EXAM_PIN', NULL, 1, 16);
+VALUES (17, 'NECO', 'E9VJ40TSZEABDZA6HRM5GHHV41', 'NECO', 'EXAM_PIN', NULL, 1, 16);
 
 INSERT INTO `vtu_networks` (`id`, `code`, `public_id`, `name`, `service_type`, `msisdn_prefixes`, `is_active`, `sorting`)
-VALUES (18, 'JAMB', 'QC3DASARMZ63H5JQFMD7393CY5', 'JAMB', 'EXAM_PIN', NULL, 1, 17);
+VALUES (18, 'JAMB', 'GZSVFBNFWY7PYF72EXFRZHHH54', 'JAMB', 'EXAM_PIN', NULL, 1, 17);
 
 -- vtu_products
 INSERT INTO `vtu_products` (`id`, `network_id`, `service_type`, `code`, `public_id`, `name`, `discount_percent`, `min_amount`, `max_amount`, `is_active`)
-VALUES (1, 1, 'AIRTIME', 'MTN-AIRTIME', 'KH2D499X2BN8QJ5A4GXRX1DHF3', 'MTN Airtime', '2.0000', '50.00000000', '50000.00000000', 1);
+VALUES (1, 1, 'AIRTIME', 'MTN-AIRTIME', 'XCAD567DZS1101T3NEWDQ3NT6S', 'MTN Airtime', '2.0000', '50.00000000', '50000.00000000', 1);
 
 INSERT INTO `vtu_products` (`id`, `network_id`, `service_type`, `code`, `public_id`, `name`, `discount_percent`, `min_amount`, `max_amount`, `is_active`)
-VALUES (2, 2, 'AIRTIME', 'GLO-AIRTIME', 'EEQDG0RV0G3CMX154G73MR36MS', 'Glo Airtime', '2.0000', '50.00000000', '50000.00000000', 1);
+VALUES (2, 2, 'AIRTIME', 'GLO-AIRTIME', 'F65XYZH2KE9AD22T9N500SP5BP', 'Glo Airtime', '2.0000', '50.00000000', '50000.00000000', 1);
 
 INSERT INTO `vtu_products` (`id`, `network_id`, `service_type`, `code`, `public_id`, `name`, `discount_percent`, `min_amount`, `max_amount`, `is_active`)
-VALUES (3, 3, 'AIRTIME', 'AIRTEL-AIRTIME', 'HDKZC04XJ1VJFYNEA5DN9CJ1PC', 'Airtel Airtime', '2.0000', '50.00000000', '50000.00000000', 1);
+VALUES (3, 3, 'AIRTIME', 'AIRTEL-AIRTIME', 'X5N86006JNQA256BGDFVF6MFX4', 'Airtel Airtime', '2.0000', '50.00000000', '50000.00000000', 1);
 
 INSERT INTO `vtu_products` (`id`, `network_id`, `service_type`, `code`, `public_id`, `name`, `discount_percent`, `min_amount`, `max_amount`, `is_active`)
-VALUES (4, 4, 'AIRTIME', '9MOBILE-AIRTIME', '1ECVD4NZCW9WH9MNNDWN05HZDV', '9mobile Airtime', '2.0000', '50.00000000', '50000.00000000', 1);
+VALUES (4, 4, 'AIRTIME', '9MOBILE-AIRTIME', '8T94HRZB8VHAYEAA9AW2MSJJC1', '9mobile Airtime', '2.0000', '50.00000000', '50000.00000000', 1);
 
 INSERT INTO `vtu_products` (`id`, `network_id`, `service_type`, `code`, `public_id`, `name`, `discount_percent`, `min_amount`, `max_amount`, `is_active`)
-VALUES (5, 12, 'ELECTRICITY', 'IKEDC-ELECTRICITY', 'WPHEFG8XFKGXQ05TNGTNWGYESH', 'Ikeja Electric Units', '1.0000', '500.00000000', '100000.00000000', 1);
+VALUES (5, 12, 'ELECTRICITY', 'IKEDC-ELECTRICITY', 'RABR9YZCAF9FAH8VT1353G0JYE', 'Ikeja Electric Units', '1.0000', '500.00000000', '100000.00000000', 1);
 
 INSERT INTO `vtu_products` (`id`, `network_id`, `service_type`, `code`, `public_id`, `name`, `discount_percent`, `min_amount`, `max_amount`, `is_active`)
-VALUES (6, 13, 'ELECTRICITY', 'EKEDC-ELECTRICITY', 'FM3R4REN8CPW9R2QVDDHNJ2PB6', 'Eko Electric Units', '1.0000', '500.00000000', '100000.00000000', 1);
+VALUES (6, 13, 'ELECTRICITY', 'EKEDC-ELECTRICITY', 'HM8WDQ931HC1Y3FMVDSZTY21VX', 'Eko Electric Units', '1.0000', '500.00000000', '100000.00000000', 1);
 
 INSERT INTO `vtu_products` (`id`, `network_id`, `service_type`, `code`, `public_id`, `name`, `discount_percent`, `min_amount`, `max_amount`, `is_active`)
-VALUES (7, 14, 'ELECTRICITY', 'AEDC-ELECTRICITY', '76JVBTS5XFP0W34YC3A57AJ3DF', 'Abuja Electric Units', '1.0000', '500.00000000', '100000.00000000', 1);
+VALUES (7, 14, 'ELECTRICITY', 'AEDC-ELECTRICITY', 'VRYZ5BCT00XH2ZE9NPFXW3T0ED', 'Abuja Electric Units', '1.0000', '500.00000000', '100000.00000000', 1);
 
 INSERT INTO `vtu_products` (`id`, `network_id`, `service_type`, `code`, `public_id`, `name`, `discount_percent`, `min_amount`, `max_amount`, `is_active`)
-VALUES (8, 15, 'ELECTRICITY', 'PHED-ELECTRICITY', 'EPJ6VQ9MWRHYWG1WE8VCKQNC9N', 'Port Harcourt Electric Units', '1.0000', '500.00000000', '100000.00000000', 1);
+VALUES (8, 15, 'ELECTRICITY', 'PHED-ELECTRICITY', '1W3WVMVM6XA7CMNHBDD0SQJSDQ', 'Port Harcourt Electric Units', '1.0000', '500.00000000', '100000.00000000', 1);
 
 -- number_countries
 INSERT INTO `number_countries` (`id`, `code`, `public_id`, `name`, `dial_prefix`, `flag_emoji`, `is_active`, `sorting`)
-VALUES (1, 'NG', '9T8QT9Z45FRAQ65BSZEKSTKJV2', 'Nigeria', '+234', '🇳🇬', 1, 0);
+VALUES (1, 'NG', 'NR08B5F1ZF6T6XV5WDC78J6XQZ', 'Nigeria', '+234', '🇳🇬', 1, 0);
 
 INSERT INTO `number_countries` (`id`, `code`, `public_id`, `name`, `dial_prefix`, `flag_emoji`, `is_active`, `sorting`)
-VALUES (2, 'GH', '0Y24498Y9WVDGTA5Z15TP0GYQS', 'Ghana', '+233', '🇬🇭', 1, 1);
+VALUES (2, 'GH', 'FRFER6J96ATZS48MESPTN98PP0', 'Ghana', '+233', '🇬🇭', 1, 1);
 
 INSERT INTO `number_countries` (`id`, `code`, `public_id`, `name`, `dial_prefix`, `flag_emoji`, `is_active`, `sorting`)
-VALUES (3, 'KE', 'M3Q92N7C3PDFB3390R76R6HYE4', 'Kenya', '+254', '🇰🇪', 1, 2);
+VALUES (3, 'KE', '7PCC1YYDM8JADFM47FW3J1VS31', 'Kenya', '+254', '🇰🇪', 1, 2);
 
 INSERT INTO `number_countries` (`id`, `code`, `public_id`, `name`, `dial_prefix`, `flag_emoji`, `is_active`, `sorting`)
-VALUES (4, 'ZA', 'KYHZJARES0EW546MY4BBH25S8M', 'South Africa', '+27', '🇿🇦', 1, 3);
+VALUES (4, 'ZA', 'JE8RRGJZQGVZHMMHVYHKQFVFPY', 'South Africa', '+27', '🇿🇦', 1, 3);
 
 INSERT INTO `number_countries` (`id`, `code`, `public_id`, `name`, `dial_prefix`, `flag_emoji`, `is_active`, `sorting`)
-VALUES (5, 'GB', 'E3RQK5S3N5BX1AWKBDZTT2J9G0', 'United Kingdom', '+44', '🇬🇧', 1, 4);
+VALUES (5, 'GB', '0JTBYY70SB01V9NCB69HV6RBFT', 'United Kingdom', '+44', '🇬🇧', 1, 4);
 
 INSERT INTO `number_countries` (`id`, `code`, `public_id`, `name`, `dial_prefix`, `flag_emoji`, `is_active`, `sorting`)
-VALUES (6, 'US', '45J64KH2VEQEMV01JEQ981NNRG', 'United States', '+1', '🇺🇸', 1, 5);
+VALUES (6, 'US', 'BN4WM230NAHY8VTA0A1DEA4TC6', 'United States', '+1', '🇺🇸', 1, 5);
 
 INSERT INTO `number_countries` (`id`, `code`, `public_id`, `name`, `dial_prefix`, `flag_emoji`, `is_active`, `sorting`)
-VALUES (7, 'IN', 'K63MGXY397MAV75A28HDX36BCM', 'India', '+91', '🇮🇳', 1, 6);
+VALUES (7, 'IN', 'T83PGYFVY8ETJ98CP0C0GCA3XF', 'India', '+91', '🇮🇳', 1, 6);
 
 -- number_services
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (1, 'WHATSAPP', 'T9J45FES9D8BDSEWMTND1NZ4EB', 'WhatsApp', 1, 0);
+VALUES (1, 'WHATSAPP', 'Z2Q5BZNHQNT42C44CHYSARRN2N', 'WhatsApp', 1, 0);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (2, 'TELEGRAM', 'HDPMPZ93DH6RF5Y7D1Y70RVM78', 'Telegram', 1, 1);
+VALUES (2, 'TELEGRAM', 'ZZ0QJXKWSHW48R9BVEM2X94PM7', 'Telegram', 1, 1);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (3, 'FACEBOOK', 'KJBG6Z37P3B4RENQJ4AE19NBV6', 'Facebook', 1, 2);
+VALUES (3, 'FACEBOOK', 'TWEWAFNJBTGTC8T5MC51DKJ3DV', 'Facebook', 1, 2);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (4, 'INSTAGRAM', 'HY7ARD3Q1GQZBHVR7CK11YRZDR', 'Instagram', 1, 3);
+VALUES (4, 'INSTAGRAM', 'R4YTH5VZDV55AFA1E8JQQV364Y', 'Instagram', 1, 3);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (5, 'GOOGLE', 'GK80H72C3QNBQ3EFHX08091NV4', 'Google', 1, 4);
+VALUES (5, 'GOOGLE', 'EPESDH4A1ZHVBEZ2S76XH6HYSN', 'Google', 1, 4);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (6, 'TWITTER', 'N26FFEYYB8MNBRRATZSAF5JMQW', 'X (Twitter)', 1, 5);
+VALUES (6, 'TWITTER', 'JRPDS36ZXWPFTNF76BAP644Y95', 'X (Twitter)', 1, 5);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (7, 'TIKTOK', '3ZR53FP62D2JWNX7NQF08VWRX2', 'TikTok', 1, 6);
+VALUES (7, 'TIKTOK', 'JGKQHKW5MRZ1SV6TCQBF65CY60', 'TikTok', 1, 6);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (8, 'DISCORD', '8FQEPE0YDC4NG0SSS8J1HBMD9X', 'Discord', 1, 7);
+VALUES (8, 'DISCORD', 'DRPXBS4AC7X4PEDXYKTZRB7YZ6', 'Discord', 1, 7);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (9, 'UBER', 'CR99CC2RPWGXGWK32F1VKHCAM5', 'Uber', 1, 8);
+VALUES (9, 'UBER', 'GKM9H4VQFYTBZCTB81Q8D9HKG4', 'Uber', 1, 8);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (10, 'AMAZON', 'Q6Y6N78S1T93JWSBHHV0AHMR85', 'Amazon', 1, 9);
+VALUES (10, 'AMAZON', '9JASA1P83C1FMDKYXXBWDJXVSR', 'Amazon', 1, 9);
 
 INSERT INTO `number_services` (`id`, `code`, `public_id`, `name`, `is_active`, `sorting`)
-VALUES (11, 'OTHER', '1XQKAJDRTDKZTJDYXD2ZQ1C036', 'Any other service', 1, 10);
+VALUES (11, 'OTHER', 'N3MRR94DDE3DVBMYKVWJVT7JE5', 'Any other service', 1, 10);
 
 -- identity_products
 INSERT INTO `identity_products` (`id`, `code`, `public_id`, `name`, `id_type`, `lookup_field`, `provider_code`, `description`, `is_active`, `sorting`)
-VALUES (1, 'NIN_BASIC', 'B1WM58APF7PF0X8ARZ2FCQSRN5', 'NIN verification', 'NIN', 'IDENTIFIER', 'kyc/nin', 'Confirm a National Identification Number and return the registered name, date of birth and gender.', 0, 0);
+VALUES (1, 'NIN_BASIC', '7J6PTRNSKY4G69ZA7DVZDRH9CQ', 'NIN verification', 'NIN', 'IDENTIFIER', 'kyc/nin', 'Confirm a National Identification Number and return the registered name, date of birth and gender.', 0, 0);
 
 INSERT INTO `identity_products` (`id`, `code`, `public_id`, `name`, `id_type`, `lookup_field`, `provider_code`, `description`, `is_active`, `sorting`)
-VALUES (2, 'BVN_BASIC', 'J5Z9NQD68VS5AS28N7MEJFXFNZ', 'BVN verification', 'BVN', 'IDENTIFIER', 'kyc/bvn', 'Confirm a Bank Verification Number against the NIBSS record.', 0, 1);
+VALUES (2, 'BVN_BASIC', 'S5GZXRTRCTW5DZKH1Q9AEA79HW', 'BVN verification', 'BVN', 'IDENTIFIER', 'kyc/bvn', 'Confirm a Bank Verification Number against the NIBSS record.', 0, 1);
 
 INSERT INTO `identity_products` (`id`, `code`, `public_id`, `name`, `id_type`, `lookup_field`, `provider_code`, `description`, `is_active`, `sorting`)
-VALUES (3, 'NIN_PHONE', '3R38VDX4RT4W1FPBRSB950G485', 'NIN by phone number', 'NIN', 'PHONE', 'kyc/nin/phone_number', 'Find the NIN record linked to a Nigerian phone number.', 0, 2);
+VALUES (3, 'NIN_PHONE', '8CKPAEEPWT3BXV0P36F77FR5W8', 'NIN by phone number', 'NIN', 'PHONE', 'kyc/nin/phone_number', 'Find the NIN record linked to a Nigerian phone number.', 0, 2);
 
 -- giftcard_brands
 INSERT INTO `giftcard_brands` (`id`, `code`, `public_id`, `name`, `redeem_instructions`, `is_active`, `sorting`)
-VALUES (1, 'AMAZON', 'V842S7ESVC3WEWQ1X03FT2R708', 'Amazon', 'Go to amazon.com/redeem and enter the claim code to add it to your Amazon balance.', 1, 0);
+VALUES (1, 'AMAZON', '3ZVMSKBXHRP4Z9T5PW4SY2KTKS', 'Amazon', 'Go to amazon.com/redeem and enter the claim code to add it to your Amazon balance.', 1, 0);
 
 INSERT INTO `giftcard_brands` (`id`, `code`, `public_id`, `name`, `redeem_instructions`, `is_active`, `sorting`)
-VALUES (2, 'APPLE', '8F2SF44HDH635C0EGXEPNM7ZV4', 'App Store & iTunes', 'Go to apple.com/redeem, or open the App Store, tap your profile and choose Redeem Gift Card.', 1, 1);
+VALUES (2, 'APPLE', 'C7HRMJJ9XF2FMMGMWDVSAW65QV', 'App Store & iTunes', 'Go to apple.com/redeem, or open the App Store, tap your profile and choose Redeem Gift Card.', 1, 1);
 
 INSERT INTO `giftcard_brands` (`id`, `code`, `public_id`, `name`, `redeem_instructions`, `is_active`, `sorting`)
-VALUES (3, 'GOOGLE_PLAY', '3C1CBA6JTEGV0BTXVSKTDMYX4P', 'Google Play', 'Open the Google Play Store, tap your profile, choose Payments & subscriptions, then Redeem code.', 1, 2);
+VALUES (3, 'GOOGLE_PLAY', '1JS2VPDW6PCQKE5JR7ENKKRG9F', 'Google Play', 'Open the Google Play Store, tap your profile, choose Payments & subscriptions, then Redeem code.', 1, 2);
 
 INSERT INTO `giftcard_brands` (`id`, `code`, `public_id`, `name`, `redeem_instructions`, `is_active`, `sorting`)
-VALUES (4, 'STEAM', '9AB72PF6P4QP2XVYXS7T9GPYVM', 'Steam', 'Open Steam, choose Games then Redeem a Steam Wallet Code, and enter the code.', 1, 3);
+VALUES (4, 'STEAM', '635S11DQ63CRMJ7VWPTBFG0RW0', 'Steam', 'Open Steam, choose Games then Redeem a Steam Wallet Code, and enter the code.', 1, 3);
 
 INSERT INTO `giftcard_brands` (`id`, `code`, `public_id`, `name`, `redeem_instructions`, `is_active`, `sorting`)
-VALUES (5, 'NETFLIX', 'J1STHE69CMHM3YPPXSCCXXH8G9', 'Netflix', 'Go to netflix.com/redeem and enter the code to add it to your Netflix account.', 1, 4);
+VALUES (5, 'NETFLIX', 'S53AP93A411HX6WXRWR6K3S1W8', 'Netflix', 'Go to netflix.com/redeem and enter the code to add it to your Netflix account.', 1, 4);
 
 INSERT INTO `giftcard_brands` (`id`, `code`, `public_id`, `name`, `redeem_instructions`, `is_active`, `sorting`)
-VALUES (6, 'SPOTIFY', 'YZH4WSA3ZXA3VGJR1Y58Z67F42', 'Spotify', 'Go to spotify.com/redeem and enter the code to add Premium time to your account.', 1, 5);
+VALUES (6, 'SPOTIFY', 'G7EQ5MYB2PF1K63KMK9H305XZD', 'Spotify', 'Go to spotify.com/redeem and enter the code to add Premium time to your account.', 1, 5);
 
 INSERT INTO `giftcard_brands` (`id`, `code`, `public_id`, `name`, `redeem_instructions`, `is_active`, `sorting`)
-VALUES (7, 'XBOX', 'WZRWWXPFC0MVQF4YKP3JGZK4QZ', 'Xbox', 'Sign in at redeem.microsoft.com and enter the 25-character code.', 1, 6);
+VALUES (7, 'XBOX', '4R4E28C82BE3TY0H0A33FP7E0Z', 'Xbox', 'Sign in at redeem.microsoft.com and enter the 25-character code.', 1, 6);
 
 INSERT INTO `giftcard_brands` (`id`, `code`, `public_id`, `name`, `redeem_instructions`, `is_active`, `sorting`)
-VALUES (8, 'PLAYSTATION', 'VYRFEXZFY0K1EJA5RRZ6DZB2JF', 'PlayStation Store', 'Sign in to PlayStation Store, choose Redeem Codes, and enter the 12-digit code.', 1, 7);
+VALUES (8, 'PLAYSTATION', 'XXV2CKB8XKEAFSD3HQ6VMD1FM5', 'PlayStation Store', 'Sign in to PlayStation Store, choose Redeem Codes, and enter the 12-digit code.', 1, 7);
 
 -- marketplace_categories
 INSERT INTO `marketplace_categories` (`id`, `slug`, `public_id`, `name`, `status`, `sort_order`, `created_at`, `updated_at`)
-VALUES (1, 'DIGITAL_GOODS', '5YXQZMTA76ZK33CEEH1ATAVBA2', 'Digital goods', 'ACTIVE', 0, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+VALUES (1, 'DIGITAL_GOODS', '4R11BMVKNX9BQTR9JR8TWSM1T8', 'Digital goods', 'ACTIVE', 0, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
 
 INSERT INTO `marketplace_categories` (`id`, `slug`, `public_id`, `name`, `status`, `sort_order`, `created_at`, `updated_at`)
-VALUES (2, 'GAMING', 'SFFXNNNJ1SC0B4M7Q7CJRKGTXD', 'Gaming', 'ACTIVE', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+VALUES (2, 'GAMING', 'JZ1KFGEPYVGKBBCP0P7N4ZSH2Q', 'Gaming', 'ACTIVE', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
 
 INSERT INTO `marketplace_categories` (`id`, `slug`, `public_id`, `name`, `status`, `sort_order`, `created_at`, `updated_at`)
-VALUES (3, 'ACCOUNTS', '1XENF2R9Q35CB123AFF0P1GVQ2', 'Accounts', 'ACTIVE', 2, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+VALUES (3, 'ACCOUNTS', '1SVDKX325AMTAH6STHM0SEFQQZ', 'Accounts', 'ACTIVE', 2, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
 
 INSERT INTO `marketplace_categories` (`id`, `slug`, `public_id`, `name`, `status`, `sort_order`, `created_at`, `updated_at`)
-VALUES (4, 'SOFTWARE_KEYS', '6717S4G3S6CRYZ27YBT2R96262', 'Software & keys', 'ACTIVE', 3, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+VALUES (4, 'SOFTWARE_KEYS', 'W7EPWGDQAP28DA0QA3K1ZGH7DM', 'Software & keys', 'ACTIVE', 3, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
 
 -- ======================================================================
 -- FIRST ADMINISTRATOR
@@ -2536,13 +2592,13 @@ INSERT INTO `users`
   (`id`, `public_id`, `username`, `email`, `password_hash`, `first_name`, `last_name`,
    `status`, `role`, `price_group_id`, `referral_code`, `timezone`, `locale`,
    `email_verified_at`, `mfa_enabled`, `created_at`, `updated_at`)
-VALUES (1, 'CV8Z9CM2GA5C441DXFXDSQJGSC', 'admin', 'admin@example.com', '$2y$12$MJz0lE9DjLFjHFMryp5l2OEVzNVXmEpt7K2.XRvE4uXo3JUbPCmue', 'Panel', 'Administrator',
+VALUES (1, '2558ZS4XH6J8JXA5GRXK83CEEK', 'admin', 'admin@example.com', '$2y$12$cAi15LwaQtqC1UEXIYVgUe0sEWTJVST0L6v/I/m425ACk9ZUWiAui', 'Panel', 'Administrator',
         'ACTIVE', 'SUPER_ADMIN', 1, 'ADMIN-0001', 'UTC', 'en',
         '2026-01-01 00:00:00', 0, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
 
 INSERT INTO `wallets`
   (`public_id`, `user_id`, `balance`, `currency`, `created_at`, `updated_at`)
-VALUES ('M1MEX6DZJBT0ZW588245F6123G', 1, '0.00000000', 'NGN', '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+VALUES ('D3S1VPTVKCTA5A65AGTZ39ZMRT', 1, '0.00000000', 'NGN', '2026-01-01 00:00:00', '2026-01-01 00:00:00');
 
 INSERT INTO `referral_accounts`
   (`user_id`, `code`, `commission_percent`, `created_at`, `updated_at`)

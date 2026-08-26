@@ -215,9 +215,12 @@ class WithdrawalRemovalTest extends TestCase
 
         // The migration chain target accounts for the retrofit.
         $config = file_get_contents(self::$root.'/application/config/migration.php');
-        $this->assertStringContainsString("\$config['migration_version'] = 19;", $config);
-        $this->assertSame(19, count(glob(self::$root.'/application/migrations/*.php')),
+        preg_match("/migration_version'\]\s*=\s*(\d+)/", $config, $mv);
+        $version = (int)$mv[1];
+        $this->assertSame(count(glob(self::$root.'/application/migrations/*.php')), $version,
             'sequential migration count must match migration_version');
+        $this->assertGreaterThanOrEqual(18, $version,
+            'the withdrawal-removal migration must be inside the chain');
     }
 
     public function testMigration018ActuallyRunsAgainstARealDatabaseShape()

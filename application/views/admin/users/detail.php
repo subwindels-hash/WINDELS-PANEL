@@ -28,6 +28,10 @@ $nonce = bin2hex(random_bytes(8));
     </h2>
     <p class="muted text-sm">
       <?=htmlspecialchars((string)$user->email)?>
+      <?php if (!empty($user->user_code)): ?>
+      · <span title="Six-digit account number — the customer can sign in and quote support with this">ID
+        <span class="mono"><?=htmlspecialchars((string)$user->user_code)?></span></span>
+      <?php endif; ?>
       · <span class="mono text-xs"><?=htmlspecialchars((string)$user->public_id)?></span>
       · joined <?=htmlspecialchars(date('M j, Y', strtotime($user->created_at)))?>
     </p>
@@ -130,6 +134,71 @@ $nonce = bin2hex(random_bytes(8));
     <?php endif; ?>
   </div>
 </div>
+
+<?php
+// Credentials panel. Everything here is a reset — there is deliberately no
+// control that displays a password or a PIN, because both are stored as
+// one-way hashes and staff must never be able to learn a customer's secret.
+$pin_set = !empty($user->pin_hash);
+$pin_locked = !empty($user->pin_locked_until) && strtotime($user->pin_locked_until.' UTC') > time();
+?>
+<?php if (!$self && $can_edit): ?>
+<div class="card mb-4">
+  <h3 style="font-size:1rem;font-weight:600" class="mb-1">Credentials</h3>
+  <p class="muted text-xs mb-3">
+    Passwords and security PINs are stored as one-way hashes. They cannot be displayed here or anywhere
+    else — these controls reset them so the customer can choose a new one.
+  </p>
+
+  <div class="row mb-3" style="gap:1.25rem;flex-wrap:wrap">
+    <div>
+      <div class="muted text-xs">Security PIN</div>
+      <div class="text-sm">
+        <?php if (!$pin_set): ?>
+          Not set
+        <?php elseif ($pin_locked): ?>
+          Set · <span style="color:var(--color-danger,#dc2626)">locked until
+            <?=htmlspecialchars(date('H:i', strtotime($user->pin_locked_until.' UTC')))?> UTC</span>
+        <?php else: ?>
+          Set<?php if ((int)$user->pin_failed_attempts > 0): ?>
+            · <?=(int)$user->pin_failed_attempts?> failed attempt<?=(int)$user->pin_failed_attempts === 1 ? '' : 's'?>
+          <?php endif; ?>
+        <?php endif; ?>
+      </div>
+    </div>
+    <div>
+      <div class="muted text-xs">Two-factor</div>
+      <div class="text-sm"><?=((int)$user->mfa_enabled === 1) ? 'Enabled' : 'Not enabled'?></div>
+    </div>
+    <div>
+      <div class="muted text-xs">Email verified</div>
+      <div class="text-sm"><?=$user->email_verified_at ? 'Yes' : 'No'?></div>
+    </div>
+  </div>
+
+  <div class="row" style="gap:.5rem;flex-wrap:wrap">
+    <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/password-reset')?>" style="margin:0">
+      <?=$csrf()?>
+      <button class="btn btn-secondary btn-sm" type="submit">Email a password-reset link</button>
+    </form>
+
+    <?php if ($pin_set): ?>
+    <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/pin-reset')?>" style="margin:0">
+      <?=$csrf()?>
+      <input type="hidden" name="reason" value="Reset from the customer file">
+      <button class="btn btn-secondary btn-sm" type="submit">Clear security PIN</button>
+    </form>
+    <?php endif; ?>
+
+    <?php if ($pin_locked): ?>
+    <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/pin-unlock')?>" style="margin:0">
+      <?=$csrf()?>
+      <button class="btn btn-secondary btn-sm" type="submit">Lift PIN lockout</button>
+    </form>
+    <?php endif; ?>
+  </div>
+</div>
+<?php endif; ?>
 
 <?php if ($can_impersonate && !$self && $user->status === 'ACTIVE' && $user->role === 'CUSTOMER'): ?>
 <div class="card mb-4" style="border-color:var(--color-warning,#f59e0b)">

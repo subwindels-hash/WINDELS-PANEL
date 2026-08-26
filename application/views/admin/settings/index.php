@@ -10,6 +10,12 @@ $category_titles = array(
     'affiliate' => 'Referrals',
     'identity'  => 'Identity verification',
     'giftcards' => 'Gift cards',
+    'crypto'    => 'Bitcoin and crypto deposits',
+    'marketplace' => 'Marketplace',
+    'orders'    => 'Orders',
+    'api'       => 'Reseller API',
+    'currency'  => 'Currency',
+    'branding'  => 'Branding',
 );
 
 /** Render one control from its schema declaration. */
@@ -38,6 +44,21 @@ $field = function ($key, $def, $value) {
                 .((string)$value === $o ? ' selected' : '').'>'.htmlspecialchars($o).'</option>';
         }
         echo '</select>';
+    } elseif ($type === 'secret') {
+        // Never echo a stored secret back to the browser. A configured value
+        // shows as a placeholder that save() interprets as "leave unchanged";
+        // clearing the box stores an empty value and disables the feature.
+        $configured = ($value !== null && $value !== '' && $value !== SettingsService::SECRET_PLACEHOLDER);
+        echo '<label class="label" for="'.htmlspecialchars($id).'">'.htmlspecialchars($label).'</label>';
+        echo '<input class="input mono" type="password" autocomplete="new-password" spellcheck="false"'
+            .' id="'.htmlspecialchars($id).'"'
+            .' name="'.htmlspecialchars($key).'"'
+            .' value="'.($configured ? htmlspecialchars(SettingsService::SECRET_PLACEHOLDER) : '').'"'
+            .' placeholder="'.($configured ? 'Configured — type a new value to replace it' : 'Not configured').'">';
+        if ($configured) {
+            echo '<p class="muted text-xs" style="margin:.25rem 0 0">'
+                .'A value is stored. Leave the field untouched to keep it, or clear it to remove it.</p>';
+        }
     } else {
         $input_type = in_array($type, array('int','money','percent'), true) ? 'number'
                     : ($type === 'email' ? 'email' : 'text');

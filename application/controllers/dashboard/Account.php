@@ -58,9 +58,15 @@ class Account extends Auth_Controller {
         // Safe projection keeps the stored credential verifier out of views.
         $keys = $this->Api_key_model->for_user_safe($this->current_user->id);
 
+        $this->load->library('PinService');
+
         $this->render('Security', 'dashboard/account/security', 'dashboard/security', array(
-            'keys'  => $keys,
-            'mfa'   => $this->current_user->mfa_enabled,
+            'keys'       => $keys,
+            'mfa'        => $this->current_user->mfa_enabled,
+            // Whether a PIN exists, never the PIN itself — there is no code
+            // path that can recover it from the stored hash.
+            'pin_set'    => $this->pinservice->is_set($this->current_user),
+            'pin_locked' => $this->pinservice->locked_for($this->current_user),
         ));
     }
 
@@ -86,6 +92,36 @@ class Account extends Auth_Controller {
             $this->session->set_flashdata('success', 'Password changed.');
             return redirect('dashboard/security');
         }
+
+        if ($action === 'set_pin') {
+            $this->load->library('PinService');
+            $has_pin = $this->pinservice->is_set($this->current_user);
+
+            $this->form_validation->set_rules('new_pin', 'New PIN', 'required|exact_length[4]|numeric');
+            $this->form_validation->set_rules('confirm_pin', 'Confirm PIN', 'required|matches[new_pin]');
+            if ($has_pin) {
+                $this->form_validation->set_rules('current_pin', 'Current PIN', 'required|exact_length[4]|numeric');
+            }
+            if (!$this->form_validation->run()) {
+                $this->session->set_flashdata('error', validation_errors());
+                return redirect('dashboard/security');
+            }
+
+            $res = $this->pinservice->set(
+                $this->current_user,
+                $this->input->post('new_pin'),
+                $has_pin ? $this->input->post('current_pin') : null
+            );
+            if (empty($res['ok'])) {
+                $this->session->set_flashdata('error', $res['error']);
+                return redirect('dashboard/security');
+            }
+
+            $this->session->set_flashdata('success',
+                $has_pin ? 'Your transaction PIN was updated.' : 'Your transaction PIN is now set.');
+            return redirect('dashboard/security');
+        }
+
         show_404();
     }
 

@@ -302,7 +302,12 @@ class ImpersonationTest extends TestCase
         $this->assertStringContainsString("\$this->input->post('confirm', true) === '1'", $users);
         $this->assertStringContainsString("method(true) !== 'POST'", $stop);
         $this->assertStringContainsString('csrf', strtolower($layout));
-        $this->assertStringContainsString('IMPERSONATING CUSTOMER', $layout);
+        // The banner must name the mode in the operator's own words. Wording is
+        // pinned because it is the only thing separating "I am looking at a
+        // customer's screen" from "I am looking at my own".
+        $this->assertStringContainsString('Administrator Mode', $layout);
+        $this->assertStringContainsString('viewing this account as an administrator', $layout);
+        $this->assertStringContainsString('Return to Admin Dashboard', $layout);
         $this->assertStringContainsString('impersonation-read-only main form[method="post" i]', $layout);
         $this->assertStringContainsString("site_url('impersonation/stop')", $layout);
         $this->assertStringContainsString("\$has('users.impersonate')", $detail);

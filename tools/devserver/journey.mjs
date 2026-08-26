@@ -17,103 +17,7 @@ const only = (() => {
   return i === -1 ? null : argv[i + 1];
 })();
 
-const ERROR_MARKERS = [
-  'A Database Error Occurred',
-  'An uncaught Exception',
-  'A PHP Error was encountered',
-  'Fatal error',
-  'Parse error',
-  'Undefined constant',
-  'Call to undefined',
-  'An unexpected error occurred',
-  'Unable to locate',
-];
-
-/** A browser-ish HTTP client: cookie jar, redirects, CSRF token extraction. */
-export class Client {
-  constructor(base = BASE) {
-    this.base = base;
-    this.jar = new Map();
-    this.last = null;
-  }
-
-  cookieHeader() {
-    return [...this.jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
-  }
-
-  storeCookies(res) {
-    const raw = res.headers.getSetCookie ? res.headers.getSetCookie() : [];
-    for (const line of raw) {
-      const [pair] = line.split(';');
-      const idx = pair.indexOf('=');
-      if (idx === -1) continue;
-      const name = pair.slice(0, idx).trim();
-      const value = pair.slice(idx + 1).trim();
-      if (value === '' || /expires=Thu, 01 Jan 1970/i.test(line)) this.jar.delete(name);
-      else this.jar.set(name, value);
-    }
-  }
-
-  async raw(pathname, options = {}) {
-    const url = pathname.startsWith('http') ? pathname : this.base + pathname;
-    const headers = Object.assign({}, options.headers);
-    const cookies = this.cookieHeader();
-    if (cookies) headers.cookie = cookies;
-    const res = await fetch(url, { ...options, headers, redirect: 'manual' });
-    this.storeCookies(res);
-    const text = await res.text();
-    this.last = { url, status: res.status, text, headers: res.headers };
-    return this.last;
-  }
-
-  /** GET, following redirects (like a browser). */
-  async get(pathname, hops = 5) {
-    let r = await this.raw(pathname);
-    while (r.status >= 300 && r.status < 400 && hops-- > 0) {
-      const loc = r.headers.get('location');
-      if (!loc) break;
-      r = await this.raw(loc.startsWith('http') ? loc : loc);
-    }
-    return r;
-  }
-
-  /**
-   * Pull the CSRF token out of a rendered form.
-   *
-   * Matches the whole <input> and reads its attributes separately, because
-   * name= and value= appear in either order depending on the view helper.
-   */
-  csrfFrom(html) {
-    for (const tag of html.match(/<input[^>]*>/gi) || []) {
-      const name = (/name="([^"]+)"/i.exec(tag) || [])[1];
-      const value = (/value="([^"]*)"/i.exec(tag) || [])[1];
-      if (name && /csrf/i.test(name) && value) return { name, value };
-    }
-    return null;
-  }
-
-  /** POST a form, reusing the CSRF token from a page we just loaded. */
-  async postForm(pathname, fields, { fromHtml = null, follow = true } = {}) {
-    const html = fromHtml ?? this.last?.text ?? '';
-    const token = this.csrfFrom(html);
-    const body = new URLSearchParams();
-    for (const [k, v] of Object.entries(fields)) body.append(k, v);
-    if (token && !body.has(token.name)) body.append(token.name, token.value);
-
-    let r = await this.raw(pathname, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    });
-    let hops = 5;
-    while (follow && r.status >= 300 && r.status < 400 && hops-- > 0) {
-      const loc = r.headers.get('location');
-      if (!loc) break;
-      r = await this.raw(loc);
-    }
-    return r;
-  }
-}
+import { Client, errorMarkersIn } from './client.mjs';
 
 // ---------------------------------------------------------------------------
 // Assertions
@@ -134,7 +38,7 @@ function check(label, condition, detail = '') {
 }
 
 function pageOk(label, r, extra = () => true) {
-  const markers = ERROR_MARKERS.filter((m) => r.text.includes(m));
+  const markers = errorMarkersIn(r.text);
   const statusOk = r.status >= 200 && r.status < 400;
   return check(
     label,
@@ -144,8 +48,6 @@ function pageOk(label, r, extra = () => true) {
     }`
   );
 }
-
-export { section, check, pageOk, results, BASE, only };
 
 // ---------------------------------------------------------------------------
 // Journeys

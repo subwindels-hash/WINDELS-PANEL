@@ -128,6 +128,7 @@ class Setup extends CI_Controller {
                 'role'              => 'SUPER_ADMIN',
                 'price_group_id'    => $group ? $group->id : null,
                 'referral_code'     => strtoupper(substr(bin2hex(random_bytes(6)), 0, 10)),
+                'user_code'         => marvy_allocate_user_code($this->db),
                 'timezone'          => 'UTC',
                 'locale'            => 'en',
                 'email_verified_at' => $now,

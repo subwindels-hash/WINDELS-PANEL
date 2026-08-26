@@ -371,3 +371,51 @@ if (!function_exists('marvy_migration_item')) {
         return array_key_exists($key, $cfg) ? $cfg[$key] : $default;
     }
 }
+
+if (!function_exists('marvy_allocate_user_code')) {
+    /**
+     * Allocate an unused six-digit account number.
+     *
+     * The customer-facing account handle: short enough to read over the phone,
+     * quotable to support, and usable as a sign-in identifier alongside the
+     * username and email. The ULID `public_id` remains the canonical internal
+     * identifier — this never replaces it.
+     *
+     * Random rather than sequential. A sequential code would leak the customer
+     * count and growth rate, and would let anyone enumerate accounts by
+     * counting upwards. Starting at 100000 keeps every code six digits, so a
+     * leading zero cannot be lost when it is written down or pasted into a
+     * spreadsheet.
+     *
+     * Lives in the helper because three separate paths create users — customer
+     * registration, the setup wizard and the demo seeder — and a code that only
+     * some of them allocate is worse than none.
+     *
+     * @param object|null $db CI database instance; defaults to the loaded one
+     * @return string|null the code, or NULL if none could be allocated
+     */
+    function marvy_allocate_user_code($db = null) {
+        if ($db === null) {
+            if (!function_exists('get_instance')) return null;
+            $ci =& get_instance();
+            if (!isset($ci->db) || !is_object($ci->db)) return null;
+            $db = $ci->db;
+        }
+
+        for ($attempt = 0; $attempt < 50; $attempt++) {
+            $code = (string) random_int(100000, 999999);
+            try {
+                if ((int) $db->where('user_code', $code)->count_all_results('users') === 0) {
+                    return $code;
+                }
+            } catch (Exception $e) {
+                // Column not present yet (pre-migration install): the caller
+                // simply gets no code rather than a fatal.
+                return null;
+            }
+        }
+
+        log_message('error', 'could not allocate a free user_code after 50 attempts');
+        return null;
+    }
+}

@@ -30,6 +30,15 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 class SettingsService {
 
     /**
+     * What a configured secret renders as in the admin form.
+     *
+     * Sending the real value back to the browser would put it in page source,
+     * in the browser cache and in any screenshot of the settings screen. The
+     * placeholder round-trips instead, and save() treats it as "unchanged".
+     */
+    const SECRET_PLACEHOLDER = '••••••••';
+
+    /**
      * The editable surface: key => [type, category, label, help, default].
      *
      * Types: `text`, `email`, `bool`, `int`, `money`, `percent`, `choice:a|b`.
@@ -83,6 +92,28 @@ class SettingsService {
             // seller the gross is the revenue — nothing is split or paid out.
             'marketplace_auto_release_hours' => array('int', 'marketplace', 'Escrow auto-release (hours)',
                 'Hours after fulfilment before an undisputed order completes automatically (1–720).', 72),
+
+            // --- Bitcoin (Blockonomics) --------------------------------
+            // Secrets are stored encrypted and never rendered back into the
+            // form (see the `secret` type), so an operator can rotate a key
+            // from the browser without it appearing in page source, history
+            // or a screenshot.
+            'blockonomics_btc_enabled' => array('bool', 'crypto', 'Accept Bitcoin (BTC)',
+                'Shows the Bitcoin option on Add funds. Requires an API key below; the gateway refuses to '
+                .'take a payment it cannot confirm.', false),
+            'blockonomics_usdt_enabled' => array('bool', 'crypto', 'Accept USDT',
+                'Reserved for a USDT wallet. Leave off until a USDT receive flow is configured — turning it '
+                .'on alone does not create one.', false),
+            'blockonomics_api_key' => array('secret', 'crypto', 'Blockonomics API key',
+                'From blockonomics.co → Merchants → API. Used to derive a fresh receive address per deposit.', ''),
+            'blockonomics_callback_secret' => array('secret', 'crypto', 'Callback secret',
+                'A random string you also put in the Blockonomics callback URL '
+                .'(…/webhook/blockonomics?secret=…). Callbacks that do not present it are refused, and '
+                .'without it configured no crypto deposit is ever credited.', ''),
+            'blockonomics_confirmations' => array('int', 'crypto', 'Required confirmations',
+                'Network confirmations before the wallet is credited. 2 is the usual balance of speed and safety.', 2),
+            'blockonomics_timeout_minutes' => array('int', 'crypto', 'Address validity (minutes)',
+                'How long a quoted BTC amount stays valid before the deposit is treated as expired.', 60),
 
             'api_enabled' => array('bool', 'api', 'Enable the reseller API',
                 'Off returns a 503 for every /api/v1 call without revoking any keys.', true),
@@ -173,6 +204,11 @@ class SettingsService {
             if (!$submitted) continue;
 
             $value = is_string($input[$key]) ? trim($input[$key]) : $input[$key];
+
+            // The form renders a stored secret as a masked placeholder rather
+            // than its real value. Submitting the form unchanged must leave
+            // the secret alone, not overwrite it with a row of bullets.
+            if ($type === 'secret' && $value === self::SECRET_PLACEHOLDER) continue;
             $res   = $this->coerce($type, $value, $label);
             if ($res['error'] !== null) { $errors[] = $res['error']; continue; }
             $clean[$key] = $res['value'];
@@ -234,6 +270,11 @@ class SettingsService {
                     return array('value' => null, 'error' => $label.' must be between 0 and 100.');
                 }
                 return array('value' => number_format((float)$value, 4, '.', ''), 'error' => null);
+            case 'secret':
+                // May legitimately be blank (feature not configured yet), and
+                // is allowed to be long — API keys are not 255-char-limited
+                // display strings.
+                return array('value' => mb_substr((string)$value, 0, 512), 'error' => null);
             case 'text':
             default:
                 $value = (string)$value;

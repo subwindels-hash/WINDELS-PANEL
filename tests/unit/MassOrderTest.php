@@ -266,7 +266,14 @@ class MassOrderTest extends TestCase
         $this->assertStringContainsString('mass_order_batches', $sql);
         $this->assertStringContainsString('UNIQUE KEY uq_mass_order_batch_token (user_id, token_hash)', $sql);
         $this->assertStringContainsString('result_json MEDIUMTEXT', $sql);
-        $this->assertStringContainsString("\$config['migration_version'] = 19;", file_get_contents($root.'/application/config/migration.php'));
+        // Version tracks the file count rather than a pinned literal, so a
+        // later migration does not fail this mass-order test.
+        preg_match("/migration_version'\]\s*=\s*(\d+)/",
+            file_get_contents($root.'/application/config/migration.php'), $mv);
+        $version = (int)$mv[1];
+        $this->assertSame(count(glob($root.'/application/migrations/*.php')), $version,
+            'migration_version must match the number of migration files');
+        $this->assertGreaterThanOrEqual(16, $version, 'the mass-order migration must be inside the chain');
         $this->assertStringContainsString('CREATE TABLE IF NOT EXISTS mass_order_batches', file_get_contents($root.'/docs/database.sql'));
     }
 

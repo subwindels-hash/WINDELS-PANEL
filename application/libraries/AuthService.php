@@ -79,6 +79,7 @@ class AuthService {
             'status'            => 'ACTIVE',
             'role'              => 'CUSTOMER',
             'referral_code'     => $this->generate_referral_code(),
+            'user_code'         => marvy_allocate_user_code($this->ci->db),
             'referred_by_id'    => $referred_by,
             'timezone'          => $data['timezone'] ?? 'UTC',
             'locale'            => $data['locale'] ?? 'en',

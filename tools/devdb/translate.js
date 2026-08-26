@@ -332,6 +332,10 @@ function translateAlterTable(sql, registry) {
     }
 
     am = /^ADD\s+(UNIQUE\s+)?(?:INDEX|KEY)\s+("?[\w$]+"?)\s*\(([^)]*)\)/i.exec(action);
+    if (!am) {
+      am = /^ADD\s+CONSTRAINT\s+("?[\w$]+"?)\s+UNIQUE\s*\(([^)]*)\)/i.exec(action);
+      if (am) am = [action, 'UNIQUE ', am[1], am[2]];
+    }
     if (am) {
       statements.push(
         `CREATE ${am[1] ? 'UNIQUE ' : ''}INDEX IF NOT EXISTS "${am[2].replace(/"/g, '')}" ON "${table}" (${am[3]})`
@@ -485,11 +489,101 @@ function translateMultiTableDelete(sql) {
 }
 
 /**
+ * Rewrite MySQL string literals into SQLite string literals.
+ *
+ * MySQL (and therefore every driver that escapes for it, including PDO's
+ * quote()) uses C-style backslash escapes inside single-quoted strings:
+ * `'{\"value\":true}'`. SQLite has no backslash escaping at all — a backslash
+ * is just a backslash — so that literal round-trips as `{\"value\":true}` and
+ * any JSON stored through the query builder comes back corrupt.
+ *
+ * This converts each literal to SQLite's own convention: interpret the
+ * backslash escapes, then re-quote by doubling single quotes.
+ */
+function translateStringLiterals(sql) {
+  let out = '';
+  let i = 0;
+
+  while (i < sql.length) {
+    const ch = sql[i];
+
+    // Line and block comments pass through untouched.
+    if (ch === '-' && sql[i + 1] === '-') {
+      const nl = sql.indexOf('\n', i);
+      const stop = nl === -1 ? sql.length : nl;
+      out += sql.slice(i, stop);
+      i = stop;
+      continue;
+    }
+    if (ch === '/' && sql[i + 1] === '*') {
+      const end = sql.indexOf('*/', i + 2);
+      const stop = end === -1 ? sql.length : end + 2;
+      out += sql.slice(i, stop);
+      i = stop;
+      continue;
+    }
+    // Identifiers keep their quoting.
+    if (ch === '"' || ch === '`') {
+      const q = ch;
+      let lit = ch;
+      i++;
+      while (i < sql.length) {
+        lit += sql[i];
+        if (sql[i] === q) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      out += lit;
+      continue;
+    }
+
+    if (ch === "'") {
+      i++;
+      let value = '';
+      while (i < sql.length) {
+        const c = sql[i];
+        if (c === '\\' && i + 1 < sql.length) {
+          const next = sql[i + 1];
+          const simple = { n: '\n', t: '\t', r: '\r', 0: '\0', b: '\b', Z: '\x1a' };
+          if (Object.prototype.hasOwnProperty.call(simple, next)) value += simple[next];
+          else value += next; // \' \" \\ and anything else: the literal character
+          i += 2;
+          continue;
+        }
+        if (c === "'") {
+          // '' inside a literal is an escaped quote in both dialects.
+          if (sql[i + 1] === "'") {
+            value += "'";
+            i += 2;
+            continue;
+          }
+          i++;
+          break;
+        }
+        value += c;
+        i++;
+      }
+      out += "'" + value.replace(/'/g, "''") + "'";
+      continue;
+    }
+
+    out += ch;
+    i++;
+  }
+
+  return out;
+}
+
+/**
  * Main entry point: translate one MySQL statement into zero or more SQLite
  * statements.
  */
 function translate(sqlRaw, registry) {
-  let sql = stripBackticks(sqlRaw).trim().replace(/;+\s*$/, '');
+  // Literals first: every later rewrite scans for quotes, so they must already
+  // be in SQLite's own escaping convention.
+  let sql = translateStringLiterals(stripBackticks(sqlRaw)).trim().replace(/;+\s*$/, '');
   if (!sql) return [];
 
   if (/^CREATE\s+TABLE\b/i.test(sql)) {
@@ -538,6 +632,7 @@ function translate(sqlRaw, registry) {
 module.exports = {
   NOOP,
   translate,
+  translateStringLiterals,
   translateMultiTableDelete,
   translateExpressions,
   translateCreateTable,

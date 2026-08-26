@@ -499,6 +499,11 @@ class Core_seeder extends Seeder {
             array('flutterwave','Flutterwave','FLUTTERWAVE',0,50),
             array('razorpay','Razorpay','RAZORPAY',0,60),
             array('coinpayments','CoinPayments','COINPAYMENTS',0,70),
+            // Bitcoin via Blockonomics. Inactive until an operator supplies an
+            // API key and callback secret; the adapter refuses to initiate
+            // without them, so activating it early cannot take a payment it
+            // has no way to confirm.
+            array('blockonomics','Bitcoin (BTC)','BLOCKONOMICS',0,15),
         );
         foreach ($methods as $m) {
             $this->insert_once('payment_methods', array('code'=>$m[0]), array(
