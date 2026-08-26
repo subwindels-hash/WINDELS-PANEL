@@ -388,6 +388,8 @@ $route['admin/earnings'] = 'admin/payouts/earnings';
 $route['admin/earnings/(:any)/reverse'] = 'admin/payouts/reverse_earning/$1';
 $route['admin/referrals'] = 'admin/payouts/referrals';
 $route['admin/referrals/(:any)/review'] = 'admin/payouts/review_signup/$1';
+$route['admin/campaigns'] = 'admin/payouts/create_campaign';
+$route['admin/campaigns/(:any)/status'] = 'admin/payouts/campaign_status/$1';
 
 // No web installer: provisioning is CLI-only (preflight / migrate / seed),
 // so /install intentionally falls through to 404.

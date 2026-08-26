@@ -74,6 +74,75 @@ class Payouts extends Admin_Controller {
         ));
     }
 
+    /** POST /admin/campaigns — create an advertising code. */
+    public function create_campaign() {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm('earnings.manage');
+
+        $code = strtoupper(trim((string)$this->input->post('code', true)));
+        $name = trim((string)$this->input->post('name', true));
+
+        if ($code === '' || $name === '') {
+            $this->session->set_flashdata('error', 'A campaign needs a name and a code.');
+            return redirect('admin/referrals');
+        }
+        if (!preg_match('/^[A-Z0-9_-]{3,32}$/', $code)) {
+            $this->session->set_flashdata('error',
+                'Campaign codes may use letters, digits, dashes and underscores only.');
+            return redirect('admin/referrals');
+        }
+        // A campaign code and a personal referral code share one namespace —
+        // whichever resolves first would silently win otherwise.
+        if ($this->Referral_campaign_model->by_code($code) || $this->Referral_code_model->by_code($code)) {
+            $this->session->set_flashdata('error', 'That code is already in use.');
+            return redirect('admin/referrals');
+        }
+
+        $qualify = strtoupper((string)$this->input->post('qualify_event', true));
+        if (!in_array($qualify, ReferralService::EVENTS, true)) $qualify = 'FIRST_ORDER';
+
+        $id = $this->Referral_campaign_model->create(array(
+            'name'          => mb_substr($name, 0, 160),
+            'code'          => $code,
+            'source'        => mb_substr((string)$this->input->post('source', true), 0, 64) ?: null,
+            'reward_amount' => number_format((float)$this->input->post('reward_amount'), 8, '.', ''),
+            'qualify_event' => $qualify,
+            'hold_hours'    => max(0, (int)$this->input->post('hold_hours')),
+            'budget'        => $this->input->post('budget') !== ''
+                               ? number_format((float)$this->input->post('budget'), 8, '.', '') : null,
+            'cost'          => $this->input->post('cost') !== ''
+                               ? number_format((float)$this->input->post('cost'), 8, '.', '') : null,
+            'status'        => 'ACTIVE',
+            'created_by_id' => (int)$this->current_user->id,
+        ));
+
+        $this->Audit_log_model->record(
+            $this->current_user->id, 'campaign.created', 'referral_campaigns', (string)$id,
+            null, array('code' => $code, 'name' => $name),
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
+
+        $this->session->set_flashdata('success',
+            'Campaign created. Share '.site_url('register').'?ref='.$code);
+        redirect('admin/referrals');
+    }
+
+    /** POST /admin/campaigns/:id/status — pause or resume. */
+    public function campaign_status($public_id) {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm('earnings.manage');
+
+        $campaign = $this->db->where('public_id', $public_id)->get('referral_campaigns')->row();
+        if (!$campaign) show_404();
+
+        $status = strtoupper((string)$this->input->post('status', true));
+        if (!in_array($status, array('ACTIVE', 'PAUSED', 'ENDED'), true)) show_404();
+
+        $this->Referral_campaign_model->update_row($campaign->id, array('status' => $status));
+        $this->session->set_flashdata('success', 'Campaign is now '.strtolower($status).'.');
+        redirect('admin/referrals');
+    }
+
     /* ------------------------------ actions ----------------------------- */
 
     /** POST /admin/payouts/:id/approve */
