@@ -33,12 +33,8 @@
 !/assets/uploads/.htaccess
 !/assets/uploads/index.html
 
-# Staging directory of tools/build_deployment_package.sh, and the zip it
-# produces. application-deployment.zip is NOT committed to git — it is a
-# build artifact: downloaded from Releases (built by the packaging pipeline)
-# or produced locally with `bash tools/build_deployment_package.sh`.
+# Staging directory of tools/build_deployment_package.sh
 /build/
-/application-deployment.zip
 
 # Dev database file created by tools/devdb (never part of a deployment).
 /storage/devdb/
