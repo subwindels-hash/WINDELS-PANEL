@@ -174,7 +174,7 @@ class SettingsService {
                 'The smallest cash payout the platform will process.', '1000.00000000'),
             'earnings_payouts_enabled' => array('bool', 'referrals', 'Allow cash payouts',
                 'Off still lets users convert earnings into wallet credit. Confirm your licensing, KYC '
-                .'and tax obligations before turning cash payouts on.', false),
+                .'and tax obligations before turning cash payouts on.', true),
 
             'api_enabled' => array('bool', 'api', 'Enable the reseller API',
                 'Off returns a 503 for every /api/v1 call without revoking any keys.', true),
@@ -182,6 +182,11 @@ class SettingsService {
                 'Optional HTTPS endpoint. Order status changes POST a signed JSON body. Leave blank to disable.', ''),
             'reseller_webhook_secret' => array('secret', 'api', 'Reseller webhook secret',
                 'HMAC-SHA256 of the raw JSON, sent as X-Marvy-Signature.', ''),
+
+            'base_currency' => array('choice:NGN|USD|EUR|GBP', 'currency', 'Base (accounting) currency',
+                'The currency every wallet, order and ledger entry is denominated in. Changing it reinterprets '
+                .'all stored amounts, so only do this on a fresh or migrated database. The platform can still '
+                .'show customers prices in other currencies via Admin → Currencies.', 'NGN'),
 
             'currency_display' => array('choice:symbol|code', 'currency', 'Currency display',
                 'Whether prices render as a symbol (₦1,234.56) or a code (NGN 1,234.56).', 'symbol'),
@@ -204,10 +209,8 @@ class SettingsService {
     /** Settings shown but not editable, with the reason. */
     public static function readonly_settings() {
         return array(
-            'base_currency' => 'The accounting/settlement currency every wallet, order and ledger entry '
-                .'is denominated in. Changing this would reinterpret every stored amount, so it moves by '
-                .'migration only — see docs/session-22-currency.md. To let customers browse in other '
-                .'currencies, enable them and set a default display currency in Admin → Currencies.',
+            // base_currency became editable (Admin → Settings → Currency) so it is
+            // no longer listed here. It is read via marvy_base_currency().
             // Wired, but edited on their own screen rather than as text fields:
             // a logo is chosen from the media library, not typed as a URL.
             'brand_primary_color' => 'Set in Admin → Appearance.',

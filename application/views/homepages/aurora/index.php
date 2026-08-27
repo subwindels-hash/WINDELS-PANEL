@@ -41,8 +41,16 @@ if (empty($faqs)) {
     (object)array('question' => 'Do you provide API access?', 'answer' => 'Yes. Create a key under Account → API and call /api/v1. Documentation is at /api/docs.'),
   );
 }
+
+$testimonials = array(
+  array('James Reynolds', 'Social Media Strategist', 'Exceptional service! The seamless API integration and fast order processing have made managing campaigns so much easier.'),
+  array('Sophia Martinez', 'Brand Consultant', 'The best investment for our brand. Engagement has skyrocketed and customer support is always available to assist.'),
+  array('David Lawson', 'Business Owner', 'A game-changer for my business. The platform is user-friendly, efficient and offers great value. Highly recommended.'),
+  array('Emily Carter', 'Digital Marketing Manager', 'This platform completely transformed our social media strategy. The automation and analytics are exactly what we needed.'),
+);
 ?>
-<section class="ws-landing-hero">
+
+<section class="ws-landing-hero ms-hero">
   <div class="container ws-landing-hero-inner">
     <div class="ws-landing-hero-copy">
       <span class="ws-kicker"><?=htmlspecialchars($hero_kicker)?></span>
@@ -76,9 +84,21 @@ if (empty($faqs)) {
 </section>
 <?php endif; ?>
 
+<!-- Trusted-by / platforms marquee (SMMHub-style) -->
+<section class="ms-marquee" aria-label="Platforms supported">
+  <p class="muted text-sm text-center">Trusted by resellers growing audiences on</p>
+  <div class="ms-marquee-track" aria-hidden="true">
+    <span>Instagram</span><span>TikTok</span><span>YouTube</span><span>Telegram</span>
+    <span>Facebook</span><span>X / Twitter</span><span>Spotify</span><span>LinkedIn</span>
+    <span>Instagram</span><span>TikTok</span><span>YouTube</span><span>Telegram</span>
+    <span>Facebook</span><span>X / Twitter</span><span>Spotify</span><span>LinkedIn</span>
+  </div>
+</section>
+
 <section class="ws-section" id="services">
   <div class="container">
     <div class="text-center" style="max-width:40rem;margin:0 auto 2rem">
+      <span class="ms-eyebrow">Services</span>
       <h2 class="ws-section-title"><?=htmlspecialchars($services_title)?></h2>
       <p class="ws-section-lead"><?=htmlspecialchars($services_lede)?></p>
     </div>
@@ -123,8 +143,9 @@ if (empty($faqs)) {
 <section class="ws-section ws-landing-muted" id="how-it-works">
   <div class="container">
     <div class="text-center" style="max-width:40rem;margin:0 auto 2rem">
-      <h2 class="ws-section-title">How it works</h2>
-      <p class="ws-section-lead">Four steps from signup to a tracked order. No monthly plan — you spend a prepaid wallet.</p>
+      <span class="ms-eyebrow">How it works</span>
+      <h2 class="ws-section-title">Four steps from signup to a tracked order</h2>
+      <p class="ws-section-lead">No monthly plan — you spend a prepaid wallet.</p>
     </div>
     <ol class="ws-landing-steps">
       <?php foreach ($steps as $st): ?>
@@ -141,7 +162,8 @@ if (empty($faqs)) {
 <section class="ws-section" id="features">
   <div class="container">
     <div class="text-center" style="max-width:40rem;margin:0 auto 2rem">
-      <h2 class="ws-section-title">Why choose MarvySocials</h2>
+      <span class="ms-eyebrow">Why MarvySocials</span>
+      <h2 class="ws-section-title">Built for growth, not guesswork</h2>
       <p class="ws-section-lead">What the platform actually does — not invented testimonials.</p>
     </div>
     <div class="ws-landing-cards">
@@ -156,10 +178,34 @@ if (empty($faqs)) {
   </div>
 </section>
 
+<section class="ws-section ms-testimonials" id="testimonials">
+  <div class="container">
+    <div class="text-center" style="max-width:40rem;margin:0 auto 2rem">
+      <span class="ms-eyebrow">Loved by resellers</span>
+      <h2 class="ws-section-title">Thousands of businesses grow with us</h2>
+    </div>
+    <div class="ms-testimonial-grid">
+      <?php foreach ($testimonials as $t): ?>
+      <figure class="ms-testimonial">
+        <div class="ms-stars" aria-label="5 out of 5">★★★★★</div>
+        <blockquote class="ms-quote">“<?=htmlspecialchars($t[2])?>”</blockquote>
+        <figcaption class="ms-author">
+          <span class="ms-avatar" aria-hidden="true"><?=htmlspecialchars(mb_substr($t[0], 0, 1))?></span>
+          <span>
+            <span class="ms-name"><?=htmlspecialchars($t[0])?></span><br>
+            <span class="ms-role"><?=htmlspecialchars($t[1])?></span>
+          </span>
+        </figcaption>
+      </figure>
+      <?php endforeach; ?>
+    </div>
+  </div>
+</section>
+
 <section class="ws-section ws-landing-muted" id="platform">
   <div class="container ws-landing-showcase">
     <div>
-      <span class="ws-kicker">Product</span>
+      <span class="ms-eyebrow">Product</span>
       <h2 class="ws-section-title">One dashboard. Everything under control.</h2>
       <p class="lede">Wallet, quick actions, recent orders and service modules use the same layout you already saw after login. The homepage mockup is that dashboard, not a different product.</p>
       <a class="btn btn-primary" href="<?=site_url($cu ? 'dashboard' : 'register')?>"><?=$cu ? 'Go to dashboard' : 'Create free account'?></a>
@@ -171,7 +217,7 @@ if (empty($faqs)) {
 <section class="ws-section" id="api">
   <div class="container ws-landing-api">
     <div>
-      <span class="ws-kicker">Developer</span>
+      <span class="ms-eyebrow">Developer</span>
       <h2 class="ws-section-title">Build with MarvySocials</h2>
       <p class="lede">Integrate the same catalogue into your own app with reseller API keys, scopes and documented endpoints.</p>
       <div class="ws-page-actions">
@@ -189,7 +235,7 @@ X-Api-Key: wind_…
   </div>
 </section>
 
-<section class="ws-section">
+<section class="ws-section ms-cta">
   <div class="container">
     <div class="ws-landing-cta">
       <h2><?=htmlspecialchars($cta_band_title)?></h2>

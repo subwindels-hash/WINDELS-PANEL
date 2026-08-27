@@ -1,4 +1,11 @@
-<?php defined('BASEPATH') OR exit('No direct script access allowed');?>
+<?php defined('BASEPATH') OR exit('No direct script access allowed');
+// Controllers pass `content_view` and `data`; alias them to the names this
+// layout uses. Without this, `$content` is null, the `!== ''` guard passes,
+// and `$this->load->view(null)` blows up with "Unable to load the requested
+// file: .php" (HTTP 500). Mirrors layouts/main.php.
+$content   = $content_view ?? '';
+$page_data = $data ?? array();
+?>
 <!doctype html>
 <html lang="en">
 <head>
@@ -8,6 +15,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="<?=base_url('assets/css/tailwind.css')?>">
 <link rel="stylesheet" href="<?=base_url('assets/css/design-system.css')?>">
+<link rel="stylesheet" href="<?=base_url('assets/css/marketing.css')?>">
 <?php if (!empty($brand['brand_primary_color'])): ?>
 <style>
 :root{--ws-primary:<?=htmlspecialchars($brand['brand_primary_color'])?>}
@@ -42,8 +50,13 @@
 </header>
 
 <main id="main" class="ws-main px-6 py-8">
-  <?php if ($content !== ''): ?>
-    <?php $this->load->view($content, $page_data); ?>
+  <?php if (!empty($content) && is_file(VIEWPATH.$content.'.php')): ?>
+    <?php
+      // Pass the whole layout scope (incl. `$data`) so content views that read
+      // `$data[...]` work, while still exposing the individual keys. A missing
+      // or empty view falls through to the empty-state instead of 500-ing.
+      $this->load->view($content, array_diff_key(get_defined_vars(), array_flip(array('content','page_data'))));
+    ?>
   <?php else: ?>
     <div class="container ws-section-sm">
       <div class="empty-state card text-center py-12">

@@ -16,19 +16,26 @@ $auth_site = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySoci
 <?php $this->load->view('partials/announcement'); ?>
 <div class="min-h-screen flex flex-col">
   <header class="border-b bg-surface">
-    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
       <a href="<?=site_url()?>" class="ws-brand">
         <?php $this->load->view('partials/brand_logo', array('variant'=>'horizontal','height'=>30)); ?>
         <span class="sr-only"><?=htmlspecialchars($auth_site)?></span>
       </a>
-      <?php if (!empty($current_user)): ?>
-        <form method="post" action="<?=site_url('logout')?>" class="m-0">
-          <input type="hidden" name="<?=$this->security->get_csrf_token_name()?>" value="<?=$this->security->get_csrf_hash()?>">
-          <button type="submit" class="text-sm text-slate-600 hover:text-slate-900 bg-transparent border-0 p-0 cursor-pointer">Log out</button>
-        </form>
-      <?php else: ?>
-        <a href="<?=site_url()?>" class="text-sm text-slate-600 hover:text-slate-900">← Back to site</a>
-      <?php endif; ?>
+      <nav class="ws-auth-nav" aria-label="Primary">
+        <a href="<?=site_url('services')?>">Services</a>
+        <a href="<?=site_url('shop')?>">Shop</a>
+        <a href="<?=site_url('pricing')?>">Pricing</a>
+        <a href="<?=site_url('faq')?>">FAQ</a>
+        <?php if (!empty($current_user)): ?>
+          <form method="post" action="<?=site_url('logout')?>" class="m-0 inline">
+            <input type="hidden" name="<?=$this->security->get_csrf_token_name()?>" value="<?=$this->security->get_csrf_hash()?>">
+            <button type="submit" class="text-sm text-slate-600 hover:text-slate-900 bg-transparent border-0 p-0 cursor-pointer">Log out</button>
+          </form>
+        <?php else: ?>
+          <a href="<?=site_url('login')?>">Log in</a>
+          <a href="<?=site_url('register')?>" class="btn btn-primary btn-sm">Get started</a>
+        <?php endif; ?>
+      </nav>
     </div>
   </header>
 
