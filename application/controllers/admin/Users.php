@@ -313,7 +313,7 @@ class Users extends Admin_Controller {
     }
 
     private function render($title, $view, array $data) {
-        $this->load->view('layouts/app', array_merge(array(
+        $this->load->view('layouts/app_theme', array_merge(array(
             'title'        => $title,
             'nav_active'   => 'admin/customers',
             'content_view' => $view,

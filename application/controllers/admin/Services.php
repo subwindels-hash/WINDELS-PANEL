@@ -104,6 +104,20 @@ class Services extends Admin_Controller {
         $this->audit('service.archived', $res['service'], $res['before'], get_object_vars($res['service']));
         $this->flash_result($res, 'Service archived. It remains attached to historical orders.');
         redirect('admin/services/'.$public_id);
+
+
+    /** POST /admin/services/:public-id/delete */
+    public function delete($public_id) {
+        $this->guard("services.manage");
+        $service = $this->find_or_404($public_id);
+        $res = $this->smmserviceadminservice->delete($service);
+        if (empty($res['ok'])) return $this->fail("admin/services/" . $public_id, $res["error"]);
+
+        $this->audit("service.deleted", $res["service"], $res["before"], null);
+        $this->flash_result($res, "Service deleted.");
+        redirect("admin/services");
+    }
+
     }
 
     /** POST /admin/services/:public-id/pricing/group/:group-id */

@@ -162,7 +162,14 @@ if (!function_exists('marvy_base_currency')) {
         $code = 'NGN';
         if (function_exists('get_instance')) {
             $ci = @get_instance();
-            if ($ci && isset($ci->config)) {
+            if ($ci && isset($ci->db) && is_object($ci->db) && !empty($ci->db->conn_id)) {
+                $ci->load->model('Setting_model');
+                $stored = $ci->Setting_model->get('base_currency', 'NGN');
+                if ($stored && strtoupper(trim((string)$stored)) !== '') {
+                    $code = strtoupper(trim((string)$stored));
+                }
+            }
+            if ($code === 'NGN') {
                 $cfg = $ci->config->item('marvy');
                 if (is_array($cfg) && !empty($cfg['base_currency'])) {
                     $code = strtoupper($cfg['base_currency']);

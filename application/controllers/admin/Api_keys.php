@@ -84,7 +84,7 @@ class Api_keys extends Admin_Controller {
     }
 
     private function render($view, array $data) {
-        $this->load->view('layouts/app', array_merge(array(
+        $this->load->view('layouts/app_theme', array_merge(array(
             'nav_active'=>'admin/api-keys',
             'content_view'=>$view,
             'current_user'=>$this->current_user,

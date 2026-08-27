@@ -24,7 +24,8 @@ $search = $search ?? '';
       <?php endif; ?>
     </form>
     <?php if ($has('providers.manage')): ?>
-      <button class="btn btn-primary" type="button" onclick="document.getElementById('ws-new-provider').showModal()">+ Add provider</button>
+      <button class="btn btn-primary" type="button"
+              onclick="var d=document.getElementById('ws-new-provider'); if(d){d.showModal?d.showModal():d.open=true;}">+ Add provider</button>
     <?php endif; ?>
   </div>
 </div>

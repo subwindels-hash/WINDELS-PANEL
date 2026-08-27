@@ -29,7 +29,7 @@ class Affiliates extends Admin_Controller {
         $accounts = $this->Referral_account_model->paginated($limit, ($page - 1) * $limit);
         $total    = $this->Referral_account_model->count_all_accounts();
 
-        $this->load->view('layouts/app', array(
+        $this->load->view('layouts/app_theme', array(
             'title'        => 'Affiliates',
             'nav_active'   => 'admin/affiliates',
             'content_view' => 'admin/affiliates/index',

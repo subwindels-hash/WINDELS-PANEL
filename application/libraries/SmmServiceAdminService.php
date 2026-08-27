@@ -310,6 +310,24 @@ class SmmServiceAdminService {
             'warnings' => array());
     }
 
+    public function delete($public_id) {
+        $service = $this->find($public_id);
+        if (!$service) return array('ok' => false, 'error' => 'Service not found');
+        if ($service->status === 'ARCHIVED') {
+            return array('ok' => false, 'error' => 'Cannot delete an archived service. Unarchive it first.');
+        }
+        // Check for active orders using this service
+        $order_count = $this->ci->db->where('service_id', $service->id)->where('status !=', 'ARCHIVED')->count_all_results('orders');
+        if ($order_count > 0) {
+            return array('ok' => false, 'error' => 'Cannot delete service that has active orders. Archive or reassign orders first.');
+        }
+        $before = get_object_vars($service);
+        $this->ci->db->where('id', $service->id)->delete('services');
+        $this->ci->db->where('service_id', $service->id)->delete('service_price'); // remove pricing
+        $this->audit('service.deleted', $service, $before, null);
+        return array('ok' => true, 'before' => $before, 'service' => null, 'warnings' => array());
+    }
+
     public function group_rates($service_id) {
         return $this->ci->Service_price_model->for_service_with_groups($service_id, 100);
     }

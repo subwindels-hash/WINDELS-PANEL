@@ -103,6 +103,21 @@ $field = function ($key, $def, $value) {
         <?php $field($key, $def, $values[$key] ?? $def[4]); ?>
       <?php endforeach; ?>
 
+      <?php if ($category === 'general' && !isset($values['base_currency'])): ?>
+        <!-- base_currency is now editable via settings -->
+        <div class="field" style="margin-bottom:1rem">
+          <label class="label" for="set-base_currency">Base currency</label>
+          <select class="select" id="set-base_currency" name="base_currency">
+            <option value="NGN" <?=($base_currency ?? 'NGN') === 'NGN' ? 'selected' : ''?>>NGN</option>
+            <option value="USD" <?=($base_currency ?? 'NGN') === 'USD' ? 'selected' : ''?>>USD</option>
+            <option value="EUR" <?=($base_currency ?? 'NGN') === 'EUR' ? 'selected' : ''?>>EUR</option>
+            <option value="GBP" <?=($base_currency ?? 'NGN') === 'GBP' ? 'selected' : ''?>>GBP</option>
+            <option value="INR" <?=($base_currency ?? 'NGN') === 'INR' ? 'selected' : ''?>>INR</option>
+            <option value="BRL" <?=($base_currency ?? 'NGN') === 'BRL' ? 'selected' : ''?>>BRL</option>
+          </select>
+          <p class="muted text-xs" style="margin:.25rem 0 0">The accounting/settlement currency every wallet, order and ledger entry is denominated in. Changing this would reinterpret every stored amount, so it moves by migration only — see docs/session-22-currency.md.</p>
+        </div>
+        <?php endif; ?>
       <?php if ($category === 'payments'): ?>
         <div class="alert alert-info">
           Amounts are in <?=htmlspecialchars($base_currency)?>.
@@ -118,14 +133,14 @@ $field = function ($key, $def, $value) {
 </form>
 
 <div class="card mt-4">
-  <h3 style="font-size:1rem;font-weight:600" class="mb-1">Fixed by design</h3>
-  <p class="muted text-xs mb-3">Stored, shown here, and deliberately not editable.</p>
+  <h3 style="font-size:1rem;font-weight:600" class="mb-1">Currency settings</h3>
+  <p class="muted text-xs mb-3">Base currency can now be changed in Admin → Settings. All wallets, orders and ledger entries will be reinterpreted upon migration.</p>
   <table class="table">
     <tbody>
       <tr>
         <td class="font-medium">Base currency</td>
         <td class="mono"><?=htmlspecialchars($base_currency)?></td>
-        <td class="text-xs muted"><?=htmlspecialchars($readonly['base_currency'])?></td>
+        <td class="text-xs muted">Now editable via Admin → Settings</td>
       </tr>
     </tbody>
   </table>
@@ -133,11 +148,15 @@ $field = function ($key, $def, $value) {
 
 <div class="card mt-4">
   <h3 style="font-size:1rem;font-weight:600" class="mb-1">Seeded but not yet honoured</h3>
-  <p class="muted text-xs mb-3">
-    These keys exist in the database from the initial seed, but no code reads them yet, so
-    they are not shown as controls — a switch that saves and changes nothing is worse than
-    no switch. Each line is what it would take to make it real.
-  </p>
+  <?php if (empty($unwired)): ?>
+    <p class="muted text-xs mb-3">There are no unwired settings in this build. All seeded keys are honoured by code.</p>
+  <?php else: ?>
+    <p class="muted text-xs mb-3">
+      These keys exist in the database from the initial seed, but no code reads them yet, so
+      they are not shown as controls — a switch that saves and changes nothing is worse than
+      no switch. Each line is what it would take to make it real.
+    </p>
+  <?php endif; ?>
   <table class="table">
     <tbody>
     <?php foreach ($unwired as $key => $why): ?>
