@@ -1,5 +1,7 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
 $can_manage = in_array('*', $permissions ?? array(), true) || in_array('services.manage', $permissions ?? array(), true);
+$csrf_name = $this->security->get_csrf_token_name();
+$csrf_hash = $this->security->get_csrf_hash();
 ?>
 <div class="row justify-between mb-4" style="align-items:flex-start;gap:1rem;flex-wrap:wrap">
   <div>
@@ -52,7 +54,15 @@ $can_manage = in_array('*', $permissions ?? array(), true) || in_array('services
         <td class="mono"><?=htmlspecialchars($service->rate)?></td>
         <td class="mono text-xs"><?=number_format((int)$service->min_quantity)?>–<?=number_format((int)$service->max_quantity)?></td>
         <td><span class="badge <?=$status_class?>"><?=htmlspecialchars($service->status)?></span><?php if ((int)$service->auto_price_sync): ?><div class="text-xs muted mt-1">auto-price</div><?php endif; ?></td>
-        <td class="text-right"><a class="btn btn-ghost btn-sm" href="<?=site_url('admin/services/'.$service->public_id)?>"><?=$can_manage?'Edit':'View'?> →</a></td>
+        <td class="text-right">
+          <a class="btn btn-ghost btn-sm" href="<?=site_url('admin/services/'.$service->public_id)?>"><?=$can_manage?'Edit':'View'?> →</a>
+          <?php if ($can_manage && $service->status !== 'ARCHIVED'): ?>
+          <form method="post" action="<?=site_url('admin/services/'.$service->public_id.'/delete')?>" style="display:inline">
+            <input type="hidden" name="<?=htmlspecialchars($csrf_name)?>" value="<?=htmlspecialchars($csrf_hash)?>">
+            <button class="btn btn-ghost btn-sm text-rose-600" type="submit" onclick="return confirm('Delete this service? This cannot be undone.')">Delete</button>
+          </form>
+          <?php endif; ?>
+        </td>
       </tr>
     <?php endforeach; ?>
     </tbody>
