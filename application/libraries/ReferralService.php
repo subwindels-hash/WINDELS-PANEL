@@ -124,7 +124,64 @@ class ReferralService {
             // Still lets the person register — it just will not pay a reward.
             return $this->err('CAMPAIGN_EXHAUSTED', 'That campaign has reached its budget.');
         }
+        if (!$this->geo_allows($campaign)) {
+            return $this->err('CAMPAIGN_GEO', 'That campaign is not available in your region.');
+        }
         return array('ok' => true);
+    }
+
+    /**
+     * Whether this visitor's country is inside the campaign's allow-list.
+     *
+     * Country is read from the header the CDN or load balancer in front of the
+     * panel sets — Cloudflare's CF-IPCountry and the common variants. There is
+     * deliberately no IP-to-country database here: shipping a stale bundled
+     * GeoIP file, or calling a third-party lookup on every click, are both
+     * worse than using the value the edge already computed correctly.
+     *
+     * **Fails open when the country is unknown.** An operator who has not put a
+     * geo-aware proxy in front of the site would otherwise find that setting
+     * any restriction silently rejected every visitor on earth. A campaign that
+     * accidentally pays a few out-of-region rewards is a budgeting annoyance;
+     * one that rejects all traffic looks like the site is broken. The admin
+     * screen says which of the two is in effect.
+     */
+    public function geo_allows($campaign) {
+        $allow = trim((string)($campaign->geo_allow ?? ''));
+        if ($allow === '') return true;
+
+        $country = $this->visitor_country();
+        if ($country === null) return true; // unknown — see the note above
+
+        $allowed = array_filter(array_map(
+            function ($c) { return strtoupper(trim($c)); },
+            explode(',', $allow)
+        ));
+
+        return in_array($country, $allowed, true);
+    }
+
+    /**
+     * The visitor's ISO-2 country, or NULL when nothing in front of us knows.
+     *
+     * Public so the admin screen can show an operator what the panel is
+     * actually seeing, rather than leaving them to guess why a restriction is
+     * or is not biting.
+     */
+    public function visitor_country() {
+        if (!isset($this->ci->input)) return null;
+
+        foreach (array('CF-IPCountry', 'CloudFront-Viewer-Country',
+                       'X-Country-Code', 'X-Geo-Country', 'X-AppEngine-Country') as $header) {
+            $value = $this->ci->input->get_request_header($header, true);
+            if (!$value) continue;
+            $value = strtoupper(trim($value));
+            // Cloudflare sends XX for anonymised or unresolvable addresses, and
+            // T1 for Tor. Neither is a country.
+            if ($value === 'XX' || $value === 'T1') continue;
+            if (preg_match('/^[A-Z]{2}$/', $value)) return $value;
+        }
+        return null;
     }
 
     /* ------------------------------------------------------------------ */

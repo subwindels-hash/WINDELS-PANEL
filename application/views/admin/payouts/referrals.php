@@ -43,8 +43,24 @@ $csrf = function () {
       <input class="input mono" type="number" name="budget" step="0.01" min="0" placeholder="none"></label>
     <label class="field"><span class="label">Ad cost</span>
       <input class="input mono" type="number" name="cost" step="0.01" min="0" placeholder="optional"></label>
+    <label class="field"><span class="label">Countries</span>
+      <input class="input mono" type="text" name="geo_allow" maxlength="255"
+             placeholder="NG,GH,KE" style="max-width:10rem"></label>
     <button class="btn btn-primary" type="submit">Create</button>
   </form>
+  <p class="muted text-xs mt-2">
+    <strong>Countries</strong> is an optional comma-separated ISO-2 allow-list; blank means anywhere.
+    <?php if (!empty($geo_detected)): ?>
+      Your own request resolves to <strong><?=htmlspecialchars($geo_detected)?></strong>, so restrictions
+      will be applied.
+    <?php else: ?>
+      <span style="color:var(--color-warning,#b45309)">
+        No country header is reaching the panel, so a restriction here would match nobody and is
+        therefore ignored rather than blocking everyone. Put a geo-aware proxy (for example
+        Cloudflare, which sends <code>CF-IPCountry</code>) in front of the site to make it effective.
+      </span>
+    <?php endif; ?>
+  </p>
 </div>
 
 <div class="card mb-4">
@@ -54,7 +70,7 @@ $csrf = function () {
   <?php else: ?>
   <table class="table">
     <thead><tr><th>Campaign</th><th>Code</th><th>Source</th><th>Clicks</th><th>Sign-ups</th>
-               <th>Qualified</th><th>Conversion</th><th>Spent</th><th>Cost/signup</th><th>Status</th></tr></thead>
+               <th>Qualified</th><th>Conversion</th><th>Spent</th><th>Cost/signup</th><th>Geo</th><th>Status</th></tr></thead>
     <tbody>
       <?php foreach ($campaigns as $c): ?>
       <tr>
@@ -66,6 +82,7 @@ $csrf = function () {
         <td><?=number_format((int)$c->total_qualified)?></td>
         <td><?=htmlspecialchars((string)$c->conversion_rate)?>%</td>
         <td class="mono text-xs"><?=marvy_money($c->spent)?></td>
+        <td class="mono text-xs"><?=empty($c->geo_allow) ? 'any' : htmlspecialchars($c->geo_allow)?></td>
         <td class="mono text-xs"><?=$c->cost_per_signup === null ? '—' : marvy_money($c->cost_per_signup)?></td>
         <td>
           <span class="badge badge-default"><?=htmlspecialchars($c->status)?></span>

@@ -45,6 +45,13 @@ const now = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
  */
 function resetRateLimits(db) {
   db.prepare("DELETE FROM login_attempts WHERE ip = '127.0.0.1'").run();
+
+  // Every account in this run is created from one IP within seconds, which is
+  // exactly the pattern IP_VELOCITY exists to catch. The rule is working — it
+  // simply cannot tell a test rig from a referral farm. Clearing prior signups
+  // keeps the velocity window clean so this suite exercises the attribution
+  // path; the fraud rule itself is asserted explicitly further down.
+  db.prepare('DELETE FROM referral_signups').run();
 }
 
 resetRateLimits(db);
@@ -242,6 +249,34 @@ for (const landing of ['/', '/services', '/faq']) {
     form.text.includes(CODE),
     'attribution was lost — an advert pointing anywhere but /register would credit nobody'
   );
+}
+
+console.log('\n── Campaign · geographic restriction');
+{
+  const geoCode = 'GEO' + stamp;
+  db.prepare(
+    `INSERT INTO referral_campaigns
+     (public_id,name,code,source,reward_amount,qualify_event,hold_hours,status,geo_allow,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+  ).run(ulid(), 'Geo test', geoCode, 'test', '100.00000000', 'FIRST_ORDER', 0, 'ACTIVE', 'NG', now(), now());
+
+  const validateAs = async (country) => {
+    const headers = { 'content-type': 'application/json' };
+    if (country) headers['CF-IPCountry'] = country;
+    const r = await fetch(`${BASE}/api/referrals/validate`, {
+      method: 'POST', headers, body: JSON.stringify({ code: geoCode }),
+    });
+    return (await r.json()).data;
+  };
+
+  check('an allowed country passes', (await validateAs('NG')).valid === true);
+  check('a disallowed country is refused',
+    (await validateAs('US')).reason === 'CAMPAIGN_GEO', 'US was not blocked');
+  // Fails open on purpose: a panel with no geo-aware proxy must not reject
+  // every visitor on earth the moment a restriction is set.
+  check('an unknown country fails open', (await validateAs(null)).valid === true,
+    'a restriction blocked everyone when no country header was present');
+  check('an anonymised country fails open', (await validateAs('XX')).valid === true);
 }
 
 console.log('\n── Referral · fraud prevention');

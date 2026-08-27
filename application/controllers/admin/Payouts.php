@@ -71,6 +71,10 @@ class Payouts extends Admin_Controller {
             'campaigns' => $this->Referral_campaign_model->performance(),
             'filters'   => $filters,
             'page'      => $page,
+            // What the panel can actually see about a visitor's country. Shown
+            // so an operator setting a geo restriction knows whether it will
+            // bite or silently do nothing.
+            'geo_detected' => $this->referralservice->visitor_country(),
         ));
     }
 
@@ -110,6 +114,7 @@ class Payouts extends Admin_Controller {
             'hold_hours'    => max(0, (int)$this->input->post('hold_hours')),
             'budget'        => $this->input->post('budget') !== ''
                                ? number_format((float)$this->input->post('budget'), 8, '.', '') : null,
+            'geo_allow'     => $this->clean_geo($this->input->post('geo_allow', true)),
             'cost'          => $this->input->post('cost') !== ''
                                ? number_format((float)$this->input->post('cost'), 8, '.', '') : null,
             'status'        => 'ACTIVE',
@@ -206,6 +211,25 @@ class Payouts extends Admin_Controller {
         $this->session->set_flashdata(empty($res['ok']) ? 'error' : 'success',
             empty($res['ok']) ? ($res['error'] ?? 'Could not review that referral.') : 'Referral reviewed.');
         redirect('admin/referrals');
+    }
+
+    /**
+     * Normalise a comma-separated ISO-2 allow-list.
+     *
+     * Anything that is not two letters is dropped rather than stored: a typo
+     * like "UK" (the ISO code is GB) would silently exclude every visitor from
+     * that country, which is the opposite of what the operator intended.
+     */
+    private function clean_geo($raw) {
+        $raw = trim((string)$raw);
+        if ($raw === '') return null;
+
+        $codes = array();
+        foreach (explode(',', $raw) as $part) {
+            $code = strtoupper(trim($part));
+            if (preg_match('/^[A-Z]{2}$/', $code)) $codes[$code] = true;
+        }
+        return $codes ? implode(',', array_keys($codes)) : null;
     }
 
     /* ------------------------------ helpers ----------------------------- */

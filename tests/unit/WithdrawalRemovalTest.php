@@ -146,6 +146,9 @@ class WithdrawalRemovalTest extends TestCase
             'application/views/admin/payouts/index.php',
             // Declares /api/withdrawals and /admin/payouts, both earnings-only.
             'application/config/routes.php',
+            // Documents the earnings payout in its own clearly-labelled
+            // section; the reseller half is asserted clean separately above.
+            'application/views/api/docs.php',
         );
         $copy_only = array_merge($copy_only, $earnings_payouts);
         $clean = array(
@@ -193,11 +196,30 @@ class WithdrawalRemovalTest extends TestCase
         $api = file_get_contents(self::$root.'/application/controllers/Api_v1.php');
         $this->assertStringNotContainsStringIgnoringCase('withdrawal', $api,
             'Api_v1 must not expose withdrawal endpoints or scopes');
+        // The reseller API surface must not offer a withdrawal endpoint or
+        // scope. The docs page also carries a clearly separated
+        // session-authenticated section for the panel's own frontend, which
+        // documents the *earnings* payout — a different ledger that cannot
+        // reach a wallet (EarningsPayoutIsolationTest). So the assertion is on
+        // the reseller table, not on the whole file.
         $docs = glob(self::$root.'/application/views/api/*.php') ?: array();
         foreach ($docs as $file) {
-            $this->assertStringNotContainsStringIgnoringCase('withdrawal',
-                file_get_contents($file), basename($file).' must not document withdrawals');
+            $html = file_get_contents($file);
+            $split = stripos($html, 'Dashboard endpoints (session-authenticated)');
+            $reseller = $split === false ? $html : substr($html, 0, $split);
+
+            $this->assertStringNotContainsStringIgnoringCase('withdrawal', $reseller,
+                basename($file).' must not document withdrawals in the reseller API');
+            $this->assertStringNotContainsStringIgnoringCase('api/v1/withdraw', $html,
+                basename($file).' must not expose a v1 withdrawal path');
         }
+
+        // And the page must state plainly that deposits are not withdrawable,
+        // so nobody reads the earnings section and assumes their topped-up
+        // balance can be cashed out.
+        $main = file_get_contents(self::$root.'/application/views/api/docs.php');
+        $this->assertStringContainsString('Deposited wallet funds cannot be withdrawn', $main,
+            'the docs must say deposits are not withdrawable');
     }
 
     public function testNoAssetOrUploadReferencesWithdrawals()

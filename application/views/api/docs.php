@@ -70,6 +70,39 @@
     </div>
   </div>
 
+  <div class="card">
+    <h2 class="card-title">Dashboard endpoints (session-authenticated)</h2>
+    <p class="muted">
+      These power the panel's own pages and authenticate with your signed-in session, not an API
+      key — they are <strong>not</strong> part of the reseller API and are listed here so the surface
+      is documented in one place. State-changing calls need the CSRF token, which
+      <code><?=site_url('csrf')?></code> returns; send it as the <code>X-CSRF-TOKEN</code> header.
+      Base URL <code><?=site_url('api')?></code>.
+    </p>
+    <div class="overflow-x-auto">
+    <table class="table">
+      <thead><tr><th></th><th>Path</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><span class="ws-method ws-post">POST</span></td><td><code>/payments/fundsvera/initialize</code></td><td>Start a bank-transfer deposit. Body: <code>{amount}</code>. Returns the account details to pay into. Your wallet is credited by the provider's webhook, never by returning to the site.</td></tr>
+        <tr><td><span class="ws-method ws-get">GET</span></td><td><code>/payments/history</code></td><td>Your deposits.</td></tr>
+        <tr><td><span class="ws-method ws-get">GET</span></td><td><code>/payments/:reference</code></td><td>One deposit by its reference.</td></tr>
+        <tr><td><span class="ws-method ws-get">GET</span></td><td><code>/referrals/my-code</code></td><td>Your referral code, link and click/sign-up counts.</td></tr>
+        <tr><td><span class="ws-method ws-post">POST</span></td><td><code>/referrals/validate</code></td><td>Check a code before signing up. Body: <code>{code}</code>. The only endpoint here reachable without a session; rate limited per IP.</td></tr>
+        <tr><td><span class="ws-method ws-get">GET</span></td><td><code>/referrals/dashboard</code></td><td>Referral totals and earnings summary.</td></tr>
+        <tr><td><span class="ws-method ws-get">GET</span></td><td><code>/referrals/history</code></td><td>People you referred and their qualification status.</td></tr>
+        <tr><td><span class="ws-method ws-get">GET</span></td><td><code>/earnings</code></td><td>Available, pending, locked and paid balances, kept separate.</td></tr>
+        <tr><td><span class="ws-method ws-get">GET</span></td><td><code>/earnings/history</code></td><td>The earnings ledger for your account.</td></tr>
+        <tr><td><span class="ws-method ws-post">POST</span></td><td><code>/withdrawals</code></td><td>Request a payout of <em>available earnings</em>. Body: <code>{amount, method, destination?}</code>. <code>WALLET_CREDIT</code> converts to spendable balance immediately; <code>BANK_TRANSFER</code> is reviewed by staff.</td></tr>
+        <tr><td><span class="ws-method ws-get">GET</span></td><td><code>/withdrawals/history</code></td><td>Your payout requests and their status.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="muted text-sm mt-3">
+      Deposited wallet funds cannot be withdrawn — only referral and campaign earnings are payable.
+      The two balances are separate ledgers.
+    </p>
+  </div>
+
   <div class="grid" style="grid-template-columns:1fr 1fr;gap:1rem">
     <div class="card">
       <h3 class="card-title">Place an order</h3>
