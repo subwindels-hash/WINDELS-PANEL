@@ -12,8 +12,28 @@ if (!defined('BASEPATH')
     exit('No direct script access allowed');
 }
 
-if (!function_exists('marvy_public_id')) {
-    function marvy_public_id(){
+if (!function_exists('csrf')) {
+    /**
+     * Hidden CSRF input for hand-written <form> blocks.
+     *
+     * Many admin views emit `<?=csrf()?>` inside a <form method="post"> that
+     * is not built with form_open(); without this helper every such POST is
+     * rejected by the CSRF filter and the form "does nothing". Returns the
+     * markup, or an empty string when the security helper is unavailable.
+     */
+    function csrf() {
+        $ci =& get_instance();
+        if (!isset($ci->security)) {
+            $ci->load->library('security');
+        }
+        $name = $ci->security->get_csrf_token_name();
+        $hash = $ci->security->get_csrf_hash();
+        return '<input type="hidden" name="'.htmlspecialchars($name, ENT_QUOTES).'"'
+            .' value="'.htmlspecialchars($hash, ENT_QUOTES).'">';
+    }
+}
+
+if (!function_exists('marvy_public_id')) {    function marvy_public_id(){
         if (class_exists(\Robbins\Ulid\Ulid::class)) return (string)\Robbins\Ulid\Ulid::generate();
         if (class_exists(\Ramsey\Uuid\Uuid::class)) return \Ramsey\Uuid\Uuid::uuid4()->toString();
         return bin2hex(random_bytes(13));
