@@ -253,6 +253,52 @@ class CronWorkers {
         );
     }
 
+    /* ======================= earnings maintenance ========================= */
+
+    /**
+     * Release earnings whose holding period has elapsed.
+     *
+     * Without this an earning created with a hold would sit PENDING forever and
+     * could never be withdrawn — the holding period would be a life sentence
+     * rather than a delay. EarningsService::release_due() moves each row with a
+     * compare-and-set, so two overlapping runs cannot release the same earning
+     * twice.
+     */
+    public function earnings_release($limit = 500) {
+        $this->need(array('Earning_model'), array('EarningsService'));
+        $released = $this->ci->earningsservice->release_due($limit);
+
+        return array(
+            'processed' => $released,
+            'failed'    => 0,
+            'message'   => $released
+                ? $released.' earning(s) became available'
+                : 'no earnings due for release',
+        );
+    }
+
+    /**
+     * Close out bank-transfer checkouts whose 30-minute window has passed.
+     *
+     * Cosmetic for the customer, load-bearing for support: a PENDING checkout
+     * from three weeks ago is noise that hides the one from ten minutes ago
+     * that genuinely needs attention. A late webhook still reconciles, because
+     * the payment transaction itself is matched by reference, not by this row's
+     * status.
+     */
+    public function fundsvera_expire($limit = 200) {
+        $this->need(array('Fundsvera_checkout_model'));
+        $expired = $this->ci->Fundsvera_checkout_model->expire_stale($limit);
+
+        return array(
+            'processed' => $expired,
+            'failed'    => 0,
+            'message'   => $expired
+                ? $expired.' expired bank transfer checkout(s) closed'
+                : 'no stale checkouts',
+        );
+    }
+
     /* ===================== order status synchronisation ==================== */
 
     /**

@@ -27,6 +27,91 @@ class Payments extends Admin_Controller {
         ));
     }
 
+    /**
+     * GET /admin/payments/webhooks — stored gateway callbacks.
+     *
+     * The support view for "the customer says they paid". A callback that
+     * arrived but could not be verified, or was verified but matched no
+     * transaction, is invisible without this.
+     */
+    public function webhooks() {
+        $this->require_perm('payments.view');
+        $this->load->model('Payment_webhook_admin_model');
+
+        $filters = array(
+            'gateway'   => $this->input->get('gateway', true),
+            'processed' => $this->input->get('processed', true),
+            'signature' => $this->input->get('signature', true),
+            'search'    => $this->input->get('q', true),
+        );
+        $page  = max(1, (int)$this->input->get('page'));
+        $limit = 25;
+
+        $this->load->view('layouts/app', array(
+            'title'        => 'Webhook events',
+            'nav_active'   => 'admin/payments',
+            'content_view' => 'admin/payments/webhooks',
+            'current_user' => $this->current_user,
+            'permissions'  => $this->auth->permissions(),
+            'unread'       => $this->dashboardstats->unread_count($this->current_user->id),
+            'events'       => $this->Payment_webhook_admin_model->admin_search($filters, $limit, ($page - 1) * $limit),
+            'total'        => $this->Payment_webhook_admin_model->admin_count($filters),
+            'health'       => $this->Payment_webhook_admin_model->health(),
+            'filters'      => $filters,
+            'page'         => $page,
+            'limit'        => $limit,
+            'total_pages'  => max(1, (int)ceil($this->Payment_webhook_admin_model->admin_count($filters) / $limit)),
+        ));
+    }
+
+    /**
+     * POST /admin/payments/webhooks/:id/reprocess — retry one stored event.
+     *
+     * Safe to press twice: it replays the payload through the same
+     * PaymentService path a live callback takes, which is idempotent on the
+     * gateway event id and on the ledger's own key. It cannot invent a payment
+     * — an event whose signature never verified still will not credit.
+     */
+    public function reprocess_webhook($id) {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm('payments.manage');
+        $this->load->model('Payment_webhook_admin_model');
+
+        $event = $this->Payment_webhook_admin_model->find($id);
+        if (!$event) show_404();
+
+        if ((int)$event->signature_valid !== 1) {
+            $this->session->set_flashdata('error',
+                'That event never passed signature verification, so it cannot be credited. '
+                .'Check the gateway secret before retrying.');
+            return redirect('admin/payments/webhooks');
+        }
+
+        // Clear the processed marker so record_webhook re-runs the match, then
+        // replay the stored payload verbatim.
+        $this->db->where('id', $event->id)->update('payment_webhooks',
+            array('processed' => 0, 'error' => null));
+
+        $res = $this->paymentservice->record_webhook(
+            $event->gateway_type, (string)$event->payload, array()
+        );
+
+        // audit() expects a transaction; this is a webhook row, so record it
+        // directly against the event rather than bending that helper.
+        $this->Audit_log_model->record(
+            $this->current_user->id, 'payment.webhook_reprocessed', 'payment_webhooks',
+            (string)$event->id, null,
+            array('event_id' => $event->event_id, 'ok' => !empty($res['ok'])),
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
+
+        $this->session->set_flashdata(empty($res['ok']) ? 'error' : 'success',
+            empty($res['ok'])
+                ? ('Reprocessing did not complete: '.($res['error'] ?? 'unknown'))
+                : 'Event reprocessed.');
+        redirect('admin/payments/webhooks');
+    }
+
     public function index() {
         // Default to the queue staff actually work: deposits awaiting review.
         $status  = $this->input->get('status', true);

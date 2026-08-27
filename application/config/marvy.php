@@ -78,6 +78,10 @@ $config['cron'] = array(
     'provider_health' => '*/5 * * * *',
     'refill_status' => '*/5 * * * *',
     'payment_reconciliation' => '*/5 * * * *',
+    // Earnings sit PENDING until their holding period elapses; without this
+    // sweep they would never become withdrawable.
+    'earnings_release'       => '*/10 * * * *',
+    'fundsvera_expire'       => '*/5 * * * *',
     'email_queue' => '*/5 * * * *',
     'analytics' => '0 * * * *',
     'provider_sync' => '*/60 * * * *',

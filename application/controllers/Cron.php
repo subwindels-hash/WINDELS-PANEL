@@ -89,6 +89,20 @@ class Cron extends Cron_Controller {
         });
     }
 
+    /** Make held earnings available once their holding period elapses. */
+    public function earnings_release() {
+        $this->execute('earnings_release', function () {
+            return $this->cronworkers->earnings_release();
+        });
+    }
+
+    /** Close bank-transfer checkouts whose 30-minute window has passed. */
+    public function fundsvera_expire() {
+        $this->execute('fundsvera_expire', function () {
+            return $this->cronworkers->fundsvera_expire();
+        });
+    }
+
     /** Release undisputed marketplace deliveries after the review window. */
     public function marketplace_release() {
         $this->execute('marketplace_release', function () {
