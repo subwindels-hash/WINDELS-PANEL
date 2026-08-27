@@ -51,6 +51,19 @@ $icons = array(
     'eye-off'    => '<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/>',
     'badge-check'=> '<path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><path d="m9 12 2 2 4-4"/>',
     'trash'      => '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
+
+    // Platform glyphs. These exist because service_categories.icon stores keys
+    // like 'instagram' and 'send'; without them the category grid rendered the
+    // label with no mark at all. Simple line forms in the same 24x24 stroke
+    // style as the rest of the set — deliberately generic shapes rather than
+    // traced brand logos, which we have no licence to redistribute.
+    'instagram'  => '<rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>',
+    'youtube'    => '<rect x="2" y="5" width="20" height="14" rx="4"/><polygon points="10 9 15 12 10 15 10 9"/>',
+    'facebook'   => '<path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>',
+    'twitter'    => '<path d="M4 4l16 16"/><path d="M20 4L4 20"/>',
+    'send'       => '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
+    'music'      => '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+    'music-2'    => '<circle cx="12" cy="12" r="10"/><path d="M8 14.5c2.5-1 5.5-1 8 .5"/><path d="M7 11c3-1.2 7-1 10 1"/><path d="M7 7.5c3.5-1.4 8-1 11 1.5"/>',
 );
 $svg = $icons[$name] ?? '';
 if ($svg === '') return;

@@ -46,6 +46,18 @@ $faqs = array(
   </div>
 </section>
 
+<?php if ($trending): ?>
+<section class="ws-pulse-showcase" aria-hidden="true">
+  <div class="container" style="max-width:1080px">
+    <?php // Decorative supporting image. Sits between the search hero and the
+          // category rail rather than behind the centred hero text, where a
+          // photograph would fight the search field for contrast. ?>
+    <img src="<?=base_url('assets/images/home/hero-pulse.jpg')?>" alt=""
+         width="1200" height="675" loading="lazy" decoding="async">
+  </div>
+</section>
+<?php endif; ?>
+
 <section class="py-8">
   <div class="container" style="max-width:1080px">
     <div class="ws-cat-scroll" aria-label="Categories">
@@ -229,6 +241,12 @@ $faqs = array(
   .ws-pulse-search .btn{border-radius:0;width:100%}
   .ws-fast-grid{grid-template-columns:1fr}
 }
+/* Supporting hero band. Capped in height so it never pushes the category rail
+   and trending services below the fold on a laptop. */
+.ws-pulse-showcase{padding:.5rem 0 1.5rem}
+.ws-pulse-showcase img{width:100%;height:clamp(180px,26vw,320px);object-fit:cover;
+  border-radius:var(--radius-xl);box-shadow:var(--shadow-card)}
+@media(max-width:640px){.ws-pulse-showcase img{height:150px}}
 </style>
 <script <?=csp_nonce_attr()?>>
 // Quick-order estimate over the real catalogue. Rates, minimums and maximums

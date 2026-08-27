@@ -27,7 +27,13 @@ $faqs = array(
 );
 ?>
 <section class="ws-nexus-hero">
-  <div class="container" style="max-width:1180px">
+  <?php // Decorative only: the hero's meaning is carried by the heading and the
+        // flow diagram, so this is aria-hidden and empty-alt rather than
+        // described to a screen reader. Loaded eagerly with high priority
+        // because it is the largest paint on the page. ?>
+  <img class="ws-nexus-hero-bg" src="<?=base_url('assets/images/home/hero-nexus.jpg')?>"
+       alt="" aria-hidden="true" width="1200" height="675" fetchpriority="high" decoding="async">
+  <div class="container" style="max-width:1180px;position:relative;z-index:1">
     <div class="ws-nexus-grid">
       <div>
         <p class="ws-nexus-eyebrow">// ENTERPRISE SMM INFRASTRUCTURE</p>
@@ -167,7 +173,7 @@ $faqs = array(
 </section>
 
 <style>
-.ws-nexus-hero{background:#0b0f1a;color:#e2e8f0;padding:4.5rem 0 3rem;
+.ws-nexus-hero{background:#0b0f1a;color:#e2e8f0;padding:4.5rem 0 3rem;position:relative;overflow:hidden;
   background-image:
    linear-gradient(rgba(34,211,238,.04) 1px,transparent 1px),
    linear-gradient(90deg,rgba(34,211,238,.04) 1px,transparent 1px),
@@ -222,4 +228,18 @@ $faqs = array(
 .ws-neon-cta{text-align:center;border:1px solid rgba(34,211,238,.4);border-radius:var(--radius-xl);padding:2.5rem;background:radial-gradient(600px 200px at 50% 0,rgba(34,211,238,.08),transparent)}
 @media(max-width:880px){.ws-nexus-grid{grid-template-columns:1fr}.ws-nexus-stats{grid-template-columns:repeat(2,1fr)}}
 @media(prefers-reduced-motion:reduce){.ws-dot::after{animation:none}}
+/* The photograph sits behind the hero. It is anchored right so the artwork's
+   bright routing wall stays clear of the left-hand text column, and a gradient
+   scrim guarantees text contrast regardless of how the image crops. */
+.ws-nexus-hero-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  object-position:right center;opacity:.55}
+.ws-nexus-hero::after{content:'';position:absolute;inset:0;
+  background:linear-gradient(90deg,#0b0f1a 0%,rgba(11,15,26,.92) 38%,rgba(11,15,26,.35) 100%)}
+.ws-nexus-hero>.container{position:relative;z-index:1}
+@media(max-width:900px){
+  /* On a narrow screen the text sits over the busiest part of the image, so
+     fade it further rather than letting contrast degrade. */
+  .ws-nexus-hero-bg{opacity:.28}
+  .ws-nexus-hero::after{background:linear-gradient(180deg,rgba(11,15,26,.85),rgba(11,15,26,.96))}
+}
 </style>
