@@ -1,82 +1,69 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
 $t = $totals;
+$name = htmlspecialchars($current_user->username ?? 'there');
 ?>
-<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-  <div class="card">
-    <div class="card-meta">Wallet balance</div>
-    <div class="mt-1 text-3xl font-bold tracking-tight" style="font-family:var(--font-display)">
-      <?=marvy_money($wallet->balance ?? '0', $wallet->currency ?? marvy_base_currency())?>
-    </div>
-    <p class="text-xs muted mt-1">MARVYSOCIALS Wallet Balance — use your available balance to pay for services, orders, and other supported purchases within the platform.</p>
-    <div class="row mt-3">
-      <a href="<?=site_url('dashboard/add-funds')?>" class="btn btn-primary btn-sm">Add funds</a>
-      <a href="<?=site_url('dashboard/transactions')?>" class="btn btn-ghost btn-sm">History</a>
-    </div>
-  </div>
-
-  <a href="<?=site_url('dashboard/orders')?>" class="card card-hover">
-    <div class="card-meta">Total orders</div>
-    <div class="mt-1 text-3xl font-bold" style="font-family:var(--font-display)"><?=number_format($t['orders'])?></div>
-    <div class="mt-3 text-sm muted"><?=number_format($t['active'])?> active · <?=number_format($t['completed'])?> completed</div>
-  </a>
-
-  <div class="card">
-    <div class="card-meta">Total spent</div>
-    <div class="mt-1 text-3xl font-bold" style="font-family:var(--font-display)"><?=marvy_money($t['spent'])?></div>
-    <div class="mt-3 text-sm muted">across completed orders</div>
-  </div>
-
-  <div class="card">
-    <div class="card-meta">Total deposited</div>
-    <div class="mt-1 text-3xl font-bold" style="font-family:var(--font-display)"><?=marvy_money($t['deposited'])?></div>
-    <div class="mt-3"><a href="<?=site_url('dashboard/new-order')?>" class="btn btn-secondary btn-sm">Place an order →</a></div>
-  </div>
-</div>
-
-<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mt-4">
-  <a href="<?=site_url('dashboard/orders?status=PENDING')?>" class="card card-hover">
-    <div class="card-meta">Pending</div>
-    <div class="mt-1 text-2xl font-bold"><?=number_format($t['pending'] ?? 0)?></div>
-  </a>
-  <a href="<?=site_url('dashboard/orders?status=PROCESSING')?>" class="card card-hover">
-    <div class="card-meta">Processing</div>
-    <div class="mt-1 text-2xl font-bold"><?=number_format($t['processing'] ?? 0)?></div>
-  </a>
-  <a href="<?=site_url('dashboard/orders?status=COMPLETED')?>" class="card card-hover">
-    <div class="card-meta">Completed</div>
-    <div class="mt-1 text-2xl font-bold"><?=number_format($t['completed'] ?? 0)?></div>
-  </a>
-  <a href="<?=site_url('dashboard/orders?status=CANCELED')?>" class="card card-hover">
-    <div class="card-meta">Cancelled</div>
-    <div class="mt-1 text-2xl font-bold"><?=number_format($t['cancelled'] ?? 0)?></div>
-  </a>
-</div>
-
-<div class="row mt-4" style="gap:.5rem">
-  <a class="btn btn-primary" href="<?=site_url('dashboard/new-order')?>">New order</a>
-  <a class="btn btn-secondary" href="<?=site_url('dashboard/add-funds')?>">Add funds</a>
-</div>
-
 <?php if (empty($current_user->email_verified_at)): ?>
-  <div class="alert alert-warning mt-6">
+  <div class="alert alert-warning">
     <strong>Please verify your email.</strong> Some features are restricted until you confirm your address.
     <form method="post" action="<?=site_url('verify-email/resend')?>" class="inline">
       <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
-      <button type="submit" class="btn btn-sm" style="background:var(--warning-600);color:#fff">Resend verification email</button>
+      <button type="submit" class="btn btn-sm btn-secondary">Resend verification email</button>
     </form>
   </div>
 <?php endif; ?>
 
-<div class="grid gap-6 lg:grid-cols-3 mt-6">
+<section class="ws-stat-grid">
+  <div class="card ws-stat-card">
+    <div class="card-meta">Wallet balance</div>
+    <div class="ws-stat-value"><?=marvy_money($wallet->balance ?? '0', $wallet->currency ?? marvy_base_currency())?></div>
+    <p class="hint">Available for orders and in-app purchases.</p>
+  </div>
+  <a href="<?=site_url('dashboard/orders')?>" class="card ws-stat-card card-hover ws-action-card">
+    <div class="card-meta">Total orders</div>
+    <div class="ws-stat-value"><?=number_format($t['orders'])?></div>
+    <p class="hint"><?=number_format($t['active'])?> active · <?=number_format($t['completed'])?> completed</p>
+  </a>
+  <a href="<?=site_url('dashboard/orders?status=PROCESSING')?>" class="card ws-stat-card card-hover ws-action-card">
+    <div class="card-meta">Active orders</div>
+    <div class="ws-stat-value"><?=number_format($t['active'])?></div>
+    <p class="hint"><?=number_format($t['pending'] ?? 0)?> pending</p>
+  </a>
+  <a href="<?=site_url('dashboard/orders?status=COMPLETED')?>" class="card ws-stat-card card-hover ws-action-card">
+    <div class="card-meta">Completed</div>
+    <div class="ws-stat-value"><?=number_format($t['completed'])?></div>
+    <p class="hint"><?=marvy_money($t['spent'])?> spent</p>
+  </a>
+</section>
+
+<section class="ws-action-grid">
+  <a class="card card-hover ws-action-card" href="<?=site_url('dashboard/new-order')?>">
+    <h3 class="card-title">New order</h3>
+    <p class="muted mb-0">Place SMM, drip-feed, or subscription orders.</p>
+  </a>
+  <a class="card card-hover ws-action-card" href="<?=site_url('dashboard/add-funds')?>">
+    <h3 class="card-title">Add funds</h3>
+    <p class="muted mb-0">Top up your prepaid wallet.</p>
+  </a>
+  <a class="card card-hover ws-action-card" href="<?=site_url('dashboard/orders')?>">
+    <h3 class="card-title">View orders</h3>
+    <p class="muted mb-0">Track status, refills, and history.</p>
+  </a>
+  <a class="card card-hover ws-action-card" href="<?=site_url('dashboard/tickets')?>">
+    <h3 class="card-title">Contact support</h3>
+    <p class="muted mb-0">Open a ticket if something looks wrong.</p>
+  </a>
+</section>
+
+<div class="grid gap-6 lg:grid-cols-3">
   <div class="lg:col-span-2 card">
     <div class="row justify-between">
       <h2 class="card-title mb-0">Recent orders</h2>
-      <a class="btn btn-ghost btn-sm" href="<?=site_url('dashboard/orders')?>">View all →</a>
+      <a class="btn btn-ghost btn-sm" href="<?=site_url('dashboard/orders')?>">View all</a>
     </div>
     <?php if (empty($orders)): ?>
-      <p class="muted mt-4">No orders yet. <a href="<?=site_url('dashboard/new-order')?>">Place your first order</a>.</p>
+      <?php $this->load->view('partials/empty_state', array('title'=>'No orders yet','body'=>'Place your first order to see it here.','action_href'=>site_url('dashboard/new-order'),'action_label'=>'New order')); ?>
     <?php else: ?>
-    <div class="overflow-x-auto mt-3">
+    <div class="table-wrap mt-3">
       <table class="table">
         <thead><tr><th>Order</th><th>Service</th><th>Qty</th><th>Charge</th><th>Status</th><th></th></tr></thead>
         <tbody>
@@ -98,7 +85,7 @@ $t = $totals;
 
   <div class="card">
     <div class="row justify-between">
-      <h2 class="card-title mb-0">Activity</h2>
+      <h2 class="card-title mb-0">Recent activity</h2>
       <a class="btn btn-ghost btn-sm" href="<?=site_url('dashboard/notifications')?>"><?=$unread ? $unread.' new' : 'Inbox'?></a>
     </div>
     <ul class="mt-3 stack" style="gap:.5rem">
@@ -119,3 +106,12 @@ $t = $totals;
     </ul>
   </div>
 </div>
+
+<section class="ws-action-grid">
+  <a class="card card-hover ws-action-card" href="<?=site_url('dashboard/services')?>"><h3 class="card-title">SMM services</h3><p class="muted mb-0">Catalogue of social media services.</p></a>
+  <a class="card card-hover ws-action-card" href="<?=site_url('dashboard/vtu')?>"><h3 class="card-title">VTU</h3><p class="muted mb-0">Airtime, data, and bills.</p></a>
+  <a class="card card-hover ws-action-card" href="<?=site_url('dashboard/numbers')?>"><h3 class="card-title">Phone numbers</h3><p class="muted mb-0">Temporary numbers for OTP.</p></a>
+  <a class="card card-hover ws-action-card" href="<?=site_url('dashboard/giftcards')?>"><h3 class="card-title">Gift cards</h3><p class="muted mb-0">Digital gift card catalogue.</p></a>
+  <a class="card card-hover ws-action-card" href="<?=site_url('dashboard/identity')?>"><h3 class="card-title">Identity</h3><p class="muted mb-0">Verification products.</p></a>
+  <a class="card card-hover ws-action-card" href="<?=site_url('dashboard/marketplace')?>"><h3 class="card-title">Marketplace</h3><p class="muted mb-0">Accounts and digital goods.</p></a>
+</section>

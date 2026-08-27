@@ -3,12 +3,7 @@ $perms = $permissions ?? array();
 $has   = function ($k) use ($perms) { return in_array('*', $perms, true) || in_array($k, $perms, true); };
 $healthy = (int)($health['HEALTHY'] ?? 0);
 ?>
-<div class="mb-4">
-  <h2 class="mb-0" style="font-size:1.4rem;font-weight:600">Overview</h2>
-  <p class="muted text-sm">Signed in as <?=htmlspecialchars($current_user->username)?> (<?=htmlspecialchars($current_user->role)?>)</p>
-</div>
-
-<div class="grid grid-4 mb-4" style="gap:1rem">
+<div class="ws-stat-grid">
   <div class="card">
     <div class="muted text-sm">Net revenue today</div>
     <div class="text-2xl font-bold"><?=marvy_money($today['net'])?></div>

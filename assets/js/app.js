@@ -271,6 +271,7 @@
       initMfa();
       initFormSubmitGuard();
       initThemeToggle();
+      initAppSidebar();
     } catch (e) {
       // A broken optional widget must never stop the other global behaviours
       // (CSRF plumbing, mobile nav, FAQ filter, assistant) from running.
@@ -801,6 +802,24 @@
         disableConfirm.textContent = 'Disabling…';
         showError(disableError, '');
         postJson(disableUrl, { code: code }).then(function (res) {
+          disableConfirm.disabled = false;
+          disableConfirm.textContent = 'Disable';
+          if (!res.ok || !res.body || !res.body.success) {
+            var msg = (res.body && res.body.error && res.body.error.message) || 'That code was not accepted.';
+            showError(disableError, msg);
+            return;
+          }
+          window.location.reload();
+        }).catch(function () {
+          disableConfirm.disabled = false;
+          disableConfirm.textContent = 'Disable';
+          showError(disableError, 'Network error. Try again.');
+        });
+      });
+    }
+  }
+})();
+ableUrl, { code: code }).then(function (res) {
           disableConfirm.disabled = false;
           disableConfirm.textContent = 'Disable';
           if (!res.ok || !res.body || !res.body.success) {
