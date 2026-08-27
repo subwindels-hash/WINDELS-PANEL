@@ -174,7 +174,7 @@ class SettingsService {
                 'The smallest cash payout the platform will process.', '1000.00000000'),
             'earnings_payouts_enabled' => array('bool', 'referrals', 'Allow cash payouts',
                 'Off still lets users convert earnings into wallet credit. Confirm your licensing, KYC '
-                .'and tax obligations before turning cash payouts on.', true),
+                .'and tax obligations before turning cash payouts on.', false),
 
             'api_enabled' => array('bool', 'api', 'Enable the reseller API',
                 'Off returns a 503 for every /api/v1 call without revoking any keys.', true),
@@ -182,11 +182,6 @@ class SettingsService {
                 'Optional HTTPS endpoint. Order status changes POST a signed JSON body. Leave blank to disable.', ''),
             'reseller_webhook_secret' => array('secret', 'api', 'Reseller webhook secret',
                 'HMAC-SHA256 of the raw JSON, sent as X-Marvy-Signature.', ''),
-
-            'base_currency' => array('choice:NGN|USD|EUR|GBP', 'currency', 'Base (accounting) currency',
-                'The currency every wallet, order and ledger entry is denominated in. Changing it reinterprets '
-                .'all stored amounts, so only do this on a fresh or migrated database. The platform can still '
-                .'show customers prices in other currencies via Admin → Currencies.', 'NGN'),
 
             'currency_display' => array('choice:symbol|code', 'currency', 'Currency display',
                 'Whether prices render as a symbol (₦1,234.56) or a code (NGN 1,234.56).', 'symbol'),
@@ -209,8 +204,9 @@ class SettingsService {
     /** Settings shown but not editable, with the reason. */
     public static function readonly_settings() {
         return array(
-            // base_currency became editable (Admin → Settings → Currency) so it is
-            // no longer listed here. It is read via marvy_base_currency().
+            // Shown, never editable: every wallet, order and ledger entry is
+            // already denominated in it, so it moves by migration only.
+            'base_currency'       => 'Fixed for the ledger. Redenominating is a migration, not a setting.',
             // Wired, but edited on their own screen rather than as text fields:
             // a logo is chosen from the media library, not typed as a URL.
             'brand_primary_color' => 'Set in Admin → Appearance.',
@@ -353,43 +349,45 @@ class SettingsService {
                 // treated as a required field. A non-empty value must still be
                 // a well-formed http(s) URL, so a typo is caught here rather
                 // than surfacing as a silent webhook that never fires.
-                $value = (string)$value;
-                // Allow empty values (leave blank to disable) as documented in the schema
+                $value = trim((string)$value);
+                // Allow empty values (leave blank to disable) as documented in the schema.
                 if ($value === '') {
                     return array('value' => '', 'error' => null);
                 }
-                // Validate URL format - allow http:// or https://
-                // If the URL doesn't have a scheme, try prepending http://
-                if (!filter_var($value, FILTER_VALIDATE_URL) || !preg_match('#^https?://#i', $value)) {
-                    // Try prepending http:// if not already present
-                    $test_url = 'http://' . $value;
-                    if (filter_var($test_url, FILTER_VALIDATE_URL)) {
-                        return array('value' => $value, 'error' => null);
-                    }
+                // A non-empty value must be a complete http(s) URL. Anything
+                // else is refused rather than "repaired": a webhook stored as
+                // `not-a-url` (or as a scheme-less host) never fires, and a
+                // silent dead endpoint is far worse than a validation error.
+                $host = parse_url($value, PHP_URL_HOST);
+                $host_ok = $host !== null && $host !== false && $host !== ''
+                    && (strpos($host, '.') !== false || strtolower($host) === 'localhost');
+                if (!preg_match('#^https?://#i', $value) || !filter_var($value, FILTER_VALIDATE_URL) || !$host_ok) {
                     return array('value' => null, 'error' => $label.' must be a valid http(s) URL, or left empty to disable it.');
                 }
                 return array('value' => mb_substr($value, 0, 512), 'error' => null);
             
             case 'int':
-                $value = (int)$value;
-                if (!is_numeric($value) || (int)$value != $value || (int)$value < 0) {
+                // Validate BEFORE casting: (int)'abc' is 0, so casting first
+                // silently accepted any text as the number zero.
+                $raw = trim((string)$value);
+                if ($raw === '' || !preg_match('/^\d+$/', $raw)) {
                     return array('value' => null, 'error' => $label.' must be a whole number of zero or more.');
                 }
-                return array('value' => $value, 'error' => null);
+                return array('value' => (int)$raw, 'error' => null);
             
             case 'money':
-                $value = (float)$value;
-                if (!is_numeric($value) || $value < 0) {
+                $raw = trim((string)$value);
+                if ($raw === '' || !is_numeric($raw) || (float)$raw < 0) {
                     return array('value' => null, 'error' => $label.' must be an amount of zero or more.');
                 }
-                return array('value' => number_format((float)$value, 8, '.', ''), 'error' => null);
+                return array('value' => number_format((float)$raw, 8, '.', ''), 'error' => null);
             
             case 'percent':
-                $value = (float)$value;
-                if (!is_numeric($value) || $value < 0 || $value > 100) {
+                $raw = trim((string)$value);
+                if ($raw === '' || !is_numeric($raw) || (float)$raw < 0 || (float)$raw > 100) {
                     return array('value' => null, 'error' => $label.' must be between 0 and 100.');
                 }
-                return array('value' => number_format((float)$value, 4, '.', ''), 'error' => null);
+                return array('value' => number_format((float)$raw, 4, '.', ''), 'error' => null);
             
             case 'secret':
                 // May legitimately be blank (feature not configured yet), and

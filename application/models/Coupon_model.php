@@ -8,10 +8,12 @@ class Coupon_model extends MY_Model {
     public function find_valid($code) {
         $code = strtoupper(trim((string)$code));
         if ($code === '') return null;
-        $now = $this->db->escape($this->now_utc());
+        // Escaped inline at the point of interpolation so the fragment can be
+        // read (and linted) as safe without chasing a variable up the method.
+        $now = $this->now_utc();
         $row = $this->db->where('code', $code)->where('is_active', 1)
-            ->where('(starts_at IS NULL OR starts_at <= '.$now.')', null, false)
-            ->where('(ends_at IS NULL OR ends_at >= '.$now.')', null, false)
+            ->where('(starts_at IS NULL OR starts_at <= '.$this->db->escape($now).')', null, false)
+            ->where('(ends_at IS NULL OR ends_at >= '.$this->db->escape($now).')', null, false)
             ->get($this->table)->row();
         if (!$row) return null;
         if ($row->usage_limit !== null && (int)$row->times_used >= (int)$row->usage_limit) return null;
@@ -30,10 +32,12 @@ class Coupon_model extends MY_Model {
      * listing one at all.
      */
     public function public_valid($limit = 10) {
-        $now = $this->db->escape($this->now_utc());
+        // Escaped inline at the point of interpolation so the fragment can be
+        // read (and linted) as safe without chasing a variable up the method.
+        $now = $this->now_utc();
         $rows = $this->db->where('is_active', 1)->where('is_public', 1)
-            ->where('(starts_at IS NULL OR starts_at <= '.$now.')', null, false)
-            ->where('(ends_at IS NULL OR ends_at >= '.$now.')', null, false)
+            ->where('(starts_at IS NULL OR starts_at <= '.$this->db->escape($now).')', null, false)
+            ->where('(ends_at IS NULL OR ends_at >= '.$this->db->escape($now).')', null, false)
             ->order_by('created_at', 'DESC')->limit($limit)
             ->get($this->table)->result();
         return array_values(array_filter($rows, function ($row) {

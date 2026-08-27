@@ -11,6 +11,9 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  */
 class Checkout extends Auth_Controller {
 
+    /** Saved addresses shown in the checkout picker (bounded list). */
+    const ADDRESS_PER_PAGE = 50;
+
     public function __construct() {
         parent::__construct();
         if (!marvy_feature_enabled('marketplace', true)) show_404();
@@ -28,7 +31,7 @@ class Checkout extends Auth_Controller {
 
         $this->render('Checkout', 'public/shop/checkout', array_merge($check['view'], array(
             'wallet' => $this->Wallet_model->for_user($this->current_user->id),
-            'addresses' => $this->Shipping_address_model->for_user($this->current_user->id),
+            'addresses' => $this->Shipping_address_model->for_user($this->current_user->id, self::ADDRESS_PER_PAGE),
             'shipping_methods' => $this->Shipping_method_model->active(),
         )));
     }

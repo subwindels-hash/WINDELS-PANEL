@@ -4,7 +4,7 @@
     <h2 class="mb-0" style="font-size:1.4rem;font-weight:600">Subscriptions</h2>
     <p class="muted text-sm">Automatically order on a daily, weekly or monthly cadence.</p>
   </div>
-  <button class="btn btn-primary" onclick="document.getElementById('ws-new-sub').showModal()">+ New subscription</button>
+  <button class="btn btn-primary" data-dialog-open="ws-new-sub" >+ New subscription</button>
 </div>
 
 <div class="card">
@@ -48,7 +48,7 @@
 <?php endif; ?>
 </div>
 
-<dialog id="ws-new-sub" class="ws-dialog" onclick="if(event.target===this)this.close()">
+<dialog id="ws-new-sub" class="ws-dialog" data-dialog-light-dismiss >
   <?=form_open('dashboard/subscriptions/create', array('class'=>'stack'))?>
     <h3 class="card-title mb-0">New subscription</h3>
     <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
@@ -70,7 +70,7 @@
     </div>
     <label class="field"><span class="label">Posts to cover (optional)</span><input class="input" type="number" name="posts" min="1" placeholder="unlimited"></label>
     <div class="row" style="justify-content:flex-end">
-      <button type="button" class="btn btn-ghost" onclick="document.getElementById('ws-new-sub').close()">Cancel</button>
+      <button type="button" class="btn btn-ghost" data-dialog-close="ws-new-sub" >Cancel</button>
       <button type="submit" class="btn btn-primary">Create</button>
     </div>
   <?=form_close()?>

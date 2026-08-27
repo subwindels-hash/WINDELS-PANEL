@@ -58,7 +58,7 @@ $refundable = in_array((string)$s->order_status, array('PAID', 'DELIVERED', 'DIS
       shipment cancelled. This cannot be undone.
     </p>
     <form method="post" action="<?=site_url('admin/shop/shipments/'.$s->public_id.'/refund')?>" class="stack"
-          onsubmit="return confirm('Refund this order from escrow? This cannot be undone.');">
+          data-confirm="Refund this order from escrow? This cannot be undone." >
       <?=$csrf?>
       <label class="field"><span class="label">Reason (shown in the audit trail)</span>
         <input class="input" name="reason" maxlength="500" placeholder="e.g. Item never arrived"></label>

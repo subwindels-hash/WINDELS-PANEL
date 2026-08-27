@@ -65,7 +65,7 @@ $actionable = in_array($tx->status, array('CREATED','PENDING'), true);
         have actually arrived first — this cannot be undone from here.
       </p>
       <form method="post" action="<?=site_url('admin/payments/'.$tx->public_id.'/approve')?>" class="mb-4"
-            onsubmit="return confirm('Credit <?=htmlspecialchars(marvy_money($tx->credited_amount ?? $tx->amount))?> to this wallet?')">
+            data-confirm="Credit <?=htmlspecialchars(marvy_money($tx->credited_amount ?? $tx->amount))?> to this wallet?" >
         <?=$csrf()?>
         <input class="input mb-2" name="provider_tx_id" placeholder="Bank reference (optional)"
                value="<?=htmlspecialchars((string)$tx->provider_tx_id)?>">
@@ -73,7 +73,7 @@ $actionable = in_array($tx->status, array('CREATED','PENDING'), true);
       </form>
 
       <form method="post" action="<?=site_url('admin/payments/'.$tx->public_id.'/reject')?>"
-            onsubmit="return confirm('Reject this deposit? Nothing will be credited.')">
+            data-confirm="Reject this deposit? Nothing will be credited." >
         <?=$csrf()?>
         <input class="input mb-2" name="reason" placeholder="Rejection reason">
         <button class="btn btn-secondary btn-sm" type="submit">Reject</button>

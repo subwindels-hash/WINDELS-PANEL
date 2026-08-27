@@ -1,4 +1,5 @@
 <?php
+require_once dirname(__DIR__).'/_support/ShellSource.php';
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -82,7 +83,10 @@ class DashboardTest extends TestCase
             $src = file_get_contents($file);
             // Controllers that only POST-and-redirect never render the shell,
             // so they have no view variables to pass.
-            if (strpos($src, "load->view('layouts/app'") === false) {
+            // Both authenticated shells (layouts/app and the themed
+            // layouts/app_theme) take the same variables.
+            if (strpos($src, "load->view('layouts/app'") === false
+                && strpos($src, "load->view('layouts/app_theme'") === false) {
                 $this->assertStringContainsString('redirect(', $src,
                     basename($file).' renders no shell, so it must redirect');
                 continue;
@@ -167,15 +171,15 @@ class DashboardTest extends TestCase
 
     public function testAppShellRendersNotificationBadgeAndMobileNav()
     {
-        $shell = file_get_contents(self::$root.'/application/views/layouts/app.php');
+        $shell = ShellSource::app(self::$root);
         $this->assertStringContainsString('dashboard/notifications', $shell);
-        $this->assertStringContainsString('Mobile bottom nav', $shell);
+        $this->assertStringContainsString('ws-mobile-tabbar', $shell);
         $this->assertStringContainsString('ws-nav-group', $shell);
-        $this->assertStringContainsString('New Order', $shell);
+        $this->assertStringContainsString('New order', $shell);
         $this->assertStringContainsString('partials/icon', $shell);
-        // Brand component classes used.
-        $this->assertStringContainsString('bg-brand-50', $shell);
-        $this->assertStringContainsString('text-brand-700', $shell);
+        // Design-system component classes used (not raw utilities).
+        $this->assertStringContainsString('ws-nav-link', $shell);
+        $this->assertStringContainsString('ws-unread', $shell);
     }
 }
 

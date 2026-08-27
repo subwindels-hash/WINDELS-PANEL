@@ -9,7 +9,7 @@ foreach ($categories as $c) $by_id[(int)$c->id] = $c;
     <h2 class="mb-0" style="font-size:1.4rem;font-weight:600">Service categories</h2>
     <p class="muted text-sm">How services are grouped on the storefront</p>
   </div>
-  <button class="btn btn-primary" onclick="document.getElementById('ws-new-cat').showModal()">+ New category</button>
+  <button class="btn btn-primary" data-dialog-open="ws-new-cat" >+ New category</button>
 </div>
 
 <?php $this->load->view('admin/system/_tabs', array('tabs'=>$tabs,'area'=>$area)); ?>
@@ -45,7 +45,7 @@ foreach ($categories as $c) $by_id[(int)$c->id] = $c;
           </td>
           <td>
             <button class="btn btn-ghost btn-sm"
-                    onclick="document.getElementById('ws-cat-<?=(int)$c->id?>').showModal()">Edit</button>
+                    data-dialog-open="ws-cat-<?=(int)$c->id?>" >Edit</button>
           </td>
         </tr>
       <?php endforeach; ?>
@@ -114,7 +114,7 @@ $form = function ($c) use ($csrf, $categories) {
 
         <div class="row" style="gap:.5rem;justify-content:flex-end">
           <button class="btn btn-ghost btn-sm" type="button"
-                  onclick="document.getElementById('<?=$dialog?>').close()">Cancel</button>
+                  data-dialog-close="<?=$dialog?>" >Cancel</button>
           <button class="btn btn-primary btn-sm" type="submit">Save</button>
         </div>
       </form>

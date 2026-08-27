@@ -152,8 +152,15 @@ class SupportContentTest extends TestCase
         $this->assertStringContainsString('visible(', $partial);
         $this->assertStringContainsString('get_instance()', $partial,
             'views must not resolve models through $this (CI_Loader has no __get)');
-        $this->assertStringContainsString('ws-announce-slides', $partial);
-        $this->assertStringContainsString('ws-announce-dots', $partial);
+        // The bar is a marquee ticker (design-system: .ws-announce-track,
+        // paused on hover/focus and disabled under prefers-reduced-motion).
+        $this->assertStringContainsString('ws-announce-track', $partial);
+        $this->assertStringContainsString('ws-announce-item', $partial);
+        $this->assertStringContainsString('aria-label="Announcements"', $partial);
+
+        $css = file_get_contents(self::$root.'/assets/css/design-system.css');
+        $this->assertStringContainsString('.ws-announce-track', $css);
+        $this->assertStringContainsString('prefers-reduced-motion', $css);
     }
 
     public function testAnnouncementBarIsIncludedInEveryLayout()

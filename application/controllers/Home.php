@@ -21,15 +21,12 @@ class Home extends Public_Controller {
         );
         if ($this->db_ready) {
             try {
+                // One read for the whole settings table, then pick the
+                // homepage keys out of it — never a query per key.
                 $this->load->model('Setting_model');
-                foreach (array(
-                    'homepage_hero_kicker','homepage_hero_title','homepage_hero_lede',
-                    'homepage_cta_primary','homepage_cta_secondary',
-                    'homepage_services_title','homepage_services_lede',
-                    'homepage_cta_band_title','homepage_cta_band_body',
-                    'homepage_meta_description',
-                ) as $k) {
-                    $copy[$k] = $this->Setting_model->get($k);
+                $all = $this->Setting_model->all();
+                foreach (array_keys($copy) as $k) {
+                    if (array_key_exists($k, $all) && $all[$k] !== NULL) $copy[$k] = $all[$k];
                 }
             } catch (Throwable $e) { /* defaults in the view */ }
         }
@@ -99,7 +96,6 @@ class Home extends Public_Controller {
         $this->load->view('layouts/public_theme', array('content_view'=>$view,'data'=>$data,
             'title' => $copy['homepage_hero_title'] ?: 'Grow and manage your social presence',
             'page_description' => $copy['homepage_meta_description'] ?: 'MarvySocials is a prepaid panel for social media growth services, Nigerian VTU and bills, virtual numbers, identity checks and gift cards. Add funds, place an order, track it from one dashboard.',
-            'brand' => $brand,
         ));
     }
     private function active_homepage(){

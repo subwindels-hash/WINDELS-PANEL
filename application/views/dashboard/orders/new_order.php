@@ -58,8 +58,30 @@ elseif ($svc) $selected = $svc->public_id;
 
         <label class="field">
           <span class="label">Service</span>
+          <?php
+            // Server-rendered so the form is orderable before (or without) the
+            // filtering script runs; the script narrows this list, it does not
+            // create it.
+            $__symbol = trim(str_replace(array('0', '.', ','), '', marvy_money(0)));
+          ?>
           <select name="service" id="ws-service" class="select" required>
             <option value="">— Choose a service —</option>
+            <?php foreach ($picker as $row): ?>
+              <option value="<?=htmlspecialchars($row['id'])?>"
+                      data-rate="<?=htmlspecialchars($row['rate'])?>"
+                      data-min="<?=(int)$row['min']?>"
+                      data-max="<?=(int)$row['max']?>"
+                      data-step="<?=(int)$row['step']?>"
+                      data-avg="<?=htmlspecialchars($row['avg'])?>"
+                      data-refill="<?=$row['refill'] ? '1' : '0'?>"
+                      data-cancel="<?=$row['cancel'] ? '1' : '0'?>"
+                      data-name="<?=htmlspecialchars($row['name'])?>"
+                      data-platform="<?=htmlspecialchars($row['platform'])?>"
+                      data-category="<?=htmlspecialchars($row['category_id'])?>"
+                      <?=$selected === $row['id'] ? 'selected' : ''?>>
+                <?=htmlspecialchars($row['name'].' — '.$__symbol.number_format((float)$row['rate'], 2).'/1k')?>
+              </option>
+            <?php endforeach; ?>
           </select>
         </label>
 

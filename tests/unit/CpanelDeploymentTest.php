@@ -616,7 +616,21 @@ class CpanelDeploymentTest extends TestCase
     private function expected_deployment_files()
     {
         $out = array();
+        // Runtime payloads under storage/ are gitignored data belonging to the
+        // machine that produced them (the local dev database, uploaded digital
+        // goods, logs and caches). The package ships the *directories*, never
+        // their contents, so they are not part of the staleness comparison.
         $skip_prefix = array('application/seeds/', 'vendor/', 'system/');
+        // Runtime payloads under storage/ and assets/uploads/ are gitignored
+        // data belonging to the machine that produced them (the local dev
+        // database, uploaded goods, logs, caches). The package ships those
+        // directories and their .htaccess/index.html guards, never the data,
+        // so only the guards take part in the staleness comparison.
+        $runtime_prefix = array(
+            'storage/devdb/', 'storage/digital_products/', 'storage/logs/', 'storage/cache/',
+            'assets/uploads/',
+        );
+        $guards = array('.htaccess', 'index.html', 'index.php');
         $skip_suffix = array('.gitignore', '.gitkeep', '.map');
 
         $it = new RecursiveIteratorIterator(
@@ -636,6 +650,11 @@ class CpanelDeploymentTest extends TestCase
             }
             foreach ($skip_suffix as $suffix) {
                 if (substr($rel, -strlen($suffix)) === $suffix) {
+                    continue 2;
+                }
+            }
+            foreach ($runtime_prefix as $prefix) {
+                if (strpos($rel, $prefix) === 0 && !in_array(basename($rel), $guards, true)) {
                     continue 2;
                 }
             }

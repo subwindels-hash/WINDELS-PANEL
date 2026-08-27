@@ -285,6 +285,7 @@ $route['admin/categories/(:any)/save'] = 'admin/system/save_category/$1';
 $route['admin/categories/(:any)/delete'] = 'admin/system/delete_category/$1';
 $route['admin/providers'] = 'admin/providers/index';
 $route['admin/providers/create'] = 'admin/providers/create';
+$route['admin/providers/(:any)/pricing'] = 'admin/providers/pricing/$1';
 $route['admin/providers/(:any)/test'] = 'admin/providers/test/$1';
 $route['admin/providers/(:any)/sync'] = 'admin/providers/sync/$1';
 $route['admin/providers/(:any)/sync-balance'] = 'admin/providers/sync_balance/$1';

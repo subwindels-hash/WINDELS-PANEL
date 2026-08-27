@@ -14,10 +14,23 @@ class Downloads extends Auth_Controller {
         $this->load->library(array('ShopDeliveryService', 'DashboardStats'));
     }
 
+    /** One page of downloads; the list is bounded so a long purchase history
+     *  can never render an unpaginated query. */
+    const PER_PAGE = 50;
+
     /** GET /dashboard/downloads */
     public function index() {
+        $page   = max(1, (int)$this->input->get('page'));
+        $limit  = self::PER_PAGE;
+        $offset = ($page - 1) * $limit;
+        $rows   = $this->shopdeliveryservice->for_user($this->current_user->id, $limit + 1, $offset);
+        $has_more = count($rows) > $limit;
+        if ($has_more) array_pop($rows);
+
         $this->render('My Downloads', 'dashboard/shop/downloads', array(
-            'downloads' => $this->shopdeliveryservice->for_user($this->current_user->id),
+            'downloads' => $rows,
+            'page'      => $page,
+            'has_more'  => $has_more,
         ));
     }
 

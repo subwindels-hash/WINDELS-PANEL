@@ -144,6 +144,11 @@ class WithdrawalRemovalTest extends TestCase
             'application/models/Payout_request_model.php',
             'application/views/dashboard/earnings/index.php',
             'application/views/admin/payouts/index.php',
+            // The earnings payout queue's detail screen and the affiliate
+            // section of a customer file: same feature, same vocabulary the
+            // operator sees on the request itself.
+            'application/views/admin/payouts/detail.php',
+            'application/views/admin/users/detail.php',
             // Declares /api/withdrawals and /admin/payouts, both earnings-only.
             'application/config/routes.php',
             // Documents the earnings payout in its own clearly-labelled

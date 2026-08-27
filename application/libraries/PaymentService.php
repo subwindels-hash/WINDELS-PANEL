@@ -386,9 +386,20 @@ class PaymentService {
         }
     }
 
-    /** Payment-method codes that have a wired adapter. */
+    /**
+     * Payment-method codes whose adapter is wired, tested and trusted to
+     * verify its own callbacks.
+     *
+     * The remaining adapters in application/libraries/*Gateway.php are
+     * scaffolds — their own file headers say so — and have never been run
+     * against a live sandbox. Listing one here hands it webhook verification
+     * for real money: `verify_webhook()` returns false without configured
+     * credentials, so a genuine callback is thrown away instead of falling
+     * back to the generic, fail-closed HMAC envelope below. They stay out
+     * until each is integrated and verified.
+     */
     public function implemented_gateways() {
-        return array('manual','blockonomics','fundsvera','stripe','paypal','flutterwave','razorpay','paystack','coinpayments');
+        return array('manual', 'blockonomics', 'fundsvera');
     }
 
     private function persist_transaction(array $data) {

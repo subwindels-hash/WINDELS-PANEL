@@ -13,7 +13,7 @@ $cta_primary = $data['cta_primary'] ?? 'Get started';
 $cta_secondary = $data['cta_secondary'] ?? 'View services';
 $services_title = $data['services_title'] ?: 'Everything you need to grow online';
 $services_lede = $data['services_lede'] ?: 'Social media services, VTU, numbers, identity checks and gift cards — published rates, prepaid wallet.';
-$cta_band_title = $data['cta_band_title'] ?: 'Ready to grow?';
+$cta_band_title = $data['cta_band_title'] ?: 'Ready to get started?';
 $cta_band_body = $data['cta_band_body'] ?: 'Join MarvySocials and run social media and digital services from one prepaid platform.';
 
 $steps = array(
@@ -42,19 +42,25 @@ if (empty($faqs)) {
   );
 }
 
-$testimonials = array(
-  array('James Reynolds', 'Social Media Strategist', 'Exceptional service! The seamless API integration and fast order processing have made managing campaigns so much easier.'),
-  array('Sophia Martinez', 'Brand Consultant', 'The best investment for our brand. Engagement has skyrocketed and customer support is always available to assist.'),
-  array('David Lawson', 'Business Owner', 'A game-changer for my business. The platform is user-friendly, efficient and offers great value. Highly recommended.'),
-  array('Emily Carter', 'Digital Marketing Manager', 'This platform completely transformed our social media strategy. The automation and analytics are exactly what we needed.'),
-);
 ?>
 
+<style>
+/* AURORA identity: soft aurora gradient wash behind a light, editorial hero. */
+.ws-aurora .gradient-text{
+  background:linear-gradient(100deg,#4f46e5 0%,#7c3aed 45%,#c026d3 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.ws-aurora .ms-hero{background:
+  radial-gradient(900px 320px at 8% -10%,rgba(99,102,241,.18),transparent 60%),
+  radial-gradient(700px 260px at 92% 0,rgba(192,38,211,.14),transparent 55%);}
+</style>
+
+<div class="ws-aurora">
 <section class="ws-landing-hero ms-hero">
   <div class="container ws-landing-hero-inner">
     <div class="ws-landing-hero-copy">
       <span class="ws-kicker"><?=htmlspecialchars($hero_kicker)?></span>
-      <h1><?=htmlspecialchars($hero_title)?></h1>
+      <h1 class="gradient-text"><?=htmlspecialchars($hero_title)?></h1>
       <p class="lede"><?=htmlspecialchars($hero_lede)?>
         <?php if ($catalogue_size > 0): ?>
           <?=number_format($catalogue_size)?> live service<?=$catalogue_size === 1 ? '' : 's'?> on the catalogue now.
@@ -98,11 +104,12 @@ $testimonials = array(
 <section class="ws-section" id="services">
   <div class="container">
     <div class="text-center" style="max-width:40rem;margin:0 auto 2rem">
-      <span class="ms-eyebrow">Services</span>
+      <span class="ms-eyebrow">Services on the panel</span>
       <h2 class="ws-section-title"><?=htmlspecialchars($services_title)?></h2>
       <p class="ws-section-lead"><?=htmlspecialchars($services_lede)?></p>
     </div>
     <?php if ($categories): ?>
+    <h3 class="ws-section-subtitle text-center">Browse by category</h3>
     <div class="ws-landing-cards">
       <?php foreach (array_slice($categories, 0, 8) as $c): ?>
       <a class="card card-hover ws-landing-service" href="<?=site_url('services?category='.rawurlencode($c->slug))?>">
@@ -162,7 +169,7 @@ $testimonials = array(
 <section class="ws-section" id="features">
   <div class="container">
     <div class="text-center" style="max-width:40rem;margin:0 auto 2rem">
-      <span class="ms-eyebrow">Why MarvySocials</span>
+      <span class="ms-eyebrow">Why choose MarvySocials</span>
       <h2 class="ws-section-title">Built for growth, not guesswork</h2>
       <p class="ws-section-lead">What the platform actually does — not invented testimonials.</p>
     </div>
@@ -173,30 +180,6 @@ $testimonials = array(
         <h3 class="card-title"><?=htmlspecialchars($f[1])?></h3>
         <p class="muted mb-0"><?=htmlspecialchars($f[2])?></p>
       </div>
-      <?php endforeach; ?>
-    </div>
-  </div>
-</section>
-
-<section class="ws-section ms-testimonials" id="testimonials">
-  <div class="container">
-    <div class="text-center" style="max-width:40rem;margin:0 auto 2rem">
-      <span class="ms-eyebrow">Loved by resellers</span>
-      <h2 class="ws-section-title">Thousands of businesses grow with us</h2>
-    </div>
-    <div class="ms-testimonial-grid">
-      <?php foreach ($testimonials as $t): ?>
-      <figure class="ms-testimonial">
-        <div class="ms-stars" aria-label="5 out of 5">★★★★★</div>
-        <blockquote class="ms-quote">“<?=htmlspecialchars($t[2])?>”</blockquote>
-        <figcaption class="ms-author">
-          <span class="ms-avatar" aria-hidden="true"><?=htmlspecialchars(mb_substr($t[0], 0, 1))?></span>
-          <span>
-            <span class="ms-name"><?=htmlspecialchars($t[0])?></span><br>
-            <span class="ms-role"><?=htmlspecialchars($t[1])?></span>
-          </span>
-        </figcaption>
-      </figure>
       <?php endforeach; ?>
     </div>
   </div>
@@ -259,3 +242,4 @@ X-Api-Key: wind_…
     <p class="text-center muted mt-4">More answers on the <a href="<?=site_url('faq')?>">FAQ page</a>.</p>
   </div>
 </section>
+</div>

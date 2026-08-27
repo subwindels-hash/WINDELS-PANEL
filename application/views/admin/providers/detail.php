@@ -34,8 +34,8 @@ $has = function ($permission) use ($permissions) {
         <div><dt class="muted text-xs">Last sync</dt><dd class="text-sm"><?=$p->last_successful_sync_at?date('M j, H:i',strtotime($p->last_successful_sync_at)):'never'?></dd></div>
         <div><dt class="muted text-xs">Timeout</dt><dd class="mono text-sm"><?=(int)$p->timeout_ms?> ms</dd></div>
         <div><dt class="muted text-xs">Sync every</dt><dd class="mono text-sm"><?=(int)$p->sync_interval_minutes?> min</dd></div>
-        <div><dt class="muted text-xs">Rate mult.</dt><dd class="mono text-sm"><?=htmlspecialchars($p->rate_multiplier)?>×</dd></div>
-        <div><dt class="muted text-xs">Markup</dt><dd class="mono text-sm"><?=htmlspecialchars($p->markup)?></dd></div>
+        <div><dt class="muted text-xs">Markup</dt><dd class="mono text-sm"><?=rtrim(rtrim(number_format(ProviderSyncService::markup_percent($p), 2, '.', ''), '0'), '.')?>%</dd></div>
+        <div><dt class="muted text-xs">Flat add-on</dt><dd class="mono text-sm"><?=marvy_money($p->markup, $p->currency)?></dd></div>
       </dl>
 
       <?php if ($has('providers.sync')): ?>
@@ -54,6 +54,75 @@ $has = function ($permission) use ($permissions) {
         </form>
       </div>
       <?php endif; ?>
+      <?php if ($has('providers.manage')): ?>
+      <?php
+        $__percent = ProviderSyncService::markup_percent($p);
+        $__example_cost = 20;
+      ?>
+      <div class="card mt-5" style="background:var(--color-surface-muted,#f8fafc)">
+        <h3 class="card-title">Pricing rule</h3>
+        <p class="muted text-sm">
+          What customers pay for anything sourced from this provider:
+          <span class="mono">vendor cost + markup %</span> (plus an optional flat amount).
+          A vendor price of <?=marvy_money($__example_cost, $p->currency)?> at
+          <span class="mono" data-pricing-percent-label><?=rtrim(rtrim(number_format($__percent, 2, '.', ''), '0'), '.')?>%</span>
+          sells for <strong class="mono" data-pricing-example><?=marvy_money($__example_cost * (1 + $__percent / 100) + (float)$p->markup, $p->currency)?></strong>.
+        </p>
+
+        <form method="post" action="<?=site_url('admin/providers/'.$p->public_id.'/pricing')?>" class="mt-3">
+          <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
+          <div class="row" style="gap:.75rem;flex-wrap:wrap;align-items:flex-end">
+            <label class="field mb-0" style="flex:1;min-width:12rem">
+              <span class="label">Percentage increase</span>
+              <select class="select" name="markup_percent" id="ws-markup-percent" data-pricing-input>
+                <?php for ($i = 0; $i <= ProviderSyncService::MAX_MARKUP_PERCENT; $i++): ?>
+                  <option value="<?=$i?>" <?=((int)round($__percent) === $i) ? 'selected' : ''?>>
+                    <?=$i?>%<?=$i === 0 ? ' — sell at cost' : ''?>
+                  </option>
+                <?php endfor; ?>
+              </select>
+              <span class="hint">0% to <?=ProviderSyncService::MAX_MARKUP_PERCENT?>% over the vendor's own rate.</span>
+            </label>
+            <label class="field mb-0" style="flex:1;min-width:10rem">
+              <span class="label">Flat add-on (optional)</span>
+              <input class="input" type="number" step="0.01" min="0" name="markup_flat"
+                     value="<?=htmlspecialchars(number_format((float)$p->markup, 2, '.', ''))?>" data-pricing-flat>
+              <span class="hint">Added after the percentage, in <?=htmlspecialchars($p->currency)?>.</span>
+            </label>
+          </div>
+          <label class="row mt-3" style="gap:.5rem;align-items:flex-start">
+            <input type="checkbox" name="reprice" value="1" checked>
+            <span class="text-sm">Re-price the services already mirrored from this provider that follow provider pricing.
+              Hand-priced services are never touched.</span>
+          </label>
+          <div class="row mt-3" style="justify-content:flex-end">
+            <button class="btn btn-primary" type="submit">Save pricing rule</button>
+          </div>
+        </form>
+      </div>
+
+      <script <?=csp_nonce_attr()?>>
+      (function () {
+        var sel = document.getElementById('ws-markup-percent');
+        var flat = document.querySelector('[data-pricing-flat]');
+        var out = document.querySelector('[data-pricing-example]');
+        var label = document.querySelector('[data-pricing-percent-label]');
+        if (!sel || !out) return;
+        var cost = <?=json_encode($__example_cost)?>;
+        var sym = <?=json_encode(trim(str_replace(array('0','.',','), '', marvy_money(0, $p->currency))))?>;
+        function recalc() {
+          var pct = parseFloat(sel.value || '0');
+          var add = parseFloat((flat && flat.value) || '0') || 0;
+          out.textContent = sym + (cost * (1 + pct / 100) + add).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+          if (label) label.textContent = pct + '%';
+        }
+        sel.addEventListener('change', recalc);
+        if (flat) flat.addEventListener('input', recalc);
+        recalc();
+      })();
+      </script>
+      <?php endif; ?>
+
       <?php if (!empty($p->last_error)): ?>
         <div class="alert alert-danger mt-4 mb-0"><?=htmlspecialchars($p->last_error)?></div>
       <?php endif; ?>

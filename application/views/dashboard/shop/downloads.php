@@ -50,4 +50,19 @@ $csrf = '<input type="hidden" name="'.htmlspecialchars($this->security->get_csrf
     </tbody>
   </table>
 </div>
+
+<?php
+  $page = isset($page) ? (int)$page : 1;
+  $has_more = !empty($has_more);
+?>
+<?php if ($page > 1 || $has_more): ?>
+  <nav class="row justify-between mt-4" aria-label="Downloads pagination">
+    <?php if ($page > 1): ?>
+      <a class="btn btn-secondary btn-sm" href="<?=site_url('dashboard/downloads?page='.($page - 1))?>">← Newer</a>
+    <?php else: ?><span></span><?php endif; ?>
+    <?php if ($has_more): ?>
+      <a class="btn btn-secondary btn-sm" href="<?=site_url('dashboard/downloads?page='.($page + 1))?>">Older →</a>
+    <?php endif; ?>
+  </nav>
+<?php endif; ?>
 <?php endif; ?>

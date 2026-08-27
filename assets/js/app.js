@@ -288,6 +288,58 @@
     boot();
   }
 
+  /**
+   * Mobile sidebar (authenticated shell).
+   *
+   * The shell renders `[data-sidebar-toggle]` in the topbar and a
+   * `.ws-sidebar-backdrop` behind the drawer; the design system shows the
+   * drawer while `.ws-app-shell` carries `.sidebar-open`. This was called at
+   * boot but never defined, so the init block threw before it could finish and
+   * the toggle did nothing on small screens.
+   */
+  function initAppSidebar() {
+    var shell = document.querySelector('.ws-app-shell') || document.body;
+    var toggles = document.querySelectorAll('[data-sidebar-toggle]');
+    if (!toggles.length) return;
+
+    function setOpen(open) {
+      shell.classList.toggle('sidebar-open', open);
+      for (var i = 0; i < toggles.length; i++) {
+        toggles[i].setAttribute('aria-expanded', open ? 'true' : 'false');
+      }
+      var backdrop = document.querySelector('.ws-sidebar-backdrop');
+      if (backdrop) backdrop.hidden = !open;
+    }
+
+    for (var i = 0; i < toggles.length; i++) {
+      toggles[i].addEventListener('click', function (event) {
+        event.preventDefault();
+        setOpen(!shell.classList.contains('sidebar-open'));
+      });
+    }
+
+    document.addEventListener('click', function (event) {
+      if (event.target && event.target.closest && event.target.closest('[data-sidebar-close]')) {
+        setOpen(false);
+      }
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') setOpen(false);
+    });
+
+    // Following a nav link closes the drawer, so the destination page is not
+    // rendered behind an open overlay on a phone.
+    var sidebar = document.getElementById('ws-app-sidebar');
+    if (sidebar) {
+      sidebar.addEventListener('click', function (event) {
+        if (event.target && event.target.closest && event.target.closest('a')) setOpen(false);
+      });
+    }
+
+    setOpen(false);
+  }
+
   function initSkipLinks() {
     // The "Skip to content" link is a plain #main anchor so it still works
     // without JavaScript. Native behaviour, though, leaves #main stuck in the
@@ -773,4 +825,127 @@
       });
     }
   }
+})();
+
+/**
+ * Declarative UI behaviours (CSP-safe).
+ *
+ * These used to be inline `onclick="…"` / `onsubmit="…"` attributes, which
+ * forced the Content-Security-Policy to allow 'unsafe-inline' for scripts —
+ * i.e. to allow exactly the injection class a CSP exists to stop. The markup
+ * now carries data attributes and this one delegated listener implements them,
+ * so script-src can be nonce-only.
+ *
+ *   data-confirm="Message?"        confirm() before a form submits / a button acts
+ *   data-dialog-open="dialog-id"   open a <dialog>
+ *   data-dialog-close="dialog-id"  close a <dialog> (omit the value to close the
+ *                                  nearest enclosing dialog)
+ *   data-dialog-light-dismiss      on <dialog>: click the backdrop to close
+ *   data-autosubmit                on a <select>/<input>: submit its form on change
+ *   data-select-on-click           select an input's whole value on click
+ *   data-copy="#id"                copy that element's value/text to the clipboard
+ *   data-copied-label="Copied"     …and show this label afterwards
+ *   data-check-all=".selector"     master checkbox for a set of checkboxes
+ *   data-toggle-target="id"        show #id only when this control's value
+ *   data-toggle-when="VALUE"       equals VALUE
+ *   data-demo-form                 a styleguide form that must never submit
+ */
+(function () {
+  'use strict';
+
+  function dialogFor(el, id) {
+    if (id) return document.getElementById(id);
+    return el.closest ? el.closest('dialog') : null;
+  }
+
+  function openDialog(d) {
+    if (!d) return;
+    if (typeof d.showModal === 'function') d.showModal();
+    else d.open = true;
+  }
+
+  function closeDialog(d) {
+    if (!d) return;
+    if (typeof d.close === 'function') d.close();
+    else d.open = false;
+  }
+
+  document.addEventListener('click', function (event) {
+    var target = event.target;
+    if (!target || !target.closest) return;
+
+    // Backdrop click on a light-dismiss dialog.
+    if (target.tagName === 'DIALOG' && target.hasAttribute('data-dialog-light-dismiss')) {
+      closeDialog(target);
+      return;
+    }
+
+    var opener = target.closest('[data-dialog-open]');
+    if (opener) {
+      event.preventDefault();
+      openDialog(document.getElementById(opener.getAttribute('data-dialog-open')));
+      return;
+    }
+
+    var closer = target.closest('[data-dialog-close]');
+    if (closer) {
+      event.preventDefault();
+      closeDialog(dialogFor(closer, closer.getAttribute('data-dialog-close')));
+      return;
+    }
+
+    var copier = target.closest('[data-copy]');
+    if (copier) {
+      event.preventDefault();
+      var src = document.querySelector(copier.getAttribute('data-copy'));
+      var text = src ? (src.value !== undefined && src.value !== null && src.value !== '' ? src.value : (src.textContent || '')) : '';
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text.trim());
+      var label = copier.getAttribute('data-copied-label');
+      if (label) copier.textContent = label;
+      return;
+    }
+
+    var selector = target.closest('[data-select-on-click]');
+    if (selector && typeof selector.select === 'function') {
+      selector.select();
+      return;
+    }
+
+    var master = target.closest('[data-check-all]');
+    if (master) {
+      var boxes = document.querySelectorAll(master.getAttribute('data-check-all'));
+      for (var i = 0; i < boxes.length; i++) boxes[i].checked = master.checked;
+      return;
+    }
+
+    // A button that guards its own action (a submit button, or a link).
+    var guarded = target.closest('[data-confirm]');
+    if (guarded && guarded.tagName !== 'FORM' && !window.confirm(guarded.getAttribute('data-confirm'))) {
+      event.preventDefault();
+    }
+  });
+
+  document.addEventListener('submit', function (event) {
+    var form = event.target;
+    if (!form || form.tagName !== 'FORM') return;
+    if (form.hasAttribute('data-demo-form')) { event.preventDefault(); return; }
+    if (form.hasAttribute('data-confirm') && !window.confirm(form.getAttribute('data-confirm'))) {
+      event.preventDefault();
+    }
+  }, true);
+
+  document.addEventListener('change', function (event) {
+    var el = event.target;
+    if (!el || !el.closest) return;
+
+    if (el.hasAttribute('data-autosubmit') && el.form) {
+      el.form.submit();
+      return;
+    }
+
+    if (el.hasAttribute('data-toggle-target')) {
+      var row = document.getElementById(el.getAttribute('data-toggle-target'));
+      if (row) row.hidden = el.value !== el.getAttribute('data-toggle-when');
+    }
+  });
 })();

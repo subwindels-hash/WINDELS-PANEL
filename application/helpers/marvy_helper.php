@@ -179,17 +179,14 @@ if (!function_exists('marvy_base_currency')) {
     function marvy_base_currency(){
         static $code = NULL;
         if ($code !== NULL) return $code;
+        // Config only — never the settings table. The ledger is already
+        // written in this currency: a form that could rewrite it would
+        // silently reinterpret every stored balance, order and ledger entry.
+        // Redenominating is a migration, not a setting.
         $code = 'NGN';
         if (function_exists('get_instance')) {
             $ci = @get_instance();
-            if ($ci && isset($ci->db) && is_object($ci->db) && !empty($ci->db->conn_id)) {
-                $ci->load->model('Setting_model');
-                $stored = $ci->Setting_model->get('base_currency', 'NGN');
-                if ($stored && strtoupper(trim((string)$stored)) !== '') {
-                    $code = strtoupper(trim((string)$stored));
-                }
-            }
-            if ($code === 'NGN') {
+            if ($ci && isset($ci->config)) {
                 $cfg = $ci->config->item('marvy');
                 if (is_array($cfg) && !empty($cfg['base_currency'])) {
                     $code = strtoupper($cfg['base_currency']);

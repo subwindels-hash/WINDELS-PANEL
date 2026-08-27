@@ -113,6 +113,36 @@ class Providers extends Admin_Controller {
         ));
     }
 
+    /**
+     * POST /admin/providers/:id/pricing — set the percentage markup applied to
+     * everything this provider supplies (0–200%), plus an optional flat amount.
+     */
+    public function pricing($public_id) {
+        $this->guard_post('providers.manage');
+        $provider = $this->Provider_model->find_by_public_id($public_id);
+        if (!$provider) show_404();
+
+        $res = $this->providersyncservice->set_pricing_rule(
+            $provider,
+            $this->input->post('markup_percent', true),
+            $this->input->post('markup_flat', true) ?: 0,
+            (string)$this->input->post('reprice', true) === '1'
+        );
+
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error']);
+        } else {
+            $msg = 'Pricing rule saved: customers pay vendor cost +'.rtrim(rtrim(number_format($res['percent'], 2, '.', ''), '0'), '.').'%';
+            if (bccomp($res['flat'], '0', 8) > 0) $msg .= ' plus '.marvy_money($res['flat'], $provider->currency);
+            $msg .= '.';
+            if ($res['repriced'] > 0) {
+                $msg .= ' '.$res['repriced'].' auto-priced service'.($res['repriced'] === 1 ? '' : 's').' re-priced now.';
+            }
+            $this->session->set_flashdata('success', $msg);
+        }
+        redirect('admin/providers/'.$provider->public_id);
+    }
+
     public function test($public_id) {
         $this->guard_post();
         $provider = $this->Provider_model->find_by_public_id($public_id);

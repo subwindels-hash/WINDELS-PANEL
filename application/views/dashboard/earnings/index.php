@@ -60,7 +60,7 @@ $payout_badge = function ($s) {
     </p>
     <input class="input mono mb-2" type="text" readonly
            value="<?=htmlspecialchars($referral['link'])?>"
-           onclick="this.select()" aria-label="Your referral link">
+           data-select-on-click aria-label="Your referral link">
     <div class="row" style="gap:1.25rem;flex-wrap:wrap">
       <div><span class="muted text-xs">Code</span><br><strong class="mono"><?=htmlspecialchars($referral['code'])?></strong></div>
       <div><span class="muted text-xs">Clicks</span><br><strong><?=number_format($referral['visits'])?></strong></div>

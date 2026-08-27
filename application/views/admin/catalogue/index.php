@@ -43,7 +43,7 @@ $current_type = $filters['service_type'] ?? ($filters['id_type'] ?? ($filters['d
   </div>
   <?php if ($can_price): ?>
     <button class="btn btn-primary"
-            onclick="var d=document.getElementById('ws-new-product'); if(d){d.showModal?d.showModal():d.open=true;}">+ Add product</button>
+            data-dialog-open="ws-new-product" >+ Add product</button>
   <?php endif; ?>
 </div>
 
@@ -240,7 +240,7 @@ $current_type = $filters['service_type'] ?? ($filters['id_type'] ?? ($filters['d
 
 <?php if ($can_price): ?>
 <!-- Add product dialog -->
-<dialog id="ws-new-product" class="ws-dialog" onclick="if(event.target===this)this.close()">
+<dialog id="ws-new-product" class="ws-dialog" data-dialog-light-dismiss >
   <form method="post" action="<?=site_url('admin/catalogue/'.$domain.'/create')?>" class="grid" style="gap:.75rem">
     <?=$csrf()?>
     <h3 style="font-size:1.1rem;font-weight:600;margin:0">New <?=htmlspecialchars(strtolower(CatalogueService::label($domain)))?> product</h3>
@@ -251,7 +251,7 @@ $current_type = $filters['service_type'] ?? ($filters['id_type'] ?? ($filters['d
     <?php $this->load->view('admin/catalogue/_form', array(
         'domain' => $domain, 'options' => $options, 'product' => null)); ?>
     <div class="row" style="justify-content:flex-end">
-      <button type="button" class="btn btn-ghost" onclick="document.getElementById('ws-new-product').close()">Cancel</button>
+      <button type="button" class="btn btn-ghost" data-dialog-close="ws-new-product" >Cancel</button>
       <button type="submit" class="btn btn-primary">Create product</button>
     </div>
   </form>

@@ -28,6 +28,15 @@ class Migration_Coupon_discovery extends CI_Migration {
         );
     }
 
+    /**
+     * Tables this migration creates: none — it is a single additive column.
+     * Declared anyway so the schema linter can treat every migration the same
+     * way (see SchemaTest::testDownDropsEveryTableItCreates).
+     */
+    public static function tables() {
+        return array();
+    }
+
     public function up() {
         foreach (self::statements() as $sql) {
             if (preg_match('/^ALTER TABLE (\w+)\s+ADD COLUMN (\w+)/i', trim($sql), $m)

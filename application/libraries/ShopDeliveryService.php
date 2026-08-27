@@ -152,8 +152,8 @@ class ShopDeliveryService {
     }
 
     /** Every download this user currently has (My Downloads). */
-    public function for_user($user_id) {
-        return $this->ci->Digital_delivery_model->for_user($user_id);
+    public function for_user($user_id, $limit = 100, $offset = 0) {
+        return $this->ci->Digital_delivery_model->for_user($user_id, $limit, $offset);
     }
 
     /**

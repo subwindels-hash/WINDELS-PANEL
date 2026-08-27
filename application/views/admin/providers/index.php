@@ -25,7 +25,7 @@ $search = $search ?? '';
     </form>
     <?php if ($has('providers.manage')): ?>
       <button class="btn btn-primary" type="button"
-              onclick="var d=document.getElementById('ws-new-provider'); if(d){d.showModal?d.showModal():d.open=true;}">+ Add provider</button>
+              data-dialog-open="ws-new-provider" >+ Add provider</button>
     <?php endif; ?>
   </div>
 </div>
@@ -91,7 +91,7 @@ $search = $search ?? '';
 
 <!-- Create provider dialog -->
 <?php if ($has('providers.manage')): ?>
-<dialog id="ws-new-provider" class="ws-dialog" onclick="if(event.target===this)this.close()">
+<dialog id="ws-new-provider" class="ws-dialog" data-dialog-light-dismiss >
   <form method="post" action="<?=site_url('admin/providers/create')?>" class="stack">
     <h3 class="card-title mb-0">Add provider</h3>
     <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
@@ -172,16 +172,21 @@ $search = $search ?? '';
     <details class="text-sm muted">
       <summary>Advanced</summary>
       <div class="row" style="gap:.75rem;margin-top:.5rem">
-        <label class="field" style="flex:1"><span class="label">Rate multiplier</span>
-          <input class="input" type="number" step="0.01" name="rate_multiplier" value="1.00" min="0">
+        <label class="field" style="flex:1"><span class="label">Percentage increase</span>
+          <select class="select" name="markup_percent">
+            <?php for ($i = 0; $i <= ProviderSyncService::MAX_MARKUP_PERCENT; $i++): ?>
+              <option value="<?=$i?>"><?=$i?>%<?=$i === 0 ? ' — sell at cost' : ''?></option>
+            <?php endfor; ?>
+          </select>
+          <span class="hint">Customers pay the vendor's rate plus this. Editable later on the provider page.</span>
         </label>
-        <label class="field" style="flex:1"><span class="label">Markup</span>
+        <label class="field" style="flex:1"><span class="label">Flat add-on</span>
           <input class="input" type="number" step="0.01" name="markup" value="0.00" min="0">
         </label>
       </div>
     </details>
     <div class="row" style="justify-content:flex-end">
-      <button type="button" class="btn btn-ghost" onclick="document.getElementById('ws-new-provider').close()">Cancel</button>
+      <button type="button" class="btn btn-ghost" data-dialog-close="ws-new-provider" >Cancel</button>
       <button type="submit" class="btn btn-primary">Create provider</button>
     </div>
   </form>

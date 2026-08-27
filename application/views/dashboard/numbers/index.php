@@ -20,7 +20,7 @@
 
   <form method="get" action="<?=site_url('dashboard/numbers')?>" class="mb-4">
     <label class="label" for="country">Country</label>
-    <select class="select" id="country" name="country" onchange="this.form.submit()">
+    <select class="select" id="country" name="country" data-autosubmit >
       <?php foreach ($countries as $c): ?>
         <option value="<?=htmlspecialchars($c->code)?>"
           <?=($country && $country->code === $c->code) ? 'selected' : ''?>>

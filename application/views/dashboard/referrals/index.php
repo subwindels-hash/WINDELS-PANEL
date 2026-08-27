@@ -17,9 +17,9 @@ $currency = marvy_base_currency();
       <label class="field mt-4">
         <span class="label">Your referral link</span>
         <div class="row" style="gap:.5rem">
-          <input class="input" id="ws-ref" value="<?=htmlspecialchars($link)?>" readonly onclick="this.select()">
+          <input class="input" id="ws-ref" value="<?=htmlspecialchars($link)?>" readonly data-select-on-click >
           <button class="btn btn-secondary" type="button"
-                  onclick="navigator.clipboard?.writeText(document.getElementById('ws-ref').value);this.textContent='Copied'">Copy</button>
+                  data-copy="#ws-ref" data-copied-label="Copied">Copy</button>
         </div>
         <span class="hint">Referral code <span class="mono"><?=htmlspecialchars($code)?></span></span>
       </label>

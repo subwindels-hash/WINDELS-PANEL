@@ -6,7 +6,7 @@
         <strong>Copy your API key now.</strong> It will not be shown again.
         <div class="row mt-2" style="gap:.5rem">
           <code id="ws-key" class="flex-1 block rounded p-2" style="background:#fff;border:1px solid var(--slate-200);word-break:break-all"><?=htmlspecialchars($new_key['raw'])?></code>
-          <button class="btn btn-secondary btn-sm" type="button" onclick="navigator.clipboard?.writeText(document.getElementById('ws-key').textContent)">Copy</button>
+          <button class="btn btn-secondary btn-sm" type="button" data-copy="#ws-key" data-copied-label="Copied">Copy</button>
         </div>
       </div>
     <?php endif; ?>
@@ -33,7 +33,7 @@
               <td><?php if ($k->revoked_at): ?><span class="badge badge-default">revoked</span><?php elseif (!empty($k->expires_at) && strtotime($k->expires_at) <= time()): ?><span class="badge badge-warning">expired</span><?php else: ?><span class="badge badge-success badge-dot">active</span><?php endif; ?></td>
               <td>
                 <?php if (!$k->revoked_at): ?>
-                <form method="post" action="<?=site_url('dashboard/api/revoke/'.$k->public_id)?>" onsubmit="return confirm('Revoke this key? Applications using it will stop working immediately.')">
+                <form method="post" action="<?=site_url('dashboard/api/revoke/'.$k->public_id)?>" data-confirm="Revoke this key? Applications using it will stop working immediately." >
                   <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
                   <button class="btn btn-ghost btn-sm" type="submit">Revoke</button>
                 </form>

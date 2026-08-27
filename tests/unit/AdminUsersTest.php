@@ -360,7 +360,10 @@ class AdminUsersTest extends TestCase
         );
         foreach ($files as $f) {
             $src = file_get_contents($f);
-            foreach (array('password_hash', 'mfa_secret', 'api_key', 'set_userdata') as $forbidden) {
+            // `api_key_encrypted` rather than `api_key`: staff may *revoke* a
+            // customer's keys (Users::revoke_keys), which names the concept —
+            // what must never appear is the stored credential itself.
+            foreach (array('password_hash', 'mfa_secret', 'api_key_encrypted', 'set_userdata') as $forbidden) {
                 $this->assertStringNotContainsString($forbidden, $src,
                     basename($f).' must not touch '.$forbidden);
             }

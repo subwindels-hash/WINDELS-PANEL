@@ -6,7 +6,7 @@ $this->load->view('admin/system/_tabs');
     <p class="muted mb-0">No log files under storage/logs.</p>
   <?php else: ?>
     <form method="get" class="table-toolbar">
-      <select class="select" name="file" onchange="this.form.submit()">
+      <select class="select" name="file" data-autosubmit >
         <?php foreach ($files as $f): ?>
           <option value="<?=htmlspecialchars($f)?>" <?=$file===$f?'selected':''?>><?=htmlspecialchars($f)?></option>
         <?php endforeach; ?>

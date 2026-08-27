@@ -1,19 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="MarvySocials">
-  <defs>
-    <linearGradient id="wp-mark" x1="8" y1="4" x2="58" y2="60" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#6366F1"/>
-      <stop offset=".55" stop-color="#4F46E5"/>
-      <stop offset="1" stop-color="#C026D3"/>
-    </linearGradient>
-    <linearGradient id="wp-sheen" x1="12" y1="8" x2="40" y2="36" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#fff" stop-opacity=".35"/>
-      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
-    </linearGradient>
-  </defs>
-  <rect width="64" height="64" rx="16" fill="url(#wp-mark)"/>
-  <rect x="2.5" y="2.5" width="59" height="59" rx="14.5" fill="none" stroke="#fff" stroke-opacity=".18"/>
-  <path d="M12 14h16v36H12z" fill="url(#wp-sheen)"/>
-  <path d="M16 42V24.5L24.2 38h3.1L35.6 24.5V42h4.4V22h-6.2L25.8 35.4 17.8 22H11.5v20H16z" fill="#fff"/>
-  <rect x="42" y="28" width="5.2" height="14" rx="1.4" fill="#fff" opacity=".92"/>
-  <rect x="48.6" y="22" width="5.2" height="20" rx="1.4" fill="#fff" opacity=".75"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="WINDELSOCIALS">
+  <defs><linearGradient id="wi" x1="12" y1="16" x2="52" y2="52" gradientUnits="userSpaceOnUse">
+    <stop stop-color="#6366F1"/><stop offset="1" stop-color="#C026D3"/></linearGradient></defs>
+  <rect width="64" height="64" rx="16" fill="#0A0A0F"/>
+  <path d="M12 18h9l5.5 20L32 18h4l5.5 20L47 18h9L45 48h-8l-5-17-5 17h-8L12 18z" fill="url(#wi)"/>
 </svg>

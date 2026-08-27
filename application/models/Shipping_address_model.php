@@ -4,9 +4,11 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 class Shipping_address_model extends MY_Model {
     protected $table = 'shipping_addresses';
 
-    public function for_user($user_id) {
+    /** A customer's saved addresses, newest first and bounded. */
+    public function for_user($user_id, $limit = 50) {
         return $this->db->where('user_id', (int)$user_id)
             ->order_by('is_default', 'DESC')->order_by('id', 'DESC')
+            ->limit((int)$limit)
             ->get($this->table)->result();
     }
 

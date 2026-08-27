@@ -96,7 +96,7 @@ $expires     = $number && $number->expires_at ? strtotime($number->expires_at.' 
         </form>
 
         <form method="post" action="<?=site_url('admin/numbers/'.$tx->public_id.'/release')?>" class="mb-4"
-              onsubmit="return confirm('Release this number back to the vendor?')">
+              data-confirm="Release this number back to the vendor?" >
           <?=$csrf()?>
           <p class="hint mb-2">Hand the number back. If no code ever arrived the
              charge is refunded as part of releasing it.</p>
@@ -111,7 +111,7 @@ $expires     = $number && $number->expires_at ? strtotime($number->expires_at.' 
 
       <?php if ($has('numbers.refund') && $can_refund): ?>
       <form method="post" action="<?=site_url('admin/numbers/'.$tx->public_id.'/refund')?>"
-            onsubmit="return confirm('Refund <?=htmlspecialchars(marvy_money($outstanding, $tx->currency))?> to this customer\'s wallet?')">
+            data-confirm="Refund <?=htmlspecialchars(marvy_money($outstanding, $tx->currency))?> to this customer&#39;s wallet?" >
         <?=$csrf()?>
         <label class="text-sm font-medium" for="reason">Refund reason</label>
         <input class="input mb-2" id="reason" name="reason" placeholder="Recorded in the status history">

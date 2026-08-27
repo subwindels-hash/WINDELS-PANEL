@@ -9,7 +9,7 @@ class Account extends Auth_Controller {
     public function __construct() {
         parent::__construct();
         $this->load->library(array('form_validation', 'AuthService', 'ApiKeyPolicy'));
-        $this->load->model(array('Api_key_model', 'Audit_log_model'));
+        $this->load->model(array('Api_key_model', 'Audit_log_model', 'User_model'));
         $this->load->library('DashboardStats');
     }
 
@@ -23,6 +23,15 @@ class Account extends Auth_Controller {
     }
 
     private function profile_update() {
+        if ($this->input->post('action', true) === 'avatar') {
+            return $this->avatar_update();
+        }
+        if ($this->input->post('action', true) === 'avatar_remove') {
+            return $this->avatar_remove();
+        }
+
+        $this->form_validation->set_rules('username', 'Username', 'trim|required|min_length[3]|max_length[64]|alpha_dash');
+        $this->form_validation->set_rules('email', 'Email', 'trim|required|valid_email|max_length[255]');
         $this->form_validation->set_rules('first_name', 'First name', 'trim|max_length[100]');
         $this->form_validation->set_rules('last_name', 'Last name', 'trim|max_length[100]');
         $this->form_validation->set_rules('phone', 'Phone', 'trim|max_length[32]');
@@ -30,11 +39,32 @@ class Account extends Auth_Controller {
         $this->form_validation->set_rules('locale', 'Locale', 'trim|max_length[8]');
 
         if (!$this->form_validation->run()) {
-            $this->session->set_flashdata('error', validation_errors());
+            $this->session->set_flashdata('error', strip_tags(validation_errors()));
             return redirect('dashboard/profile');
         }
 
+        $username = trim((string)$this->input->post('username', true));
+        $email    = strtolower(trim((string)$this->input->post('email', true)));
+
+        // A username or email that already belongs to somebody else is a
+        // unique-key violation waiting to happen: refuse it with a readable
+        // message instead of a database error page.
+        $by_username = $this->User_model->find_by_username($username);
+        if ($by_username && (int)$by_username->id !== (int)$this->current_user->id) {
+            $this->session->set_flashdata('error', 'That username is already taken.');
+            return redirect('dashboard/profile');
+        }
+        $by_email = $this->User_model->find_by_email($email);
+        if ($by_email && (int)$by_email->id !== (int)$this->current_user->id) {
+            $this->session->set_flashdata('error', 'That email address is already in use.');
+            return redirect('dashboard/profile');
+        }
+
+        $email_changed = strtolower((string)$this->current_user->email) !== $email;
+
         $data = array(
+            'username'   => $username,
+            'email'      => $email,
             'first_name' => $this->input->post('first_name', true),
             'last_name'  => $this->input->post('last_name', true),
             'phone'      => $this->input->post('phone', true),
@@ -42,10 +72,72 @@ class Account extends Auth_Controller {
             'locale'     => $this->input->post('locale', true) ?: 'en',
             'updated_at' => gmdate('Y-m-d H:i:s'),
         );
+        // A new address is unproven until it is confirmed; keeping the old
+        // verification would let anyone move notices to an address they do not
+        // control and still look verified.
+        if ($email_changed) $data['email_verified_at'] = null;
+
         $this->db->where('id', $this->current_user->id)->update('users', $data);
         $this->Audit_log_model->record($this->current_user->id, 'profile.update', 'users',
-            $this->current_user->public_id, null, $data, $this->input->ip_address(), $this->input->user_agent(), $this->request_id);
-        $this->session->set_flashdata('success', 'Profile updated.');
+            $this->current_user->public_id,
+            array('username' => $this->current_user->username, 'email' => $this->current_user->email),
+            $data, $this->input->ip_address(), $this->input->user_agent(), $this->request_id);
+
+        $message = 'Profile updated.';
+        if ($email_changed) {
+            $message .= ' Your email address changed, so it needs verifying again.';
+            try {
+                $this->load->library('MailService');
+                $fresh = $this->User_model->find_by_id($this->current_user->id);
+                $token = $this->auth->issue_verification_token($fresh);
+                $this->mailservice->enqueue_template($email, 'auth.verify_email', array(
+                    'username'   => $fresh->username,
+                    'verify_url' => site_url('verify-email/'.$token),
+                ), trim(($fresh->first_name ?? '').' '.($fresh->last_name ?? '')) ?: $fresh->username);
+            } catch (Throwable $e) {
+                log_message('error', 'verification email after profile change failed: '.$e->getMessage());
+            }
+        }
+        $this->session->set_flashdata('success', $message);
+        redirect('dashboard/profile');
+    }
+
+    /** Profile picture upload — same validated pipeline as the media library. */
+    private function avatar_update() {
+        $this->load->library('MediaService');
+        if (empty($_FILES['avatar']['name'])) {
+            $this->session->set_flashdata('error', 'Choose an image first.');
+            return redirect('dashboard/profile');
+        }
+
+        $res = $this->mediaservice->store($_FILES['avatar'], 'avatar', $this->current_user->id);
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error']);
+            return redirect('dashboard/profile');
+        }
+        if (strpos((string)$res['media']->mime_type, 'image/') !== 0) {
+            $this->mediaservice->delete($res['media']);
+            $this->session->set_flashdata('error', 'A profile picture must be an image.');
+            return redirect('dashboard/profile');
+        }
+
+        $this->db->where('id', $this->current_user->id)
+            ->update('users', array('avatar_url' => $res['media']->url, 'updated_at' => gmdate('Y-m-d H:i:s')));
+        $this->Audit_log_model->record($this->current_user->id, 'profile.avatar', 'users',
+            $this->current_user->public_id, array('avatar_url' => $this->current_user->avatar_url),
+            array('avatar_url' => $res['media']->url),
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id);
+        $this->session->set_flashdata('success', 'Profile picture updated.');
+        redirect('dashboard/profile');
+    }
+
+    private function avatar_remove() {
+        $this->db->where('id', $this->current_user->id)
+            ->update('users', array('avatar_url' => null, 'updated_at' => gmdate('Y-m-d H:i:s')));
+        $this->Audit_log_model->record($this->current_user->id, 'profile.avatar_removed', 'users',
+            $this->current_user->public_id, array('avatar_url' => $this->current_user->avatar_url), null,
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id);
+        $this->session->set_flashdata('success', 'Profile picture removed.');
         redirect('dashboard/profile');
     }
 

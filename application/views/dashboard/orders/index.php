@@ -11,7 +11,7 @@ $q = $q ?? '';
     <div class="row">
       <form method="get" class="row" style="gap:.5rem">
         <input class="input" type="search" name="q" value="<?=htmlspecialchars($q)?>" placeholder="Search ID, service or link" style="width:12rem">
-        <select name="status" class="select" style="width:auto" onchange="this.form.submit()">
+        <select name="status" class="select" style="width:auto" data-autosubmit >
           <?php foreach ($statuses as $k=>$v): ?>
             <option value="<?=htmlspecialchars($k)?>" <?=($status===$k)?'selected':''?>><?=htmlspecialchars($v)?></option>
           <?php endforeach; ?>

@@ -70,6 +70,8 @@ $auth_site = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySoci
     </div>
     </div>
   </main>
+
+  <?php $this->load->view('partials/footer'); ?>
 </div>
 <?php $this->load->view('partials/chatbot'); ?>
 <?php $this->load->view('partials/scripts'); ?>

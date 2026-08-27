@@ -93,7 +93,7 @@ $csrf_hash = $this->security->get_csrf_hash();
     <form class="mt-4" method="post" action="<?=site_url('admin/services/'.$s->public_id.'/archive')?>"><input type="hidden" name="<?=htmlspecialchars($csrf_name)?>" value="<?=htmlspecialchars($csrf_hash)?>" readonly><button class="btn btn-danger" type="submit">Archive service</button></form>
   </div>
   <div class="card mt-6 border-rose-200"><h2 class="card-title text-rose-700">Delete service</h2><p class="text-sm muted mt-1">Permanently remove this service and its price overrides. Cannot be undone.</p>
-    <form class="mt-4" method="post" action="<?=site_url('admin/services/'.$s->public_id.'/delete')?>"><input type="hidden" name="<?=htmlspecialchars($csrf_name)?>" value="<?=htmlspecialchars($csrf_hash)?>" readonly><button class="btn btn-danger" type="submit" onclick="return confirm('Are you sure you want to permanently delete this service? This cannot be undone.')">Delete service</button></form>
+    <form class="mt-4" method="post" action="<?=site_url('admin/services/'.$s->public_id.'/delete')?>"><input type="hidden" name="<?=htmlspecialchars($csrf_name)?>" value="<?=htmlspecialchars($csrf_hash)?>" readonly><button class="btn btn-danger" type="submit" data-confirm="Are you sure you want to permanently delete this service? This cannot be undone." >Delete service</button></form>
   </div>
   <?php endif; ?>
 <?php endif; ?>

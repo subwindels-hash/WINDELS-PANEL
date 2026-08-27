@@ -31,7 +31,8 @@ class Digital_delivery_model extends MY_Model {
     }
 
     /** Every download this user is entitled to, for "My Downloads". */
-    public function for_user($user_id) {
+    /** One page of a customer's downloads (newest first). */
+    public function for_user($user_id, $limit = 100, $offset = 0) {
         return $this->db
             ->select($this->table.'.*, marketplace_listings.title AS listing_title, '
                     .'marketplace_listings.image, digital_products.original_filename, '
@@ -42,6 +43,7 @@ class Digital_delivery_model extends MY_Model {
             ->join('marketplace_orders', 'marketplace_orders.id = '.$this->table.'.marketplace_order_id', 'left')
             ->where($this->table.'.user_id', (int)$user_id)
             ->order_by($this->table.'.created_at', 'DESC')
+            ->limit((int)$limit, (int)$offset)
             ->get()->result();
     }
 

@@ -25,6 +25,9 @@ require_once __DIR__.'/StandardSmmAdapter.php';
  */
 class ProviderSyncService {
 
+    /** Largest percentage markup the console offers (200% = sell at 3x cost). */
+    const MAX_MARKUP_PERCENT = 200;
+
     private $ci;
 
     public function __construct() {
@@ -777,7 +780,11 @@ class ProviderSyncService {
             'currency'          => $input['currency'] ?? marvy_base_currency(),
             'timeout_ms'        => (int)($input['timeout_ms'] ?? 15000),
             'sync_interval_minutes' => max(1, (int)($input['sync_interval_minutes'] ?? 60)),
-            'rate_multiplier'   => number_format((float)($input['rate_multiplier'] ?? 1.0), 8, '.', ''),
+            // The console asks for a percentage (0–200); a raw multiplier is
+            // still accepted for API/CLI callers that already speak it.
+            'rate_multiplier'   => isset($input['markup_percent']) && $input['markup_percent'] !== ''
+                ? number_format(1 + (min(self::MAX_MARKUP_PERCENT, max(0, (float)$input['markup_percent'])) / 100), 8, '.', '')
+                : number_format((float)($input['rate_multiplier'] ?? 1.0), 8, '.', ''),
             'markup'            => number_format((float)($input['markup'] ?? 0.0), 8, '.', ''),
             'notes'             => $input['notes'] ?? null,
             'created_at'        => gmdate('Y-m-d H:i:s'),
@@ -793,6 +800,92 @@ class ProviderSyncService {
             $this->ci->input->ip_address(), $this->ci->input->user_agent(),
             method_exists($this->ci, 'request_id') ? $this->ci->request_id() : null);
         return array('ok' => true, 'provider' => $provider);
+    }
+
+    /**
+     * Percentage markup, the way an operator actually thinks about it.
+     *
+     * A provider row prices with `rate = vendor_rate * rate_multiplier + markup`.
+     * Admins do not think in multipliers, they think "sell this vendor's stock
+     * at 20% over cost", so the console offers 0–200% and this converts it:
+     * 20% -> 1.20000000. Zero percent is legitimate (resell at cost).
+     *
+     * @param float $percent   0–200, the increase over the vendor's own rate
+     * @param float $flat      optional flat amount added after the percentage
+     * @param bool  $reprice   also re-price the services already mirrored from
+     *                         this provider that opted into auto price sync
+     */
+    public function set_pricing_rule($provider, $percent, $flat = 0.0, $reprice = false) {
+        if (!is_numeric($percent) || (float)$percent < 0 || (float)$percent > self::MAX_MARKUP_PERCENT) {
+            return array('ok' => false, 'error' => 'Choose a markup between 0% and '.self::MAX_MARKUP_PERCENT.'%.');
+        }
+        if (!is_numeric($flat) || (float)$flat < 0) {
+            return array('ok' => false, 'error' => 'The flat amount cannot be negative.');
+        }
+
+        $multiplier = number_format(1 + ((float)$percent / 100), 8, '.', '');
+        $flat_value = number_format((float)$flat, 8, '.', '');
+        $before = array(
+            'rate_multiplier' => (string)$provider->rate_multiplier,
+            'markup'          => (string)$provider->markup,
+        );
+        $after = array('rate_multiplier' => $multiplier, 'markup' => $flat_value);
+
+        $this->ci->db->where('id', (int)$provider->id)->update('providers', array_merge($after, array(
+            'updated_at' => gmdate('Y-m-d H:i:s'),
+        )));
+
+        $repriced = 0;
+        if ($reprice) {
+            $repriced = $this->reprice_auto_synced_services($provider->id, $multiplier, $flat_value);
+        }
+
+        $this->ci->load->model('Audit_log_model');
+        $this->ci->Audit_log_model->record(
+            (isset($this->ci->authservice) && $this->ci->authservice) ? $this->ci->authservice->id() : null,
+            'provider.pricing_rule', 'providers', $provider->public_id,
+            $before, array_merge($after, array('percent' => (float)$percent, 'repriced' => $repriced)),
+            $this->ci->input->ip_address(), $this->ci->input->user_agent(),
+            method_exists($this->ci, 'request_id') ? $this->ci->request_id() : null);
+
+        return array('ok' => true, 'percent' => (float)$percent, 'multiplier' => $multiplier,
+            'flat' => $flat_value, 'repriced' => $repriced, 'error' => null);
+    }
+
+    /**
+     * Apply a new pricing rule to services already mirrored from a provider.
+     *
+     * Only rows that opted into `auto_price_sync` are touched: a rate an admin
+     * typed by hand is never overwritten by a provider-level rule. The vendor
+     * cost used is `services.provider_rate`, the last cost the sync recorded —
+     * so this never invents a price out of a stale selling rate.
+     */
+    private function reprice_auto_synced_services($provider_id, $multiplier, $flat) {
+        $rows = $this->ci->db->select('id, provider_rate', false)
+            ->where('provider_id', (int)$provider_id)
+            ->where('auto_price_sync', 1)
+            ->where('provider_rate IS NOT NULL', null, false)
+            ->get('services')->result();
+
+        $count = 0;
+        foreach ($rows as $row) {
+            $rate = bcadd(bcmul((string)$row->provider_rate, (string)$multiplier, 8), (string)$flat, 8);
+            if (!preg_match('/^(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{8})$/', $rate) || bccomp($rate, '0', 8) <= 0) {
+                continue;
+            }
+            $this->ci->db->where('id', (int)$row->id)->update('services', array(
+                'rate' => $rate,
+                'updated_at' => gmdate('Y-m-d H:i:s'),
+            ));
+            $count++;
+        }
+        return $count;
+    }
+
+    /** The percentage a provider's current multiplier represents. */
+    public static function markup_percent($provider) {
+        $multiplier = (float)(isset($provider->rate_multiplier) ? $provider->rate_multiplier : 1);
+        return round(max(0, ($multiplier - 1) * 100), 2);
     }
 
     /**

@@ -58,7 +58,7 @@ $can_refund = OrderStateMachine::can($order->status, 'REFUNDED');
 
       <?php if ($has('orders.edit') && $order->status === 'PENDING'): ?>
       <form method="post" action="<?=site_url('admin/orders/'.$order->public_id.'/submit')?>" class="mb-4"
-            onsubmit="return confirm('Submit this order to its provider?')">
+            data-confirm="Submit this order to its provider?" >
         <?=$csrf()?>
         <button class="btn btn-primary btn-sm" type="submit">Submit to provider</button>
         <p class="hint">The order is held in PENDING (manual review). Submitting pushes it to the provider.</p>
@@ -70,7 +70,7 @@ $can_refund = OrderStateMachine::can($order->status, 'REFUNDED');
         <?=$csrf()?>
         <label class="text-sm font-medium" for="status">Change status</label>
         <select class="input mb-2" id="status" name="status"
-                onchange="document.getElementById('remains-row').hidden = this.value !== 'PARTIAL'">
+                data-toggle-target="remains-row" data-toggle-when="PARTIAL">
           <?php foreach ($targets as $t): ?>
             <option value="<?=htmlspecialchars($t)?>"><?=htmlspecialchars($t)?></option>
           <?php endforeach; ?>
@@ -88,7 +88,7 @@ $can_refund = OrderStateMachine::can($order->status, 'REFUNDED');
 
       <?php if ($has('orders.cancel') && $can_cancel): ?>
       <form method="post" action="<?=site_url('admin/orders/'.$order->public_id.'/cancel')?>" class="mb-2"
-            onsubmit="return confirm('Cancel this order and refund the charge?')">
+            data-confirm="Cancel this order and refund the charge?" >
         <?=$csrf()?>
         <input class="input mb-2" name="reason" placeholder="Cancellation reason">
         <button class="btn btn-secondary btn-sm" type="submit">Cancel &amp; refund</button>
@@ -97,7 +97,7 @@ $can_refund = OrderStateMachine::can($order->status, 'REFUNDED');
 
       <?php if ($has('orders.refund') && $can_refund): ?>
       <form method="post" action="<?=site_url('admin/orders/'.$order->public_id.'/refund')?>"
-            onsubmit="return confirm('Refund this order in full?')">
+            data-confirm="Refund this order in full?" >
         <?=$csrf()?>
         <input class="input mb-2" name="reason" placeholder="Refund reason">
         <button class="btn btn-secondary btn-sm" type="submit">Refund order</button>
