@@ -357,6 +357,37 @@ class Env
             $upgraded = 'https://' . substr($configured, 7);
             self::put('APP_URL', $upgraded, true);
             self::put('VP_BASE_URL', $upgraded, true);
+            $configured = $upgraded;
+        }
+
+        // The other half of the same cPanel trap: VP_BASE_URL says www.X but
+        // the visitor is browsing X (or vice versa — AutoSSL serves both).
+        // Session and CSRF cookies are host-only (cookie_domain is ''), while
+        // every form_open()/redirect() is built from the *configured* host, so
+        // a login form rendered on one host POSTs to the twin: the CSRF cookie
+        // is never sent, the token check fails, and nobody can log in even
+        // with correct credentials. Follow the request host when the two
+        // differ only by a leading "www." — links, posts and cookies then all
+        // live on the host that is actually in the address bar. Any other
+        // host difference is left alone (this is not a proxy rewriter), and
+        // CLI/cron has no request host, so .env keeps ruling there.
+        if ($configured !== '' && !empty($_SERVER['HTTP_HOST'])) {
+            $parts = parse_url($configured);
+            $cfg_host = isset($parts['host']) ? strtolower($parts['host']) : '';
+            $req_host = strtolower(preg_replace('/[^A-Za-z0-9\-\._:\[\]]/', '', (string)$_SERVER['HTTP_HOST']));
+            $req_bare = preg_replace('/:\d+$/', '', $req_host);
+            $strip_www = function ($h) {
+                return strpos($h, 'www.') === 0 ? substr($h, 4) : $h;
+            };
+            if ($cfg_host !== '' && $req_bare !== '' && $cfg_host !== $req_bare
+                && $strip_www($cfg_host) === $strip_www($req_bare)) {
+                $scheme = isset($parts['scheme']) ? $parts['scheme']
+                    : (self::request_is_https() ? 'https' : 'http');
+                $path = isset($parts['path']) ? $parts['path'] : '';
+                $aligned = $scheme . '://' . $req_host . rtrim($path, '/');
+                self::put('APP_URL', $aligned, true);
+                self::put('VP_BASE_URL', $aligned, true);
+            }
         }
     }
 

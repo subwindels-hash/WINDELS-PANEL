@@ -460,7 +460,10 @@ class AdminVtuTest extends TestCase
         $icons = file_get_contents(self::$root.'/application/views/partials/icon.php');
         $layout = file_get_contents(self::$root.'/application/views/layouts/app.php');
 
-        preg_match("~\\\$nav = \\\$is_admin \? array\((.*?)\n\);~s", $layout, $m);
+        // The nav is defined as grouped sections ($nav_groups = $is_admin ?
+        // array(...) : array(...)) and flattened afterwards. Read the whole
+        // definition, both admin and customer branches.
+        preg_match("~\\\$nav_groups = \\\$is_admin \? array\((.*?)\n\);~s", $layout, $m);
         $this->assertNotEmpty($m, 'could not read the nav definition');
         preg_match_all("~,\s*'([a-z-]+)'\)~", $m[1], $used);
 

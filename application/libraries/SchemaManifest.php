@@ -44,6 +44,17 @@ class SchemaManifest {
             foreach ($m as $t) {
                 $name = $t[1];
                 $body = $t[2];
+
+                // A foreign key wrapped onto two lines —
+                //   CONSTRAINT fk_x FOREIGN KEY (col)
+                //     REFERENCES parent(id) ON DELETE SET NULL
+                // — must be treated as ONE logical line. Splitting first made
+                // the continuation parse as a column literally named
+                // `REFERENCES`, which deploy-verify.php then reported as a
+                // "missing column" on a perfectly healthy database
+                // (managed_pages.REFERENCES). Join before splitting so the FK
+                // is recorded as a foreign key instead.
+                $body = preg_replace('/\R\s*(REFERENCES\b)/i', ' $1', $body);
                 $table = array(
                     'engine'  => strtolower($t[3]),
                     'columns' => array(),

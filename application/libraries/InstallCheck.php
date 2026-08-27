@@ -320,6 +320,26 @@ class InstallCheck {
         else
             $this->add('fail', 'env', 'base URL is not set', '', 'Set VP_BASE_URL=https://yourdomain.com (or APP_URL=…) in .env.');
 
+        // www/apex split — the classic "correct password, still cannot log
+        // in". Session and CSRF cookies are host-only, but every form action
+        // is built from VP_BASE_URL; when the visitor is on the twin host the
+        // login POST crosses hosts without its CSRF cookie and is refused.
+        // The app self-aligns at runtime (Env::apply_defaults), but the .env
+        // should still name the host people actually visit.
+        if ($base && !empty($_SERVER['HTTP_HOST'])) {
+            $cfg_host = strtolower((string) parse_url($base, PHP_URL_HOST));
+            $req_host = strtolower(preg_replace('/[^A-Za-z0-9\-\._:\[\]]/', '', (string)$_SERVER['HTTP_HOST']));
+            $req_host = preg_replace('/:\d+$/', '', $req_host);
+            $bare = function ($h) { return strpos($h, 'www.') === 0 ? substr($h, 4) : $h; };
+            if ($cfg_host !== '' && $req_host !== '' && $cfg_host !== $req_host
+                && $bare($cfg_host) === $bare($req_host)) {
+                $this->add('warn', 'env', 'base URL host does not match the address you are browsing',
+                    '.env says ' . $cfg_host . ', this page was opened on ' . $req_host,
+                    'Set VP_BASE_URL=https://' . $req_host . ' in .env so links, forms and cookies all use the host visitors actually see. '
+                    . '(The app follows the request host automatically when the two differ only by "www.", but .env should still match.)');
+            }
+        }
+
         foreach (array(
                 array('ENCRYPTION_KEY', 'VP_ENCRYPTION_KEY'),
                 array('APP_KEY', 'VP_AUTH_SECRET'),
