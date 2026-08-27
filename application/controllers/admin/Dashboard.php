@@ -21,6 +21,8 @@ class Dashboard extends Admin_Controller {
             'current_user'  => $this->current_user,
             'permissions'   => $permissions,
             'unread'        => $this->dashboardstats->unread_count($this->current_user->id),
+            'overview'      => $this->adminstats->platform_overview(),
+            'series'        => $this->adminstats->revenue_series(14),
             'today'         => $this->adminstats->revenue(1),
             'month'         => $this->adminstats->revenue(30),
             'queue'         => $this->adminstats->action_queue(),

@@ -35,6 +35,40 @@ class Staff extends Admin_Controller {
         $this->load->model(array('User_model', 'Role_model', 'Permission_model', 'Audit_log_model'));
     }
 
+    /** GET /admin/administrators — SUPER_ADMIN and ADMIN only. */
+    public function administrators() {
+        $filters = array(
+            'search' => $this->input->get('q', true),
+            'role'   => $this->input->get('role', true),
+        );
+        $page  = max(1, (int)$this->input->get('page'));
+        $limit = self::PER_PAGE;
+        $this->db->from('users')->where_in('role', array('SUPER_ADMIN','ADMIN'));
+        if (!empty($filters['role'])) $this->db->where('role', $filters['role']);
+        if (!empty($filters['search'])) {
+            $q = $filters['search'];
+            $this->db->group_start()->like('username', $q)->or_like('email', $q)->group_end();
+        }
+        $total = (int)$this->db->count_all_results();
+        $this->db->from('users')->where_in('role', array('SUPER_ADMIN','ADMIN'));
+        if (!empty($filters['role'])) $this->db->where('role', $filters['role']);
+        if (!empty($filters['search'])) {
+            $q = $filters['search'];
+            $this->db->group_start()->like('username', $q)->or_like('email', $q)->group_end();
+        }
+        $rows = $this->db->order_by('role', 'ASC')->order_by('username', 'ASC')
+            ->limit($limit, ($page - 1) * $limit)->get()->result();
+
+        $this->render('Administrators', 'admin/staff/administrators', array(
+            'staff'       => $rows,
+            'filters'     => $filters,
+            'page'        => $page,
+            'total'       => $total,
+            'total_pages' => max(1, (int)ceil($total / $limit)),
+            'page_description' => 'Accounts that can reach the admin area as SUPER_ADMIN or ADMIN.',
+        ));
+    }
+
     /** GET /admin/staff — the staff directory. */
     public function index() {
         $filters = array(

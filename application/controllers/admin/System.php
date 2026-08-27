@@ -32,7 +32,8 @@ class System extends Admin_Controller {
         parent::__construct();
         if (!$this->auth->can('categories.manage')
             && !$this->auth->can('blacklist.manage')
-            && !$this->auth->can('audit.view')) {
+            && !$this->auth->can('audit.view')
+            && !$this->auth->can('api.manage')) {
             $this->require_perm('audit.view');
         }
         $this->load->library(array('SystemAdminService', 'DashboardStats'));
@@ -142,6 +143,63 @@ class System extends Admin_Controller {
      * There is no companion write action anywhere in this controller, and
      * that is the feature.
      */
+    /** GET /admin/logs — last lines of application log files. */
+    public function logs() {
+        $this->require_perm('audit.view');
+        require_once APPPATH.'core/Env.php';
+        $dir = rtrim(Env::root(), '/').'/storage/logs';
+        $files = array();
+        $tail = '';
+        if ($dir && is_dir($dir)) {
+            foreach (glob($dir.'/*.log') ?: array() as $f) {
+                $files[] = basename($f);
+            }
+            rsort($files);
+            $pick = $this->input->get('file', true) ?: (isset($files[0]) ? $files[0] : '');
+            if ($pick && in_array($pick, $files, true)) {
+                $lines = @file($dir.'/'.$pick);
+                if (is_array($lines)) {
+                    $tail = implode('', array_slice($lines, -200));
+                }
+            }
+        } else {
+            $pick = '';
+        }
+
+        $this->render('System logs', 'admin/system/logs', 'logs', array(
+            'files' => $files,
+            'file'  => $pick ?? '',
+            'tail'  => $tail,
+            'page_description' => 'Read-only tail of storage/logs. Nothing here can be edited.',
+        ));
+    }
+
+    /** GET /admin/api-logs */
+    public function api_logs() {
+        $this->require_perm('api.manage');
+        $page = max(1, (int)$this->input->get('page'));
+        $limit = 50;
+        $total = 0;
+        $rows = array();
+        if ($this->db->table_exists('api_usage_logs')) {
+            $total = (int)$this->db->count_all('api_usage_logs');
+            $rows = $this->db->select('api_usage_logs.*, api_keys.prefix, api_keys.name AS key_name, users.username', false)
+                ->from('api_usage_logs')
+                ->join('api_keys', 'api_keys.id = api_usage_logs.api_key_id', 'left')
+                ->join('users', 'users.id = api_keys.user_id', 'left')
+                ->order_by('api_usage_logs.created_at', 'DESC')
+                ->limit($limit, ($page - 1) * $limit)
+                ->get()->result();
+        }
+        $this->render('API logs', 'admin/system/api_logs', 'api_logs', array(
+            'rows' => $rows,
+            'page' => $page,
+            'total' => $total,
+            'total_pages' => max(1, (int)ceil($total / $limit)),
+            'page_description' => 'Reseller API requests recorded in api_usage_logs.',
+        ));
+    }
+
     public function audit_logs() {
         $this->require_perm('audit.view');
 
@@ -174,6 +232,8 @@ class System extends Admin_Controller {
             'categories' => array('Categories', 'admin/categories', $this->auth->can('categories.manage')),
             'blacklist'  => array('Blacklist',  'admin/blacklist',  $this->auth->can('blacklist.manage')),
             'audit'      => array('Audit log',  'admin/audit-logs', $this->auth->can('audit.view')),
+            'logs'       => array('System logs','admin/logs',       $this->auth->can('audit.view')),
+            'api_logs'   => array('API logs',   'admin/api-logs',   $this->auth->can('api.manage')),
         );
         $this->load->view('layouts/app', array_merge(array(
             'title'        => $title,

@@ -12,11 +12,41 @@ class Home extends Public_Controller {
         } else {
             $active = $this->active_homepage();
         }
+        $copy = array(
+            'homepage_hero_kicker'=>'','homepage_hero_title'=>'','homepage_hero_lede'=>'',
+            'homepage_cta_primary'=>'','homepage_cta_secondary'=>'',
+            'homepage_services_title'=>'','homepage_services_lede'=>'',
+            'homepage_cta_band_title'=>'','homepage_cta_band_body'=>'',
+            'homepage_meta_description'=>'',
+        );
+        if ($this->db_ready) {
+            try {
+                $this->load->model('Setting_model');
+                foreach (array(
+                    'homepage_hero_kicker','homepage_hero_title','homepage_hero_lede',
+                    'homepage_cta_primary','homepage_cta_secondary',
+                    'homepage_services_title','homepage_services_lede',
+                    'homepage_cta_band_title','homepage_cta_band_body',
+                    'homepage_meta_description',
+                ) as $k) {
+                    $copy[$k] = $this->Setting_model->get($k);
+                }
+            } catch (Throwable $e) { /* defaults in the view */ }
+        }
         $data = array(
             'active_homepage'=>$active,
-            'title'=>'Grow and manage your social presence',
-            'meta_description'=>'MarvySocials is a prepaid panel for social media growth services, Nigerian VTU and bills, virtual numbers, identity checks and gift cards. Add funds, place an order, track it from one dashboard.',
+            'title'=> $copy['homepage_hero_title'] ?: 'Grow and manage your social presence',
+            'meta_description'=> $copy['homepage_meta_description'] ?: 'MarvySocials is a prepaid panel for social media growth services, Nigerian VTU and bills, virtual numbers, identity checks and gift cards. Add funds, place an order, track it from one dashboard.',
             'canonical' => '',
+            'hero_kicker' => $copy['homepage_hero_kicker'] ?: null,
+            'hero_title'  => $copy['homepage_hero_title'] ?: null,
+            'hero_lede'   => $copy['homepage_hero_lede'] ?: null,
+            'cta_primary' => $copy['homepage_cta_primary'] ?: 'Get started',
+            'cta_secondary' => $copy['homepage_cta_secondary'] ?: 'View services',
+            'services_title' => $copy['homepage_services_title'] ?: null,
+            'services_lede' => $copy['homepage_services_lede'] ?: null,
+            'cta_band_title' => $copy['homepage_cta_band_title'] ?: null,
+            'cta_band_body' => $copy['homepage_cta_band_body'] ?: null,
         );
 
         // The homepage advertises the *live* catalogue: real service names,
@@ -27,17 +57,38 @@ class Home extends Public_Controller {
         $data['categories'] = array();
         $data['catalogue_size'] = 0;
         $data['posts'] = array();
+        $data['faqs'] = array();
+        $data['stats'] = array();
         if ($this->db_ready) {
             try {
-                $this->load->model(array('Service_model', 'Service_category_model'));
+                $this->load->model(array('Service_model', 'Service_category_model', 'Faq_model', 'Blog_post_model'));
                 $data['showcase'] = $this->Service_model->homepage_showcase(6);
                 $data['categories'] = $this->Service_model->categories_with_counts(8);
                 $data['catalogue_size'] = $this->Service_model->count_active();
-                $this->load->model('Blog_post_model');
                 $data['posts'] = $this->Blog_post_model->published(null, 3, 0);
+                $data['faqs'] = $this->Faq_model->active();
+                $orders = 0; $customers = 0;
+                try {
+                    $orders = (int)$this->db->where_in('status', array('COMPLETED','PARTIAL'))->count_all_results('orders');
+                    $customers = (int)$this->db->where('role', 'CUSTOMER')->where('status', 'ACTIVE')->count_all_results('users');
+                } catch (Throwable $e) { /* optional aggregates */ }
+                $data['stats'] = array(
+                    array('value' => $data['catalogue_size'] > 0 ? number_format($data['catalogue_size']) : 'Live', 'label' => 'Published services'),
+                    array('value' => $orders > 0 ? number_format($orders) : 'Tracked', 'label' => 'Completed orders'),
+                    array('value' => $customers > 0 ? number_format($customers) : 'Prepaid', 'label' => $customers > 0 ? 'Active customers' : 'Wallet billing'),
+                    array('value' => '24/7', 'label' => 'Ticket support'),
+                );
             } catch (Throwable $e) {
                 log_message('error', 'homepage catalogue unavailable: '.$e->getMessage());
             }
+        }
+        if (empty($data['stats'])) {
+            $data['stats'] = array(
+                array('value' => 'Prepaid', 'label' => 'Wallet billing'),
+                array('value' => 'Ledger', 'label' => 'Auditable credits'),
+                array('value' => 'API', 'label' => 'Reseller keys'),
+                array('value' => '24/7', 'label' => 'Ticket support'),
+            );
         }
         // Single switch — no Node
         $view = 'homepages/'.strtolower($active).'/index';

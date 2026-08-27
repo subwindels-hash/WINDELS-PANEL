@@ -78,6 +78,7 @@ class AuthService {
             'last_name'         => $data['last_name'] ?? null,
             'status'            => 'ACTIVE',
             'role'              => 'CUSTOMER',
+            'price_group_id'    => $price_group_id,
             'referral_code'     => $this->generate_referral_code(),
             'user_code'         => marvy_allocate_user_code($this->ci->db),
             'referred_by_id'    => $referred_by,

@@ -43,6 +43,39 @@ class Settings extends Admin_Controller {
     }
 
     /** POST /admin/settings/save — validate and persist. */
+    /** GET|POST /admin/settings/flags */
+    public function flags() {
+        if ($this->input->method(true) === 'POST') {
+            return $this->save_flags();
+        }
+        $this->load->model('Feature_flag_model');
+        $this->load->view('layouts/app', array(
+            'title'        => 'Feature flags',
+            'nav_active'   => 'admin/settings',
+            'content_view' => 'admin/settings/flags',
+            'current_user' => $this->current_user,
+            'permissions'  => $this->auth->permissions(),
+            'unread'       => $this->dashboardstats->unread_count($this->current_user->id),
+            'flags'        => $this->Feature_flag_model->all_rows(),
+            'page_description' => 'Turn product modules on or off without a deploy.',
+        ));
+    }
+
+    /** POST /admin/settings/flags */
+    public function save_flags() {
+        $this->guard();
+        $this->load->model('Feature_flag_model');
+        $posted = $this->input->post('flags');
+        $posted = is_array($posted) ? $posted : array();
+        foreach ($this->Feature_flag_model->all_rows() as $row) {
+            $on = !empty($posted[$row->flag_key]);
+            $this->Feature_flag_model->set_enabled($row->flag_key, $on);
+        }
+        $this->audit('settings.feature_flags', array('flags' => array('before' => null, 'after' => $posted)));
+        $this->session->set_flashdata('success', 'Feature flags saved.');
+        redirect('admin/settings/flags');
+    }
+
     public function save() {
         $this->guard();
 

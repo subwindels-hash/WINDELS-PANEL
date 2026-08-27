@@ -27,6 +27,30 @@ class Tickets extends Admin_Controller {
         ));
     }
 
+    /** GET /admin/messages — visitor contact emails queued from the public form. */
+    public function messages() {
+        $rows = array();
+        if ($this->db->table_exists('email_queue')) {
+            $rows = $this->db->group_start()
+                    ->where('template_key', 'contact.message')
+                    ->or_like('subject', '[Contact]')
+                ->group_end()
+                ->order_by('created_at', 'DESC')
+                ->limit(100)
+                ->get('email_queue')->result();
+        }
+        $this->load->view('layouts/app', array(
+            'title'        => 'Customer messages',
+            'nav_active'   => 'admin/tickets',
+            'content_view' => 'admin/tickets/messages',
+            'current_user' => $this->current_user,
+            'permissions'  => $this->auth->permissions(),
+            'unread'       => $this->dashboardstats->unread_count($this->current_user->id),
+            'rows'         => $rows,
+            'page_description' => 'Messages from the public contact form. Signed-in customers open tickets instead.',
+        ));
+    }
+
     public function index() {
         $filters = array(
             'status'     => $this->input->get('status', true),

@@ -258,7 +258,36 @@ class OrderService {
             $order = $this->ci->Order_model->find_by_id($order->id);
         }
         $this->sync_affiliate($order);
+        $this->notify_reseller_webhook($order, $new_status);
         return array('ok'=>true, 'order'=>$order);
+    }
+
+    private function notify_reseller_webhook($order, $status) {
+        try {
+            $this->ci->load->model('Setting_model');
+            if (!isset($this->ci->Setting_model)) return;
+            $url = trim((string)$this->ci->Setting_model->get('reseller_webhook_url', ''));
+            if ($url === '' || stripos($url, 'https://') !== 0) return;
+            $secret = (string)$this->ci->Setting_model->get('reseller_webhook_secret', '');
+            $payload = json_encode(array(
+                'event'    => 'order.status',
+                'status'   => $status,
+                'order_id' => $order->public_id,
+                'user_id'  => (int)$order->user_id,
+                'at'       => gmdate('c'),
+            ));
+            $headers = array('Content-Type: application/json', 'X-Marvy-Event: order.status');
+            if ($secret !== '') {
+                $headers[] = 'X-Marvy-Signature: sha256='.hash_hmac('sha256', $payload, $secret);
+            }
+            if (!class_exists('SecureHttpClient', false)) {
+                require_once APPPATH.'libraries/SecureHttpClient.php';
+            }
+            $http = new SecureHttpClient();
+            $http->post($url, $payload, $headers);
+        } catch (Throwable $e) {
+            log_message('error', 'reseller webhook failed: '.$e->getMessage());
+        }
     }
 
     /**

@@ -250,6 +250,22 @@ class Users extends Admin_Controller {
      * password the operator would then know. Staff never handle a customer
      * credential.
      */
+    public function force_logout($public_id) {
+        $user = $this->guard($public_id, 'users.edit');
+        $res = $this->useradminservice->force_logout($this->current_user, $user);
+        if (empty($res['ok'])) return $this->fail($user, $res['error']);
+        $this->audit('user.force_logout', $user, null, $res['after']);
+        $this->done($user, 'Refresh tokens revoked. The customer must sign in again on other devices.');
+    }
+
+    public function revoke_keys($public_id) {
+        $user = $this->guard($public_id, 'users.edit');
+        $res = $this->useradminservice->revoke_api_keys($this->current_user, $user);
+        if (empty($res['ok'])) return $this->fail($user, $res['error']);
+        $this->audit('user.api_keys_revoked', $user, null, $res['after']);
+        $this->done($user, 'All API keys for this account have been revoked.');
+    }
+
     public function password_reset($public_id) {
         $user = $this->guard($public_id, 'users.edit');
 

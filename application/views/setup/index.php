@@ -49,8 +49,21 @@ foreach ($checks as $c) { if ($c['status'] === 'fail') $failed++; }
   code { background: #f1f5f9; border-radius: 5px; padding: .1rem .35rem; font-size: .9em; }
   footer { margin-top: 3rem; color: #64748b; font-size: .9rem; }
 </style>
+  .ws-announce{background:#fff;color:#000;border-bottom:1px solid #e5e7eb;height:2.75rem;overflow:hidden;display:flex;align-items:center}
+  .ws-announce-track{display:flex;width:max-content;animation:ws-marquee 40s linear infinite}
+  .ws-announce-item{white-space:nowrap;padding:0 2.5rem;font-size:.875rem;font-weight:500;color:#000}
+  @keyframes ws-marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+</style>
 </head>
 <body>
+<div class="ws-announce" role="region" aria-label="Announcements">
+  <div class="ws-announce-track">
+    <span class="ws-announce-item">MarvySocials setup — import database/marvysocials.sql, then create the first SUPER_ADMIN.</span>
+    <span class="ws-announce-item">Set VP_DB_HOST, VP_DB_NAME, VP_DB_USER and VP_DB_PASS in .env to the database you imported.</span>
+    <span class="ws-announce-item">MarvySocials setup — import database/marvysocials.sql, then create the first SUPER_ADMIN.</span>
+    <span class="ws-announce-item">Set VP_DB_HOST, VP_DB_NAME, VP_DB_USER and VP_DB_PASS in .env to the database you imported.</span>
+  </div>
+</div>
 <main>
   <h1>Deployment setup</h1>
   <p class="lede">
@@ -66,11 +79,18 @@ foreach ($checks as $c) { if ($c['status'] === 'fail') $failed++; }
     <div class="flash success"><?= $success ?></div>
   <?php endif; ?>
 
+  <?php if (!empty($bootstrap_open)): ?>
+  <div class="flash notice">
+    No active SUPER_ADMIN was found. Create the first administrator below. After this
+    succeeds, this page closes unless <code>VP_SETUP_TOKEN</code> is set for recovery.
+  </div>
+  <?php else: ?>
   <div class="flash notice">
     This page is open because <code>VP_SETUP_TOKEN</code> is set in <code>.env</code>.
     Delete that line (cPanel → File Manager → Edit) when you are finished; the page then
     returns 404 to everyone, including you.
   </div>
+  <?php endif; ?>
 
   <h2>Deployment checks<?= $failed ? ' — '.$failed.' need attention' : '' ?></h2>
   <div class="card">
