@@ -282,6 +282,7 @@ $route['admin/drip-feed'] = 'admin/operations/dripfeed';
 $route['admin/drip-feed/(:any)/(pause|resume|cancel)'] = 'admin/operations/dripfeed_action/$1/$2';
 $route['admin/subscriptions'] = 'admin/operations/subscriptions';
 $route['admin/subscriptions/(:any)/(pause|resume|cancel)'] = 'admin/operations/subscription_action/$1/$2';
+$route['admin/messages'] = 'admin/tickets/messages';
 $route['admin/tickets'] = 'admin/tickets/index';
 $route['admin/tickets/(:any)/reply'] = 'admin/tickets/reply/$1';
 $route['admin/tickets/(:any)/assign'] = 'admin/tickets/assign/$1';

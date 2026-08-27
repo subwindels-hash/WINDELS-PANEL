@@ -46,6 +46,7 @@ $nav_groups = $is_admin ? array(
     )),
     array('Support', array(
         array('admin/tickets',      'Support tickets',    'tickets.view',    'message-square'),
+        array('admin/messages',     'Customer messages',  'tickets.view',    'message-square'),
     )),
     array('System', array(
         array('admin/settings',     'Settings',   'settings.manage', 'settings'),

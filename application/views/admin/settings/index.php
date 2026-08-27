@@ -4,7 +4,7 @@ $csrf = function () { return '<input type="hidden" name="'.htmlspecialchars($thi
 
 $category_titles = array(
     'general'   => 'General',
-    'homepage'  => 'Homepage',
+    'homepage'  => 'Homepage content',
     'security'  => 'Registration and security',
     'payments'  => 'Deposits',
     'affiliate' => 'Referrals',
@@ -61,9 +61,13 @@ $field = function ($key, $def, $value) {
             echo '<p class="muted text-xs" style="margin:.25rem 0 0">'
                 .'A value is stored. Leave the field untouched to keep it, or clear it to remove it.</p>';
         }
+    } elseif ($type === 'longtext') {
+        echo '<label class="label" for="'.htmlspecialchars($id).'">'.htmlspecialchars($label).'</label>';
+        echo '<textarea class="textarea" id="'.htmlspecialchars($id).'" name="'.htmlspecialchars($key).'" rows="4">'
+            .htmlspecialchars((string)$value).'</textarea>';
     } else {
         $input_type = in_array($type, array('int','money','percent'), true) ? 'number'
-                    : ($type === 'email' ? 'email' : 'text');
+                    : ($type === 'email' ? 'email' : ($type === 'url' ? 'url' : 'text'));
         $step = $type === 'money' ? '0.01' : ($type === 'percent' ? '0.01' : '1');
         echo '<label class="label" for="'.htmlspecialchars($id).'">'.htmlspecialchars($label).'</label>';
         echo '<input class="input'.($input_type === 'number' ? ' mono' : '').'"'

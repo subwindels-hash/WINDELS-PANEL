@@ -12,11 +12,41 @@ class Home extends Public_Controller {
         } else {
             $active = $this->active_homepage();
         }
+        $copy = array(
+            'homepage_hero_kicker'=>'','homepage_hero_title'=>'','homepage_hero_lede'=>'',
+            'homepage_cta_primary'=>'','homepage_cta_secondary'=>'',
+            'homepage_services_title'=>'','homepage_services_lede'=>'',
+            'homepage_cta_band_title'=>'','homepage_cta_band_body'=>'',
+            'homepage_meta_description'=>'',
+        );
+        if ($this->db_ready) {
+            try {
+                $this->load->model('Setting_model');
+                foreach (array(
+                    'homepage_hero_kicker','homepage_hero_title','homepage_hero_lede',
+                    'homepage_cta_primary','homepage_cta_secondary',
+                    'homepage_services_title','homepage_services_lede',
+                    'homepage_cta_band_title','homepage_cta_band_body',
+                    'homepage_meta_description',
+                ) as $k) {
+                    $copy[$k] = $this->Setting_model->get($k);
+                }
+            } catch (Throwable $e) { /* defaults in the view */ }
+        }
         $data = array(
             'active_homepage'=>$active,
-            'title'=>'Grow and manage your social presence',
-            'meta_description'=>'MarvySocials is a prepaid panel for social media growth services, Nigerian VTU and bills, virtual numbers, identity checks and gift cards. Add funds, place an order, track it from one dashboard.',
+            'title'=> $copy['homepage_hero_title'] ?: 'Grow and manage your social presence',
+            'meta_description'=> $copy['homepage_meta_description'] ?: 'MarvySocials is a prepaid panel for social media growth services, Nigerian VTU and bills, virtual numbers, identity checks and gift cards. Add funds, place an order, track it from one dashboard.',
             'canonical' => '',
+            'hero_kicker' => $copy['homepage_hero_kicker'] ?: null,
+            'hero_title'  => $copy['homepage_hero_title'] ?: null,
+            'hero_lede'   => $copy['homepage_hero_lede'] ?: null,
+            'cta_primary' => $copy['homepage_cta_primary'] ?: 'Get started',
+            'cta_secondary' => $copy['homepage_cta_secondary'] ?: 'View services',
+            'services_title' => $copy['homepage_services_title'] ?: null,
+            'services_lede' => $copy['homepage_services_lede'] ?: null,
+            'cta_band_title' => $copy['homepage_cta_band_title'] ?: null,
+            'cta_band_body' => $copy['homepage_cta_band_body'] ?: null,
         );
 
         // The homepage advertises the *live* catalogue: real service names,

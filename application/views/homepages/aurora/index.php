@@ -6,9 +6,15 @@ $stats = isset($data['stats']) && is_array($data['stats']) ? $data['stats'] : ar
 $faqs = isset($data['faqs']) && is_array($data['faqs']) ? $data['faqs'] : array();
 $cu = $current_user ?? null;
 
-$hero_kicker = $data['hero_kicker'] ?? 'Power your social growth';
-$hero_title  = $data['hero_title'] ?? 'Grow your social presence with one powerful platform';
-$hero_lede   = $data['hero_lede'] ?? 'Access fast, reliable social media services, VTU, numbers, identity checks and gift cards from a prepaid dashboard you can actually audit.';
+$hero_kicker = $data['hero_kicker'] ?: 'Power your social growth';
+$hero_title  = $data['hero_title'] ?: 'Grow your social presence with one powerful platform';
+$hero_lede   = $data['hero_lede'] ?: 'Access fast, reliable social media services, VTU, numbers, identity checks and gift cards from a prepaid dashboard you can actually audit.';
+$cta_primary = $data['cta_primary'] ?? 'Get started';
+$cta_secondary = $data['cta_secondary'] ?? 'View services';
+$services_title = $data['services_title'] ?: 'Everything you need to grow online';
+$services_lede = $data['services_lede'] ?: 'Social media services, VTU, numbers, identity checks and gift cards — published rates, prepaid wallet.';
+$cta_band_title = $data['cta_band_title'] ?: 'Ready to grow?';
+$cta_band_body = $data['cta_band_body'] ?: 'Join MarvySocials and run social media and digital services from one prepaid platform.';
 
 $steps = array(
   array('01', 'Create an account', 'Register in a minute and open your personal dashboard.'),
@@ -47,8 +53,8 @@ if (empty($faqs)) {
         <?php endif; ?>
       </p>
       <div class="ws-page-actions">
-        <a class="btn btn-primary btn-lg" href="<?=site_url($cu ? 'dashboard' : 'register')?>"><?=$cu ? 'Open dashboard' : 'Get started'?></a>
-        <a class="btn btn-secondary btn-lg" href="<?=site_url('services')?>">View services</a>
+        <a class="btn btn-primary btn-lg" href="<?=site_url($cu ? 'dashboard' : 'register')?>"><?=$cu ? 'Open dashboard' : htmlspecialchars($cta_primary)?></a>
+        <a class="btn btn-secondary btn-lg" href="<?=site_url('services')?>"><?=htmlspecialchars($cta_secondary)?></a>
       </div>
     </div>
     <div class="ws-landing-hero-visual">
@@ -73,8 +79,8 @@ if (empty($faqs)) {
 <section class="ws-section" id="services">
   <div class="container">
     <div class="text-center" style="max-width:40rem;margin:0 auto 2rem">
-      <h2 class="ws-section-title">Everything you need to grow online</h2>
-      <p class="ws-section-lead">Social media services, VTU, numbers, identity checks and gift cards — published rates, prepaid wallet.</p>
+      <h2 class="ws-section-title"><?=htmlspecialchars($services_title)?></h2>
+      <p class="ws-section-lead"><?=htmlspecialchars($services_lede)?></p>
     </div>
     <?php if ($categories): ?>
     <div class="ws-landing-cards">
@@ -186,8 +192,8 @@ X-Api-Key: wind_…
 <section class="ws-section">
   <div class="container">
     <div class="ws-landing-cta">
-      <h2>Ready to grow?</h2>
-      <p>Join MarvySocials and run social media and digital services from one prepaid platform.</p>
+      <h2><?=htmlspecialchars($cta_band_title)?></h2>
+      <p><?=htmlspecialchars($cta_band_body)?></p>
       <a class="btn btn-lg" href="<?=site_url('register')?>">Create free account</a>
     </div>
   </div>
