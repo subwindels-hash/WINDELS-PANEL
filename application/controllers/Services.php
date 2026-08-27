@@ -24,13 +24,15 @@ class Services extends Public_Controller {
         $platform = $this->input->get('platform', true);
         $type   = $this->input->get('type', true);
         $sort   = $this->input->get('sort', true);
+        $view   = $this->input->get('view', true) === 'table' ? 'table' : 'cards';
         $page   = max(1, (int)$this->input->get('page'));
+        $per_page = $view === 'table' ? 40 : self::PER_PAGE;
 
         $category = $cat ? $this->Service_category_model->find_by_slug($cat) : null;
 
         // Build the result set. FULLTEXT is used only when there is a searchable
         // term; otherwise we fall back to a LIKE scan so short tokens still work.
-        $result = $this->query_services($q, $category, $platform, $type, $sort, $page, self::PER_PAGE);
+        $result = $this->query_services($q, $category, $platform, $type, $sort, $page, $per_page);
 
         $categories = $this->Service_category_model->active();
         $platforms  = array_unique(array_filter(array_map(function ($c) { return $c->platform; }, $categories)));
@@ -51,13 +53,15 @@ class Services extends Public_Controller {
             'types'       => $types,
             'total'       => $result['total'],
             'page'        => $page,
-            'total_pages' => max(1, (int)ceil($result['total'] / self::PER_PAGE)),
+            'total_pages' => max(1, (int)ceil($result['total'] / $per_page)),
+            'view_mode'   => $view,
             'filters'     => array(
                 'q'        => $q,
                 'category' => $cat,
                 'platform' => $platform,
                 'type'     => $type,
                 'sort'     => $sort ?: 'popular',
+                'view'     => $view,
             ),
         ));
     }

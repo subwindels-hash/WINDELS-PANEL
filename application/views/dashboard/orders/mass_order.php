@@ -16,9 +16,9 @@
           <label for="mass-orders" class="label">Order instructions</label>
           <textarea id="mass-orders" name="orders" rows="13" maxlength="65536" required
                     class="input font-mono text-sm leading-6"
-                    placeholder="instagram-followers|https://instagram.com/example|1000"><?=htmlspecialchars($mass_input, ENT_QUOTES, 'UTF-8')?></textarea>
+                    placeholder="instagram-followers | https://instagram.com/example | 1000"><?=htmlspecialchars($mass_input, ENT_QUOTES, 'UTF-8')?></textarea>
           <div class="mt-2 flex flex-wrap justify-between gap-2 text-xs text-slate-500">
-            <span>Format: <code class="font-mono text-slate-700">service|https://target.example|quantity</code></span>
+            <span>Format: <code class="font-mono text-slate-700">service | https://target.example | quantity</code> (pipes or tabs)</span>
             <span>64 KiB request limit</span>
           </div>
         </div>

@@ -130,7 +130,8 @@ $show_marketing = !empty($show_marketing);
             <label class="sr-only" for="services-search">Search services</label>
             <?php $this->load->view('partials/icon', array('name'=>'search','class'=>'w-5 h-5')); ?>
             <input class="input" id="services-search" type="search" name="q" value="<?=htmlspecialchars($f['q'])?>"
-                   placeholder="Search services — e.g. Instagram followers">
+                   placeholder="Search by name or service ID">
+            <input type="hidden" name="view" value="<?=htmlspecialchars($f['view'] ?? 'cards')?>">
           </div>
           <button class="btn btn-primary" type="submit">Search</button>
         </div>
@@ -169,6 +170,16 @@ $show_marketing = !empty($show_marketing);
       </div>
     </form>
 
+    <div class="row justify-between mb-4">
+      <p class="muted text-sm mb-0"><?=number_format($total)?> services</p>
+      <div class="row" style="gap:.35rem">
+        <a class="btn btn-sm <?=(($f['view'] ?? 'cards') !== 'table') ? 'btn-secondary' : 'btn-ghost'?>"
+           href="<?=site_url('services?'.ws_query_string(array('view'=>'cards','page'=>1), $f))?>">Cards</a>
+        <a class="btn btn-sm <?=(($f['view'] ?? '') === 'table') ? 'btn-secondary' : 'btn-ghost'?>"
+           href="<?=site_url('services?'.ws_query_string(array('view'=>'table','page'=>1), $f))?>">Table</a>
+      </div>
+    </div>
+
     <?php if (empty($services)): ?>
       <?php $has_filter = ($f['q'] !== '' || $f['category'] !== '' || $f['platform'] !== '' || $f['type'] !== ''); ?>
       <?php if (!$has_filter): ?>
@@ -192,6 +203,49 @@ $show_marketing = !empty($show_marketing);
       </div>
       <?php endif; ?>
     <?php else: ?>
+    <?php if (($f['view'] ?? 'cards') === 'table'):
+      $grouped = array();
+      foreach ($services as $s) {
+          $key = $s->category_name ?: 'Other';
+          $grouped[$key][] = $s;
+      }
+    ?>
+    <?php foreach ($grouped as $cat_name => $rows): ?>
+      <h2 class="h3 mt-6" style="font-size:1.1rem"><?=htmlspecialchars($cat_name)?></h2>
+      <div class="card overflow-x-auto" style="padding:0">
+        <table class="table ws-service-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Service</th>
+              <th>Price / 1k</th>
+              <th>Min</th>
+              <th>Max</th>
+              <th>Speed</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+          <?php foreach ($rows as $s): ?>
+            <tr>
+              <td class="mono text-xs"><?=(int)$s->id?></td>
+              <td>
+                <a href="<?=site_url('services/'.$s->slug)?>"><?=htmlspecialchars($s->name)?></a>
+                <?php if ((int)$s->refill_supported): ?><span class="badge badge-success">Refill</span><?php endif; ?>
+                <?php if ((int)$s->cancel_supported): ?><span class="badge badge-info">Cancel</span><?php endif; ?>
+              </td>
+              <td><?=marvy_money($s->rate)?></td>
+              <td><?=number_format((int)$s->min_quantity)?></td>
+              <td><?=number_format((int)$s->max_quantity)?></td>
+              <td class="text-xs muted"><?=htmlspecialchars($s->average_time ?: '—')?></td>
+              <td><a class="btn btn-primary btn-sm" href="<?=site_url('dashboard/new-order?service='.rawurlencode($s->public_id))?>">Order</a></td>
+            </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    <?php endforeach; ?>
+    <?php else: ?>
     <div class="grid grid-4" style="gap:1rem">
       <?php foreach ($services as $s):
         $flags = json_decode($s->metadata ?? '', true) ?: array();
@@ -199,6 +253,7 @@ $show_marketing = !empty($show_marketing);
       <article class="card card-hover">
         <div class="row justify-between">
           <span class="badge badge-default"><?=htmlspecialchars($s->category_name ?? $s->service_type)?></span>
+          <span class="mono text-xs muted">#<?=(int)$s->id?></span>
           <?php if ((int)$s->trending): ?><span class="badge badge-danger">🔥 Trending</span><?php endif; ?>
         </div>
         <h3 class="card-title mt-2">
@@ -220,6 +275,7 @@ $show_marketing = !empty($show_marketing);
       </article>
       <?php endforeach; ?>
     </div>
+    <?php endif; ?>
 
     <?php if ($total_pages > 1):
       $make_link = function($p) use ($f) {

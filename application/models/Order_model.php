@@ -45,17 +45,36 @@ class Order_model extends MY_Model {
     }
 
     /** Order with its service name joined (for list/detail views). */
-    public function for_user_with_service($user_id, $limit=25, $offset=0, $status=NULL){
+    public function for_user_with_service($user_id, $limit=25, $offset=0, $status=NULL, $q=NULL){
         $this->db->select('orders.*, services.name AS service_name, services.slug AS service_slug')
                  ->from('orders')
                  ->join('services', 'services.id = orders.service_id', 'left')
                  ->where('orders.user_id', $user_id);
         if ($status) $this->db->where('orders.status', $status);
+        if ($q) {
+            $this->db->group_start()
+                ->like('orders.public_id', $q)
+                ->or_like('orders.link', $q)
+                ->or_like('services.name', $q)
+                ->group_end();
+        }
         return $this->db->order_by('orders.created_at','DESC')
                         ->limit($limit, $offset)->get()->result();
     }
 
-    public function count_for_user($user_id, $status=NULL){
+    public function count_for_user($user_id, $status=NULL, $q=NULL){
+        if ($q) {
+            $this->db->from($this->table)
+                ->join('services', 'services.id = orders.service_id', 'left')
+                ->where('orders.user_id', $user_id);
+            if ($status) $this->db->where('orders.status', $status);
+            $this->db->group_start()
+                ->like('orders.public_id', $q)
+                ->or_like('orders.link', $q)
+                ->or_like('services.name', $q)
+                ->group_end();
+            return (int)$this->db->count_all_results();
+        }
         $this->db->where('user_id',$user_id);
         if ($status) $this->db->where('status',$status);
         return (int)$this->db->count_all_results($this->table);

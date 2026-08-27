@@ -33,6 +33,30 @@ $t = $totals;
   </div>
 </div>
 
+<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mt-4">
+  <a href="<?=site_url('dashboard/orders?status=PENDING')?>" class="card card-hover">
+    <div class="card-meta">Pending</div>
+    <div class="mt-1 text-2xl font-bold"><?=number_format($t['pending'] ?? 0)?></div>
+  </a>
+  <a href="<?=site_url('dashboard/orders?status=PROCESSING')?>" class="card card-hover">
+    <div class="card-meta">Processing</div>
+    <div class="mt-1 text-2xl font-bold"><?=number_format($t['processing'] ?? 0)?></div>
+  </a>
+  <a href="<?=site_url('dashboard/orders?status=COMPLETED')?>" class="card card-hover">
+    <div class="card-meta">Completed</div>
+    <div class="mt-1 text-2xl font-bold"><?=number_format($t['completed'] ?? 0)?></div>
+  </a>
+  <a href="<?=site_url('dashboard/orders?status=CANCELED')?>" class="card card-hover">
+    <div class="card-meta">Cancelled</div>
+    <div class="mt-1 text-2xl font-bold"><?=number_format($t['cancelled'] ?? 0)?></div>
+  </a>
+</div>
+
+<div class="row mt-4" style="gap:.5rem">
+  <a class="btn btn-primary" href="<?=site_url('dashboard/new-order')?>">New order</a>
+  <a class="btn btn-secondary" href="<?=site_url('dashboard/add-funds')?>">Add funds</a>
+</div>
+
 <?php if (empty($current_user->email_verified_at)): ?>
   <div class="alert alert-warning mt-6">
     <strong>Please verify your email.</strong> Some features are restricted until you confirm your address.

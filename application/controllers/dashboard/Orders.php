@@ -19,15 +19,16 @@ class Orders extends Auth_Controller {
 
     public function index() {
         $status = $this->input->get('status', true);
-        $allowed = array('PENDING','PROCESSING','IN_PROGRESS','COMPLETED','PARTIAL','CANCELED','CANCELLED','FAILED');
+        $q = trim((string)$this->input->get('q'));
+        $allowed = array('PENDING','PROCESSING','IN_PROGRESS','COMPLETED','PARTIAL','CANCELED','CANCELLED','FAILED','REFUNDED');
         if ($status && !in_array($status, $allowed, true)) $status = null;
 
         $page = max(1, (int)$this->input->get('page'));
         $limit = self::PER_PAGE;
         $offset = ($page - 1) * $limit;
 
-        $orders = $this->Order_model->for_user_with_service($this->current_user->id, $limit, $offset, $status);
-        $total  = $this->Order_model->count_for_user($this->current_user->id, $status);
+        $orders = $this->Order_model->for_user_with_service($this->current_user->id, $limit, $offset, $status, $q);
+        $total  = $this->Order_model->count_for_user($this->current_user->id, $status, $q);
 
         $this->load->view('layouts/app', array(
             'title'        => 'My Orders',
@@ -38,6 +39,7 @@ class Orders extends Auth_Controller {
             'permissions'  => $this->auth->permissions(),
             'orders'       => $orders,
             'status'       => $status,
+            'q'            => $q,
             'total'        => $total,
             'page'         => $page,
             'total_pages'  => max(1, (int)ceil($total / $limit)),
@@ -75,7 +77,14 @@ class Orders extends Auth_Controller {
                 : $this->Service_model->find_by_public_id($svc_param);
         }
         $categories = $this->db->order_by('sorting','ASC')->get('service_categories')->result();
-        $services = $this->Service_model->active_for_picker();
+        $services = $this->db
+            ->select('services.id, services.public_id, services.name, services.slug, services.category_id, services.rate, services.min_quantity, services.max_quantity, services.increment_step, services.service_type, services.average_time, services.refill_supported, services.cancel_supported, service_categories.name AS category_name, service_categories.platform AS platform', false)
+            ->from('services')
+            ->join('service_categories', 'service_categories.id = services.category_id', 'left')
+            ->where('services.status', 'ACTIVE')
+            ->order_by('service_categories.sorting', 'ASC')
+            ->order_by('services.sorting', 'ASC')
+            ->get()->result();
         $wallet = $this->Wallet_model->for_user($this->current_user->id);
 
         $this->load->view('layouts/app', array(
