@@ -15,6 +15,7 @@ $page_data = $data ?? array();
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="<?=base_url('assets/css/tailwind.css')?>">
 <link rel="stylesheet" href="<?=base_url('assets/css/design-system.css')?>">
+<link rel="stylesheet" href="<?=base_url('assets/css/marketing.css')?>">
 <?php if (!empty($brand['brand_primary_color'])): ?>
 <style>
 :root{--ws-primary:<?=htmlspecialchars($brand['brand_primary_color'])?>}
