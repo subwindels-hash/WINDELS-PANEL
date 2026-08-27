@@ -55,6 +55,44 @@ class MY_Controller extends CI_Controller {
         // Maintenance mode (§ settings: maintenance_mode). When enabled, hold
         // non-staff visitors on a branded page while staff keep working.
         $this->enforce_maintenance();
+
+        $this->capture_referral();
+    }
+
+    /**
+     * Remember a ?ref= code arriving on any page.
+     *
+     * Campaign links point wherever the advert wants — the homepage, a service
+     * page, a blog post — not just /register. Capturing this only on the
+     * registration form meant an advert driving traffic to the homepage lost
+     * its attribution entirely, so the campaign looked like it converted
+     * nobody.
+     *
+     * Deliberately cheap and silent: one session read for the overwhelming
+     * majority of requests that carry no ?ref=, and any failure is swallowed.
+     * Referral bookkeeping must never be able to take a page down.
+     */
+    protected function capture_referral() {
+        if (!isset($this->input) || $this->input->is_cli_request()) return;
+        if (strtoupper((string)$this->input->method(true)) !== 'GET') return;
+
+        $code = $this->input->get('ref', true);
+        if (!$code) return;
+
+        // An authenticated visitor cannot be referred — they already have an
+        // account, and attribution happens once at registration.
+        try {
+            if ($this->auth && $this->auth->check()) return;
+        } catch (Throwable $e) { /* treat as anonymous */ }
+
+        if (!$this->db_ready) return;
+
+        try {
+            $this->load->library('ReferralService');
+            $this->referralservice->remember_visit($code, $this->uri->uri_string());
+        } catch (Throwable $e) {
+            log_message('error', 'referral capture failed: '.$e->getMessage());
+        }
     }
 
     /**

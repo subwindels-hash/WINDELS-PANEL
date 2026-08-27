@@ -240,15 +240,11 @@ class Auth extends MY_Controller {
             return redirect('login');
         }
 
-        // Capture ?ref= into the session before anything else. Holding it
-        // server-side is what makes the referral survive a refresh, a failed
-        // validation round-trip, or the visitor wandering off to read the
-        // terms and coming back — a hidden form field does not.
+        // ?ref= is captured for every page by MY_Controller::capture_referral(),
+        // so by the time we get here the code is already held in the session
+        // whether the visitor landed on /register or on the homepage.
         $this->load->library('ReferralService');
         $incoming = $this->input->get('ref', true);
-        if ($incoming) {
-            $this->referralservice->remember_visit($incoming, 'register');
-        }
 
         if ($this->input->method(true) === 'POST') {
             return $this->register_post();

@@ -230,6 +230,20 @@ check('it points at the right referrer',
 check('it starts pending, not paid', signup && signup.status === 'PENDING', `status=${signup?.status}`);
 
 // ---------------------------------------------------------------------------
+console.log('\n── Referral · capture from any landing page');
+for (const landing of ['/', '/services', '/faq']) {
+  const c = new Client(BASE);
+  await c.get(`${landing}?ref=${CODE}`);
+  // Navigate on with no ?ref= at all, then reach the form.
+  await c.get('/pricing');
+  const form = await c.get('/register');
+  check(
+    `a link to ${landing} still carries the referral to /register`,
+    form.text.includes(CODE),
+    'attribution was lost — an advert pointing anywhere but /register would credit nobody'
+  );
+}
+
 console.log('\n── Referral · fraud prevention');
 const selfClient = new Client(BASE);
 const selfUser = { username: `self${stamp}`, email: `self${stamp}@example.test`, password: 'SelfRef!Pass99' };
