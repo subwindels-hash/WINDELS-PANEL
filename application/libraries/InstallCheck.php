@@ -495,6 +495,31 @@ class InstallCheck {
         }
     }
 
+    /** Confirm roles, permissions and at least one SUPER_ADMIN after import. */
+    public function check_seed_data($link) {
+        $q = function ($sql) use ($link) {
+            $r = @mysqli_query($link, $sql);
+            if (!$r) return 0;
+            $row = mysqli_fetch_row($r);
+            return (int)($row[0] ?? 0);
+        };
+        $roles = $q("SELECT COUNT(*) FROM roles");
+        if ($roles >= 4) $this->add('pass', 'schema', 'roles table is seeded ('.$roles.' roles)');
+        else $this->add('fail', 'schema', 'roles are missing or incomplete', (string)$roles,
+            'Re-import database/marvysocials.sql, then create the first admin at /setup if needed.');
+
+        $perms = $q("SELECT COUNT(*) FROM permissions");
+        if ($perms > 0) $this->add('pass', 'schema', 'permissions catalogue is present ('.$perms.' keys)');
+        else $this->add('fail', 'schema', 'permissions table is empty', '',
+            'Re-import database/marvysocials.sql.');
+
+        $admins = $q("SELECT COUNT(*) FROM users WHERE role='SUPER_ADMIN' AND status='ACTIVE'");
+        if ($admins > 0) $this->add('pass', 'schema', 'active SUPER_ADMIN account exists');
+        else $this->add('warn', 'schema', 'no SUPER_ADMIN user found',
+            'open /setup to create the first administrator',
+            'Import database/marvysocials.sql or complete first-admin setup at /setup.');
+    }
+
     /** Close the mysqli link opened by check_database(). */
     public function close() {
         if ($this->db_link) { @mysqli_close($this->db_link); $this->db_link = null; }

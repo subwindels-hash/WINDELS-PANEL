@@ -21,10 +21,11 @@ $nav_groups = $is_admin ? array(
         array('admin/giftcards',    'Gift cards', 'giftcards.view',  'gift-card'),
         array('admin/marketplace',  'Marketplace','marketplace.view','shopping-bag'),
     )),
-    array('Customers', array(
-        array('admin/customers',    'Customers',   'users.view',      'users'),
-        array('admin/affiliates',   'Affiliates', 'affiliates.view', 'gift'),
+    array('User management', array(
+        array('admin/customers',    'All users',   'users.view',      'users'),
         array('admin/staff',        'Staff',      'staff.manage',    'shield'),
+        array('admin/staff/permissions','Roles & permissions','staff.manage','shield'),
+        array('admin/affiliates',   'Affiliates', 'affiliates.view', 'gift'),
     )),
     array('Finance', array(
         array('admin/payments',     'Payments',   'payments.view',   'credit-card'),

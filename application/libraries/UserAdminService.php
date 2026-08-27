@@ -217,6 +217,31 @@ class UserAdminService {
         );
     }
 
+    /**
+     * Revoke every unrevoked API key for this user.
+     */
+    public function revoke_api_keys($actor, $user) {
+        $now = gmdate('Y-m-d H:i:s');
+        $this->ci->db->where('user_id', $user->id)->where('revoked_at IS NULL', null, false)
+            ->update('api_keys', array('revoked_at' => $now));
+        return array('ok' => true, 'error' => null, 'code' => null,
+            'before' => null, 'after' => array('revoked_at' => $now, 'actor' => (int)$actor->id));
+    }
+
+    /**
+     * Force logout: revoke refresh tokens so other devices must sign in again.
+     * PHP file sessions cannot be enumerated reliably on shared hosting.
+     */
+    public function force_logout($actor, $user) {
+        $now = gmdate('Y-m-d H:i:s');
+        if ($this->ci->db->table_exists('refresh_tokens')) {
+            $this->ci->db->where('user_id', $user->id)->where('revoked_at IS NULL', null, false)
+                ->update('refresh_tokens', array('revoked_at' => $now));
+        }
+        return array('ok' => true, 'error' => null, 'code' => null,
+            'before' => null, 'after' => array('forced_at' => $now, 'actor' => (int)$actor->id));
+    }
+
     /* ------------------------------ helpers ----------------------------- */
 
     /**

@@ -69,7 +69,7 @@ class Setup extends CI_Controller {
         $token = $this->gate();
 
         if ($this->input->method(TRUE) !== 'POST') {
-            redirect('setup?token='.rawurlencode($token));
+            redirect($token === '' ? 'setup' : 'setup?token='.rawurlencode($token));
             return;
         }
 
@@ -154,8 +154,7 @@ class Setup extends CI_Controller {
 
         $this->render($token, array(
             'checks'  => $this->checks(),
-            'success' => 'Administrator saved. Sign in at '.site_url('login').' with “'.html_escape($username).'”, '
-                       .'then remove the VP_SETUP_TOKEN line from .env to close this page.',
+            'success' => 'Administrator saved. Sign in at '.site_url('admin/login').' as “'.html_escape($username).'”.',
         ));
     }
 
@@ -164,13 +163,14 @@ class Setup extends CI_Controller {
     /* ------------------------------------------------------------------ */
 
     /**
-     * Return the presented token, or 404 the request.
-     *
-     * Deliberately indistinguishable from a route that does not exist: with no
-     * VP_SETUP_TOKEN in .env there is nothing here to find, and with the wrong
-     * token there is nothing to brute force against a visible target.
+     * First-admin bootstrap is public only while no SUPER_ADMIN exists.
+     * After that the page is token-gated (or 404).
      */
     private function gate() {
+        if ($this->needs_first_admin()) {
+            return '';
+        }
+
         $expected = (string)Env::get('SETUP_TOKEN', '');
         $presented = (string)$this->input->get_post('token');
 
@@ -186,6 +186,22 @@ class Setup extends CI_Controller {
             show_404();
         }
         return $expected;
+    }
+
+    /** True when the database is reachable but has no active SUPER_ADMIN. */
+    private function needs_first_admin() {
+        if (!$this->database_ready()) {
+            return true;
+        }
+        try {
+            if (!$this->db->table_exists('users')) {
+                return true;
+            }
+            $n = (int)$this->db->where('role', 'SUPER_ADMIN')->where('status', 'ACTIVE')->count_all_results('users');
+            return $n === 0;
+        } catch (Exception $e) {
+            return true;
+        }
     }
 
     /* ------------------------------------------------------------------ */
@@ -366,6 +382,9 @@ class Setup extends CI_Controller {
 
     private function render($token, array $data) {
         $data['token'] = $token;
+        if (!isset($data['bootstrap_open'])) {
+            $data['bootstrap_open'] = $this->needs_first_admin();
+        }
         $this->output->set_header('X-Robots-Tag: noindex, nofollow');
         $this->load->view('setup/index', $data);
     }

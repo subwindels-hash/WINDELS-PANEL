@@ -5,9 +5,8 @@ $route['default_controller'] = 'home';
 $route['404_override'] = 'home/not_found';
 $route['translate_uri_dashes'] = FALSE;
 
-// First-run setup / deployment self-check. 404 unless VP_SETUP_TOKEN is set in
-// .env and the request presents it, so these two lines add no attack surface
-// to a deployment that never uses them.
+// First-run setup. Open without a token only while no SUPER_ADMIN exists;
+// afterwards VP_SETUP_TOKEN is required or the route 404s.
 $route['setup'] = 'setup/index';
 $route['setup/admin'] = 'setup/admin';
 
@@ -263,6 +262,8 @@ $route['admin/customers/(:any)/adjust'] = 'admin/users/adjust/$1';
 $route['admin/customers/(:any)/pin-reset'] = 'admin/users/pin_reset/$1';
 $route['admin/customers/(:any)/pin-unlock'] = 'admin/users/pin_unlock/$1';
 $route['admin/customers/(:any)/password-reset'] = 'admin/users/password_reset/$1';
+$route['admin/customers/(:any)/force-logout'] = 'admin/users/force_logout/$1';
+$route['admin/customers/(:any)/revoke-keys'] = 'admin/users/revoke_keys/$1';
 $route['admin/customers/(:any)'] = 'admin/users/detail/$1';
 $route['admin/payments'] = 'admin/payments/index';
 $route['admin/payments/webhooks'] = 'admin/payments/webhooks';

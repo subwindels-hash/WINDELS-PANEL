@@ -3,6 +3,16 @@ $perms = $permissions ?? array();
 $has   = function ($k) use ($perms) { return in_array('*', $perms, true) || in_array($k, $perms, true); };
 $healthy = (int)($health['HEALTHY'] ?? 0);
 ?>
+<?php $ov = $overview ?? array(); ?>
+<div class="ws-stat-grid">
+  <div class="card"><div class="muted text-sm">Total users</div><div class="text-2xl font-bold"><?=number_format((int)($ov['users_total'] ?? 0))?></div>
+    <div class="hint"><?=number_format((int)($ov['users_today'] ?? 0))?> new today · <?=number_format((int)($ov['users_suspended'] ?? 0))?> suspended</div></div>
+  <div class="card"><div class="muted text-sm">Active users</div><div class="text-2xl font-bold"><?=number_format((int)($ov['users_active'] ?? 0))?></div></div>
+  <div class="card"><div class="muted text-sm">Orders today</div><div class="text-2xl font-bold"><?=number_format((int)($ov['orders_today'] ?? 0))?></div>
+    <div class="hint"><?=number_format((int)($ov['orders_pending'] ?? 0))?> pending · <?=number_format((int)($ov['orders_failed'] ?? 0))?> failed</div></div>
+  <div class="card"><div class="muted text-sm">Wallet float</div><div class="text-2xl font-bold"><?=marvy_money($ov['wallet_float'] ?? '0')?></div>
+    <div class="hint"><?=number_format((int)($ov['payouts_pending'] ?? 0))?> pending payouts</div></div>
+</div>
 <div class="ws-stat-grid">
   <div class="card">
     <div class="muted text-sm">Net revenue today</div>
@@ -29,6 +39,22 @@ $healthy = (int)($health['HEALTHY'] ?? 0);
     <div class="hint">healthy and active</div>
   </div>
 </div>
+
+<?php if (!empty($series)): ?>
+<div class="card">
+  <h3 class="text-sm font-semibold mb-2">Revenue · 14 days</h3>
+  <div class="row" style="align-items:flex-end;gap:4px;height:72px">
+    <?php
+      $max = '0.00000001';
+      foreach ($series as $d) { if (bccomp($d['net'], $max, 8) > 0) $max = $d['net']; }
+      foreach ($series as $day => $d):
+        $h = max(4, (int)round((float)$d['net'] / (float)$max * 64));
+    ?>
+      <div title="<?=htmlspecialchars($day.' · '.marvy_money($d['net']))?>" style="flex:1;height:<?=$h?>px;background:var(--brand-500);border-radius:3px 3px 0 0"></div>
+    <?php endforeach; ?>
+  </div>
+</div>
+<?php endif; ?>
 
 <div class="card mb-4">
   <h3 class="text-sm font-semibold mb-2">Needs attention</h3>

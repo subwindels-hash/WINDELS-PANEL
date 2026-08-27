@@ -327,6 +327,37 @@ class AdminStats {
         );
     }
 
+    /** Headline platform counts for the admin command center. */
+    public function platform_overview() {
+        $users = $this->ci->db
+            ->select('COUNT(*) AS total', false)
+            ->select("COALESCE(SUM(CASE WHEN status='ACTIVE' THEN 1 ELSE 0 END),0) AS active", false)
+            ->select("COALESCE(SUM(CASE WHEN status='SUSPENDED' THEN 1 ELSE 0 END),0) AS suspended", false)
+            ->select("COALESCE(SUM(CASE WHEN created_at >= '".gmdate('Y-m-d 00:00:00')."' THEN 1 ELSE 0 END),0) AS new_today", false)
+            ->get('users')->row();
+        $orders = $this->order_status_counts();
+        $order_today = (int)$this->ci->db->where('created_at >=', gmdate('Y-m-d 00:00:00'))->count_all_results('orders');
+        $wallet = $this->ci->db->select('COALESCE(SUM(balance),0) AS total', false)->get('wallets')->row();
+        $payouts = 0;
+        if ($this->ci->db->table_exists('payouts')) {
+            $payouts = (int)$this->ci->db->where_in('status', array('PENDING','APPROVED'))->count_all_results('payouts');
+        }
+        $failed_orders = (int)($orders['FAILED'] ?? 0) + (int)($orders['ERROR'] ?? 0);
+        return array(
+            'users_total'     => (int)($users->total ?? 0),
+            'users_active'    => (int)($users->active ?? 0),
+            'users_suspended' => (int)($users->suspended ?? 0),
+            'users_today'     => (int)($users->new_today ?? 0),
+            'orders_total'    => array_sum($orders),
+            'orders_today'    => $order_today,
+            'orders_pending'  => (int)($orders['PENDING'] ?? 0),
+            'orders_completed'=> (int)($orders['COMPLETED'] ?? 0),
+            'orders_failed'   => $failed_orders,
+            'wallet_float'    => $this->money($wallet->total ?? 0),
+            'payouts_pending' => $payouts,
+        );
+    }
+
     /** Customer totals. */
     public function customers() {
         $row = $this->ci->db

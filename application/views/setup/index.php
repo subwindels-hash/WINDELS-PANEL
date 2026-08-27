@@ -66,11 +66,18 @@ foreach ($checks as $c) { if ($c['status'] === 'fail') $failed++; }
     <div class="flash success"><?= $success ?></div>
   <?php endif; ?>
 
+  <?php if (!empty($bootstrap_open)): ?>
+  <div class="flash notice">
+    No active SUPER_ADMIN was found. Create the first administrator below. After this
+    succeeds, this page closes unless <code>VP_SETUP_TOKEN</code> is set for recovery.
+  </div>
+  <?php else: ?>
   <div class="flash notice">
     This page is open because <code>VP_SETUP_TOKEN</code> is set in <code>.env</code>.
     Delete that line (cPanel → File Manager → Edit) when you are finished; the page then
     returns 404 to everyone, including you.
   </div>
+  <?php endif; ?>
 
   <h2>Deployment checks<?= $failed ? ' — '.$failed.' need attention' : '' ?></h2>
   <div class="card">

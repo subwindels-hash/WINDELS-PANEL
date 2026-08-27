@@ -33,6 +33,10 @@ class Auth extends MY_Controller {
         if ($this->auth->check()) {
             redirect($this->default_landing());
         }
+        if ($this->no_super_admin()) {
+            $this->session->set_flashdata('warning', 'No administrator exists yet. Complete first-time setup.');
+            return redirect('setup');
+        }
 
         if ($this->input->method(true) === 'POST') {
             return $this->login_post();
@@ -58,6 +62,10 @@ class Auth extends MY_Controller {
      * invalid-credentials message so this page cannot be used to probe roles.
      */
     public function admin_login() {
+        if ($this->no_super_admin()) {
+            $this->session->set_flashdata('warning', 'No administrator exists yet. Complete first-time setup.');
+            return redirect('setup');
+        }
         if ($this->auth->check()) {
             if ($this->auth->has_role(array('SUPER_ADMIN','ADMIN','STAFF'))) {
                 redirect('admin');
@@ -579,6 +587,15 @@ class Auth extends MY_Controller {
     /* -------------------------------------------------------------- */
     /* Helpers                                                        */
     /* -------------------------------------------------------------- */
+
+    private function no_super_admin() {
+        try {
+            if (!$this->db_ready) return false;
+            return (int)$this->db->where('role', 'SUPER_ADMIN')->where('status', 'ACTIVE')->count_all_results('users') === 0;
+        } catch (Throwable $e) {
+            return false;
+        }
+    }
 
     private function default_landing() {
         if (!$this->auth) return 'login';
