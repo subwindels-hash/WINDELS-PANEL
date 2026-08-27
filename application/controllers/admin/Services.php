@@ -104,6 +104,7 @@ class Services extends Admin_Controller {
         $this->audit('service.archived', $res['service'], $res['before'], get_object_vars($res['service']));
         $this->flash_result($res, 'Service archived. It remains attached to historical orders.');
         redirect('admin/services/'.$public_id);
+    }
 
 
     /** POST /admin/services/:public-id/delete */
@@ -116,8 +117,6 @@ class Services extends Admin_Controller {
         $this->audit("service.deleted", $res["service"], $res["before"], null);
         $this->flash_result($res, "Service deleted.");
         redirect("admin/services");
-    }
-
     }
 
     /** POST /admin/services/:public-id/pricing/group/:group-id */
