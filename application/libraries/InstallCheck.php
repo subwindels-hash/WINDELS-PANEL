@@ -78,6 +78,7 @@ class InstallCheck {
 
     /** Load the app's own Env bootstrap so checks resolve values as the app does. */
     public function bootstrap_app_env() {
+        $this->check_application_files();
         $envlib = $this->root . '/application/core/Env.php';
         if (!is_file($envlib)) {
             return $this->add('fail', 'package', 'application/core/Env.php is missing',
@@ -91,6 +92,39 @@ class InstallCheck {
             return $this->add('pass', 'package', 'application bootstrap (application/core/Env.php) loads');
         } catch (Exception $e) {
             return $this->add('warn', 'package', 'application bootstrap raised an error', $e->getMessage());
+        }
+    }
+
+    /**
+     * The three application trees an extract into public_html must contain.
+     * Missing any of them means the zip was not extracted at document root
+     * (an extra folder level) or the upload was cut short.
+     */
+    public function check_application_files() {
+        $required = array(
+            'index.php'    => 'file',
+            'application'  => 'dir',
+            'assets'       => 'dir',
+        );
+        foreach ($required as $rel => $kind) {
+            $path = $this->root . '/' . $rel;
+            if ($kind === 'file') {
+                if (!is_file($path)) {
+                    $this->add('fail', 'package', $rel . ' is missing',
+                        'index.php must sit directly in the web directory (usually public_html)',
+                        'Extract application-deployment.zip so index.php, application/ and assets/ are next to each other. If extract created an extra folder, move its contents up one level.');
+                } else {
+                    $this->add('pass', 'package', $rel . ' is at the document root');
+                }
+            } else {
+                if (!is_dir($path)) {
+                    $this->add('fail', 'package', $rel . '/ is missing',
+                        '',
+                        'Re-upload the ' . $rel . '/ directory from application-deployment.zip.');
+                } else {
+                    $this->add('pass', 'package', $rel . '/ directory is present');
+                }
+            }
         }
     }
 
@@ -139,21 +173,59 @@ class InstallCheck {
 
     public function check_composer() {
         $autoload = $this->root . '/vendor/autoload.php';
-        if (is_file($autoload) && is_dir($this->root . '/vendor/composer')) {
+        // Missing autoload is reported as a framework failure (it is one of
+        // the three required paths). Here we only distinguish full vs fallback.
+        if (!is_file($autoload)) {
+            return $this->add('fail', 'composer', 'vendor/autoload.php is missing',
+                'the official package ships this file (full composer install or bundled fallback)',
+                'Re-upload vendor/autoload.php from application-deployment.zip. No composer install is required on the host.');
+        }
+        if (is_dir($this->root . '/vendor/composer')) {
             return $this->add('pass', 'composer', 'vendor/autoload.php present (full composer install)');
         }
-        if (is_file($autoload)) {
-            return $this->add('pass', 'composer', 'vendor/autoload.php present (bundled fallback)',
-                'covers project classes; optional feature packages (predis, aws-sdk, guzzle) '
-                . 'stay disabled until composer install is run — the app is designed for this');
-        }
-        return $this->add('warn', 'composer', 'vendor/autoload.php is missing',
-            'the request path does not require it, but optional features stay disabled',
-            'The official deployment package ships one; re-upload vendor/, or run composer install.');
+        return $this->add('pass', 'composer', 'vendor/autoload.php present (bundled fallback)',
+            'covers project classes; optional feature packages (predis, aws-sdk, guzzle) '
+            . 'stay disabled until a package built after composer install is uploaded — the app is designed for this');
     }
 
-    /** The exact auto-detection index.php runs. Returns the resolved path (or null). */
+    /**
+     * The three paths a cPanel extract must contain as regular files.
+     * Missing any of them is the 503 "CodeIgniter framework files are missing".
+     * Returns the resolved system path (or null).
+     */
     public function check_framework() {
+        $required = array(
+            'system/core/CodeIgniter.php',
+            'vendor/autoload.php',
+            'vendor/codeigniter/framework/system/core/CodeIgniter.php',
+        );
+        $ok = true;
+        foreach ($required as $rel) {
+            $path = $this->root . '/' . $rel;
+            if (!is_file($path)) {
+                $this->add('fail', 'framework', $rel . ' is missing',
+                    'the official package ships this as a regular file, never a symlink',
+                    'Re-upload ' . $rel . ' from application-deployment.zip. No composer install or symlink is required.');
+                $ok = false;
+                continue;
+            }
+            if (is_link($path)) {
+                $this->add('fail', 'framework', $rel . ' is a symlink',
+                    'cPanel File Manager extract often drops symlinks, which produces a 503',
+                    'Re-upload from application-deployment.zip — the official package stores real files.');
+                $ok = false;
+                continue;
+            }
+            $this->add('pass', 'framework', $rel . ' present (regular file)');
+        }
+        if (is_link($this->root . '/system')) {
+            $this->add('warn', 'framework', 'system/ is a symlink',
+                'this works on the current host but cPanel File Manager extract often drops it — the result is a 503',
+                'The official package ships system/ as a real directory. Re-upload from application-deployment.zip when moving hosts.');
+        } elseif (is_dir($this->root . '/system')) {
+            $this->add('pass', 'framework', 'system/ is a real directory (not a symlink)');
+        }
+
         $candidates = array(
             $this->root . '/system',
             $this->root . '/vendor/codeigniter/framework/system',
@@ -171,9 +243,15 @@ class InstallCheck {
         $kind = is_link($resolved) ? 'symlink' : 'real directory';
         $version = '';
         $src = @file_get_contents($resolved . '/core/CodeIgniter.php');
-        if ($src && preg_match("/CI_VERSION = '([^']+)'/", $src, $m)) $version = ', CodeIgniter ' . $m[1];
-        $this->add('pass', 'framework', 'CodeIgniter system path resolved automatically',
-            str_replace($this->root . '/', '', $resolved) . ' (' . $kind . $version . ') — no composer install, no manual symlink needed');
+        if ($src && preg_match("/CI_VERSION = '([^']+)'/", $src, $m)) $version = 'CodeIgniter ' . $m[1];
+        if (!$src || strpos($src, "CI_VERSION = '3.1.") === false) {
+            $this->add('fail', 'framework', 'CodeIgniter.php is not version 3.1.x',
+                $version !== '' ? $version : 'CI_VERSION not found',
+                'Re-upload system/ from application-deployment.zip (CodeIgniter 3.1.13).');
+        } else {
+            $this->add('pass', 'framework', 'CodeIgniter system path resolved automatically',
+                str_replace($this->root . '/', '', $resolved) . ' (' . $kind . ($version !== '' ? ', ' . $version : '') . ') — no composer install, no manual symlink needed');
+        }
         return $resolved;
     }
 
@@ -232,10 +310,13 @@ class InstallCheck {
             $this->add('warn', 'env', 'environment is ' . ($ci_env ?: $this->val('APP_ENV')), '', 'Use production on a live domain.');
 
         $base = $this->val('APP_URL');
+        $base_host = $base ? preg_replace('#^(https?://[^/]+).*#', '$1', $base) : '';
         if ($base && strpos($base, 'https://') === 0)
-            $this->add('pass', 'env', 'base URL is set and uses https', preg_replace('#^(https?://[^/]+).*#', '$1', $base));
+            $this->add('pass', 'env', 'base URL is set and uses https', $base_host);
         elseif ($base)
-            $this->add('warn', 'env', 'base URL is not https', '', 'Use https://yourdomain.com on a live domain.');
+            $this->add('warn', 'env', 'base URL is not https', $base_host,
+                'Set VP_BASE_URL=https://yourdomain.com in .env (File Manager → Edit). '
+                . 'An http:// value produces mixed-content links and Secure session cookies that the browser will not send.');
         else
             $this->add('fail', 'env', 'base URL is not set', '', 'Set VP_BASE_URL=https://yourdomain.com (or APP_URL=…) in .env.');
 
@@ -352,11 +433,7 @@ class InstallCheck {
                     if (count($examples) < 6) $examples[] = "{$tname}.{$cname} (missing)";
                     continue;
                 }
-                $want = SchemaManifest::base_type($c['type']);
-                $have = SchemaManifest::base_type($cols[$cname]);
-                if ($want === 'timestamp') $want = 'datetime';                  // aliases across MySQL/MariaDB
-                if ($have === 'timestamp') $have = 'datetime';
-                if ($want !== $have) {
+                if (!SchemaManifest::types_compatible($c['type'], $cols[$cname])) {
                     $type_mismatch++;
                     if (count($examples) < 6) $examples[] = "{$tname}.{$cname}: want {$c['type']}, have {$cols[$cname]}";
                 }

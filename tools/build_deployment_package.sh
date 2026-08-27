@@ -70,6 +70,32 @@ require_regular_file() {
 echo "Building the cPanel deployment package"
 
 # ---------------------------------------------------------------------------
+# 0. Production dependencies and compiled CSS, so the zip never asks the
+#    destination host to run composer or npm. CI always has both; a laptop
+#    build does too when the tools are installed. Missing composer is not a
+#    hard fail here because the script can still fetch CodeIgniter and ship
+#    the bundled autoload — GitHub Actions runs composer install first.
+# ---------------------------------------------------------------------------
+if [[ ! -d "${ROOT}/vendor/composer" ]]; then
+  if command -v composer >/dev/null 2>&1; then
+    say "composer install --no-dev --optimize-autoloader"
+    (cd "${ROOT}" && composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader)
+  else
+    say "composer not found — will package CodeIgniter as real files + fallback autoload"
+  fi
+fi
+if command -v npm >/dev/null 2>&1 && [[ -f "${ROOT}/package.json" ]]; then
+  if [[ ! -d "${ROOT}/node_modules/tailwindcss" ]]; then
+    say "npm ci"
+    (cd "${ROOT}" && npm ci --no-fund --no-audit)
+  fi
+  say "npm run build:css"
+  (cd "${ROOT}" && npm run build:css)
+else
+  say "npm not found — shipping the committed assets/css/tailwind.css"
+fi
+
+# ---------------------------------------------------------------------------
 # 1. The database file has to exist and has to be current, because it *is* the
 #    installer now. A stale marvysocials.sql is a deployment that boots into a
 #    half-migrated database with no terminal available to fix it.
@@ -228,6 +254,34 @@ rm -rf "${STAGE}/vendor/bin" 2>/dev/null || true
 # The seeds are a development convenience (`php index.php seed demo`), and the
 # demo seeder in particular must never be a click away from a live panel.
 rm -rf "${STAGE}/application/seeds"
+
+# Composer packages (and a handful of other trees) can contain symlinks.
+# zip stores them as links; cPanel File Manager extract often drops them.
+# Replace every remaining link with a real copy so the archive is link-free.
+say "materialising any leftover symlinks in the staged tree"
+symlink_rounds=0
+while links="$(find "${STAGE}" -type l -print)"; do
+  [[ -z "${links}" ]] && break
+  symlink_rounds=$((symlink_rounds + 1))
+  if [[ "${symlink_rounds}" -gt 20 ]]; then
+    find "${STAGE}" -type l >&2
+    die "could not eliminate staged symlinks after 20 passes"
+  fi
+  while IFS= read -r link; do
+    [[ -z "${link}" ]] && continue
+    target="$(readlink -f "${link}" || true)"
+    if [[ -z "${target}" || ! -e "${target}" ]]; then
+      die "broken symlink in staged tree: ${link} -> $(readlink "${link}" 2>/dev/null || echo '?')"
+    fi
+    rm -f "${link}"
+    if [[ -d "${target}" ]]; then
+      mkdir -p "${link}"
+      cp -a "${target}/." "${link}/"
+    else
+      cp -a "${target}" "${link}"
+    fi
+  done <<< "${links}"
+done
 
 # ---------------------------------------------------------------------------
 # 5. A README the operator sees first

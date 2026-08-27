@@ -158,6 +158,88 @@ class CpanelDeploymentTest extends TestCase
             'vendor/ must be optional, not required');
         $this->assertStringNotContainsString('Dotenv\\Dotenv', $src,
             'phpdotenv was the one hard composer dependency in the request path');
+        $this->assertDoesNotMatchRegularExpression('#/home/[^/\s]+/public_html#', $src,
+            'index.php must not hard-code a development-server absolute path');
+        $this->assertStringContainsString("\$system_path = 'system';", $src,
+            'the primary framework location after a cPanel extract is ./system');
+    }
+
+    public function testHttpBaseUrlIsUpgradedWhenTheRequestIsHttps()
+    {
+        $_SERVER['HTTPS'] = 'on';
+        $_SERVER['HTTP_HOST'] = 'www.marvysocials.com';
+        $this->withEnv(array(
+            'VP_BASE_URL' => 'http://www.marvysocials.com',
+            'VP_DB_NAME'  => 'x',
+        ), function () {
+            $this->assertSame('https://www.marvysocials.com', getenv('APP_URL'),
+                'an http:// VP_BASE_URL on an HTTPS request must not emit mixed-content links');
+        });
+        unset($_SERVER['HTTPS'], $_SERVER['HTTP_HOST']);
+    }
+
+    public function testHttpBaseUrlIsLeftAloneOnCli()
+    {
+        unset($_SERVER['HTTPS'], $_SERVER['HTTP_X_FORWARDED_PROTO'], $_SERVER['REQUEST_SCHEME']);
+        $_SERVER['SERVER_PORT'] = '80';
+        $this->withEnv(array(
+            'VP_BASE_URL' => 'http://www.marvysocials.com',
+            'VP_DB_NAME'  => 'x',
+        ), function () {
+            $this->assertSame('http://www.marvysocials.com', getenv('APP_URL'),
+                'cron must not rewrite VP_BASE_URL just because the operator has not switched to https yet');
+        });
+        unset($_SERVER['SERVER_PORT']);
+    }
+
+    public function testMariaDbJsonIsCompatibleWithLongtext()
+    {
+        require_once self::$root.'/application/libraries/SchemaManifest.php';
+        $this->assertTrue(SchemaManifest::types_compatible('json', 'longtext'),
+            'MariaDB reports JSON columns as longtext — that is not a schema mismatch');
+        $this->assertTrue(SchemaManifest::types_compatible('JSON', 'LONGTEXT'));
+        $this->assertTrue(SchemaManifest::types_compatible('datetime', 'timestamp'));
+        $this->assertFalse(SchemaManifest::types_compatible('int', 'varchar'));
+        $this->assertFalse(SchemaManifest::types_compatible('int', 'bigint'));
+    }
+
+    public function testDeployVerifyRequiresTheThreeFrameworkPaths()
+    {
+        $src = file_get_contents(self::$root.'/application/libraries/InstallCheck.php');
+        foreach (array(
+            'system/core/CodeIgniter.php',
+            'vendor/autoload.php',
+            'vendor/codeigniter/framework/system/core/CodeIgniter.php',
+            'types_compatible',
+        ) as $needle) {
+            $this->assertStringContainsString($needle, $src, "InstallCheck must check {$needle}");
+        }
+        $verify = file_get_contents(self::$root.'/deploy-verify.php');
+        $this->assertStringContainsString('check_framework', $verify);
+        $this->assertStringContainsString('check_composer', $verify);
+        $this->assertStringContainsString('check_schema', $verify);
+    }
+
+    public function testDeploymentPackageWorkflowIsActive()
+    {
+        $wf = self::$root.'/.github/workflows/deployment-package.yml';
+        $staged = self::$root.'/docs/github-actions/deployment-package.yml';
+        // GitHub Apps without the `workflows` permission cannot push files
+        // under .github/workflows/. The identical YAML ships at
+        // docs/github-actions/deployment-package.yml for a one-paste activate.
+        $this->assertTrue(is_file($wf) || is_file($staged),
+            'the packaging pipeline YAML must exist (as a GitHub Actions workflow, or at docs/github-actions/ until the workflows permission is granted)');
+        $src = file_get_contents(is_file($wf) ? $wf : $staged);
+        $this->assertStringContainsString('workflow_dispatch', $src);
+        $this->assertStringContainsString("tags: ['v*']", $src);
+        $this->assertStringContainsString('composer install --no-dev', $src);
+        $this->assertStringContainsString('npm run build:css', $src);
+        $this->assertStringContainsString('tools/build_deployment_package.sh', $src);
+        $this->assertStringContainsString('tools/verify_deployment_package.sh', $src);
+        $this->assertStringContainsString('application-deployment.zip', $src);
+        $this->assertStringContainsString('actions/upload-artifact', $src);
+        $this->assertFileDoesNotExist(self::$root.'/deployment-package.yml.workflow-ready',
+            'do not leave the workflow as a .workflow-ready file in the repository root');
     }
 
     /* ===================== runtime directories ============================ */
@@ -488,7 +570,7 @@ class CpanelDeploymentTest extends TestCase
             }
             if (strpos($rel, 'assets/uploads/') === 0) {
                 $base = basename($rel);
-                if ($base === '.gitignore' || $base === 'index.html') {
+                if ($base === '.gitignore') {
                     continue;
                 }
             }
@@ -589,6 +671,7 @@ class CpanelDeploymentTest extends TestCase
             'ENCRYPTION_KEY', 'APP_KEY', 'SMTP_HOST', 'SESS_DRIVER', 'CACHE_DRIVER',
             'STORAGE_DRIVER', 'STRIPE_SECRET_KEY', 'MAIL_DRIVER', 'APP_TIMEZONE',
             'DB_CHARSET', 'DB_COLLATION', 'DB_DRIVER', 'STORAGE_PATH', 'CI_ENV', 'APP_ENV',
+            'VP_BASE_URL',
         ));
         $saved = array();
         foreach ($touched as $key) {

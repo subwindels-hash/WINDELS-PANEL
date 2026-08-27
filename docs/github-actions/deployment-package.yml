@@ -1,0 +1,87 @@
+# MarvySocials — deployment package build
+#
+# Produces `application-deployment.zip`: the terminal-free cPanel package
+# (index.php, .htaccess, .env.example, application/, system/, assets/,
+# storage/, cron/, database/marvysocials.sql, vendor/autoload.php and the
+# complete CodeIgniter framework as REAL FILES).
+#
+# An operator's whole deployment is: download, upload through File Manager,
+# extract, create the database, import the SQL, edit .env.
+#
+# Runs on demand (`workflow_dispatch`) and on every official release tag.
+
+name: Deployment package
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Build application-deployment.zip
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, curl, json, bcmath, mysqli, gd, zip, intl, fileinfo
+          coverage: none
+
+      - name: Install production dependencies
+        # --no-dev because the package must contain production dependencies
+        # only. The post-install hook materialises system/ from the framework
+        # package; the zip builder then copies it as REAL files (never a
+        # symlink) so cPanel File Manager extract cannot drop it.
+        run: composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+
+      - name: Build production CSS/assets
+        # Done here so the package ships compiled CSS and the destination host
+        # never needs Node.
+        run: |
+          npm ci
+          npm run build:css
+
+      - name: Validate database SQL
+        run: |
+          php tools/build_production_sql.php --check
+          python3 -m pip install --quiet sqlglot
+          python3 tools/validate_production_sql.py
+
+      - name: Build application-deployment.zip
+        # Copies CodeIgniter as REAL files into system/ and
+        # vendor/codeigniter/framework/system, then extract-validates the zip.
+        # A missing system/core/CodeIgniter.php, vendor/autoload.php or
+        # vendor/codeigniter/framework/system/core/CodeIgniter.php fails the job.
+        run: bash tools/build_deployment_package.sh
+
+      - name: Extract ZIP into a clean directory and verify
+        # Re-extracts the zip into an empty directory, asserts the three
+        # required framework paths exist as regular files, asserts no
+        # symlinks, writes a .env, and (when MySQL is available) runs
+        # deploy-verify.php. This is the same check an operator gets after
+        # File Manager → Extract.
+        run: bash tools/verify_deployment_package.sh
+
+      - name: Upload application-deployment.zip as GitHub artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: application-deployment
+          path: application-deployment.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach application-deployment.zip to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: application-deployment.zip

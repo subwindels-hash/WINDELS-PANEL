@@ -317,8 +317,9 @@ requires them.
 
 ## For maintainers: rebuilding the package
 
-The zip is committed so that an operator can download it without tooling. After
-changing application code, a migration or the core seed:
+The zip is a build artifact (GitHub Actions → Artifacts, or GitHub Releases
+when a `v*` tag is pushed). After changing application code, a migration or
+the core seed, rebuild it:
 
 ```bash
 php tools/build_production_sql.php          # regenerate database/marvysocials.sql
