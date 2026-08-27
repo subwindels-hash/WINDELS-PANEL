@@ -68,6 +68,12 @@ class AuthService {
 
         $require_verify = $this->setting('email_verification_required', false);
 
+        // New customers land in the operator's default price group, exactly
+        // like the setup-wizard's first admin account. Without this every
+        // registration threw (undefined $price_group_id) before this fix.
+        $default_group = $this->ci->db->where('is_default', 1)->limit(1)->get('price_groups')->row();
+        $price_group_id = $default_group ? $default_group->id : null;
+
         $this->ci->db->trans_start();
         $this->ci->db->insert('users', array(
             'public_id'         => marvy_public_id(),

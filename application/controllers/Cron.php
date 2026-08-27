@@ -18,7 +18,7 @@ class Cron extends Cron_Controller {
         'giftcard_codes', 'marketplace_release',
         'subscriptions', 'provider_health',
         'refill_status', 'payment_reconciliation', 'email_queue',
-        'analytics', 'provider_sync', 'affiliate_payouts',
+        'analytics', 'provider_sync', 'affiliate_payouts', 'pin_rotation',
     );
 
     public function __construct() {
@@ -143,6 +143,16 @@ class Cron extends Cron_Controller {
     public function refill_status() {
         $this->execute('refill_status', function () {
             return $this->cronworkers->refill_status();
+        });
+    }
+
+    /**
+     * Automatically rotate any customer security PIN older than the
+     * configured window (24 hours by default). See CronWorkers::pin_rotation().
+     */
+    public function pin_rotation() {
+        $this->execute('pin_rotation', function () {
+            return $this->cronworkers->pin_rotation();
         });
     }
 

@@ -32,14 +32,28 @@ class Provider_model extends MY_Model {
             ->where_in('api_type', array('STANDARD_SMM','MOCK'));
     }
 
-    public function paginated($limit, $offset, $status = null){
+    public function paginated($limit, $offset, $status = null, $search = null){
         if ($status) $this->db->where('status', $status);
+        $this->apply_search($search);
         return $this->db->order_by('name','ASC')->limit($limit,$offset)->get($this->table)->result();
     }
 
-    public function count_all($status = null){
+    public function count_all($status = null, $search = null){
         if ($status) $this->db->where('status', $status);
+        $this->apply_search($search);
         return (int)$this->db->count_all_results($this->table);
+    }
+
+    /** Search by name, API type or the public-facing provider ID. */
+    private function apply_search($search){
+        $search = trim((string)$search);
+        if ($search === '') return;
+        $this->db->group_start()
+            ->like('name', $search)
+            ->or_like('api_type', $search)
+            ->or_like('public_id', $search)
+            ->or_like('api_url', $search)
+            ->group_end();
     }
 
     public function due_for_sync(){

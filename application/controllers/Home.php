@@ -65,7 +65,8 @@ class Home extends Public_Controller {
                 $data['showcase'] = $this->Service_model->homepage_showcase(6);
                 $data['categories'] = $this->Service_model->categories_with_counts(8);
                 $data['catalogue_size'] = $this->Service_model->count_active();
-                $data['posts'] = $this->Blog_post_model->published(null, 3, 0);
+                $data['posts'] = marvy_feature_enabled('blog', true)
+                    ? $this->Blog_post_model->published(null, 3, 0) : array();
                 $data['faqs'] = $this->Faq_model->active();
                 $orders = 0; $customers = 0;
                 try {
@@ -395,12 +396,13 @@ class Home extends Public_Controller {
     }
     public function sitemap(){
         $urls = array(
-            '', 'services', 'pricing', 'about', 'faq', 'blog', 'contact',
+            '', 'services', 'pricing', 'about', 'faq', 'contact',
             'terms', 'privacy', 'refund-policy', 'acceptable-use',
             'api/docs',
         );
-        if ($this->db_ready) {
+        if ($this->db_ready && marvy_feature_enabled('blog', true)) {
             try {
+                $urls[] = 'blog';
                 $this->load->model('Blog_post_model');
                 foreach ($this->Blog_post_model->published(null, 200, 0) as $post) {
                     $urls[] = 'blog/'.$post->slug;

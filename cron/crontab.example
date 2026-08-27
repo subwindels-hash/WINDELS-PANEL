@@ -35,5 +35,12 @@
 # Close bank-transfer checkouts whose 30-minute account window has passed.
 */5 * * * * cd /var/www/html && php index.php cron fundsvera_expire >> storage/logs/cron.log 2>&1
 
+# Automatically rotates every customer's transaction PIN once it is older than
+# pin_rotation_hours (24 hours by default, Admin -> Settings). A new PIN is
+# generated, hashed, and delivered to the customer (in-app + email); nothing
+# is ever logged in plaintext. Runs every 15 minutes so no PIN is overdue by
+# more than that.
+*/15 * * * * cd /var/www/html && php index.php cron pin_rotation >> storage/logs/cron.log 2>&1
+
 # Each job takes an exclusive lock, so a slow run is skipped rather than
 # overlapping the next tick. Run history: php index.php cron status

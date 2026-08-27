@@ -127,6 +127,9 @@ class MarketplaceService {
 
     /** Charge a buyer and open escrow. The transaction stays PROCESSING. */
     public function purchase($user, array $input) {
+        if (!marvy_feature_enabled('marketplace', true)) {
+            return $this->err('The marketplace is currently unavailable.', 'FEATURE_DISABLED');
+        }
         $buyer_id = $this->user_id($user);
         $listing = $this->ci->Marketplace_listing_model->find_public((string)($input['listing'] ?? ''), true);
         if (!$listing) return $this->err('That listing is not available', 'NO_LISTING');
@@ -142,7 +145,14 @@ class MarketplaceService {
         // live promotion undercuts the list price. Selling is platform-side,
         // so the gross IS the revenue: no supplier cost, fee or payout split.
         $unit_price = $this->effective_price($listing);
-        $gross = $this->money(bcmul($unit_price, (string)$quantity, 8));
+        $line_amount = bcmul($unit_price, (string)$quantity, 8);
+        // Optional per-line discount (e.g. a coupon applied at cart checkout,
+        // ShopCheckoutService). Never negative and never larger than the line
+        // itself — a caller cannot make a line's charge go below zero.
+        $discount = isset($input['discount']) ? (string)$input['discount'] : '0';
+        if (bccomp($discount, '0', 8) < 0) $discount = '0';
+        if (bccomp($discount, $line_amount, 8) > 0) $discount = $line_amount;
+        $gross = $this->money(bcsub($line_amount, $discount, 8));
         $order_model = $this->ci->Marketplace_order_model;
         $listing_model = $this->ci->Marketplace_listing_model;
         $order_id = null;
@@ -192,6 +202,30 @@ class MarketplaceService {
                     return array('ok' => false, 'error' => 'Could not open marketplace escrow');
                 }
                 $order_model->record_event($order->id, $order->buyer_id, 'PURCHASED', 'PENDING', 'PAID');
+
+                // Automatic fulfilment for DIGITAL listings that carry an
+                // uploaded file: secure download access is granted the
+                // instant payment settles (ShopDeliveryService), with no
+                // human step required. This never touches money — the wallet
+                // has already been charged above — so a failure here cannot
+                // fail the purchase itself; it is recorded and left for the
+                // order's normal support/retry path like any other
+                // post-payment delivery step in this codebase. (Gift cards
+                // bought from the vendor catalogue are a separate, already
+                // fully-built purchase flow — see dashboard/Giftcards /
+                // GiftcardService — and are deliberately not routed through
+                // here: that flow has its own TransactionEngine charge, and
+                // calling it again from inside this one would charge the
+                // wallet twice for one purchase.)
+                if (strtoupper((string)$listing->product_type) === 'DIGITAL') {
+                    try {
+                        $this->ci->load->library('ShopDeliveryService');
+                        $this->ci->shopdeliveryservice->provision($order, $listing);
+                    } catch (Throwable $e) {
+                        log_message('error', 'marketplace digital fulfilment failed for order '.$order->public_id.': '.$e->getMessage());
+                    }
+                }
+
                 return array('ok' => true, 'status' => 'PROCESSING');
             },
         ));
@@ -451,6 +485,51 @@ class MarketplaceService {
         $this->audit($actor_id, 'marketplace.listing.moderate', 'marketplace_listing', $public_id,
             array('status' => $listing->status), array('status' => $status));
         return array('ok' => true, 'listing' => $this->ci->Marketplace_listing_model->find_id($listing->id));
+    }
+
+    /** Toggle a listing on/off the storefront's featured shelf. */
+    public function set_featured($public_id, $featured, $actor_id) {
+        $listing = $this->ci->Marketplace_listing_model->find_public($public_id, false);
+        if (!$listing) return $this->err('Listing not found', 'NOT_FOUND');
+        $value = $featured ? 1 : 0;
+        $this->ci->Marketplace_listing_model->update_fields($listing->id, array('is_featured' => $value));
+        $this->audit($actor_id, 'marketplace.listing.feature_toggled', 'marketplace_listing', $public_id,
+            array('is_featured' => (int)$listing->is_featured), array('is_featured' => $value));
+        return array('ok' => true, 'listing' => $this->ci->Marketplace_listing_model->find_id($listing->id));
+    }
+
+    /**
+     * Apply one action to many listings at once — the admin table's bulk
+     * checkbox row. Each listing is processed independently through the
+     * same single-row methods above (so every existing rule, permission and
+     * audit entry still applies per listing) and the run never partially
+     * fails silently: every skip is reported back with a reason.
+     *
+     * @param string[] $public_ids
+     * @param string $action one of publish|unpublish|archive|feature|unfeature
+     */
+    public function bulk_listing_action(array $public_ids, $action, $actor_id) {
+        $action = strtolower(trim((string)$action));
+        $map = array(
+            'publish'   => array('ACTIVE', null),
+            'unpublish' => array('PAUSED', null),
+            'archive'   => array('ARCHIVED', null),
+        );
+        $ok = array(); $failed = array();
+        foreach (array_unique(array_filter($public_ids)) as $pid) {
+            if (isset($map[$action])) {
+                $res = $this->moderate_listing($pid, $map[$action][0], $actor_id);
+            } elseif ($action === 'feature') {
+                $res = $this->set_featured($pid, true, $actor_id);
+            } elseif ($action === 'unfeature') {
+                $res = $this->set_featured($pid, false, $actor_id);
+            } else {
+                return $this->err('Unsupported bulk action', 'BAD_ACTION');
+            }
+            if (!empty($res['ok'])) $ok[] = $pid;
+            else $failed[$pid] = $res['error'] ?? 'unknown error';
+        }
+        return array('ok' => true, 'applied' => count($ok), 'failed' => $failed);
     }
 
     /**

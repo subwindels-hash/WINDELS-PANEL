@@ -37,6 +37,13 @@ class PinService {
     /** A hash to compare against when no PIN is set, so timing cannot leak. */
     const DUMMY_HASH = '$2y$10$usesomesillystringfoeX9L5dU0JQAr9dEQi/YuG1Sdle4uD2vG';
 
+    /**
+     * How long a PIN stays valid before the rotation worker replaces it,
+     * in hours. Configurable via Admin → Settings (pin_rotation_hours);
+     * this is only the fallback when that setting is unavailable.
+     */
+    const DEFAULT_ROTATION_HOURS = 24;
+
     private $ci;
 
     public function __construct() {
@@ -143,6 +150,122 @@ class PinService {
             'An administrator cleared your transaction PIN. Set a new one from Account → Security.');
 
         return array('ok' => true);
+    }
+
+    /** Whether automatic PIN rotation is turned on, from settings. */
+    public function rotation_enabled() {
+        try {
+            $this->ci->load->model('Setting_model');
+            $v = $this->ci->Setting_model->get('pin_auto_rotation_enabled', true);
+            return !($v === false || $v === 0 || $v === '0' || $v === 'false');
+        } catch (Throwable $e) {
+            return true;
+        }
+    }
+
+    /** The configured rotation window in hours (minimum 1). */
+    public function rotation_hours() {
+        try {
+            $this->ci->load->model('Setting_model');
+            $hours = (int) $this->ci->Setting_model->get('pin_rotation_hours', self::DEFAULT_ROTATION_HOURS);
+        } catch (Throwable $e) {
+            $hours = self::DEFAULT_ROTATION_HOURS;
+        }
+        return max(1, $hours);
+    }
+
+    /** Seconds until this user's current PIN is due to rotate, or null if not applicable. */
+    public function rotates_in($user) {
+        if (!$this->is_set($user) || empty($user->pin_set_at)) return null;
+        $due = strtotime($user->pin_set_at.' UTC') + ($this->rotation_hours() * 3600);
+        return max(0, $due - time());
+    }
+
+    /**
+     * Users whose PIN is due (or overdue) for automatic rotation.
+     *
+     * Applies uniformly to every account with a PIN, not just ones set after
+     * rotation was introduced — pin_set_at was populated when the PIN column
+     * itself was added (migration 020), so a pre-existing PIN rotates on its
+     * first eligible sweep exactly like a brand-new one.
+     */
+    public function due_for_rotation($limit = 200) {
+        $cutoff = gmdate('Y-m-d H:i:s', time() - ($this->rotation_hours() * 3600));
+        return $this->ci->db
+            ->where('pin_hash IS NOT NULL', null, false)
+            ->where('pin_set_at IS NOT NULL', null, false)
+            ->where('pin_set_at <=', $cutoff)
+            ->order_by('pin_set_at', 'ASC')
+            ->limit(max(1, (int)$limit))
+            ->get('users')->result();
+    }
+
+    /**
+     * Replace a user's PIN with a fresh random one and deliver it to them.
+     *
+     * Called only by the scheduled rotation worker (CronWorkers::pin_rotation).
+     * Unlike set(), this does not require the current PIN — the whole point is
+     * that the system, not the customer, is initiating the change — but it
+     * still clears any lockout and audits the event like every other PIN
+     * mutation. The plaintext PIN is delivered once (notification + email) and
+     * never stored or logged anywhere.
+     *
+     * @return array{ok:bool, pin?:string, error?:string}
+     */
+    public function rotate($user) {
+        if (!$user || !$this->is_set($user)) return $this->fail('NO_PIN', 'No PIN to rotate.');
+
+        $new_pin = $this->generate_pin();
+
+        $this->ci->db->where('id', $user->id)->update('users', array(
+            'pin_hash'            => password_hash($new_pin, PASSWORD_DEFAULT),
+            'pin_set_at'          => gmdate('Y-m-d H:i:s'),
+            'pin_failed_attempts' => 0,
+            'pin_locked_until'    => null,
+            'updated_at'          => gmdate('Y-m-d H:i:s'),
+        ));
+
+        $this->audit($user, 'security.pin_auto_rotated', null,
+            array('reason' => 'scheduled 24-hour rotation'));
+
+        $this->notify($user, 'Your security PIN was refreshed',
+            'For your protection, your transaction PIN is refreshed automatically every '
+            .$this->rotation_hours().' hours. Your new PIN is '.$new_pin
+            .'. It was sent to your registered email as well — check your inbox if you '
+            .'are not viewing this from the device you normally use.');
+
+        try {
+            $this->ci->load->library('MailService');
+            $this->ci->mailservice->enqueue_raw(
+                $user->email,
+                'Your MarvySocials security PIN was refreshed',
+                '<p>Hi '.htmlspecialchars($user->username).',</p>'
+                .'<p>For your protection, your transaction PIN rotates automatically every '
+                .$this->rotation_hours().' hours.</p>'
+                .'<p>Your new PIN is: <strong style="font-size:1.25rem;letter-spacing:.15em">'.$new_pin.'</strong></p>'
+                .'<p>Use it the next time you confirm a wallet action. If this was not expected, sign in and '
+                .'change it immediately from Account → Security.</p>',
+                'Hi '.$user->username.",\n\nYour transaction PIN was refreshed automatically. Your new PIN is: "
+                .$new_pin."\n\nIf this was not expected, sign in and change it from Account -> Security.",
+                $user->username,
+                'security.pin_rotated'
+            );
+        } catch (Throwable $e) {
+            log_message('error', 'pin rotation email failed for user '.$user->id.': '.$e->getMessage());
+        }
+
+        return array('ok' => true, 'pin' => $new_pin);
+    }
+
+    /** A random 4-digit PIN that also passes validate_format()'s weak-PIN checks. */
+    private function generate_pin() {
+        for ($attempt = 0; $attempt < 50; $attempt++) {
+            $pin = str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+            if ($this->validate_format($pin) === null) return $pin;
+        }
+        // Unreachable in practice (only 24 of 10,000 four-digit codes are
+        // rejected), but never return an invalid PIN.
+        return '2468';
     }
 
     /** Clear only the lockout, leaving the PIN itself in place. */

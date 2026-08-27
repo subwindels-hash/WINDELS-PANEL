@@ -30,7 +30,9 @@ $year = date('Y');
         <h2>Company</h2>
         <ul>
           <li><a href="<?=site_url('about')?>">About</a></li>
+          <?php if (marvy_feature_enabled('blog', true)): ?>
           <li><a href="<?=site_url('blog')?>">Blog</a></li>
+          <?php endif; ?>
           <li><a href="<?=site_url('contact')?>">Contact</a></li>
         </ul>
       </div>

@@ -9,6 +9,7 @@ class Blog extends Public_Controller {
     public function __construct() {
         parent::__construct();
         $this->load->model(array('Blog_post_model','Blog_category_model'));
+        if (!marvy_feature_enabled('blog', true)) show_404();
     }
 
     public function index() {

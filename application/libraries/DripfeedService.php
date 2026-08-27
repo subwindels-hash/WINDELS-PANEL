@@ -32,6 +32,9 @@ class DripfeedService {
      * @return array{ok:bool,dripfeed?:object,error?:string,code?:string}
      */
     public function create($user, array $input) {
+        if (!marvy_feature_enabled('dripfeed', true)) {
+            return array('ok'=>false,'error'=>'Drip-feed is currently disabled.','code'=>'FEATURE_DISABLED');
+        }
         $service = $this->resolve_service($input);
         if (!$service) return array('ok'=>false,'error'=>'Service not found','code'=>'NO_SERVICE');
         if ($service->status !== 'ACTIVE') return array('ok'=>false,'error'=>'Service unavailable','code'=>'SERVICE_INACTIVE');

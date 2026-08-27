@@ -39,6 +39,7 @@ class Users extends Admin_Controller {
         $this->load->model(array(
             'User_model', 'Wallet_model', 'Wallet_transaction_model',
             'Order_model', 'Service_transaction_model', 'Audit_log_model',
+            'Earning_model', 'Payout_request_model',
         ));
     }
 
@@ -102,6 +103,24 @@ class Users extends Admin_Controller {
         // render ten. The full lists live behind the per-domain queues.
         $limit = self::RECENT;
 
+        // The affiliate/earnings summary is only worth a query when the
+        // viewing operator can actually act on it (Admin → Payouts is gated
+        // on earnings.view/payouts.review); everyone else's file loads
+        // without it rather than paying for a permission-denied panel.
+        $perms = $this->auth->permissions();
+        $can_view_earnings = in_array('*', $perms, true)
+            || in_array('earnings.view', $perms, true)
+            || in_array('payouts.review', $perms, true);
+        $earnings_summary = null;
+        $earning_rows = array();
+        $payout_rows = array();
+        if ($can_view_earnings) {
+            $this->load->library('EarningsService');
+            $earnings_summary = $this->earningsservice->balance($user->id);
+            $earning_rows = $this->Earning_model->for_user($user->id, $limit);
+            $payout_rows = $this->Payout_request_model->for_user($user->id, $limit);
+        }
+
         $this->render($user->username, 'admin/users/detail', array(
             'user'         => $user,
             'movements'    => $this->Wallet_transaction_model->for_wallet($user->wallet->id, $limit),
@@ -111,6 +130,10 @@ class Users extends Admin_Controller {
             'roles'        => UserAdminService::ROLES,
             'statuses'     => UserAdminService::STATUSES,
             'is_last_admin'=> $this->useradminservice->is_last_super_admin($user),
+            'can_view_earnings' => $can_view_earnings,
+            'earnings_summary'  => $earnings_summary,
+            'earning_rows'      => $earning_rows,
+            'payout_rows'       => $payout_rows,
         ));
     }
 

@@ -52,6 +52,9 @@ class Marketplace_listing_model extends MY_Model {
         if (!empty($filters['category'])) {
             $this->db->where('category', $filters['category']);
         }
+        if (!empty($filters['type']) && in_array($filters['type'], array('DIGITAL', 'PHYSICAL'), true)) {
+            $this->db->where('product_type', $filters['type']);
+        }
         if (!empty($filters['search'])) {
             $term = trim($filters['search']);
             $this->db->group_start()

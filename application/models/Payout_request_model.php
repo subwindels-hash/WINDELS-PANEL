@@ -54,16 +54,41 @@ class Payout_request_model extends MY_Model {
         return $this->db->where('public_id', $public_id)->get($this->table)->row();
     }
 
+    /** Same as admin_find(), but with the requester's username/email attached for the detail page. */
+    public function admin_find_with_user($public_id) {
+        return $this->db
+            ->select($this->table.'.*, users.username AS user_username, users.email AS user_email, '
+                    .'users.public_id AS user_public_id, '
+                    .'reviewer.username AS reviewer_username', false)
+            ->from($this->table)
+            ->join('users', 'users.id = '.$this->table.'.user_id', 'left')
+            ->join('users AS reviewer', 'reviewer.id = '.$this->table.'.reviewed_by_id', 'left')
+            ->where($this->table.'.public_id', $public_id)
+            ->get()->row();
+    }
+
+    /**
+     * Filtered, searchable admin queue.
+     *
+     * apply_filters() joins `users` whenever a text search is present so
+     * "search users" can match on username/email as well as the request's own
+     * public_id — an admin chasing a specific withdrawal rarely has the
+     * internal numeric user_id on hand.
+     */
     public function admin_search(array $filters = array(), $limit = 25, $offset = 0) {
+        $this->db->select($this->table.'.*, users.username AS user_username, users.email AS user_email', false)
+                 ->from($this->table)
+                 ->join('users', 'users.id = '.$this->table.'.user_id', 'left');
         $this->apply_filters($filters);
-        return $this->db->order_by('id', 'DESC')
+        return $this->db->order_by($this->table.'.id', 'DESC')
                         ->limit(max(1, min(200, (int)$limit)), max(0, (int)$offset))
-                        ->get($this->table)->result();
+                        ->get()->result();
     }
 
     public function admin_count(array $filters = array()) {
+        $this->db->from($this->table)->join('users', 'users.id = '.$this->table.'.user_id', 'left');
         $this->apply_filters($filters);
-        return (int)$this->db->count_all_results($this->table);
+        return (int)$this->db->count_all_results();
     }
 
     public function admin_totals() {
@@ -80,8 +105,32 @@ class Payout_request_model extends MY_Model {
     }
 
     private function apply_filters(array $f) {
-        if (!empty($f['status']))  $this->db->where('status', $f['status']);
-        if (!empty($f['user_id'])) $this->db->where('user_id', (int)$f['user_id']);
-        if (!empty($f['method']))  $this->db->where('method', $f['method']);
+        $t = $this->table;
+        if (!empty($f['status']))  $this->db->where($t.'.status', $f['status']);
+        if (!empty($f['user_id'])) $this->db->where($t.'.user_id', (int)$f['user_id']);
+        if (!empty($f['method']))  $this->db->where($t.'.method', $f['method']);
+
+        // Search: username, email or the request's own public reference —
+        // whatever an admin is most likely to be holding (a support ticket
+        // usually quotes the customer's username/email, not their numeric id).
+        if (!empty($f['search'])) {
+            $needle = trim((string)$f['search']);
+            $this->db->group_start()
+                ->like('users.username', $needle)
+                ->or_like('users.email', $needle)
+                ->or_like($t.'.public_id', $needle)
+                ->or_like($t.'.destination', $needle)
+                ->group_end();
+        }
+
+        if (!empty($f['date_from'])) $this->db->where($t.'.requested_at >=', $f['date_from'].' 00:00:00');
+        if (!empty($f['date_to']))   $this->db->where($t.'.requested_at <=', $f['date_to'].' 23:59:59');
+
+        if (!empty($f['amount_min']) && is_numeric($f['amount_min'])) {
+            $this->db->where($t.'.amount >=', number_format((float)$f['amount_min'], 8, '.', ''));
+        }
+        if (!empty($f['amount_max']) && is_numeric($f['amount_max'])) {
+            $this->db->where($t.'.amount <=', number_format((float)$f['amount_max'], 8, '.', ''));
+        }
     }
 }

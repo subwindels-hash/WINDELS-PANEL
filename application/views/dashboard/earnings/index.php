@@ -13,6 +13,11 @@ $csrf = function () {
 };
 $b = $balance;
 $src = $by_source;
+$payout_badge = function ($s) {
+    $map = array('REQUESTED'=>'badge-warning','APPROVED'=>'badge-info',
+                 'PAID'=>'badge-success','REJECTED'=>'badge-danger','CANCELLED'=>'badge-default');
+    return $map[$s] ?? 'badge-default';
+};
 ?>
 <div class="row justify-between mb-4" style="align-items:flex-start;flex-wrap:wrap;gap:.75rem">
   <div>
@@ -135,7 +140,11 @@ $src = $by_source;
         <?php foreach ($payouts as $p): ?>
         <tr>
           <td class="mono text-xs"><?=marvy_money($p->amount)?></td>
-          <td><span class="badge badge-default"><?=htmlspecialchars($p->status)?></span></td>
+          <td><span class="badge <?=$payout_badge($p->status)?>"><?=htmlspecialchars($p->status)?></span>
+            <?php if ($p->status === 'REJECTED' && !empty($p->review_note)): ?>
+              <div class="text-xs muted"><?=htmlspecialchars($p->review_note)?></div>
+            <?php endif; ?>
+          </td>
           <td class="text-right">
             <?php if ($p->status === 'REQUESTED'): ?>
             <form method="post" style="margin:0"
@@ -143,6 +152,8 @@ $src = $by_source;
               <?=$csrf()?>
               <button class="btn btn-secondary btn-sm" type="submit">Cancel</button>
             </form>
+            <?php elseif ($p->payout_reference): ?>
+              <span class="mono text-xs muted"><?=htmlspecialchars($p->payout_reference)?></span>
             <?php endif; ?>
           </td>
         </tr>

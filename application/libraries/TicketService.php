@@ -28,6 +28,9 @@ class TicketService {
      * @return array{ok:bool,ticket?:object,error?:string,code?:string}
      */
     public function open($user, array $input) {
+        if (!marvy_feature_enabled('tickets', true)) {
+            return array('ok'=>false,'error'=>'Support tickets are currently unavailable.','code'=>'FEATURE_DISABLED');
+        }
         $subject = trim((string)($input['subject'] ?? ''));
         $message = trim((string)($input['message'] ?? ''));
         if ($subject === '' || mb_strlen($subject) > 255)

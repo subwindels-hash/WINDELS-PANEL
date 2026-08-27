@@ -188,6 +188,44 @@ if (!function_exists('marvy_money')) {
         return $sym . $formatted;
     }
 }
+if (!function_exists('marvy_display_money')) {
+    /**
+     * A base-currency amount, converted and formatted for browsing in the
+     * admin-configured display currency (Admin → Currencies).
+     *
+     * This is a *browsing aid only* — it never changes what is actually
+     * charged. Checkout, wallets, orders, refunds and payouts all continue to
+     * settle in marvy_base_currency() exactly as before; this exists so a
+     * catalogue page can show "≈ $12.50" next to the real ₦20,000 price
+     * without any settlement code needing to know the difference.
+     *
+     * Fails open to marvy_money() (the base-currency formatter) if
+     * CurrencyService or its dependencies are unavailable — a broken
+     * conversion path must never break the price itself from rendering.
+     *
+     * @param string $amount base-currency amount
+     * @param string|null $to target currency code; defaults to the configured display currency
+     */
+    function marvy_display_money($amount, $to = null) {
+        static $service = null;
+        if ($service === null && function_exists('get_instance')) {
+            try {
+                $ci =& get_instance();
+                $ci->load->library('CurrencyService');
+                $service = $ci->currencyservice;
+            } catch (Throwable $e) {
+                $service = false;
+            }
+        }
+        if (!$service) return marvy_money($amount);
+        try {
+            return $service->display($amount, $to);
+        } catch (Throwable $e) {
+            return marvy_money($amount);
+        }
+    }
+}
+
 if (!function_exists('marvy_request_id')) {
     function marvy_request_id(){ return bin2hex(random_bytes(8)); }
 }
@@ -215,6 +253,31 @@ if (!function_exists('csp_nonce_attr')) {
     function csp_nonce_attr() {
         $nonce = csp_nonce();
         return $nonce === '' ? '' : 'nonce="'.htmlspecialchars($nonce, ENT_QUOTES).'"';
+    }
+}
+
+if (!function_exists('marvy_feature_enabled')) {
+    /**
+     * Whether a product-module switch under Admin → Settings → Feature flags
+     * is on, with a documented default when the row/table is unavailable.
+     *
+     * Every flag seeded in Core_seeder::seed_feature_flags() must have a
+     * caller here or in a controller/library it gates — a switch nobody
+     * reads is worse than no switch (see SettingsService's class doc).
+     * Centralising the lookup also means turning a module off always fails
+     * the same way (feature unavailable), rather than one flag 404ing and
+     * another silently doing nothing.
+     */
+    function marvy_feature_enabled($key, $default = true) {
+        try {
+            $ci =& get_instance();
+            $ci->load->model('Feature_flag_model');
+            $row = $ci->db->where('flag_key', $key)->get('feature_flags')->row();
+            if (!$row) return (bool)$default;
+            return (bool)$row->enabled;
+        } catch (Throwable $e) {
+            return (bool)$default;
+        }
     }
 }
 
