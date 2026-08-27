@@ -362,6 +362,48 @@ class CpanelDeploymentTest extends TestCase
             'the credentials must be documented in the file the operator imports');
     }
 
+    public function testProductionSqlShipsACustomerAndStaffAccount()
+    {
+        $this->assertMatchesRegularExpression("/INSERT INTO `users`.*'demo'.*'CUSTOMER'/s", self::$sql,
+            'a CUSTOMER account must exist so /login can open the dashboard');
+        $this->assertMatchesRegularExpression("/INSERT INTO `users`.*'staff'.*'STAFF'/s", self::$sql,
+            'a STAFF account must exist so /admin/login has a non-owner operator');
+        $this->assertStringContainsString("'admin_mfa_required', '{\"value\":false}'", self::$sql,
+            'mandatory staff MFA would bounce first login to /dashboard/security');
+        $this->assertStringContainsString("'email_verification_required', '{\"value\":false}'", self::$sql,
+            'email verification would block a fresh import that has no mailer yet');
+    }
+
+    public function testFirstLoginPasswordsVerifyAgainstTheSeededHashes()
+    {
+        preg_match_all('/--\s+password:\s+(\S+)/', self::$sql, $pws);
+        preg_match_all('/(\$2y\$\d\d\$[.\/A-Za-z0-9]{53})/', self::$sql, $hashes);
+        $this->assertGreaterThanOrEqual(3, count($pws[1]), 'admin, demo and staff passwords must be documented');
+        $this->assertGreaterThanOrEqual(3, count($hashes[1]), 'admin, demo and staff hashes must be present');
+        $this->assertTrue(password_verify($pws[1][0], $hashes[1][0]),
+            'the first documented password must verify against the first bcrypt hash (SUPER_ADMIN)');
+        $this->assertTrue(password_verify($pws[1][1], $hashes[1][1]),
+            'the demo password must verify against its bcrypt hash');
+        $this->assertTrue(password_verify($pws[1][2], $hashes[1][2]),
+            'the staff password must verify against its bcrypt hash');
+    }
+
+    public function testLiveAccountsSqlIsIdempotentAndDoesNotOverwritePasswords()
+    {
+        $path = self::$root.'/database/first_login_accounts.sql';
+        $this->assertFileExists($path,
+            'an existing live database cannot re-import marvysocials.sql; this file is the phpMyAdmin paste');
+        $sql = file_get_contents($path);
+        $this->assertStringContainsString('WHERE NOT EXISTS', $sql);
+        $this->assertStringNotContainsStringIgnoringCase('DROP TABLE', $sql);
+        $this->assertStringNotContainsStringIgnoringCase('CREATE DATABASE', $sql);
+        $this->assertStringContainsString('admin_mfa_required', $sql);
+        $this->assertDoesNotMatchRegularExpression('/UPDATE `users`\s+SET[^;]*password_hash/is', $sql,
+            'never reset a live password the operator may already have changed');
+        $this->assertStringContainsString("'demo'", $sql);
+        $this->assertStringContainsString("'staff'", $sql);
+    }
+
     public function testProductionSqlImportsIntoADatabaseTheOperatorAlreadyCreated()
     {
         $this->assertStringNotContainsStringIgnoringCase('CREATE DATABASE', self::$sql,
@@ -382,6 +424,7 @@ class CpanelDeploymentTest extends TestCase
         $src = file_get_contents($script);
 
         foreach (array('index.php', 'application', 'assets', 'database/marvysocials.sql',
+                       'database/first_login_accounts.sql',
                        '.env.example', '.htaccess') as $needed) {
             $this->assertStringContainsString($needed, $src, "the package must contain {$needed}");
         }

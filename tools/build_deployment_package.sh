@@ -165,6 +165,7 @@ copy application
 copy assets
 copy cron
 copy database/marvysocials.sql
+copy database/first_login_accounts.sql
 copy database/schema_verification.php
 copy database/README.md
 copy docs/cpanel-deployment.md

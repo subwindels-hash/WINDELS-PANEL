@@ -72,7 +72,7 @@ pre-built CSS in `assets/`, `storage/`, `cron/`, `database/marvysocials.sql`
 That one file creates the entire schema (tables, columns, indexes, 111
 foreign keys) **and** all required data: roles, permissions, settings,
 feature flags, payment methods, email templates, currencies, catalogues, the
-migration bookkeeping row — and the **first administrator account**.
+migration bookkeeping row — and the **first-login accounts** (SUPER_ADMIN, customer, staff).
 
 **There is no migrate step and no seed step afterwards.** Re-importing is
 safe if an import is interrupted (`CREATE TABLE IF NOT EXISTS` — it just
@@ -147,13 +147,25 @@ the browser check.)*
 
 ## Step 6 — First login & secure the administrator
 
-The SQL seeds one SUPER_ADMIN:
+The SQL seeds three first-login accounts (also printed at the top of
+`marvysocials.sql`):
 
 ```
-Email:    admin
-Password: ChangeMe!Admin2026
+Staff admin — full control of the site
+  URL:      https://yourdomain.com/admin/login
+  Username: admin
+  Password: ChangeMe!Admin2026
+
+Customer dashboard
+  URL:      https://yourdomain.com/login
+  Username: demo
+  Password: MarvyDemo#2026!
+
+Support staff
+  URL:      https://yourdomain.com/admin/login
+  Username: staff
+  Password: MarvyStaff#2026!
 ```
-*(also printed in the header comment at the top of `marvysocials.sql`)*
 
 **Do one of the following immediately:**
 

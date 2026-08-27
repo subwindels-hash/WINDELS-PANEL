@@ -108,7 +108,7 @@ package as real files at *both* locations the front controller auto-detects
 `vendor/autoload.php` so the request path never needs the package manager.
 `database/marvysocials.sql` is the complete initialised database
 (schema, indexes, foreign keys, roles, permissions, settings, catalogues **and**
-the first administrator), `application/core/Env.php` reads `.env` without
+the first-login accounts), `application/core/Env.php` reads `.env` without
 phpdotenv, and the runtime directories are created on the first request.
 `deploy-verify.php` (browser or CLI) checks PHP version, required extensions,
 the framework path, writable directories, `.env` and a live MySQL connection —
