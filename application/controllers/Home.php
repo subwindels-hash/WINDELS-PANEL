@@ -27,17 +27,38 @@ class Home extends Public_Controller {
         $data['categories'] = array();
         $data['catalogue_size'] = 0;
         $data['posts'] = array();
+        $data['faqs'] = array();
+        $data['stats'] = array();
         if ($this->db_ready) {
             try {
-                $this->load->model(array('Service_model', 'Service_category_model'));
+                $this->load->model(array('Service_model', 'Service_category_model', 'Faq_model', 'Blog_post_model'));
                 $data['showcase'] = $this->Service_model->homepage_showcase(6);
                 $data['categories'] = $this->Service_model->categories_with_counts(8);
                 $data['catalogue_size'] = $this->Service_model->count_active();
-                $this->load->model('Blog_post_model');
                 $data['posts'] = $this->Blog_post_model->published(null, 3, 0);
+                $data['faqs'] = $this->Faq_model->active();
+                $orders = 0; $customers = 0;
+                try {
+                    $orders = (int)$this->db->where_in('status', array('COMPLETED','PARTIAL'))->count_all_results('orders');
+                    $customers = (int)$this->db->where('role', 'CUSTOMER')->where('status', 'ACTIVE')->count_all_results('users');
+                } catch (Throwable $e) { /* optional aggregates */ }
+                $data['stats'] = array(
+                    array('value' => $data['catalogue_size'] > 0 ? number_format($data['catalogue_size']) : 'Live', 'label' => 'Published services'),
+                    array('value' => $orders > 0 ? number_format($orders) : 'Tracked', 'label' => 'Completed orders'),
+                    array('value' => $customers > 0 ? number_format($customers) : 'Prepaid', 'label' => $customers > 0 ? 'Active customers' : 'Wallet billing'),
+                    array('value' => '24/7', 'label' => 'Ticket support'),
+                );
             } catch (Throwable $e) {
                 log_message('error', 'homepage catalogue unavailable: '.$e->getMessage());
             }
+        }
+        if (empty($data['stats'])) {
+            $data['stats'] = array(
+                array('value' => 'Prepaid', 'label' => 'Wallet billing'),
+                array('value' => 'Ledger', 'label' => 'Auditable credits'),
+                array('value' => 'API', 'label' => 'Reseller keys'),
+                array('value' => '24/7', 'label' => 'Ticket support'),
+            );
         }
         // Single switch — no Node
         $view = 'homepages/'.strtolower($active).'/index';

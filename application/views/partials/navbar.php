@@ -6,11 +6,12 @@ $is_staff = $cu && in_array($cu->role, array('SUPER_ADMIN','ADMIN','STAFF'), tru
 $path = isset($this->uri) ? trim((string)$this->uri->uri_string(), '/') : '';
 $site = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials';
 $links = array(
+    array('', 'Home'),
     array('services', 'Services'),
-    array('about', 'About'),
-    array('pricing', 'Pricing'),
+    array('#how-it-works', 'How it works'),
+    array('#features', 'Features'),
+    array('api/docs', 'API'),
     array('faq', 'FAQ'),
-    array('blog', 'Blog'),
     array('contact', 'Contact'),
 );
 $active = function ($href) use ($path) {
@@ -27,7 +28,8 @@ $active = function ($href) use ($path) {
 
     <div class="ws-nav-links" role="list">
       <?php foreach ($links as $item): ?>
-        <a href="<?=site_url($item[0])?>" class="nav-link <?=$active($item[0]) ? 'is-active' : ''?>"
+        <?php $href = $item[0] !== '' && $item[0][0] === '#' ? site_url().$item[0] : site_url($item[0]); ?>
+        <a href="<?=$href?>" class="nav-link <?=$active($item[0]) ? 'is-active' : ''?>"
            <?=$active($item[0]) ? 'aria-current="page"' : ''?>><?=htmlspecialchars($item[1])?></a>
       <?php endforeach; ?>
     </div>
@@ -48,7 +50,7 @@ $active = function ($href) use ($path) {
           </form>
         <?php else: ?>
           <a class="btn btn-ghost btn-sm" href="<?=site_url('login')?>">Login</a>
-          <a class="btn btn-primary btn-sm" href="<?=site_url('register')?>">Sign up</a>
+          <a class="btn btn-primary btn-sm" href="<?=site_url('register')?>">Get started</a>
         <?php endif; ?>
       </div>
       <button type="button" class="ws-nav-toggle" data-nav-toggle aria-controls="ws-nav-panel" aria-expanded="false" aria-label="Open menu">
@@ -59,7 +61,8 @@ $active = function ($href) use ($path) {
 
   <div id="ws-nav-panel" class="ws-nav-panel" hidden>
     <?php foreach ($links as $item): ?>
-      <a href="<?=site_url($item[0])?>"><?=htmlspecialchars($item[1])?></a>
+      <?php $href = $item[0] !== '' && $item[0][0] === '#' ? site_url().$item[0] : site_url($item[0]); ?>
+      <a href="<?=$href?>"><?=htmlspecialchars($item[1])?></a>
     <?php endforeach; ?>
     <?php if ($cu): ?>
       <a href="<?=site_url($is_staff ? 'admin' : 'dashboard')?>"><?=$is_staff ? 'Admin' : 'Dashboard'?></a>
@@ -69,7 +72,7 @@ $active = function ($href) use ($path) {
       </form>
     <?php else: ?>
       <a href="<?=site_url('login')?>">Login</a>
-      <a href="<?=site_url('register')?>">Sign up</a>
+      <a class="btn btn-primary" href="<?=site_url('register')?>">Get started</a>
     <?php endif; ?>
   </div>
 </nav>
