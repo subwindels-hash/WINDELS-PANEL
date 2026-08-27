@@ -241,6 +241,7 @@ $route['admin/shop/downloads/(:any)/revoke'] = 'admin/shop/revoke_download/$1';
 $route['admin/shop/downloads/(:any)/restore'] = 'admin/shop/restore_download/$1';
 $route['admin/shop/shipments'] = 'admin/shop/shipments';
 $route['admin/shop/shipments/(:any)/status'] = 'admin/shop/update_shipment/$1';
+$route['admin/shop/shipments/(:any)/refund'] = 'admin/shop/refund_shipment/$1';
 $route['admin/shop/shipments/(:any)'] = 'admin/shop/shipment/$1';
 $route['admin/shop/shipping-methods'] = 'admin/shop/shipping_methods';
 $route['admin/shop/shipping-methods/save'] = 'admin/shop/save_shipping_method';

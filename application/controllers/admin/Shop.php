@@ -119,6 +119,46 @@ class Shop extends Admin_Controller {
         redirect('admin/shop/shipments/'.$public_id);
     }
 
+    /**
+     * POST /admin/shop/shipments/:id/refund — refund the underlying
+     * marketplace order from the shipment screen, without sending staff to
+     * a different admin section to find it. Delegates to the exact same
+     * MarketplaceService::refund() escrow-refund path admin/Marketplace's
+     * dispute-resolution screen uses for any order type — this is a second
+     * entry point to one refund implementation, not a second refund system.
+     * Gated on marketplace.resolve (a sharper permission than
+     * marketplace.manage — refunding money is a bigger action than
+     * updating a tracking number) exactly like the existing dispute flow.
+     */
+    public function refund_shipment($public_id) {
+        $this->guard('marketplace.resolve');
+        $shipment = $this->Shop_order_shipment_model->find_public($public_id);
+        if (!$shipment) show_404();
+
+        $this->load->library('MarketplaceService');
+        $this->load->model('Marketplace_order_model');
+        $order = $this->Marketplace_order_model->find_id($shipment->marketplace_order_id);
+        if (!$order) {
+            $this->session->set_flashdata('error', 'The order behind this shipment could not be found.');
+            return redirect('admin/shop/shipments/'.$public_id);
+        }
+
+        $reason = trim((string)$this->input->post('reason', true));
+        $res = $this->marketplaceservice->refund($order, $this->current_user->id, $reason);
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error'] ?? 'Could not refund this order.');
+        } else {
+            $this->Shop_order_shipment_model->update_status($shipment->id, 'CANCELLED', array());
+            $this->Audit_log_model->record(
+                $this->current_user->id, 'shop.shipment.refunded', 'shop_order_shipments', $public_id,
+                array('order_status' => $shipment->order_status), array('order_status' => 'REFUNDED'),
+                $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+            );
+            $this->session->set_flashdata('success', 'Order refunded from escrow and the shipment marked cancelled.');
+        }
+        redirect('admin/shop/shipments/'.$public_id);
+    }
+
     /* ------------------------------ shipping methods ---------------------------- */
 
     /** GET /admin/shop/shipping-methods */

@@ -21,7 +21,9 @@ class Shop_order_shipment_model extends MY_Model {
     public function find_public($public_id) {
         return $this->db
             ->select($this->table.'.*, marketplace_orders.public_id AS order_public_id, '
-                    .'marketplace_orders.buyer_id, marketplace_listings.title AS listing_title, '
+                    .'marketplace_orders.buyer_id, marketplace_orders.status AS order_status, '
+                    .'marketplace_orders.released_at AS order_released_at, '
+                    .'marketplace_listings.title AS listing_title, '
                     .'shipping_addresses.full_name, shipping_addresses.phone, shipping_addresses.line1, '
                     .'shipping_addresses.line2, shipping_addresses.city, shipping_addresses.state, '
                     .'shipping_addresses.postal_code, shipping_addresses.country_code', false)
