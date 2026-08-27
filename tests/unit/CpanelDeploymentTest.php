@@ -178,6 +178,50 @@ class CpanelDeploymentTest extends TestCase
         unset($_SERVER['HTTPS'], $_SERVER['HTTP_HOST']);
     }
 
+    public function testBaseUrlFollowsTheRequestHostAcrossTheWwwApexSplit()
+    {
+        // .env says www., the visitor is on the apex. Session and CSRF
+        // cookies are host-only, so form actions built from the configured
+        // host make every login POST fail its CSRF check. The base URL must
+        // follow the host in the address bar.
+        $_SERVER['HTTPS'] = 'on';
+        $_SERVER['HTTP_HOST'] = 'marvysocials.com';
+        $this->withEnv(array(
+            'VP_BASE_URL' => 'https://www.marvysocials.com',
+            'VP_DB_NAME'  => 'x',
+        ), function () {
+            $this->assertSame('https://marvysocials.com', getenv('APP_URL'),
+                'VP_BASE_URL=www.X while browsing X posts the login form cross-host without its CSRF cookie — nobody can log in');
+        });
+
+        // …and the mirror image: .env says apex, visitor is on www.
+        $_SERVER['HTTP_HOST'] = 'www.marvysocials.com';
+        $this->withEnv(array(
+            'VP_BASE_URL' => 'https://marvysocials.com',
+            'VP_DB_NAME'  => 'x',
+        ), function () {
+            $this->assertSame('https://www.marvysocials.com', getenv('APP_URL'));
+        });
+        unset($_SERVER['HTTPS'], $_SERVER['HTTP_HOST']);
+    }
+
+    public function testBaseUrlDoesNotFollowAnUnrelatedRequestHost()
+    {
+        // Only the www/apex twin is followed. A different domain entirely
+        // (an old parked domain, a scanner sending a fake Host header) must
+        // not rewrite the panel's base URL.
+        $_SERVER['HTTPS'] = 'on';
+        $_SERVER['HTTP_HOST'] = 'evil.example.com';
+        $this->withEnv(array(
+            'VP_BASE_URL' => 'https://marvysocials.com',
+            'VP_DB_NAME'  => 'x',
+        ), function () {
+            $this->assertSame('https://marvysocials.com', getenv('APP_URL'),
+                'a foreign Host header must never replace the configured base URL');
+        });
+        unset($_SERVER['HTTPS'], $_SERVER['HTTP_HOST']);
+    }
+
     public function testHttpBaseUrlIsLeftAloneOnCli()
     {
         unset($_SERVER['HTTPS'], $_SERVER['HTTP_X_FORWARDED_PROTO'], $_SERVER['REQUEST_SCHEME']);
@@ -461,6 +505,36 @@ class CpanelDeploymentTest extends TestCase
         }
         $this->assertStringContainsString('type l', $src,
             'the validator must reject a package that stores symlinks');
+    }
+
+    public function testSchemaManifestJoinsFksThatWrapOntoTwoLines()
+    {
+        // managed_pages (migration 021) writes its FK as
+        //     CONSTRAINT fk_managed_pages_author FOREIGN KEY (updated_by_id)
+        //       REFERENCES users(id) ON DELETE SET NULL
+        // The continuation line used to parse as a column literally named
+        // `REFERENCES`, which deploy-verify.php reported as "1 missing
+        // column(s): managed_pages.REFERENCES" on a perfectly healthy
+        // database.
+        require_once self::$root.'/application/libraries/SchemaManifest.php';
+        $manifest = SchemaManifest::from_file(self::$root.'/database/marvysocials.sql');
+        $this->assertNull($manifest['error'], $manifest['error'] ?: '');
+
+        foreach ($manifest['tables'] as $tname => $t) {
+            foreach (array_keys($t['columns']) as $cname) {
+                $this->assertDoesNotMatchRegularExpression(
+                    '/^(REFERENCES|FOREIGN|ON)$/i', $cname,
+                    "{$tname}.{$cname}: a wrapped FOREIGN KEY clause parsed as a fake column"
+                );
+            }
+        }
+
+        $mp = $manifest['tables']['managed_pages'];
+        $this->assertArrayNotHasKey('REFERENCES', $mp['columns']);
+        $this->assertArrayHasKey('fk_managed_pages_author', $mp['fks'],
+            'the wrapped constraint must be recorded as the foreign key it is');
+        $this->assertSame('users', $mp['fks']['fk_managed_pages_author']['ref_table']);
+        $this->assertSame('SET NULL', $mp['fks']['fk_managed_pages_author']['on_delete']);
     }
 
     public function testSchemaManifestDoesNotTreatConstraintsAsColumns()
