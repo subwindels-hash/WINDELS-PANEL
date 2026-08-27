@@ -308,71 +308,98 @@ class SettingsService {
         return array('ok' => true, 'error' => null, 'changed' => $changed);
     }
 
-    /** Type coercion and per-type validation, in one place. */
+/** Type coercion and per-type validation, in one place. */
     private function coerce($type, $value, $label) {
+        // Input validation: ensure $type and $value exist
+        if (!isset($type) || $type === '') {
+            return array('value' => null, 'error' => $label . ' has an invalid type.');
+        }
+        if (!isset($value) || $value === null) {
+            return array('value' => null, 'error' => $label . ' is missing.');
+        }
+        
+        // Handle choice types first (e.g., currency_display, default_theme)
+        // Type format: 'choice:option1|option2|option3'
         if (strpos($type, 'choice:') === 0) {
             $allowed = explode('|', substr($type, 7));
             // Match case-insensitively, but store the schema's own casing
-            // ('symbol'/'code'/'system'/'light'/'dark' are declared lowercase;
-            // 'AURORA'/'LIFETIME'/'FIRST_ORDER' are declared uppercase) rather
-            // than forcing one case globally. Every reader of the uppercase
-            // family (marvy_default_theme() is the one lowercase reader; the
-            // rest — active_homepage(), AffiliateService::scope(),
-            // ReferralService's qualify_event() — already strtoupper() on
-            // read) tolerates either case, but the previous code compared an
-            // *uppercased* submission against a *lowercase* allow-list for
-            // currency_display/default_theme, which could never match and
-            // rejected every legitimately correct value, including the form's
-            // own default.
             $submitted = trim((string)$value);
             foreach ($allowed as $option) {
                 if (strcasecmp($submitted, $option) === 0) {
                     return array('value' => $option, 'error' => null);
                 }
             }
+            // Fallback error message listing allowed choices
             return array('value' => null, 'error' => $label.' must be one of: '.implode(', ', $allowed).'.');
         }
-        switch ($type) {
+        
+        // Handle known types via switch statement
+        // Use strtolower to handle case variations in type
+        $lower_type = strtolower($type);
+        switch ($lower_type) {
             case 'email':
-                return filter_var($value, FILTER_VALIDATE_EMAIL)
-                    ? array('value' => $value, 'error' => null)
+                $value = filter_var((string)$value, FILTER_VALIDATE_EMAIL)
+                    ? array('value' => (string)$value, 'error' => null)
                     : array('value' => null, 'error' => $label.' must be a valid email address.');
+                return $value;
+            
             case 'url':
-                // Optional by declaration (every current 'url' setting is
-                // documented "leave blank to disable" and read with a blank
+                // Optional by declaration (every current '''url''' setting is
+                // documented '''leave blank to disable''' and read with a blank
                 // default) — an empty submission must save as empty, not be
                 // treated as a required field. A non-empty value must still be
                 // a well-formed http(s) URL, so a typo is caught here rather
                 // than surfacing as a silent webhook that never fires.
                 $value = (string)$value;
-                if ($value === '') return array('value' => '', 'error' => null);
+                // Allow empty values (leave blank to disable) as documented in the schema
+                if ($value === '') {
+                    return array('value' => '', 'error' => null);
+                }
+                // Validate URL format - allow http:// or https://
+                // If the URL doesn't have a scheme, try prepending http://
                 if (!filter_var($value, FILTER_VALIDATE_URL) || !preg_match('#^https?://#i', $value)) {
+                    // Try prepending http:// if not already present
+                    $test_url = 'http://' . $value;
+                    if (filter_var($test_url, FILTER_VALIDATE_URL)) {
+                        return array('value' => $value, 'error' => null);
+                    }
                     return array('value' => null, 'error' => $label.' must be a valid http(s) URL, or left empty to disable it.');
                 }
                 return array('value' => mb_substr($value, 0, 512), 'error' => null);
+            
             case 'int':
+                $value = (int)$value;
                 if (!is_numeric($value) || (int)$value != $value || (int)$value < 0) {
                     return array('value' => null, 'error' => $label.' must be a whole number of zero or more.');
                 }
-                return array('value' => (int)$value, 'error' => null);
+                return array('value' => $value, 'error' => null);
+            
             case 'money':
-                if (!is_numeric($value) || (float)$value < 0) {
+                $value = (float)$value;
+                if (!is_numeric($value) || $value < 0) {
                     return array('value' => null, 'error' => $label.' must be an amount of zero or more.');
                 }
                 return array('value' => number_format((float)$value, 8, '.', ''), 'error' => null);
+            
             case 'percent':
-                if (!is_numeric($value) || (float)$value < 0 || (float)$value > 100) {
+                $value = (float)$value;
+                if (!is_numeric($value) || $value < 0 || $value > 100) {
                     return array('value' => null, 'error' => $label.' must be between 0 and 100.');
                 }
                 return array('value' => number_format((float)$value, 4, '.', ''), 'error' => null);
+            
             case 'secret':
                 // May legitimately be blank (feature not configured yet), and
                 // is allowed to be long — API keys are not 255-char-limited
                 // display strings.
-                return array('value' => mb_substr((string)$value, 0, 512), 'error' => null);
+                $value = mb_substr((string)$value, 0, 512);
+                return array('value' => $value, 'error' => null);
+            
             case 'text':
             default:
                 $value = (string)$value;
+                // Allow empty values for types that support it (validated at a higher level)
+                // but reject purely empty submissions for required-style fields
                 if ($value === '') {
                     return array('value' => null, 'error' => $label.' cannot be empty.');
                 }
