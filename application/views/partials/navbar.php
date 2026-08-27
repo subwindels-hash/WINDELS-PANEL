@@ -8,8 +8,8 @@ $site = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials';
 $links = array(
     array('', 'Home'),
     array('services', 'Services'),
+    array('shop', 'Shop'),
     array('#how-it-works', 'How it works'),
-    array('#features', 'Features'),
     array('api/docs', 'API'),
     array('faq', 'FAQ'),
     array('contact', 'Contact'),

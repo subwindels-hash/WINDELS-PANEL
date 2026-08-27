@@ -55,14 +55,119 @@ class Marketplace extends Admin_Controller {
     public function listing_form($public_id = null) {
         $this->require_perm('marketplace.manage');
         $listing = null;
+        $digital_product = null;
+        $physical_product = null;
         if ($public_id !== null) {
             $listing = $this->Marketplace_listing_model->find_public($public_id, false);
             if (!$listing) show_404();
+            if (strtoupper((string)$listing->product_type) === 'DIGITAL') {
+                $this->load->model('Digital_product_model');
+                $digital_product = $this->Digital_product_model->for_listing($listing->id);
+            } elseif (strtoupper((string)$listing->product_type) === 'PHYSICAL') {
+                $this->load->model('Physical_product_model');
+                $physical_product = $this->Physical_product_model->for_listing($listing->id);
+            }
         }
         $this->view('listing_form', $listing ? 'Edit listing' : 'New listing', array(
             'listing' => $listing,
             'categories' => $this->Marketplace_category_model->active(),
+            'digital_product' => $digital_product,
+            'physical_product' => $physical_product,
         ));
+    }
+
+    /** POST /admin/marketplace/listings/:id/physical — save SKU, weight and dimensions. */
+    public function physical_details($public_id) {
+        $this->post_only();
+        $this->require_perm('marketplace.manage');
+
+        $listing = $this->Marketplace_listing_model->find_public($public_id, false);
+        if (!$listing) show_404();
+        if (strtoupper((string)$listing->product_type) !== 'PHYSICAL') {
+            $this->session->set_flashdata('error', 'Only physical listings have shipping details.');
+            return redirect('admin/marketplace/listings/'.$public_id.'/edit');
+        }
+
+        $sku = trim((string)$this->input->post('sku', true));
+        if ($sku === '' || mb_strlen($sku) > 64) {
+            $this->session->set_flashdata('error', 'SKU is required (max 64 characters).');
+            return redirect('admin/marketplace/listings/'.$public_id.'/edit');
+        }
+
+        $this->load->model('Physical_product_model');
+        $existing_sku = $this->Physical_product_model->find_by_sku($sku);
+        if ($existing_sku && (int)$existing_sku->listing_id !== (int)$listing->id) {
+            $this->session->set_flashdata('error', 'That SKU is already used by another listing.');
+            return redirect('admin/marketplace/listings/'.$public_id.'/edit');
+        }
+
+        $to_int_or_null = function ($v) { $v = trim((string)$v); return $v === '' ? null : max(0, (int)$v); };
+        $to_dec_or_null = function ($v) { $v = trim((string)$v); return $v === '' ? null : number_format(max(0, (float)$v), 2, '.', ''); };
+
+        $before = $this->Physical_product_model->for_listing($listing->id);
+        $this->Physical_product_model->upsert_for_listing($listing->id, array(
+            'sku'               => $sku,
+            'weight_grams'      => $to_int_or_null($this->input->post('weight_grams', true)),
+            'length_cm'         => $to_dec_or_null($this->input->post('length_cm', true)),
+            'width_cm'          => $to_dec_or_null($this->input->post('width_cm', true)),
+            'height_cm'         => $to_dec_or_null($this->input->post('height_cm', true)),
+            'requires_shipping' => $this->input->post('requires_shipping') ? 1 : 0,
+        ));
+
+        $this->Audit_log_model->record(
+            $this->current_user->id, 'marketplace.listing.physical_details_saved', 'marketplace_listing', $public_id,
+            $before ? array('sku' => $before->sku) : null, array('sku' => $sku),
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
+
+        $this->session->set_flashdata('success', 'Shipping details saved.');
+        redirect('admin/marketplace/listings/'.$public_id.'/edit');
+    }
+
+    /** POST /admin/marketplace/listings/:id/digital-file — attach/replace the downloadable file. */
+    public function digital_file($public_id) {
+        $this->post_only();
+        $this->require_perm('marketplace.manage');
+
+        $listing = $this->Marketplace_listing_model->find_public($public_id, false);
+        if (!$listing) show_404();
+        if (strtoupper((string)$listing->product_type) !== 'DIGITAL') {
+            $this->session->set_flashdata('error', 'Only digital listings can have a downloadable file.');
+            return redirect('admin/marketplace/listings/'.$public_id.'/edit');
+        }
+        if (empty($_FILES['file']['name'])) {
+            $this->session->set_flashdata('error', 'Choose a file to upload.');
+            return redirect('admin/marketplace/listings/'.$public_id.'/edit');
+        }
+
+        $this->load->library('ShopDeliveryService');
+        $res = $this->shopdeliveryservice->attach_file($_FILES['file'], $listing->id);
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error']);
+            return redirect('admin/marketplace/listings/'.$public_id.'/edit');
+        }
+
+        $this->load->model('Digital_product_model');
+        // A completely absent field and an explicitly empty one must both
+        // mean "unlimited" — CI3's post() returns NULL for a missing key,
+        // and NULL !== '' evaluates true, so checking only against '' here
+        // previously defaulted every upload with no download_limit field at
+        // all to a limit of 1 instead of leaving it unlimited.
+        $limit_raw = $this->input->post('download_limit', true);
+        $this->Digital_product_model->update_fields($res['digital_product_id'], array(
+            'download_limit' => ($limit_raw !== null && $limit_raw !== '')
+                ? max(1, (int)$limit_raw) : null,
+            'link_ttl_hours' => max(1, (int)($this->input->post('link_ttl_hours', true) ?: 168)),
+        ));
+
+        $this->Audit_log_model->record(
+            $this->current_user->id, 'marketplace.listing.digital_file_uploaded', 'marketplace_listing', $public_id,
+            null, array('filename' => $_FILES['file']['name']),
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
+
+        $this->session->set_flashdata('success', 'File uploaded. It will be delivered automatically on the next purchase.');
+        redirect('admin/marketplace/listings/'.$public_id.'/edit');
     }
 
     /** POST create/update. Price and ownership are server-side throughout. */
@@ -111,6 +216,38 @@ class Marketplace extends Admin_Controller {
             $this->input->post('note', true)
         );
         $this->flash_result($res, 'Listing updated.');
+        redirect('admin/marketplace?tab=listings');
+    }
+
+    /** POST /admin/marketplace/listings/:id/feature — toggle the featured shelf. */
+    public function listing_feature($public_id) {
+        $this->post_only();
+        $this->require_perm('marketplace.manage');
+        $featured = $this->input->post('featured', true) === '1';
+        $res = $this->marketplaceservice->set_featured($public_id, $featured, $this->current_user->id);
+        $this->flash_result($res, $featured ? 'Listing featured.' : 'Listing unfeatured.');
+        redirect('admin/marketplace?tab=listings');
+    }
+
+    /** POST /admin/marketplace/listings/bulk — apply one action to many checked rows. */
+    public function listings_bulk() {
+        $this->post_only();
+        $this->require_perm('marketplace.manage');
+        $ids = $this->input->post('listing_ids');
+        $ids = is_array($ids) ? array_map('strval', $ids) : array();
+        $action = (string)$this->input->post('bulk_action', true);
+        if (!$ids) {
+            $this->session->set_flashdata('error', 'Select at least one listing first.');
+            return redirect('admin/marketplace?tab=listings');
+        }
+        $res = $this->marketplaceservice->bulk_listing_action($ids, $action, $this->current_user->id);
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error'] ?? 'Could not apply that action.');
+        } else {
+            $msg = $res['applied'].' listing(s) updated.';
+            if (!empty($res['failed'])) $msg .= ' '.count($res['failed']).' failed.';
+            $this->session->set_flashdata(empty($res['failed']) ? 'success' : 'warning', $msg);
+        }
         redirect('admin/marketplace?tab=listings');
     }
 

@@ -82,6 +82,13 @@ class SettingsService {
                 'New accounts must confirm their address before they can order.', false),
             'admin_mfa_required' => array('bool', 'security', 'Require MFA for staff',
                 'On redirects any staff account without two-factor authentication to the security screen to enrol before it can open the back office.', false),
+            'pin_auto_rotation_enabled' => array('bool', 'security', 'Automatically rotate transaction PINs',
+                'On, every customer\'s 4-digit transaction PIN is replaced with a fresh random one after the '
+                .'window below and delivered to them (in-app + email). Off leaves PINs unchanged until the '
+                .'customer resets one manually.', true),
+            'pin_rotation_hours' => array('int', 'security', 'PIN rotation window (hours)',
+                'How long a transaction PIN stays valid before the scheduled worker replaces it. Applies to '
+                .'every account with a PIN, including ones set before this was turned on.', 24),
 
             'min_deposit' => array('money', 'payments', 'Minimum deposit',
                 'The smallest top-up a customer may make.', '500.00000000'),
@@ -197,8 +204,10 @@ class SettingsService {
     /** Settings shown but not editable, with the reason. */
     public static function readonly_settings() {
         return array(
-            'base_currency' => 'Changing this would reinterpret every stored amount. '
-                .'It moves by migration only — see docs/session-22-currency.md.',
+            'base_currency' => 'The accounting/settlement currency every wallet, order and ledger entry '
+                .'is denominated in. Changing this would reinterpret every stored amount, so it moves by '
+                .'migration only — see docs/session-22-currency.md. To let customers browse in other '
+                .'currencies, enable them and set a default display currency in Admin → Currencies.',
             // Wired, but edited on their own screen rather than as text fields:
             // a logo is chosen from the media library, not typed as a URL.
             'brand_primary_color' => 'Set in Admin → Appearance.',
@@ -303,16 +312,44 @@ class SettingsService {
     private function coerce($type, $value, $label) {
         if (strpos($type, 'choice:') === 0) {
             $allowed = explode('|', substr($type, 7));
-            $value = strtoupper((string)$value);
-            return in_array($value, $allowed, true)
-                ? array('value' => $value, 'error' => null)
-                : array('value' => null, 'error' => $label.' must be one of: '.implode(', ', $allowed).'.');
+            // Match case-insensitively, but store the schema's own casing
+            // ('symbol'/'code'/'system'/'light'/'dark' are declared lowercase;
+            // 'AURORA'/'LIFETIME'/'FIRST_ORDER' are declared uppercase) rather
+            // than forcing one case globally. Every reader of the uppercase
+            // family (marvy_default_theme() is the one lowercase reader; the
+            // rest — active_homepage(), AffiliateService::scope(),
+            // ReferralService's qualify_event() — already strtoupper() on
+            // read) tolerates either case, but the previous code compared an
+            // *uppercased* submission against a *lowercase* allow-list for
+            // currency_display/default_theme, which could never match and
+            // rejected every legitimately correct value, including the form's
+            // own default.
+            $submitted = trim((string)$value);
+            foreach ($allowed as $option) {
+                if (strcasecmp($submitted, $option) === 0) {
+                    return array('value' => $option, 'error' => null);
+                }
+            }
+            return array('value' => null, 'error' => $label.' must be one of: '.implode(', ', $allowed).'.');
         }
         switch ($type) {
             case 'email':
                 return filter_var($value, FILTER_VALIDATE_EMAIL)
                     ? array('value' => $value, 'error' => null)
                     : array('value' => null, 'error' => $label.' must be a valid email address.');
+            case 'url':
+                // Optional by declaration (every current 'url' setting is
+                // documented "leave blank to disable" and read with a blank
+                // default) — an empty submission must save as empty, not be
+                // treated as a required field. A non-empty value must still be
+                // a well-formed http(s) URL, so a typo is caught here rather
+                // than surfacing as a silent webhook that never fires.
+                $value = (string)$value;
+                if ($value === '') return array('value' => '', 'error' => null);
+                if (!filter_var($value, FILTER_VALIDATE_URL) || !preg_match('#^https?://#i', $value)) {
+                    return array('value' => null, 'error' => $label.' must be a valid http(s) URL, or left empty to disable it.');
+                }
+                return array('value' => mb_substr($value, 0, 512), 'error' => null);
             case 'int':
                 if (!is_numeric($value) || (int)$value != $value || (int)$value < 0) {
                     return array('value' => null, 'error' => $label.' must be a whole number of zero or more.');

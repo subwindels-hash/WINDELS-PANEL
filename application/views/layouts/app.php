@@ -22,6 +22,7 @@ $nav_groups = $is_admin ? array(
         array('admin/identity',     'Identity services','identity.view',   'badge-check'),
         array('admin/giftcards',    'Gift cards', 'giftcards.view',  'gift-card'),
         array('admin/marketplace',  'Marketplace','marketplace.view','shopping-bag'),
+        array('admin/shop',         'Shop',       'marketplace.view','shopping-bag'),
     )),
     array('User management', array(
         array('admin/customers',    'All users',   'users.view',      'users'),
@@ -33,6 +34,7 @@ $nav_groups = $is_admin ? array(
     array('Finance', array(
         array('admin/payments',     'Payments',   'payments.view',   'credit-card'),
         array('admin/payouts',      'Payouts',    'payouts.review',  'wallet'),
+        array('admin/currencies',   'Currencies', 'settings.manage', 'wallet'),
     )),
     array('Content', array(
         array('admin/pages',        'Website pages','content.pages', 'globe'),
@@ -79,6 +81,9 @@ $nav_groups = $is_admin ? array(
         array('dashboard/identity',  'Identity verification',   null, 'badge-check'),
         array('dashboard/giftcards', 'Gift cards', null, 'gift-card'),
         array('dashboard/marketplace','Marketplace',null,'shopping-bag'),
+        array('shop',                 'Shop',       null, 'shopping-bag'),
+        array('dashboard/marketplace/orders', 'My Shop Orders', null, 'shopping-bag'),
+        array('dashboard/downloads', 'Downloads',  null, 'list'),
     )),
     array('Growth', array(
         array('dashboard/referrals', 'Referrals',  null, 'gift'),
@@ -106,6 +111,28 @@ if (!$is_admin) {
         foreach ($nav_groups as $gi => $group) {
             $nav_groups[$gi][1] = array_values(array_filter($group[1], function ($item) {
                 return $item[0] !== 'dashboard/mass-order';
+            }));
+        }
+    }
+
+    // Hide customer-facing nav items for product modules turned off in
+    // Admin → Settings → Feature flags. Off never deletes existing data —
+    // it only stops new activity and hides the entry point, same contract
+    // as mass_order above.
+    $hide_routes = array();
+    if (!marvy_feature_enabled('dripfeed', true))      $hide_routes[] = 'dashboard/drip-feed';
+    if (!marvy_feature_enabled('subscriptions', true)) $hide_routes[] = 'dashboard/subscriptions';
+    if (!marvy_feature_enabled('tickets', true))       $hide_routes[] = 'dashboard/tickets';
+    if (!marvy_feature_enabled('marketplace', true)) {
+        $hide_routes[] = 'dashboard/marketplace';
+        $hide_routes[] = 'shop';
+        $hide_routes[] = 'dashboard/marketplace/orders';
+        $hide_routes[] = 'dashboard/downloads';
+    }
+    if ($hide_routes) {
+        foreach ($nav_groups as $gi => $group) {
+            $nav_groups[$gi][1] = array_values(array_filter($group[1], function ($item) use ($hide_routes) {
+                return !in_array($item[0], $hide_routes, true);
             }));
         }
     }

@@ -29,11 +29,12 @@ class Providers extends Admin_Controller {
 
     public function index() {
         $status = $this->input->get('status', true);
+        $search = $this->input->get('q', true);
         $page   = max(1, (int)$this->input->get('page'));
         $limit  = self::PER_PAGE;
 
-        $providers = $this->Provider_model->paginated($limit, ($page-1)*$limit, $status ?: null);
-        $total     = $this->Provider_model->count_all($status ?: null);
+        $providers = $this->Provider_model->paginated($limit, ($page-1)*$limit, $status ?: null, $search ?: null);
+        $total     = $this->Provider_model->count_all($status ?: null, $search ?: null);
 
         // Attach service counts without an N+1 query.
         $counts = array();
@@ -56,6 +57,7 @@ class Providers extends Admin_Controller {
             'counts'       => $counts,
             'api_types'    => $this->api_types(),
             'status'       => $status,
+            'search'       => $search,
             'page'         => $page,
             'total_pages'  => max(1, (int)ceil($total / $limit)),
             'total'        => $total,

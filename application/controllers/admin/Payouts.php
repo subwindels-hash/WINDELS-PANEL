@@ -24,12 +24,21 @@ class Payouts extends Admin_Controller {
     public function index() {
         $this->require_perm('payouts.review');
 
-        $filters = array('status' => $this->input->get('status', true));
+        $filters = array(
+            'status'     => $this->input->get('status', true),
+            'search'     => $this->input->get('q', true),
+            'date_from'  => $this->input->get('from', true),
+            'date_to'    => $this->input->get('to', true),
+            'amount_min' => $this->input->get('amount_min', true),
+            'amount_max' => $this->input->get('amount_max', true),
+        );
         $page = max(1, (int)$this->input->get('page'));
 
+        $total = $this->Payout_request_model->admin_count($filters);
         $this->render('Payouts', 'admin/payouts/index', array(
             'payouts' => $this->Payout_request_model->admin_search($filters, self::PER_PAGE, ($page - 1) * self::PER_PAGE),
-            'total'   => $this->Payout_request_model->admin_count($filters),
+            'total'   => $total,
+            'total_pages' => max(1, (int)ceil($total / self::PER_PAGE)),
             'totals'  => $this->Payout_request_model->admin_totals(),
             'filters' => $filters,
             'page'    => $page,
@@ -146,6 +155,23 @@ class Payouts extends Admin_Controller {
         $this->Referral_campaign_model->update_row($campaign->id, array('status' => $status));
         $this->session->set_flashdata('success', 'Campaign is now '.strtolower($status).'.');
         redirect('admin/referrals');
+    }
+
+    /** GET /admin/payouts/:id — one withdrawal request in full. */
+    public function detail($public_id) {
+        $this->require_perm('payouts.review');
+
+        $payout = $this->Payout_request_model->admin_find_with_user($public_id);
+        if (!$payout) show_404();
+
+        $this->render($payout->public_id, 'admin/payouts/detail', array(
+            'payout'   => $payout,
+            'earnings' => $this->Earning_model->for_payout($payout->id),
+            // The reviewer's own history with this account, for context —
+            // "has this person withdrawn before, and did it go smoothly".
+            'user_payout_history' => $this->Payout_request_model->for_user($payout->user_id, 10),
+            'user_earnings_balance' => $this->earningsservice->balance($payout->user_id),
+        ));
     }
 
     /* ------------------------------ actions ----------------------------- */

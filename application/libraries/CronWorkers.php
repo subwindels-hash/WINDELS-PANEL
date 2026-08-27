@@ -423,6 +423,9 @@ class CronWorkers {
      * places its child order without charging again.
      */
     public function dripfeed($limit = 100) {
+        if (!marvy_feature_enabled('dripfeed', true)) {
+            return array('processed'=>0, 'failed'=>0, 'message'=>'dripfeed feature disabled');
+        }
         $this->need(array('Dripfeed_order_model'), array('DripfeedService'));
 
         $due = $this->ci->Dripfeed_order_model->due_runs($limit);
@@ -456,6 +459,9 @@ class CronWorkers {
 
     /** Place the next order for subscriptions whose execution time has arrived. */
     public function subscriptions($limit = 100) {
+        if (!marvy_feature_enabled('subscriptions', true)) {
+            return array('processed'=>0, 'failed'=>0, 'message'=>'subscriptions feature disabled');
+        }
         $this->need(array('Subscription_model'), array('SubscriptionService'));
 
         $due = $this->ci->Subscription_model->due($limit);
@@ -671,6 +677,53 @@ class CronWorkers {
             'processed' => $deleted,
             'failed'    => $failed,
             'message'   => $deleted ? "pruned ".implode(', ', $detail) : 'nothing to prune',
+        );
+    }
+
+    /* ========================= security PIN rotation ======================= */
+
+    /**
+     * Automatically rotate any transaction PIN older than the configured
+     * window (24 hours by default; Admin → Settings → pin_rotation_hours).
+     *
+     * Applies uniformly to every account that has a PIN set, including ones
+     * created long before this worker existed — pin_set_at has been populated
+     * since migration 020, so a pre-existing PIN is simply overdue on the
+     * first sweep after this job is deployed rather than being grandfathered
+     * in. Each user is issued a brand-new random PIN (PinService::rotate()),
+     * notified in-app and by email, and the change is audited. Disabling
+     * `pin_auto_rotation_enabled` turns the sweep into a no-op without
+     * touching any PIN already set.
+     */
+    public function pin_rotation($limit = 200) {
+        $this->need(array(), array('PinService'));
+
+        if (!$this->ci->pinservice->rotation_enabled()) {
+            return array('processed'=>0, 'failed'=>0, 'message'=>'automatic PIN rotation is disabled');
+        }
+
+        $due = $this->ci->pinservice->due_for_rotation($limit);
+        if (!$due) return array('processed'=>0, 'failed'=>0, 'message'=>'no PINs due for rotation');
+
+        $processed = 0; $failed = 0;
+        foreach ($due as $user) {
+            try {
+                $res = $this->ci->pinservice->rotate($user);
+                if (!empty($res['ok'])) {
+                    $processed++;
+                } else {
+                    $failed++;
+                    log_message('error', "pin_rotation user {$user->id}: ".($res['error'] ?? 'unknown'));
+                }
+            } catch (Exception $e) {
+                $failed++;
+                log_message('error', "pin_rotation user {$user->id} threw: ".$e->getMessage());
+            }
+        }
+        return array(
+            'processed' => $processed,
+            'failed'    => $failed,
+            'message'   => "{$processed} PIN(s) rotated, {$failed} failed",
         );
     }
 

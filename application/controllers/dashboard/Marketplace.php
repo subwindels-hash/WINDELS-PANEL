@@ -19,6 +19,15 @@ class Marketplace extends Auth_Controller {
             'Marketplace_listing_model', 'Marketplace_order_model',
             'Marketplace_category_model', 'Wallet_model', 'Setting_model'
         ));
+        // 'orders' stays reachable even when the module is switched off, so a
+        // customer's existing escrow/order history and downloads never
+        // disappear — only browsing/buying new listings is blocked.
+        $method = strtolower((string)$this->router->fetch_method());
+        if (!marvy_feature_enabled('marketplace', true) && $method !== 'orders'
+            && strpos($method, 'order') === false && strpos($method, 'reveal') === false
+            && strpos($method, 'accept') === false && strpos($method, 'dispute') === false) {
+            show_404();
+        }
     }
 
     public function index() {

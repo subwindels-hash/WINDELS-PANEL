@@ -12,7 +12,12 @@ class Subscriptions extends Auth_Controller {
         $this->load->library(array('SubscriptionService','DashboardStats','form_validation'));
     }
 
+    private function guard_enabled() {
+        if (!marvy_feature_enabled('subscriptions', true)) show_404();
+    }
+
     public function index() {
+        $this->guard_enabled();
         $rows = $this->Subscription_model->for_user($this->current_user->id, 25);
         $this->load->view('layouts/app', array(
             'title' => 'Subscriptions',

@@ -1,20 +1,44 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
 $perms = $permissions ?? array();
 $has   = function ($k) use ($perms) { return in_array('*', $perms, true) || in_array($k, $perms, true); };
+$search = $search ?? '';
 ?>
-<div class="row justify-between" style="margin-bottom:1rem;align-items:flex-start">
+<div class="row justify-between mb-4" style="align-items:flex-start;flex-wrap:wrap;gap:.75rem">
   <div>
     <h2 class="mb-0" style="font-size:1.4rem;font-weight:600">Providers</h2>
     <p class="muted text-sm">Upstream SMM panels. API keys are encrypted at rest and never displayed after creation.</p>
   </div>
-  <?php if ($has('providers.manage')): ?>
-    <button class="btn btn-primary" onclick="document.getElementById('ws-new-provider').showModal()">+ Add provider</button>
-  <?php endif; ?>
+  <div class="row" style="gap:.5rem;flex-wrap:wrap;align-items:center">
+    <form method="get" action="<?=site_url('admin/providers')?>" class="row" style="gap:.35rem" role="search"
+          aria-label="Search providers">
+      <?php if (!empty($status)): ?><input type="hidden" name="status" value="<?=htmlspecialchars($status)?>"><?php endif; ?>
+      <div class="ws-searchwrap">
+        <?php $this->load->view('partials/icon', array('name'=>'search','class'=>'w-4 h-4')); ?>
+        <label class="sr-only" for="ws-provider-search">Search providers</label>
+        <input class="input" id="ws-provider-search" name="q" value="<?=htmlspecialchars((string)$search)?>"
+               placeholder="Search by name, type or ID" aria-label="Search providers" style="min-width:15rem">
+      </div>
+      <button class="btn btn-secondary btn-sm" type="submit">Search</button>
+      <?php if ($search !== '' || !empty($status)): ?>
+        <a class="btn btn-ghost btn-sm" href="<?=site_url('admin/providers')?>">Clear</a>
+      <?php endif; ?>
+    </form>
+    <?php if ($has('providers.manage')): ?>
+      <button class="btn btn-primary" type="button" onclick="document.getElementById('ws-new-provider').showModal()">+ Add provider</button>
+    <?php endif; ?>
+  </div>
 </div>
 
 <div class="card">
 <?php if (empty($providers)): ?>
+  <?php if ($search !== '' || !empty($status)): ?>
+    <div class="text-center" style="padding:2.5rem 1rem">
+      <p class="muted mb-2">No providers match "<?=htmlspecialchars((string)$search)?>"<?=!empty($status) ? ' with status '.htmlspecialchars($status) : ''?>.</p>
+      <a class="btn btn-secondary btn-sm" href="<?=site_url('admin/providers')?>">Clear search</a>
+    </div>
+  <?php else: ?>
   <p class="muted">No providers configured yet.</p>
+  <?php endif; ?>
 <?php else: ?>
 <div class="overflow-x-auto">
   <table class="table">
@@ -46,6 +70,21 @@ $has   = function ($k) use ($perms) { return in_array('*', $perms, true) || in_a
     </tbody>
   </table>
 </div>
+<?php if (($total_pages ?? 1) > 1):
+  $qs = function (array $over = array()) use ($status, $search, $page) {
+    $base = array('status' => $status, 'q' => $search, 'page' => $page);
+    $merged = array_filter(array_merge($base, $over), function ($v) { return $v !== null && $v !== ''; });
+    return $merged ? '?'.http_build_query($merged) : '';
+  };
+?>
+<nav class="row justify-between mt-4" aria-label="Pagination">
+  <a class="btn btn-ghost btn-sm <?=$page <= 1 ? 'is-disabled' : ''?>"
+     href="<?=site_url('admin/providers'.$qs(array('page'=>max(1,$page-1))))?>">← Previous</a>
+  <span class="text-sm muted">Page <?=$page?> / <?=$total_pages?> · <?=number_format($total)?> providers</span>
+  <a class="btn btn-ghost btn-sm <?=$page >= $total_pages ? 'is-disabled' : ''?>"
+     href="<?=site_url('admin/providers'.$qs(array('page'=>min($total_pages,$page+1))))?>">Next →</a>
+</nav>
+<?php endif; ?>
 <?php endif; ?>
 </div>
 

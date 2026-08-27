@@ -12,7 +12,12 @@ class Dripfeed extends Auth_Controller {
         $this->load->library(array('DripfeedService', 'DashboardStats', 'form_validation'));
     }
 
+    private function guard_enabled() {
+        if (!marvy_feature_enabled('dripfeed', true)) show_404();
+    }
+
     public function index() {
+        $this->guard_enabled();
         $page = max(1, (int)$this->input->get('page'));
         $limit = 15;
         $rows = $this->Dripfeed_order_model->for_user($this->current_user->id, $limit, ($page-1)*$limit);

@@ -288,6 +288,66 @@ $pin_locked = !empty($user->pin_locked_until) && strtotime($user->pin_locked_unt
   <?php endif; ?>
 </div>
 
+<?php if (!empty($can_view_earnings)): ?>
+<div class="card mb-4">
+  <div class="row justify-between mb-3" style="align-items:center">
+    <h3 style="font-size:1rem;font-weight:600" class="mb-0">Affiliate &amp; earnings history</h3>
+    <a class="btn btn-ghost btn-sm" href="<?=site_url('admin/payouts?status=&user_id='.(int)$user->id)?>">All payouts for this user →</a>
+  </div>
+  <?php $es = $earnings_summary; ?>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:.75rem" class="mb-3">
+    <div><div class="muted text-xs">Available</div><div class="mono font-medium"><?=marvy_money($es['available'])?></div></div>
+    <div><div class="muted text-xs">Pending</div><div class="mono font-medium"><?=marvy_money($es['pending'])?></div></div>
+    <div><div class="muted text-xs">Locked</div><div class="mono font-medium"><?=marvy_money($es['locked'])?></div></div>
+    <div><div class="muted text-xs">Paid out</div><div class="mono font-medium"><?=marvy_money($es['paid'])?></div></div>
+    <div><div class="muted text-xs">Total earned</div><div class="mono font-medium"><?=marvy_money($es['total_earned'])?></div></div>
+    <div><div class="muted text-xs">Reversed</div><div class="mono font-medium"><?=marvy_money($es['reversed'])?></div></div>
+  </div>
+
+  <div class="row" style="gap:1rem;flex-wrap:wrap;align-items:flex-start">
+    <div style="flex:1;min-width:18rem">
+      <h4 class="text-xs muted mb-2" style="text-transform:uppercase;letter-spacing:.05em">Recent earnings</h4>
+      <?php if (empty($earning_rows)): ?>
+        <p class="muted text-sm">No earnings recorded.</p>
+      <?php else: ?>
+        <table class="table">
+          <tbody>
+          <?php foreach ($earning_rows as $e): ?>
+            <tr>
+              <td class="text-xs muted whitespace-nowrap"><?=htmlspecialchars(date('M j, H:i', strtotime($e->created_at)))?></td>
+              <td class="text-xs"><?=htmlspecialchars(ucfirst(strtolower($e->source)))?></td>
+              <td class="text-right mono text-xs"><?=marvy_money($e->amount, $e->currency ?? null)?></td>
+              <td><span class="badge badge-default"><?=htmlspecialchars($e->status)?></span></td>
+            </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+      <?php endif; ?>
+    </div>
+    <div style="flex:1;min-width:18rem">
+      <h4 class="text-xs muted mb-2" style="text-transform:uppercase;letter-spacing:.05em">Recent payout requests</h4>
+      <?php if (empty($payout_rows)): ?>
+        <p class="muted text-sm">No withdrawal requests.</p>
+      <?php else: ?>
+        <table class="table">
+          <tbody>
+          <?php foreach ($payout_rows as $p): ?>
+            <tr>
+              <td class="text-xs muted whitespace-nowrap"><?=htmlspecialchars(date('M j, H:i', strtotime($p->requested_at)))?></td>
+              <td class="text-xs"><?=htmlspecialchars(str_replace('_',' ',$p->method))?></td>
+              <td class="text-right mono text-xs"><?=marvy_money($p->amount, $p->currency ?? null)?></td>
+              <td><span class="badge badge-default"><?=htmlspecialchars($p->status)?></span></td>
+              <td><a class="text-xs" href="<?=site_url('admin/payouts/'.$p->public_id)?>">View →</a></td>
+            </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+      <?php endif; ?>
+    </div>
+  </div>
+</div>
+<?php endif; ?>
+
 <div class="row" style="gap:.75rem;flex-wrap:wrap;align-items:flex-start">
   <div class="card" style="flex:1;min-width:20rem">
     <h3 style="font-size:1rem;font-weight:600" class="mb-3">Recent SMM orders</h3>

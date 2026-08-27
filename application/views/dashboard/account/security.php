@@ -45,6 +45,23 @@
       </div>
       <?php endif; ?>
 
+      <?php if (!empty($pin_set) && !empty($pin_rotation_enabled)): ?>
+      <div class="alert alert-info mt-3 mb-0">
+        <?php $hrs = (int)($pin_rotation_hours ?? 24); $secs = $pin_rotates_in ?? null; ?>
+        For your protection, your PIN refreshes automatically every <?=$hrs?> hour<?=$hrs === 1 ? '' : 's'?>.
+        <?php if ($secs !== null): ?>
+          <?php if ($secs <= 0): ?>
+            A new PIN is due on the next scheduled check and will be sent to your email.
+          <?php else: ?>
+            <?php $h = (int)floor($secs / 3600); $m = (int)floor(($secs % 3600) / 60); ?>
+            Next automatic refresh in
+            <?=$h > 0 ? $h.' hour'.($h === 1 ? '' : 's').($m > 0 ? ' '.$m.' minute'.($m === 1 ? '' : 's') : '') : max(1,$m).' minute'.($m === 1 ? '' : 's')?>
+            — the new PIN will be sent to your email and shown in Notifications.
+          <?php endif; ?>
+        <?php endif; ?>
+      </div>
+      <?php endif; ?>
+
       <?=form_open('dashboard/security', array('class'=>'mt-4 stack'))?>
         <input type="hidden" name="action" value="set_pin">
         <?php if (!empty($pin_set)): ?>

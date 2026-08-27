@@ -81,17 +81,23 @@ check(
 
 console.log('\n── Responsive · dashboard shell');
 const appLayout = fs.readFileSync(path.join(ROOT, 'application/views/layouts/app.php'), 'utf8');
-// The shell uses a hidden-on-mobile sidebar plus a fixed bottom bar, which is
-// a legitimate mobile pattern — assert that pairing rather than demanding a
-// hamburger the design does not use.
+const appCss = fs.readFileSync(path.join(ROOT, 'assets/css/design-system.css'), 'utf8');
+// The shell uses a hidden-on-mobile sidebar (off-canvas via .ws-sidebar, driven
+// by a max-width media query in design-system.css) plus a fixed bottom tab bar
+// — a legitimate mobile pattern. The sidebar/tabbar visibility is CSS-driven,
+// not expressed as Tailwind utility classes in the markup, so this asserts the
+// CSS rules that actually implement it rather than a specific class string.
 check(
   'the sidebar is hidden on small screens',
-  /class="[^"]*hidden md:flex[^"]*"/.test(appLayout),
-  'the desktop sidebar is not hidden below the md breakpoint'
+  /@media\s*\(max-width:\s*767px\)\s*\{[\s\S]{0,400}?\.ws-sidebar\s*\{[\s\S]{0,200}?transform:\s*translateX\(-100%\)/.test(appCss)
+    && appLayout.includes('class="ws-sidebar"'),
+  'no off-canvas transform for .ws-sidebar below the mobile breakpoint'
 );
 check(
   'a mobile navigation replaces it',
-  /md:hidden[^"]*fixed bottom-0/.test(appLayout),
+  /\.ws-mobile-tabbar\s*\{[^}]*display:\s*none/.test(appCss)
+    && /@media\s*\(max-width:\s*767px\)\s*\{[\s\S]{0,2000}?\.ws-mobile-tabbar\s*\{[^}]*display:\s*grid/.test(appCss)
+    && appLayout.includes('class="ws-mobile-tabbar"'),
   'no mobile bottom navigation'
 );
 check('the app shell declares a viewport', /width=device-width/.test(appLayout)

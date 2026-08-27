@@ -427,6 +427,10 @@ class Core_seeder extends Seeder {
             // these back on from Admin → Settings after they have signed in.
             array('email_verification_required',FALSE,'security',0),
             array('admin_mfa_required',FALSE,'security',0),
+            // Every transaction PIN — new or already set — is replaced with a
+            // fresh random one after this many hours (CronWorkers::pin_rotation).
+            array('pin_auto_rotation_enabled',TRUE,'security',0),
+            array('pin_rotation_hours',24,'security',0),
             array('api_enabled',TRUE,'security',1),
             // affiliate
             array('referral_commission_percent','5.0000','affiliate',1),

@@ -86,7 +86,14 @@ export class Client {
     const html = fromHtml ?? this.last?.text ?? '';
     const token = this.csrfFrom(html);
     const body = new URLSearchParams();
-    for (const [k, v] of Object.entries(fields)) body.append(k, v);
+    for (const [k, v] of Object.entries(fields)) {
+      // Repeated fields (checkbox groups like `listing_ids[]`) need one
+      // `append()` per value — URLSearchParams would otherwise stringify an
+      // array into one comma-joined value, which PHP's $_POST never parses
+      // back into an array.
+      if (Array.isArray(v)) { for (const item of v) body.append(k, item); }
+      else body.append(k, v);
+    }
     if (token && !body.has(token.name)) body.append(token.name, token.value);
 
     let r = await this.raw(pathname, {

@@ -62,3 +62,70 @@ $old = function ($key, $default = '') use ($l) { return $l !== null ? ($l->{$key
     <a class="btn btn-ghost" href="<?=site_url('admin/marketplace?tab=listings')?>">Cancel</a>
   </div>
 </form>
+
+<?php if ($l && strtoupper((string)$l->product_type) === 'DIGITAL'): ?>
+<div class="card mt-4" style="max-width:46rem">
+  <h3 class="card-title">Downloadable file</h3>
+  <p class="muted text-sm mb-3">
+    Uploaded to private storage — never a public URL. A customer can only reach it through an
+    authenticated, expiring, audited download link after payment clears.
+  </p>
+  <?php if (!empty($digital_product)): ?>
+    <p class="text-sm mb-3">
+      Current file: <strong><?=htmlspecialchars($digital_product->original_filename)?></strong>
+      (<?=number_format($digital_product->size_bytes / 1048576, 2)?> MB)
+    </p>
+  <?php else: ?>
+    <p class="muted text-sm mb-3">No file attached yet — this listing cannot be automatically delivered until one is uploaded.</p>
+  <?php endif; ?>
+  <form method="post" action="<?=site_url('admin/marketplace/listings/'.$l->public_id.'/digital-file')?>" enctype="multipart/form-data" class="row" style="gap:.5rem;align-items:flex-end;flex-wrap:wrap">
+    <input type="hidden" name="<?=$this->security->get_csrf_token_name()?>" value="<?=$this->security->get_csrf_hash()?>">
+    <label class="field mb-0" style="flex:1;min-width:16rem"><span class="label">Choose file (max 200 MB)</span>
+      <input class="input" type="file" name="file" required></label>
+    <label class="field mb-0"><span class="label">Download limit (blank = unlimited)</span>
+      <input class="input mono" type="number" min="1" name="download_limit" style="width:9rem"
+             value="<?=htmlspecialchars((string)($digital_product->download_limit ?? ''))?>"></label>
+    <label class="field mb-0"><span class="label">Link valid for (hours)</span>
+      <input class="input mono" type="number" min="1" name="link_ttl_hours" style="width:9rem"
+             value="<?=htmlspecialchars((string)($digital_product->link_ttl_hours ?? 168))?>"></label>
+    <button class="btn btn-primary" type="submit">Upload</button>
+  </form>
+</div>
+<?php endif; ?>
+
+<?php if ($l && strtoupper((string)$l->product_type) === 'PHYSICAL'): ?>
+<div class="card mt-4" style="max-width:46rem">
+  <h3 class="card-title">Shipping details</h3>
+  <p class="muted text-sm mb-3">
+    SKU, weight and package dimensions used by the shipping method calculator at checkout and shown
+    to fulfilment staff on the shipment queue. Required before this listing can be sold.
+  </p>
+  <?php if (empty($physical_product)): ?>
+    <p class="muted text-sm mb-3">No SKU set yet — this listing cannot be fulfilled correctly until one is saved.</p>
+  <?php endif; ?>
+  <form method="post" action="<?=site_url('admin/marketplace/listings/'.$l->public_id.'/physical')?>" class="row" style="gap:.5rem;align-items:flex-end;flex-wrap:wrap">
+    <input type="hidden" name="<?=$this->security->get_csrf_token_name()?>" value="<?=$this->security->get_csrf_hash()?>">
+    <label class="field mb-0" style="min-width:12rem"><span class="label">SKU</span>
+      <input class="input mono" type="text" name="sku" maxlength="64" required
+             value="<?=htmlspecialchars((string)($physical_product->sku ?? ''))?>"></label>
+    <label class="field mb-0"><span class="label">Weight (grams)</span>
+      <input class="input mono" type="number" min="0" name="weight_grams" style="width:9rem"
+             value="<?=htmlspecialchars((string)($physical_product->weight_grams ?? ''))?>"></label>
+    <label class="field mb-0"><span class="label">Length (cm)</span>
+      <input class="input mono" type="number" min="0" step="0.01" name="length_cm" style="width:8rem"
+             value="<?=htmlspecialchars((string)($physical_product->length_cm ?? ''))?>"></label>
+    <label class="field mb-0"><span class="label">Width (cm)</span>
+      <input class="input mono" type="number" min="0" step="0.01" name="width_cm" style="width:8rem"
+             value="<?=htmlspecialchars((string)($physical_product->width_cm ?? ''))?>"></label>
+    <label class="field mb-0"><span class="label">Height (cm)</span>
+      <input class="input mono" type="number" min="0" step="0.01" name="height_cm" style="width:8rem"
+             value="<?=htmlspecialchars((string)($physical_product->height_cm ?? ''))?>"></label>
+    <label class="row mb-0" style="gap:.4rem;align-items:center">
+      <input type="checkbox" name="requires_shipping" value="1"
+             <?=(!isset($physical_product->requires_shipping) || (int)$physical_product->requires_shipping === 1) ? 'checked' : ''?>>
+      <span>Requires shipping</span>
+    </label>
+    <button class="btn btn-primary" type="submit">Save shipping details</button>
+  </form>
+</div>
+<?php endif; ?>

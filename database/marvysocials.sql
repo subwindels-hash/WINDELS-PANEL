@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 23), roles,
+-- foreign keys, migration bookkeeping (version 26), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first-login accounts. No migration,
 -- seed or installer command has to run afterwards.
@@ -1866,6 +1866,245 @@ ALTER TABLE earnings
 ADD CONSTRAINT fk_earn_payout FOREIGN KEY (payout_request_id)
 REFERENCES payout_requests(id) ON DELETE SET NULL;
 
+-- ---------------------------------------------------------------------
+-- migration 024_currency_management
+-- ---------------------------------------------------------------------
+
+ALTER TABLE currencies
+ADD COLUMN rate_source VARCHAR(32) NULL COMMENT 'MANUAL today; a provider key (e.g. OPEN_EXCHANGE_RATES) once automatic rates exist',
+ADD COLUMN rate_updated_by BIGINT UNSIGNED NULL COMMENT 'admin who last set exchange_rate',
+ADD COLUMN rate_updated_at DATETIME NULL COMMENT 'when exchange_rate was last changed',
+ADD COLUMN rate_effective_at DATETIME NULL COMMENT 'when this rate is considered to take effect';
+
+ALTER TABLE currencies
+ADD CONSTRAINT fk_currencies_rate_updated_by FOREIGN KEY (rate_updated_by)
+REFERENCES users(id) ON DELETE SET NULL;
+
+-- ---------------------------------------------------------------------
+-- migration 025_shop
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS shopping_carts (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  user_id BIGINT UNSIGNED NOT NULL UNIQUE COMMENT 'one open cart per account',
+  currency CHAR(3) NOT NULL COMMENT 'base currency at the time items were added',
+  coupon_code VARCHAR(32) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_cart_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS cart_items (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  cart_id BIGINT UNSIGNED NOT NULL,
+  listing_id BIGINT UNSIGNED NOT NULL,
+  quantity INT UNSIGNED NOT NULL DEFAULT 1,
+  quoted_unit_price DECIMAL(20,8) NOT NULL COMMENT 're-quoted from the listing at checkout, never trusted from this row',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_cart_listing (cart_id, listing_id),
+  CONSTRAINT fk_cartitem_cart FOREIGN KEY (cart_id) REFERENCES shopping_carts(id) ON DELETE CASCADE,
+  CONSTRAINT fk_cartitem_listing FOREIGN KEY (listing_id) REFERENCES marketplace_listings(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS coupons (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  code VARCHAR(32) NOT NULL UNIQUE,
+  description VARCHAR(255) NULL,
+  discount_type VARCHAR(16) NOT NULL DEFAULT 'PERCENT' COMMENT 'PERCENT|FIXED',
+  discount_value DECIMAL(20,8) NOT NULL,
+  currency CHAR(3) NULL COMMENT 'required when discount_type = FIXED',
+  min_order_amount DECIMAL(20,8) NULL,
+  max_discount_amount DECIMAL(20,8) NULL COMMENT 'caps a PERCENT discount in absolute terms',
+  usage_limit INT UNSIGNED NULL COMMENT 'NULL = unlimited total redemptions',
+  usage_limit_per_user INT UNSIGNED NULL DEFAULT 1,
+  times_used INT UNSIGNED NOT NULL DEFAULT 0,
+  starts_at DATETIME NULL,
+  ends_at DATETIME NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_by_id BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_coupon_active (is_active, starts_at, ends_at),
+  CONSTRAINT fk_coupon_creator FOREIGN KEY (created_by_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS coupon_redemptions (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  coupon_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  marketplace_order_id BIGINT UNSIGNED NULL,
+  discount_amount DECIMAL(20,8) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_couponredeem_coupon (coupon_id),
+  INDEX idx_couponredeem_user (user_id),
+  CONSTRAINT fk_couponredeem_coupon FOREIGN KEY (coupon_id) REFERENCES coupons(id) ON DELETE CASCADE,
+  CONSTRAINT fk_couponredeem_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_couponredeem_order FOREIGN KEY (marketplace_order_id) REFERENCES marketplace_orders(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS digital_products (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  listing_id BIGINT UNSIGNED NOT NULL UNIQUE,
+  storage_key VARCHAR(255) NOT NULL COMMENT 'path under the private storage/ directory, never web-accessible directly',
+  original_filename VARCHAR(255) NOT NULL,
+  mime_type VARCHAR(128) NOT NULL,
+  size_bytes BIGINT UNSIGNED NOT NULL,
+  download_limit INT UNSIGNED NULL COMMENT 'NULL = unlimited downloads per order',
+  link_ttl_hours INT UNSIGNED NOT NULL DEFAULT 168 COMMENT 'how long a generated download link stays valid',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_digitalproduct_listing FOREIGN KEY (listing_id) REFERENCES marketplace_listings(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS digital_deliveries (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  marketplace_order_id BIGINT UNSIGNED NOT NULL,
+  digital_product_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  download_count INT UNSIGNED NOT NULL DEFAULT 0,
+  last_downloaded_at DATETIME NULL,
+  last_download_ip VARCHAR(45) NULL,
+  revoked TINYINT(1) NOT NULL DEFAULT 0,
+  revoked_reason VARCHAR(255) NULL,
+  revoked_by BIGINT UNSIGNED NULL,
+  revoked_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_digitaldelivery_order (marketplace_order_id, digital_product_id),
+  INDEX idx_digitaldelivery_user (user_id),
+  CONSTRAINT fk_digitaldelivery_order FOREIGN KEY (marketplace_order_id) REFERENCES marketplace_orders(id) ON DELETE CASCADE,
+  CONSTRAINT fk_digitaldelivery_product FOREIGN KEY (digital_product_id) REFERENCES digital_products(id) ON DELETE CASCADE,
+  CONSTRAINT fk_digitaldelivery_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_digitaldelivery_revoker FOREIGN KEY (revoked_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shipping_methods (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  name VARCHAR(120) NOT NULL,
+  carrier VARCHAR(80) NULL,
+  price DECIMAL(20,8) NOT NULL DEFAULT 0.00000000,
+  currency CHAR(3) NOT NULL,
+  estimated_days_min INT UNSIGNED NULL,
+  estimated_days_max INT UNSIGNED NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  sorting INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_shipmethod_active (is_active, sorting)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shipping_addresses (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  user_id BIGINT UNSIGNED NOT NULL,
+  full_name VARCHAR(160) NOT NULL,
+  phone VARCHAR(32) NOT NULL,
+  line1 VARCHAR(255) NOT NULL,
+  line2 VARCHAR(255) NULL,
+  city VARCHAR(120) NOT NULL,
+  state VARCHAR(120) NULL,
+  postal_code VARCHAR(32) NULL,
+  country_code CHAR(2) NOT NULL,
+  is_default TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_shipaddr_user (user_id),
+  CONSTRAINT fk_shipaddr_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS physical_products (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  listing_id BIGINT UNSIGNED NOT NULL UNIQUE,
+  sku VARCHAR(64) NOT NULL UNIQUE,
+  weight_grams INT UNSIGNED NULL,
+  length_cm DECIMAL(8,2) NULL,
+  width_cm DECIMAL(8,2) NULL,
+  height_cm DECIMAL(8,2) NULL,
+  requires_shipping TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_physicalproduct_listing FOREIGN KEY (listing_id) REFERENCES marketplace_listings(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shop_order_shipments (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  marketplace_order_id BIGINT UNSIGNED NOT NULL UNIQUE,
+  shipping_address_id BIGINT UNSIGNED NOT NULL,
+  shipping_method_id BIGINT UNSIGNED NULL,
+  shipping_cost DECIMAL(20,8) NOT NULL DEFAULT 0.00000000,
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING'
+    COMMENT 'PENDING|PROCESSING|SHIPPED|DELIVERED|CANCELLED|RETURNED',
+  carrier VARCHAR(80) NULL,
+  tracking_number VARCHAR(120) NULL,
+  tracking_url VARCHAR(500) NULL,
+  shipped_at DATETIME NULL,
+  delivered_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_shipment_order FOREIGN KEY (marketplace_order_id) REFERENCES marketplace_orders(id) ON DELETE CASCADE,
+  CONSTRAINT fk_shipment_address FOREIGN KEY (shipping_address_id) REFERENCES shipping_addresses(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_shipment_method FOREIGN KEY (shipping_method_id) REFERENCES shipping_methods(id) ON DELETE SET NULL,
+  INDEX idx_shipment_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS product_reviews (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  listing_id BIGINT UNSIGNED NOT NULL,
+  marketplace_order_id BIGINT UNSIGNED NOT NULL COMMENT 'proof of a completed purchase',
+  user_id BIGINT UNSIGNED NOT NULL,
+  rating TINYINT UNSIGNED NOT NULL COMMENT '1-5',
+  title VARCHAR(160) NULL,
+  body TEXT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING|APPROVED|REJECTED',
+  moderated_by BIGINT UNSIGNED NULL,
+  moderated_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_review_order (marketplace_order_id) COMMENT 'one review per completed purchase',
+  INDEX idx_review_listing_status (listing_id, status),
+  CONSTRAINT fk_review_listing FOREIGN KEY (listing_id) REFERENCES marketplace_listings(id) ON DELETE CASCADE,
+  CONSTRAINT fk_review_order FOREIGN KEY (marketplace_order_id) REFERENCES marketplace_orders(id) ON DELETE CASCADE,
+  CONSTRAINT fk_review_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_review_moderator FOREIGN KEY (moderated_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE marketplace_listings
+ADD COLUMN giftcard_product_id BIGINT UNSIGNED NULL COMMENT 'set only for category=GIFT_CARD listings; points at the real gift card catalogue';
+
+ALTER TABLE marketplace_listings
+ADD CONSTRAINT fk_listing_giftcard_product FOREIGN KEY (giftcard_product_id)
+REFERENCES giftcard_products(id) ON DELETE SET NULL;
+
+ALTER TABLE marketplace_orders
+ADD COLUMN giftcard_order_id BIGINT UNSIGNED NULL COMMENT 'set when this order fulfilled through the gift card system';
+
+ALTER TABLE marketplace_orders
+ADD CONSTRAINT fk_order_giftcard_order FOREIGN KEY (giftcard_order_id)
+REFERENCES giftcard_orders(id) ON DELETE SET NULL;
+
+ALTER TABLE marketplace_listings
+ADD COLUMN currency CHAR(3) NOT NULL DEFAULT 'NGN' COMMENT 'currency of price/promo_price';
+
+ALTER TABLE marketplace_orders
+ADD COLUMN currency CHAR(3) NOT NULL DEFAULT 'NGN' COMMENT 'currency of unit_price/gross_amount';
+
+-- ---------------------------------------------------------------------
+-- migration 026_coupon_discovery
+-- ---------------------------------------------------------------------
+
+ALTER TABLE coupons
+ADD COLUMN is_public TINYINT(1) NOT NULL DEFAULT 0
+COMMENT 'Shown in the cart page discovery list when 1; still requires is_active + date window + usage limit to actually apply';
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -1880,7 +2119,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (23);
+INSERT INTO migrations (version) VALUES (26);
 
 -- ======================================================================
 -- CORE DATA
@@ -2555,6 +2794,12 @@ VALUES ('email_verification_required', '{"value":false}', 'security', 0);
 
 INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
 VALUES ('admin_mfa_required', '{"value":false}', 'security', 0);
+
+INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
+VALUES ('pin_auto_rotation_enabled', '{"value":true}', 'security', 0);
+
+INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
+VALUES ('pin_rotation_hours', '{"value":24}', 'security', 0);
 
 INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
 VALUES ('api_enabled', '{"value":true}', 'security', 1);

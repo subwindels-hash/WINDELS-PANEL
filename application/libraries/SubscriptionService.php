@@ -24,6 +24,9 @@ class SubscriptionService {
     }
 
     public function create($user, array $input) {
+        if (!marvy_feature_enabled('subscriptions', true)) {
+            return array('ok'=>false,'error'=>'Subscriptions are currently disabled.','code'=>'FEATURE_DISABLED');
+        }
         $service = $this->resolve($input);
         if (!$service) return array('ok'=>false,'error'=>'Service not found','code'=>'NO_SERVICE');
         if ($service->status !== 'ACTIVE') return array('ok'=>false,'error'=>'Service unavailable','code'=>'SERVICE_INACTIVE');

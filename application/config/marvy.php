@@ -86,4 +86,7 @@ $config['cron'] = array(
     'analytics' => '0 * * * *',
     'provider_sync' => '*/60 * * * *',
     'affiliate_payouts' => '*/10 * * * *',
+    // Rotates any transaction PIN older than pin_rotation_hours (24h default).
+    // Runs every 15 minutes so a PIN is never overdue by more than that.
+    'pin_rotation' => '*/15 * * * *',
 );

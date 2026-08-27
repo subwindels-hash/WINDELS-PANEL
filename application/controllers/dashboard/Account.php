@@ -67,6 +67,11 @@ class Account extends Auth_Controller {
             // path that can recover it from the stored hash.
             'pin_set'    => $this->pinservice->is_set($this->current_user),
             'pin_locked' => $this->pinservice->locked_for($this->current_user),
+            // Automatic rotation: when the current PIN will next be replaced,
+            // and whether the scheduled worker is even turned on.
+            'pin_rotation_enabled' => $this->pinservice->rotation_enabled(),
+            'pin_rotation_hours'   => $this->pinservice->rotation_hours(),
+            'pin_rotates_in'       => $this->pinservice->rotates_in($this->current_user),
         ));
     }
 

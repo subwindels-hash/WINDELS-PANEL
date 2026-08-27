@@ -56,6 +56,14 @@ class MY_Controller extends CI_Controller {
         // non-staff visitors on a branded page while staff keep working.
         $this->enforce_maintenance();
 
+        // Demo mode (feature flag `demo_mode`, seeded off). A public demo
+        // deployment needs to stay browsable and stay put — nobody should be
+        // able to change a price, delete a listing or drain a demo wallet
+        // from the internet. On, every mutating request is refused except
+        // the ones needed to actually experience the demo (sign in/out,
+        // health checks); reads are untouched.
+        $this->enforce_demo_mode();
+
         $this->capture_referral();
     }
 
@@ -140,6 +148,65 @@ class MY_Controller extends CI_Controller {
         $this->output->set_status_header(503);
         $this->load->view('errors/html/maintenance');
         exit;
+    }
+
+    /**
+     * Demo mode: read-only for anonymous/customer traffic, so a public demo
+     * deployment can be browsed and never mutated from the internet. Staff
+     * are exempt (same as maintenance mode above) — they still need to
+     * operate the panel, moderate it, and are the only ones who can turn
+     * the flag back off. Only the DB-backed feature flag is checked,
+     * deliberately not `env_bool('DEMO_MODE')` — that env flag governs which
+     * mock provider adapters load (see config/providers.php) and is a
+     * deploy-time decision; this is the runtime switch an operator flips
+     * from Admin → Settings → Feature flags without redeploying.
+     */
+    protected function enforce_demo_mode() {
+        if (!isset($this->input) || $this->input->is_cli_request()) return;
+        if (!$this->db_ready) return;
+        if (!marvy_feature_enabled('demo_mode', false)) return;
+
+        $method = strtoupper((string)$this->input->method(true));
+        if (!in_array($method, array('POST', 'PUT', 'PATCH', 'DELETE'), true)) return;
+
+        $path = trim((string)$this->uri->uri_string(), '/');
+        $exempt_prefixes = array('login', 'admin/login', 'logout', 'register', 'csrf');
+        foreach ($exempt_prefixes as $prefix) {
+            if ($path === $prefix || strpos($path, $prefix.'/') === 0) return;
+        }
+
+        // Staff keep working, same exemption as enforce_maintenance() above.
+        // Without it, switching demo_mode on would be a one-way door: nobody
+        // — not even a SUPER_ADMIN with the password — could POST it back
+        // off again without direct database access. The permission boundary
+        // that actually matters here (settings.manage, orders.refund, etc.)
+        // is still enforced by each controller's own require_perm() call.
+        $role = null;
+        try {
+            $u = $this->auth ? $this->auth->user() : null;
+            $role = $u ? $u->role : null;
+        } catch (Throwable $e) { $role = null; }
+        if ($role && in_array($role, array('SUPER_ADMIN', 'ADMIN', 'STAFF'), true)) return;
+
+        $message = 'This is a read-only demo. Changes are disabled.';
+        $wants_json = strpos($path, 'api/') === 0
+            || (isset($this->input) && $this->input->is_ajax_request());
+
+        $this->output->set_status_header(403);
+        if ($wants_json) {
+            $this->output->set_content_type('application/json');
+            $this->output->set_output(json_encode(array(
+                'success' => false,
+                'error' => array('code' => 'DEMO_MODE', 'message' => $message),
+            )));
+            exit;
+        }
+
+        if (isset($this->session)) {
+            $this->session->set_flashdata('error', $message);
+        }
+        $referer = isset($this->input) ? (string)$this->input->server('HTTP_REFERER') : '';
+        redirect($referer !== '' ? $referer : '/');
     }
 
     private function enforce_impersonation_request_boundary() {

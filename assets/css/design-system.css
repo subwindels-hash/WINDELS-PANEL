@@ -536,7 +536,16 @@ button { font-family:inherit; cursor:pointer; }
   border-right:1px solid var(--color-border);
   background: var(--color-surface);
   display:flex; flex-direction:column;
-  position:sticky; top:0; height:100vh; max-height:100vh;
+  /* Offset below the sticky announcement bar exactly like .ws-topbar does
+     (top:var(--ws-announce-h,0)). Without this offset, the sidebar's own
+     sticky top edge — which holds the logo in .ws-sidebar-brand — lands at
+     the same y=0 as the announcement ticker (z-index:80) once the page is
+     scrolled, so the scrolling announcement text painted on top of the
+     logo/brand mark. Same fix keeps the sidebar's height from running under
+     the announcement bar it no longer overlaps. */
+  position:sticky; top:var(--ws-announce-h,0);
+  height:calc(100vh - var(--ws-announce-h,0px)); max-height:calc(100vh - var(--ws-announce-h,0px));
+  z-index:30;
 }
 .ws-sidebar-brand {
   height: var(--ws-topbar-h);
