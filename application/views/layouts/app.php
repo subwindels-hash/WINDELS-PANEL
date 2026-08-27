@@ -2,54 +2,74 @@
 $is_admin = isset($current_user) && in_array($current_user->role, array('SUPER_ADMIN','ADMIN','STAFF'), true);
 $unread   = isset($unread) ? (int)$unread : 0;
 $active   = isset($nav_active) ? $nav_active : trim($this->uri->uri_string(), '/');
-$nav = $is_admin ? array(
-    array('admin',              'Overview',   'reports.view',    'dashboard'),
-    array('admin/orders',       'Orders',     'orders.view',     'shopping-bag'),
-    array('admin/vtu',          'VTU',        'vtu.view',        'smartphone'),
-    array('admin/numbers',      'Numbers',    'numbers.view',    'hash'),
-    array('admin/identity',     'Identity',   'identity.view',   'badge-check'),
-    array('admin/giftcards',    'Gift cards', 'giftcards.view',  'gift-card'),
-    array('admin/marketplace',  'Marketplace','marketplace.view','shopping-bag'),
-    array('admin/analytics',    'Analytics',  'reports.view',    'chart'),
-    array('admin/customers',    'Customers',   'users.view',      'users'),
-    array('admin/services',     'SMM services','services.view',   'zap'),
-    array('admin/catalogue',    'Catalogue',  'services.view',   'package'),
-    array('admin/refills',      'Operations', 'orders.refill',   'repeat'),
-    array('admin/providers',    'Providers',  'providers.view',  'server'),
-    array('admin/api-keys',     'Reseller API','api.manage',     'key'),
-    array('admin/payments',     'Payments',   'payments.view',   'credit-card'),
-    array('admin/tickets',      'Tickets',    'tickets.view',    'message-square'),
-    array('admin/affiliates',   'Affiliates', 'affiliates.view', 'gift'),
-    array('admin/payouts',      'Payouts',    'payouts.review',  'wallet'),
-    array('admin/blog',         'Content',    'blog.manage',     'list'),
-    array('admin/pages',        'Website pages','content.pages', 'globe'),
-    array('admin/staff',        'Staff',      'staff.manage',    'shield'),
-    array('admin/media',        'Media',      'media.manage',    'star'),
-    array('admin/categories',   'System',     'audit.view',      'globe'),
-    array('admin/settings',     'Settings',   'settings.manage', 'settings'),
-    array('dashboard/security', 'Account & security', null,      'shield'),
+$nav_groups = $is_admin ? array(
+    array('Overview', array(
+        array('admin',              'Overview',   'reports.view',    'dashboard'),
+        array('admin/analytics',    'Analytics',  'reports.view',    'chart'),
+    )),
+    array('Orders', array(
+        array('admin/orders',       'Orders',     'orders.view',     'shopping-bag'),
+        array('admin/refills',      'Operations', 'orders.refill',   'repeat'),
+        array('admin/vtu',          'VTU',        'vtu.view',        'smartphone'),
+        array('admin/numbers',      'Numbers',    'numbers.view',    'hash'),
+        array('admin/identity',     'Identity',   'identity.view',   'badge-check'),
+        array('admin/giftcards',    'Gift cards', 'giftcards.view',  'gift-card'),
+        array('admin/marketplace',  'Marketplace','marketplace.view','shopping-bag'),
+    )),
+    array('Catalogue', array(
+        array('admin/services',     'SMM services','services.view',   'zap'),
+        array('admin/catalogue',    'Catalogue',  'services.view',   'package'),
+        array('admin/providers',    'Providers',  'providers.view',  'server'),
+        array('admin/customers',    'Customers',   'users.view',      'users'),
+    )),
+    array('Money', array(
+        array('admin/payments',     'Payments',   'payments.view',   'credit-card'),
+        array('admin/payouts',      'Payouts',    'payouts.review',  'wallet'),
+        array('admin/affiliates',   'Affiliates', 'affiliates.view', 'gift'),
+    )),
+    array('Site', array(
+        array('admin/tickets',      'Tickets',    'tickets.view',    'message-square'),
+        array('admin/api-keys',     'Reseller API','api.manage',     'key'),
+        array('admin/blog',         'Content',    'blog.manage',     'list'),
+        array('admin/pages',        'Website pages','content.pages', 'globe'),
+        array('admin/media',        'Media',      'media.manage',    'star'),
+        array('admin/staff',        'Staff',      'staff.manage',    'shield'),
+        array('admin/categories',   'System',     'audit.view',      'globe'),
+        array('admin/settings',     'Settings',   'settings.manage', 'settings'),
+        array('dashboard/security', 'Account & security', null,      'shield'),
+    )),
 ) : array(
-    array('dashboard',           'Dashboard',  null, 'dashboard'),
-    array('dashboard/new-order', 'New Order',  null, 'zap'),
-    array('dashboard/mass-order','Mass Order', null, 'list'),
-    array('dashboard/orders',    'My Orders',  null, 'shopping-bag'),
-    array('dashboard/history',   'History',    null, 'list'),
-    array('dashboard/vtu',       'VTU',        null, 'smartphone'),
-    array('dashboard/numbers',   'Numbers',    null, 'hash'),
-    array('dashboard/identity',  'Identity',   null, 'badge-check'),
-    array('dashboard/giftcards', 'Gift cards', null, 'gift-card'),
-    array('dashboard/marketplace','Marketplace',null,'shopping-bag'),
-    array('dashboard/services',  'Services',   null, 'package'),
-    array('dashboard/favorites', 'Favorites',  null, 'star'),
-    array('dashboard/drip-feed', 'Drip-feed',  null, 'zap'),
-    array('dashboard/subscriptions','Subscriptions', null, 'repeat'),
-    array('dashboard/add-funds', 'Add Funds',  null, 'wallet'),
-    array('dashboard/transactions','Transactions', null, 'list'),
-    array('dashboard/tickets',   'Support',    null, 'message-square'),
-    array('dashboard/referrals', 'Referrals',  null, 'gift'),
-    array('dashboard/earnings',  'Earnings',   null, 'wallet'),
-    array('dashboard/api',       'API',        null, 'key'),
-    array('dashboard/security',  'Security',   null, 'shield'),
+    array('Orders', array(
+        array('dashboard',           'Dashboard',  null, 'dashboard'),
+        array('dashboard/new-order', 'New Order',  null, 'zap'),
+        array('dashboard/mass-order','Mass Order', null, 'list'),
+        array('dashboard/orders',    'My Orders',  null, 'shopping-bag'),
+        array('dashboard/drip-feed', 'Drip-feed',  null, 'zap'),
+        array('dashboard/subscriptions','Subscriptions', null, 'repeat'),
+        array('dashboard/history',   'History',    null, 'list'),
+    )),
+    array('Wallet', array(
+        array('dashboard/add-funds', 'Add Funds',  null, 'wallet'),
+        array('dashboard/transactions','Transactions', null, 'list'),
+    )),
+    array('Catalogue', array(
+        array('dashboard/services',  'Services',   null, 'package'),
+        array('dashboard/favorites', 'Favorites',  null, 'star'),
+        array('dashboard/vtu',       'VTU',        null, 'smartphone'),
+        array('dashboard/numbers',   'Numbers',    null, 'hash'),
+        array('dashboard/identity',  'Identity',   null, 'badge-check'),
+        array('dashboard/giftcards', 'Gift cards', null, 'gift-card'),
+        array('dashboard/marketplace','Marketplace',null,'shopping-bag'),
+    )),
+    array('Growth', array(
+        array('dashboard/referrals', 'Referrals',  null, 'gift'),
+        array('dashboard/earnings',  'Earnings',   null, 'wallet'),
+    )),
+    array('Account', array(
+        array('dashboard/tickets',   'Support',    null, 'message-square'),
+        array('dashboard/api',       'API',        null, 'key'),
+        array('dashboard/security',  'Security',   null, 'shield'),
+    )),
 );
 
 // Keep disabled modules out of customer navigation as well as guarding their
@@ -63,10 +83,16 @@ if (!$is_admin) {
         $mass_order_enabled = $CI->Feature_flag_model->enabled('mass_order');
     } catch (Exception $e) { /* hidden until the feature table is available */ }
     if (!$mass_order_enabled) {
-        $nav = array_values(array_filter($nav, function ($item) {
-            return $item[0] !== 'dashboard/mass-order';
-        }));
+        foreach ($nav_groups as $gi => $group) {
+            $nav_groups[$gi][1] = array_values(array_filter($group[1], function ($item) {
+                return $item[0] !== 'dashboard/mass-order';
+            }));
+        }
     }
+}
+$nav = array();
+foreach ($nav_groups as $group) {
+    foreach ($group[1] as $item) $nav[] = $item;
 }
 
 // Branding, set from Admin -> Appearance. Read defensively: the layout also
@@ -153,15 +179,20 @@ try {
         <?php endif; ?>
       </a>
     </div>
-    <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-0.5" aria-label="Primary">
-      <?php foreach ($nav as $item): list($href,$label,$perm) = $item; ?>
-        <?php if ($perm && !in_array('*', $permissions ?? array(), true) && !in_array($perm, $permissions ?? array(), true)) continue; ?>
-        <?php $is_active = ($active === $href) || (strpos($active, $href.'/') === 0); ?>
-        <a href="<?=site_url($href)?>"
-           class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm <?=$is_active ? 'bg-brand-50 text-brand-700 font-medium' : 'text-slate-600 hover:bg-slate-100'?>">
-          <?php $this->load->view('partials/icon', array('name'=>$item[3] ?? 'circle', 'class'=>'w-[18px] h-[18px]')); ?>
-          <span><?=htmlspecialchars($label)?></span>
-        </a>
+    <nav class="flex-1 overflow-y-auto px-3 py-4" aria-label="Primary">
+      <?php foreach ($nav_groups as $group): if (empty($group[1])) continue; ?>
+        <div class="ws-nav-group">
+          <span class="ws-nav-group-label"><?=htmlspecialchars($group[0])?></span>
+          <?php foreach ($group[1] as $item): list($href,$label,$perm) = $item; ?>
+            <?php if ($perm && !in_array('*', $permissions ?? array(), true) && !in_array($perm, $permissions ?? array(), true)) continue; ?>
+            <?php $is_active = ($active === $href) || ($href !== 'admin' && $href !== 'dashboard' && strpos($active, $href.'/') === 0); ?>
+            <a href="<?=site_url($href)?>"
+               class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm <?=$is_active ? 'bg-brand-50 text-brand-700 font-medium' : 'text-slate-600 hover:bg-slate-100'?>">
+              <?php $this->load->view('partials/icon', array('name'=>$item[3] ?? 'circle', 'class'=>'w-[18px] h-[18px]')); ?>
+              <span><?=htmlspecialchars($label)?></span>
+            </a>
+          <?php endforeach; ?>
+        </div>
       <?php endforeach; ?>
     </nav>
     <div class="border-t p-4">

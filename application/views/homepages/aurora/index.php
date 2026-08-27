@@ -197,6 +197,27 @@ $reasons = array(
   </div>
 </section>
 
+<?php $posts = isset($data['posts']) && is_array($data['posts']) ? $data['posts'] : array(); ?>
+<?php if ($posts): ?>
+<section class="py-12">
+  <div class="container" style="max-width:1080px">
+    <h2 class="text-center">From the blog</h2>
+    <p class="muted text-center mt-2">Published posts only — this section is empty until staff write something.</p>
+    <div class="grid grid-3 mt-6">
+      <?php foreach ($posts as $post): ?>
+      <article class="card card-hover">
+        <h3 class="card-title"><a href="<?=site_url('blog/'.$post->slug)?>"><?=htmlspecialchars($post->title)?></a></h3>
+        <?php if (!empty($post->excerpt)): ?>
+          <p class="muted"><?=htmlspecialchars(mb_strimwidth(strip_tags($post->excerpt), 0, 140, '…'))?></p>
+        <?php endif; ?>
+        <a class="btn btn-ghost btn-sm" href="<?=site_url('blog/'.$post->slug)?>">Read →</a>
+      </article>
+      <?php endforeach; ?>
+    </div>
+  </div>
+</section>
+<?php endif; ?>
+
 <section class="py-12">
   <div class="container" style="max-width:900px">
     <div class="ws-cta">

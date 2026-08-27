@@ -59,7 +59,7 @@ class SettingsService {
             'registration_enabled' => array('bool', 'security', 'Allow new sign-ups',
                 'Off closes registration; existing customers can still sign in.', true),
             'email_verification_required' => array('bool', 'security', 'Require email verification',
-                'New accounts must confirm their address before they can order.', true),
+                'New accounts must confirm their address before they can order.', false),
             'admin_mfa_required' => array('bool', 'security', 'Require MFA for staff',
                 'On redirects any staff account without two-factor authentication to the security screen to enrol before it can open the back office.', false),
 

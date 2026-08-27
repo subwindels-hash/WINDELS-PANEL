@@ -6,6 +6,12 @@ Options -Indexes
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
+    # HTTPS is terminated by cPanel AutoSSL / LiteSpeed / the CDN. Do not
+    # add an HTTP→HTTPS RewriteRule here: a host that already redirects
+    # (cPanel → Domains → Force HTTPS Redirect) would loop. Env.php upgrades
+    # an http:// VP_BASE_URL to https:// when the request itself is TLS, so
+    # generated links match the browser without a rewrite.
+
     # Deny direct access to sensitive directories (parity with
     # docker/nginx/nginx.conf and nginx.prod.conf deny rules).
     RewriteRule ^(application|system|storage|vendor|docs|database|tests|tools|cron|node_modules)(/|$) - [F,L]

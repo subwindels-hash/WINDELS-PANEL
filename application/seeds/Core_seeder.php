@@ -422,8 +422,11 @@ class Core_seeder extends Seeder {
             array('partial_refund_enabled',TRUE,'orders',0),
             // security
             array('registration_enabled',TRUE,'security',1),
-            array('email_verification_required',TRUE,'security',0),
-            array('admin_mfa_required',TRUE,'security',0),
+            // First login on a fresh cPanel import must reach /dashboard and
+            // /admin without an inbox or an authenticator app. Operators turn
+            // these back on from Admin → Settings after they have signed in.
+            array('email_verification_required',FALSE,'security',0),
+            array('admin_mfa_required',FALSE,'security',0),
             array('api_enabled',TRUE,'security',1),
             // affiliate
             array('referral_commission_percent','5.0000','affiliate',1),

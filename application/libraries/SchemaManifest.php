@@ -177,6 +177,26 @@ class SchemaManifest {
         return trim(preg_replace('/\s+/', ' ', $type));
     }
 
+    /**
+     * True when two column types are the same family across MySQL and MariaDB.
+     *
+     * MariaDB implements the JSON type as LONGTEXT (information_schema
+     * COLUMN_TYPE is `longtext`, often with a CHECK json_valid() constraint).
+     * Treating that as a mismatch made every cPanel/MariaDB install fail
+     * deploy-verify.php with dozens of "type mismatch" rows even though the
+     * schema was correct. TIMESTAMP and DATETIME are likewise aliases.
+     */
+    public static function types_compatible($want, $have) {
+        $want = self::base_type($want);
+        $have = self::base_type($have);
+        if ($want === 'timestamp') $want = 'datetime';
+        if ($have === 'timestamp') $have = 'datetime';
+        if ($want === $have) return true;
+        $json = array('json' => true, 'longtext' => true);
+        if (isset($json[$want]) && isset($json[$have])) return true;
+        return false;
+    }
+
     /** enum('A','B') → array('A','B'); NULL for non-enums. */
     public static function enum_values($type) {
         if (!preg_match('/^(enum|set)\s*\((.*)\)/is', $type, $m)) return null;

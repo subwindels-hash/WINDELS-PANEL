@@ -158,6 +158,88 @@ class CpanelDeploymentTest extends TestCase
             'vendor/ must be optional, not required');
         $this->assertStringNotContainsString('Dotenv\\Dotenv', $src,
             'phpdotenv was the one hard composer dependency in the request path');
+        $this->assertDoesNotMatchRegularExpression('#/home/[^/\s]+/public_html#', $src,
+            'index.php must not hard-code a development-server absolute path');
+        $this->assertStringContainsString("\$system_path = 'system';", $src,
+            'the primary framework location after a cPanel extract is ./system');
+    }
+
+    public function testHttpBaseUrlIsUpgradedWhenTheRequestIsHttps()
+    {
+        $_SERVER['HTTPS'] = 'on';
+        $_SERVER['HTTP_HOST'] = 'www.marvysocials.com';
+        $this->withEnv(array(
+            'VP_BASE_URL' => 'http://www.marvysocials.com',
+            'VP_DB_NAME'  => 'x',
+        ), function () {
+            $this->assertSame('https://www.marvysocials.com', getenv('APP_URL'),
+                'an http:// VP_BASE_URL on an HTTPS request must not emit mixed-content links');
+        });
+        unset($_SERVER['HTTPS'], $_SERVER['HTTP_HOST']);
+    }
+
+    public function testHttpBaseUrlIsLeftAloneOnCli()
+    {
+        unset($_SERVER['HTTPS'], $_SERVER['HTTP_X_FORWARDED_PROTO'], $_SERVER['REQUEST_SCHEME']);
+        $_SERVER['SERVER_PORT'] = '80';
+        $this->withEnv(array(
+            'VP_BASE_URL' => 'http://www.marvysocials.com',
+            'VP_DB_NAME'  => 'x',
+        ), function () {
+            $this->assertSame('http://www.marvysocials.com', getenv('APP_URL'),
+                'cron must not rewrite VP_BASE_URL just because the operator has not switched to https yet');
+        });
+        unset($_SERVER['SERVER_PORT']);
+    }
+
+    public function testMariaDbJsonIsCompatibleWithLongtext()
+    {
+        require_once self::$root.'/application/libraries/SchemaManifest.php';
+        $this->assertTrue(SchemaManifest::types_compatible('json', 'longtext'),
+            'MariaDB reports JSON columns as longtext — that is not a schema mismatch');
+        $this->assertTrue(SchemaManifest::types_compatible('JSON', 'LONGTEXT'));
+        $this->assertTrue(SchemaManifest::types_compatible('datetime', 'timestamp'));
+        $this->assertFalse(SchemaManifest::types_compatible('int', 'varchar'));
+        $this->assertFalse(SchemaManifest::types_compatible('int', 'bigint'));
+    }
+
+    public function testDeployVerifyRequiresTheThreeFrameworkPaths()
+    {
+        $src = file_get_contents(self::$root.'/application/libraries/InstallCheck.php');
+        foreach (array(
+            'system/core/CodeIgniter.php',
+            'vendor/autoload.php',
+            'vendor/codeigniter/framework/system/core/CodeIgniter.php',
+            'types_compatible',
+        ) as $needle) {
+            $this->assertStringContainsString($needle, $src, "InstallCheck must check {$needle}");
+        }
+        $verify = file_get_contents(self::$root.'/deploy-verify.php');
+        $this->assertStringContainsString('check_framework', $verify);
+        $this->assertStringContainsString('check_composer', $verify);
+        $this->assertStringContainsString('check_schema', $verify);
+    }
+
+    public function testDeploymentPackageWorkflowIsActive()
+    {
+        $wf = self::$root.'/.github/workflows/deployment-package.yml';
+        $staged = self::$root.'/docs/github-actions/deployment-package.yml';
+        // GitHub Apps without the `workflows` permission cannot push files
+        // under .github/workflows/. The identical YAML ships at
+        // docs/github-actions/deployment-package.yml for a one-paste activate.
+        $this->assertTrue(is_file($wf) || is_file($staged),
+            'the packaging pipeline YAML must exist (as a GitHub Actions workflow, or at docs/github-actions/ until the workflows permission is granted)');
+        $src = file_get_contents(is_file($wf) ? $wf : $staged);
+        $this->assertStringContainsString('workflow_dispatch', $src);
+        $this->assertStringContainsString("tags: ['v*']", $src);
+        $this->assertStringContainsString('composer install --no-dev', $src);
+        $this->assertStringContainsString('npm run build:css', $src);
+        $this->assertStringContainsString('tools/build_deployment_package.sh', $src);
+        $this->assertStringContainsString('tools/verify_deployment_package.sh', $src);
+        $this->assertStringContainsString('application-deployment.zip', $src);
+        $this->assertStringContainsString('actions/upload-artifact', $src);
+        $this->assertFileDoesNotExist(self::$root.'/deployment-package.yml.workflow-ready',
+            'do not leave the workflow as a .workflow-ready file in the repository root');
     }
 
     /* ===================== runtime directories ============================ */
@@ -280,6 +362,48 @@ class CpanelDeploymentTest extends TestCase
             'the credentials must be documented in the file the operator imports');
     }
 
+    public function testProductionSqlShipsACustomerAndStaffAccount()
+    {
+        $this->assertMatchesRegularExpression("/INSERT INTO `users`.*'demo'.*'CUSTOMER'/s", self::$sql,
+            'a CUSTOMER account must exist so /login can open the dashboard');
+        $this->assertMatchesRegularExpression("/INSERT INTO `users`.*'staff'.*'STAFF'/s", self::$sql,
+            'a STAFF account must exist so /admin/login has a non-owner operator');
+        $this->assertStringContainsString("'admin_mfa_required', '{\"value\":false}'", self::$sql,
+            'mandatory staff MFA would bounce first login to /dashboard/security');
+        $this->assertStringContainsString("'email_verification_required', '{\"value\":false}'", self::$sql,
+            'email verification would block a fresh import that has no mailer yet');
+    }
+
+    public function testFirstLoginPasswordsVerifyAgainstTheSeededHashes()
+    {
+        preg_match_all('/--\s+password:\s+(\S+)/', self::$sql, $pws);
+        preg_match_all('/(\$2y\$\d\d\$[.\/A-Za-z0-9]{53})/', self::$sql, $hashes);
+        $this->assertGreaterThanOrEqual(3, count($pws[1]), 'admin, demo and staff passwords must be documented');
+        $this->assertGreaterThanOrEqual(3, count($hashes[1]), 'admin, demo and staff hashes must be present');
+        $this->assertTrue(password_verify($pws[1][0], $hashes[1][0]),
+            'the first documented password must verify against the first bcrypt hash (SUPER_ADMIN)');
+        $this->assertTrue(password_verify($pws[1][1], $hashes[1][1]),
+            'the demo password must verify against its bcrypt hash');
+        $this->assertTrue(password_verify($pws[1][2], $hashes[1][2]),
+            'the staff password must verify against its bcrypt hash');
+    }
+
+    public function testLiveAccountsSqlIsIdempotentAndDoesNotOverwritePasswords()
+    {
+        $path = self::$root.'/database/first_login_accounts.sql';
+        $this->assertFileExists($path,
+            'an existing live database cannot re-import marvysocials.sql; this file is the phpMyAdmin paste');
+        $sql = file_get_contents($path);
+        $this->assertStringContainsString('WHERE NOT EXISTS', $sql);
+        $this->assertStringNotContainsStringIgnoringCase('DROP TABLE', $sql);
+        $this->assertStringNotContainsStringIgnoringCase('CREATE DATABASE', $sql);
+        $this->assertStringContainsString('admin_mfa_required', $sql);
+        $this->assertDoesNotMatchRegularExpression('/UPDATE `users`\s+SET[^;]*password_hash/is', $sql,
+            'never reset a live password the operator may already have changed');
+        $this->assertStringContainsString("'demo'", $sql);
+        $this->assertStringContainsString("'staff'", $sql);
+    }
+
     public function testProductionSqlImportsIntoADatabaseTheOperatorAlreadyCreated()
     {
         $this->assertStringNotContainsStringIgnoringCase('CREATE DATABASE', self::$sql,
@@ -300,6 +424,7 @@ class CpanelDeploymentTest extends TestCase
         $src = file_get_contents($script);
 
         foreach (array('index.php', 'application', 'assets', 'database/marvysocials.sql',
+                       'database/first_login_accounts.sql',
                        '.env.example', '.htaccess') as $needed) {
             $this->assertStringContainsString($needed, $src, "the package must contain {$needed}");
         }
@@ -488,7 +613,7 @@ class CpanelDeploymentTest extends TestCase
             }
             if (strpos($rel, 'assets/uploads/') === 0) {
                 $base = basename($rel);
-                if ($base === '.gitignore' || $base === 'index.html') {
+                if ($base === '.gitignore') {
                     continue;
                 }
             }
@@ -589,6 +714,7 @@ class CpanelDeploymentTest extends TestCase
             'ENCRYPTION_KEY', 'APP_KEY', 'SMTP_HOST', 'SESS_DRIVER', 'CACHE_DRIVER',
             'STORAGE_DRIVER', 'STRIPE_SECRET_KEY', 'MAIL_DRIVER', 'APP_TIMEZONE',
             'DB_CHARSET', 'DB_COLLATION', 'DB_DRIVER', 'STORAGE_PATH', 'CI_ENV', 'APP_ENV',
+            'VP_BASE_URL',
         ));
         $saved = array();
         foreach ($touched as $key) {

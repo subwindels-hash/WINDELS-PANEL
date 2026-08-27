@@ -26,12 +26,15 @@ class Home extends Public_Controller {
         $data['showcase'] = array();
         $data['categories'] = array();
         $data['catalogue_size'] = 0;
+        $data['posts'] = array();
         if ($this->db_ready) {
             try {
                 $this->load->model(array('Service_model', 'Service_category_model'));
                 $data['showcase'] = $this->Service_model->homepage_showcase(6);
                 $data['categories'] = $this->Service_model->categories_with_counts(8);
                 $data['catalogue_size'] = $this->Service_model->count_active();
+                $this->load->model('Blog_post_model');
+                $data['posts'] = $this->Blog_post_model->published(null, 3, 0);
             } catch (Throwable $e) {
                 log_message('error', 'homepage catalogue unavailable: '.$e->getMessage());
             }

@@ -69,6 +69,20 @@ class MassOrderTest extends TestCase
         $this->assertCount(1, $this->app->provider_calls);
     }
 
+    public function testSpacedPipesAreAcceptedAsTheSameFormat()
+    {
+        $result = $this->app->massorderservice->process_text(
+            $this->user,
+            'instagram-followers | https://example.test/spaced | 100',
+            $this->token('spaced')
+        );
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(1, $result['successful_count']);
+        $this->assertSame(0, $result['failed_count']);
+        $this->assertSame('9.80000000', $this->app->balance($this->user));
+    }
+
     public function testStrictQuantityParsingRejectsCastableGarbageBeforeOrderEngine()
     {
         $result = $this->app->massorderservice->process_text(

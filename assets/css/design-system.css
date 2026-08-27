@@ -243,6 +243,12 @@ button { font-family:inherit; cursor:pointer; }
 }
 .sidebar .nav { flex-direction:column; align-items:stretch; }
 .sidebar .nav-link { width:100%; }
+.ws-nav-group{margin:0 0 .85rem}
+.ws-nav-group-label{display:block;padding:.4rem .75rem .15rem;font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--slate-400)}
+.ws-service-table{min-width:640px}
+@media(max-width:700px){
+  .ws-service-table th:nth-child(6),.ws-service-table td:nth-child(6){display:none}
+}
 
 /* ------------------------------- Utility --------------------------------- */
 .muted { color:var(--color-text-muted); }

@@ -67,7 +67,7 @@ That single file creates everything: all tables, columns, indexes and foreign
 keys, the migration bookkeeping, roles, permissions, application settings,
 feature flags, payment methods, email templates, FAQs, currencies, the VTU /
 numbers / identity / gift card catalogues, marketplace categories — and the
-first administrator account.
+first-login accounts (SUPER_ADMIN, customer, staff).
 
 **There is no migration step and no seed step afterwards.** The database is
 finished when the import finishes.
@@ -141,16 +141,36 @@ exits 0/1, so monitoring can gate on it.
 
 Visit `https://yourdomain.com`.
 
-The homepage should render. Sign in at `/login` with the credentials printed in
-the header of `database/marvysocials.sql`:
+The homepage should render. Sign in with the credentials printed in the header
+of `database/marvysocials.sql`:
 
 ```
-username: admin
-password: ChangeMe!Admin2026
+Staff admin (full control of the site)
+  URL:      https://yourdomain.com/admin/login
+  username: admin
+  password: ChangeMe!Admin2026
+
+Customer dashboard
+  URL:      https://yourdomain.com/login
+  username: demo
+  password: MarvyDemo#2026!
+
+Support staff
+  URL:      https://yourdomain.com/admin/login
+  username: staff
+  password: MarvyStaff#2026!
 ```
 
-**Change that password immediately** (Dashboard → Account → Password), or set
-your own credentials *before* the first login using the setup page below.
+The SUPER_ADMIN account (`admin`) bypasses every permission check, so the
+admin dashboard can manage users, services, orders, payments, settings and
+the rest of the site. Customer credentials are refused at `/admin/login`.
+
+**Change those passwords immediately** (Dashboard → Account → Password), or set
+your own administrator *before* the first login using the setup page below.
+
+If the database was imported earlier and has no `demo`/`staff` rows, import
+`database/first_login_accounts.sql` in phpMyAdmin — it inserts missing
+accounts and does not overwrite existing passwords.
 
 ---
 
@@ -277,6 +297,7 @@ serves traffic correctly without it.
 | “Unable to connect to your database server” | Wrong `VP_DB_*` values, or the user is not assigned to the database | cPanel → MySQL Databases → *Add User To Database* → ALL PRIVILEGES. |
 | Homepage loads but every link 404s | `.htaccess` was not extracted (File Manager hides dotfiles by default) | File Manager → Settings → *Show Hidden Files*, confirm `.htaccess` exists next to `index.php`. |
 | Login form reloads without an error | Session cookies are `Secure` but the site is on plain http | Install the free certificate in cPanel → SSL/TLS Status, then set `VP_BASE_URL=https://…`. |
+| Admin login works but every `/admin` page bounces to Security | `admin_mfa_required` is on and the account has no authenticator yet | Import `database/first_login_accounts.sql`, or turn the setting off in Admin → Settings after enabling MFA. |
 | Provider keys stopped working after a move | `VP_ENCRYPTION_KEY` changed | Restore the old key in `.env`. |
 | Uploaded images 404 | `assets/uploads/` missing or not writable | Create it in File Manager and set 755/775. |
 
@@ -303,7 +324,8 @@ application-deployment.zip
 ├── storage/                  logs/ and cache/ (writable, pre-guarded)
 ├── cron/                     crontab example for cPanel → Cron Jobs
 └── database/
-    └── marvysocials.sql        the complete database: schema + data + admin
+    ├── marvysocials.sql           the complete database: schema + data + accounts
+    └── first_login_accounts.sql   phpMyAdmin paste for an existing live database
 ```
 
 `index.php` auto-detects the framework in `system/` first and
@@ -317,8 +339,9 @@ requires them.
 
 ## For maintainers: rebuilding the package
 
-The zip is committed so that an operator can download it without tooling. After
-changing application code, a migration or the core seed:
+The zip is a build artifact (GitHub Actions → Artifacts, or GitHub Releases
+when a `v*` tag is pushed). After changing application code, a migration or
+the core seed, rebuild it:
 
 ```bash
 php tools/build_production_sql.php          # regenerate database/marvysocials.sql

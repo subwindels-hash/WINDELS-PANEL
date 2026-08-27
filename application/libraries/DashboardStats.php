@@ -51,6 +51,8 @@ class DashboardStats {
             ->select("COALESCE(SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END),0) AS completed", false)
             ->select("COALESCE(SUM(CASE WHEN status IN ('PENDING','PROCESSING','IN_PROGRESS') THEN 1 ELSE 0 END),0) AS active", false)
             ->select("COALESCE(SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END),0) AS pending", false)
+            ->select("COALESCE(SUM(CASE WHEN status IN ('PROCESSING','IN_PROGRESS') THEN 1 ELSE 0 END),0) AS processing", false)
+            ->select("COALESCE(SUM(CASE WHEN status IN ('CANCELED','CANCELLED') THEN 1 ELSE 0 END),0) AS cancelled", false)
             ->select("COALESCE(SUM(CASE WHEN status IN ('COMPLETED','PARTIAL') THEN charge ELSE 0 END),0) AS spent", false)
             ->where('user_id', $user_id)
             ->get('orders')->row();
@@ -70,8 +72,10 @@ class DashboardStats {
             'orders'    => (int)($row->orders ?? 0),
             'completed' => (int)($row->completed ?? 0),
             'active'    => (int)($row->active ?? 0),
-            'pending'   => (int)($row->pending ?? 0),
-            'spent'     => (string)($row->spent ?? '0.00000000'),
+            'pending'    => (int)($row->pending ?? 0),
+            'processing' => (int)($row->processing ?? 0),
+            'cancelled'  => (int)($row->cancelled ?? 0),
+            'spent'      => (string)($row->spent ?? '0.00000000'),
             'deposited' => $deposited,
         );
     }

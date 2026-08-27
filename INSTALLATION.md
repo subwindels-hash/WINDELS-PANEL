@@ -66,13 +66,13 @@ pre-built CSS in `assets/`, `storage/`, `cron/`, `database/marvysocials.sql`
    zipped SQL directly (useful if your host's upload limit is small).*
 4. Leave all settings at their defaults → press **Go**.
 5. Wait for the green success banner: *"Import has been successfully
-   finished, 84 tables…"* (the exact query count varies — the table count
-   must be **84**).
+   finished…"* (the exact query count varies — the table count
+   must be **94**).
 
 That one file creates the entire schema (tables, columns, indexes, 111
 foreign keys) **and** all required data: roles, permissions, settings,
 feature flags, payment methods, email templates, currencies, catalogues, the
-migration bookkeeping row — and the **first administrator account**.
+migration bookkeeping row — and the **first-login accounts** (SUPER_ADMIN, customer, staff).
 
 **There is no migrate step and no seed step afterwards.** Re-importing is
 safe if an import is interrupted (`CREATE TABLE IF NOT EXISTS` — it just
@@ -134,7 +134,7 @@ You get one page that checks, in sections:
   `storage/cache/ratelimit`, `application/cache`, `assets/uploads`
 - ✅ **`.env`** parses and every required value is set (and not a placeholder)
 - ✅ **Live database connection** and — with the DB reachable — the **schema
-  audit**: all 84 tables, every column with its type, indexes, foreign keys
+  audit**: all 94 tables, every column with its type, indexes, foreign keys
 
 Any red row prints **what is missing and the exact cPanel click-path that
 fixes it** (e.g. "enable mysqli: cPanel → Select PHP Version → Extensions").
@@ -147,13 +147,25 @@ the browser check.)*
 
 ## Step 6 — First login & secure the administrator
 
-The SQL seeds one SUPER_ADMIN:
+The SQL seeds three first-login accounts (also printed at the top of
+`marvysocials.sql`):
 
 ```
-Email:    admin
-Password: ChangeMe!Admin2026
+Staff admin — full control of the site
+  URL:      https://yourdomain.com/admin/login
+  Username: admin
+  Password: ChangeMe!Admin2026
+
+Customer dashboard
+  URL:      https://yourdomain.com/login
+  Username: demo
+  Password: MarvyDemo#2026!
+
+Support staff
+  URL:      https://yourdomain.com/admin/login
+  Username: staff
+  Password: MarvyStaff#2026!
 ```
-*(also printed in the header comment at the top of `marvysocials.sql`)*
 
 **Do one of the following immediately:**
 

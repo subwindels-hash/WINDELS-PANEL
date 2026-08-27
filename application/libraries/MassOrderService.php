@@ -77,7 +77,14 @@ class MassOrderService {
     }
 
     private function parse_text_row($line, $row) {
-        $parts = explode('|', $line);
+        // Accept the panel form `service|link|quantity`, the same with
+        // spaces around the pipes, or a tab-separated triple. A line that
+        // cannot be split into exactly three fields is a format error —
+        // never a silent skip — so a typo cannot become a charged order.
+        $parts = preg_split('/\s*\|\s*/', $line);
+        if (count($parts) !== 3) {
+            $parts = preg_split('/\t+/', $line);
+        }
         if (count($parts) !== 3) {
             return $this->invalid_row($row, 'BAD_FORMAT', 'Use service|link|quantity.');
         }

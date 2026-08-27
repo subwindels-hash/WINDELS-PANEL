@@ -2,31 +2,64 @@
 $old = $this->session->flashdata('old') ?: array();
 $svc = $service;
 $user_rate = $user_rate ?? null;
+$picker = array();
+$platforms = array();
+foreach ($services as $s) {
+    $platform = (string)($s->platform ?? '');
+    $cat_id = (string)($s->category_id ?? '');
+    $cat_name = (string)($s->category_name ?? 'Other');
+    if ($platform !== '') $platforms[$platform] = true;
+    $picker[] = array(
+        'id' => $s->public_id,
+        'name' => $s->name,
+        'rate' => (string)$s->rate,
+        'min' => (int)$s->min_quantity,
+        'max' => (int)$s->max_quantity,
+        'step' => (int)($s->increment_step ?: 1),
+        'avg' => (string)($s->average_time ?: ''),
+        'refill' => (int)$s->refill_supported,
+        'cancel' => (int)$s->cancel_supported,
+        'platform' => $platform,
+        'category_id' => $cat_id,
+        'category' => $cat_name,
+    );
+}
+ksort($platforms);
+$selected = '';
+if (!empty($old['service'])) $selected = $old['service'];
+elseif ($svc) $selected = $svc->public_id;
 ?>
 <div class="grid gap-6 lg:grid-cols-3">
   <div class="lg:col-span-2 space-y-6">
     <div class="card">
       <h2 class="card-title">Place an order</h2>
-      <p class="muted">Pricing is frozen at checkout. Your wallet is charged immediately; if the provider rejects the order the charge is refunded automatically.</p>
+      <p class="muted">Choose a platform, then a category, then a service. The price shown here is a preview — the wallet is charged at the amount the server calculates when you submit.</p>
 
       <?=form_open('dashboard/orders/create', array('class'=>'mt-4 stack', 'id'=>'ws-order-form'))?>
         <input type="hidden" name="idempotency_key" value="<?=htmlspecialchars($old['idempotency_key'] ?? bin2hex(random_bytes(16)))?>">
+
+        <div class="grid gap-3 sm:grid-cols-2">
+          <label class="field mb-0">
+            <span class="label">Platform</span>
+            <select id="ws-platform" class="select">
+              <option value="">All platforms</option>
+              <?php foreach (array_keys($platforms) as $p): ?>
+                <option value="<?=htmlspecialchars($p)?>"><?=htmlspecialchars(ucfirst($p))?></option>
+              <?php endforeach; ?>
+            </select>
+          </label>
+          <label class="field mb-0">
+            <span class="label">Category</span>
+            <select id="ws-category" class="select">
+              <option value="">All categories</option>
+            </select>
+          </label>
+        </div>
 
         <label class="field">
           <span class="label">Service</span>
           <select name="service" id="ws-service" class="select" required>
             <option value="">— Choose a service —</option>
-            <?php foreach ($services as $s): ?>
-              <option value="<?=htmlspecialchars($s->public_id)?>"
-                data-rate="<?=htmlspecialchars($s->rate)?>"
-                data-min="<?= (int)$s->min_quantity?>"
-                data-max="<?= (int)$s->max_quantity?>"
-                data-step="<?= (int)($s->increment_step ?: 1)?>"
-                data-name="<?=htmlspecialchars($s->name)?>"
-                <?= (isset($old['service']) && $old['service']==$s->public_id) || ($svc && $svc->id==$s->id) ? 'selected' : ''?>>
-                <?=htmlspecialchars($s->name)?> — <?=marvy_money($s->rate)?>/1k
-              </option>
-            <?php endforeach; ?>
           </select>
         </label>
 
@@ -35,7 +68,7 @@ $user_rate = $user_rate ?? null;
           <input class="input" type="url" name="link" required maxlength="2048"
                  placeholder="https://instagram.com/yourhandle"
                  value="<?=htmlspecialchars($old['link'] ?? '')?>">
-          <span class="hint">Must be a public http(s) URL. Never enter your password.</span>
+          <span class="hint" id="ws-link-hint">Must be a public http(s) URL. Never enter your password.</span>
         </label>
 
         <div class="row" style="gap:1rem;align-items:flex-end">
@@ -56,11 +89,12 @@ $user_rate = $user_rate ?? null;
 
         <div class="row" style="justify-content:space-between;border-top:1px dashed var(--slate-200);padding-top:1rem">
           <div>
-            <div class="muted text-sm">You pay</div>
+            <div class="muted text-sm">Estimated total</div>
             <strong id="ws-total" style="font-size:1.5rem;color:var(--brand-700)">—</strong>
             <?php if ($user_rate && $svc && bccomp($user_rate, $svc->rate, 8) < 0): ?>
               <span class="badge badge-success">Your price</span>
             <?php endif; ?>
+            <p class="hint mb-0">Final charge is calculated on the server at checkout.</p>
           </div>
           <button class="btn btn-primary btn-lg" type="submit" id="ws-submit">Place order →</button>
         </div>
@@ -79,11 +113,12 @@ $user_rate = $user_rate ?? null;
     </div>
 
     <div class="card" id="ws-service-info" <?php if (!$svc): ?>style="display:none"<?php endif; ?>>
-      <h3 class="card-title">Service details</h3>
+      <h3 class="card-title" id="ws-info-name"><?=htmlspecialchars($svc->name ?? 'Service details')?></h3>
       <dl class="stack" style="gap:.5rem">
         <div class="row justify-between"><span class="muted">Average time</span><strong id="ws-avg"><?=htmlspecialchars($svc->average_time ?? '—')?></strong></div>
         <div class="row justify-between"><span class="muted">Refill</span><strong id="ws-refill"><?= !empty($svc) && (int)$svc->refill_supported ? 'Yes' : 'No'?></strong></div>
         <div class="row justify-between"><span class="muted">Cancel</span><strong id="ws-cancel"><?= !empty($svc) && (int)$svc->cancel_supported ? 'Yes' : 'No'?></strong></div>
+        <div class="row justify-between"><span class="muted">Rate / 1k</span><strong id="ws-rate"><?=$svc ? marvy_money($svc->rate) : '—'?></strong></div>
       </dl>
     </div>
 
@@ -101,40 +136,123 @@ $user_rate = $user_rate ?? null;
 
 <script <?=csp_nonce_attr()?>>
 (function(){
-  var sel=document.getElementById('ws-service'),
-      qty=document.getElementById('ws-qty'),
-      total=document.getElementById('ws-total'),
-      limits=document.getElementById('ws-limits'),
-      info=document.getElementById('ws-service-info'),
-      avg=document.getElementById('ws-avg'),
-      refill=document.getElementById('ws-refill'),
-      cancel=document.getElementById('ws-cancel'),
-      submit=document.getElementById('ws-submit');
+  var catalog = <?=json_encode($picker, JSON_UNESCAPED_SLASHES)?>;
+  var selected = <?=json_encode($selected)?>;
+  var platformSel = document.getElementById('ws-platform');
+  var categorySel = document.getElementById('ws-category');
+  var sel = document.getElementById('ws-service');
+  var qty = document.getElementById('ws-qty');
+  var total = document.getElementById('ws-total');
+  var limits = document.getElementById('ws-limits');
+  var info = document.getElementById('ws-service-info');
+  var avg = document.getElementById('ws-avg');
+  var refill = document.getElementById('ws-refill');
+  var cancel = document.getElementById('ws-cancel');
+  var submit = document.getElementById('ws-submit');
+  var infoName = document.getElementById('ws-info-name');
+  var rateEl = document.getElementById('ws-rate');
+  var sym = <?=json_encode(trim(str_replace(array('0','.',','), '', marvy_money(0))))?>;
 
-  // Service metadata is embedded on the option; live lookup is purely client-side.
-  // Currency symbol from the server so live totals match server-rendered prices.
-  var sym=<?=json_encode(trim(str_replace(array('0','.',','), '', marvy_money(0))))?>;
-  function fmt(v){return sym+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
-  function recalc(){
-    var opt=sel.options[sel.selectedIndex], rate=0, min=1, max=0, step=1;
-    if (opt && opt.value) {
-      rate=parseFloat(opt.dataset.rate||'0');
-      min=parseInt(opt.dataset.min||'1',10); max=parseInt(opt.dataset.max||'0',10);
-      step=parseInt(opt.dataset.step||'1',10);
-      qty.min=min; qty.max=max; qty.step=step;
-      limits.textContent='Min '+min.toLocaleString()+' · Max '+max.toLocaleString();
-      if (info) info.style.display='';
-    } else {
-      limits.textContent='';
-      if (info) info.style.display='none';
-    }
-    var q=Math.max(min, parseInt(qty.value||'0',10)||0);
-    var v=(rate/1000)*q;
-    total.textContent=fmt(v);
-    submit.disabled = !opt.value || q<=0;
+  function fmt(v){ return sym + v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+  function uniqueCategories(rows) {
+    var seen = {}, out = [];
+    rows.forEach(function(s){
+      var key = s.category_id || s.category;
+      if (!key || seen[key]) return;
+      seen[key] = true;
+      out.push({id: s.category_id, name: s.category || 'Other'});
+    });
+    out.sort(function(a,b){ return a.name.localeCompare(b.name); });
+    return out;
   }
+
+  function filtered() {
+    var p = platformSel.value, c = categorySel.value;
+    return catalog.filter(function(s){
+      if (p && s.platform !== p) return false;
+      if (c && s.category_id !== c) return false;
+      return true;
+    });
+  }
+
+  function fillCategories() {
+    var p = platformSel.value;
+    var rows = catalog.filter(function(s){ return !p || s.platform === p; });
+    var cats = uniqueCategories(rows);
+    var keep = categorySel.value;
+    categorySel.innerHTML = '<option value="">All categories</option>';
+    cats.forEach(function(cat){
+      var opt = document.createElement('option');
+      opt.value = cat.id;
+      opt.textContent = cat.name;
+      if (keep && keep === cat.id) opt.selected = true;
+      categorySel.appendChild(opt);
+    });
+  }
+
+  function fillServices() {
+    var rows = filtered();
+    var keep = sel.value || selected;
+    sel.innerHTML = '<option value="">— Choose a service —</option>';
+    rows.forEach(function(s){
+      var opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.name + ' — ' + fmt(parseFloat(s.rate||'0')) + '/1k';
+      opt.dataset.rate = s.rate;
+      opt.dataset.min = s.min;
+      opt.dataset.max = s.max;
+      opt.dataset.step = s.step;
+      opt.dataset.avg = s.avg || '';
+      opt.dataset.refill = s.refill ? '1' : '0';
+      opt.dataset.cancel = s.cancel ? '1' : '0';
+      opt.dataset.name = s.name;
+      if (keep && keep === s.id) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    recalc();
+  }
+
+  function recalc(){
+    var opt = sel.options[sel.selectedIndex], rate=0, min=1, max=0, step=1;
+    if (opt && opt.value) {
+      rate = parseFloat(opt.dataset.rate||'0');
+      min = parseInt(opt.dataset.min||'1',10);
+      max = parseInt(opt.dataset.max||'0',10);
+      step = parseInt(opt.dataset.step||'1',10);
+      qty.min = min; qty.max = max; qty.step = step;
+      limits.textContent = 'Min '+min.toLocaleString()+' · Max '+max.toLocaleString();
+      if (info) info.style.display = '';
+      if (infoName) infoName.textContent = opt.dataset.name || 'Service details';
+      if (avg) avg.textContent = opt.dataset.avg || '—';
+      if (refill) refill.textContent = opt.dataset.refill === '1' ? 'Yes' : 'No';
+      if (cancel) cancel.textContent = opt.dataset.cancel === '1' ? 'Yes' : 'No';
+      if (rateEl) rateEl.textContent = fmt(rate);
+    } else {
+      limits.textContent = '';
+      if (info) info.style.display = 'none';
+    }
+    var q = Math.max(min, parseInt(qty.value||'0',10)||0);
+    total.textContent = fmt((rate/1000)*q);
+    submit.disabled = !opt || !opt.value || q <= 0;
+  }
+
+  platformSel.addEventListener('change', function(){ fillCategories(); fillServices(); });
+  categorySel.addEventListener('change', fillServices);
   sel.addEventListener('change', recalc);
   qty.addEventListener('input', recalc);
-  recalc();
+
+  if (selected) {
+    var pre = null;
+    for (var i=0;i<catalog.length;i++) if (catalog[i].id === selected) { pre = catalog[i]; break; }
+    if (pre && pre.platform) platformSel.value = pre.platform;
+  }
+  fillCategories();
+  if (selected) {
+    var pre2 = null;
+    for (var j=0;j<catalog.length;j++) if (catalog[j].id === selected) { pre2 = catalog[j]; break; }
+    if (pre2 && pre2.category_id) categorySel.value = pre2.category_id;
+  }
+  fillServices();
 })();
 </script>

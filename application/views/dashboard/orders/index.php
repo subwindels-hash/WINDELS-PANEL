@@ -1,5 +1,6 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
-$statuses = array(''=>'All','PENDING'=>'Pending','IN_PROGRESS'=>'In progress','COMPLETED'=>'Completed','PARTIAL'=>'Partial','CANCELED'=>'Canceled','FAILED'=>'Failed');
+$statuses = array(''=>'All','PENDING'=>'Pending','PROCESSING'=>'Processing','IN_PROGRESS'=>'In progress','COMPLETED'=>'Completed','PARTIAL'=>'Partial','CANCELED'=>'Canceled','FAILED'=>'Failed','REFUNDED'=>'Refunded');
+$q = $q ?? '';
 ?>
 <div class="card">
   <div class="row justify-between" style="flex-wrap:wrap;gap:.75rem">
@@ -9,11 +10,13 @@ $statuses = array(''=>'All','PENDING'=>'Pending','IN_PROGRESS'=>'In progress','C
     </div>
     <div class="row">
       <form method="get" class="row" style="gap:.5rem">
+        <input class="input" type="search" name="q" value="<?=htmlspecialchars($q)?>" placeholder="Search ID, service or link" style="width:12rem">
         <select name="status" class="select" style="width:auto" onchange="this.form.submit()">
           <?php foreach ($statuses as $k=>$v): ?>
             <option value="<?=htmlspecialchars($k)?>" <?=($status===$k)?'selected':''?>><?=htmlspecialchars($v)?></option>
           <?php endforeach; ?>
         </select>
+        <button class="btn btn-secondary btn-sm" type="submit">Filter</button>
       </form>
       <a class="btn btn-primary btn-sm" href="<?=site_url('dashboard/new-order')?>">+ New order</a>
     </div>
@@ -53,10 +56,10 @@ $statuses = array(''=>'All','PENDING'=>'Pending','IN_PROGRESS'=>'In progress','C
   <?php if ($total_pages > 1): ?>
   <nav class="row justify-between mt-4" aria-label="Pagination">
     <a class="btn btn-ghost btn-sm <?=$page<=1?'is-disabled':''?>"
-       href="<?=site_url('dashboard/orders?'.http_build_query(array_filter(array('status'=>$status,'page'=>max(1,$page-1)))))?>">← Previous</a>
+       href="<?=site_url('dashboard/orders?'.http_build_query(array_filter(array('status'=>$status,'q'=>$q,'page'=>max(1,$page-1)))))?>">← Previous</a>
     <span class="text-sm muted">Page <?=$page?> / <?=$total_pages?></span>
     <a class="btn btn-ghost btn-sm <?=$page>=$total_pages?'is-disabled':''?>"
-       href="<?=site_url('dashboard/orders?'.http_build_query(array_filter(array('status'=>$status,'page'=>min($total_pages,$page+1)))))?>">Next →</a>
+       href="<?=site_url('dashboard/orders?'.http_build_query(array_filter(array('status'=>$status,'q'=>$q,'page'=>min($total_pages,$page+1)))))?>">Next →</a>
   </nav>
   <?php endif; ?>
   <?php endif; ?>

@@ -7,11 +7,11 @@ $path = isset($this->uri) ? trim((string)$this->uri->uri_string(), '/') : '';
 $site = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials';
 $links = array(
     array('services', 'Services'),
+    array('about', 'About'),
     array('pricing', 'Pricing'),
     array('faq', 'FAQ'),
     array('blog', 'Blog'),
     array('contact', 'Contact'),
-    array('about', 'About'),
 );
 $active = function ($href) use ($path) {
     if ($href === '') return $path === '';

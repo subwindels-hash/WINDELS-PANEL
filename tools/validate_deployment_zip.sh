@@ -126,6 +126,12 @@ print("  ok  zip members are regular files (no symlink entries)")
 print("  ok  zip listing contains every required framework path")
 PY
 
+# Front controller must not carry a development-server absolute path.
+if grep -E '/home/[^/]+/public_html' "${SITE}/index.php" >/dev/null 2>&1; then
+  fail "index.php contains a hard-coded /home/.../public_html path"
+fi
+ok "index.php has no host-specific /home/.../public_html path"
+
 # Destination host must not be asked to install anything.
 for banned in composer.json package.json application/seeds/Demo_seeder.php; do
   if [[ -e "${SITE}/${banned}" ]]; then

@@ -46,6 +46,16 @@ $opts = array(
     'admin-password' => 'ChangeMe!Admin2026',
     'admin-first'    => 'Panel',
     'admin-last'     => 'Administrator',
+    'demo-username'  => 'demo',
+    'demo-email'     => 'demo@example.com',
+    'demo-password'  => 'MarvyDemo#2026!',
+    'demo-first'     => 'Dana',
+    'demo-last'      => 'Demo',
+    'staff-username' => 'staff',
+    'staff-email'    => 'staff@example.com',
+    'staff-password' => 'MarvyStaff#2026!',
+    'staff-first'    => 'Sam',
+    'staff-last'     => 'Support',
 );
 $check = false;
 foreach (array_slice($argv, 1) as $arg) {
@@ -387,14 +397,13 @@ $seeder->run();
 $seed_statements = $capture->statements;
 
 /* --------------------------------------------------------------------------
- * 3. The first administrator
+ * 3. First-login accounts (SUPER_ADMIN + customer + staff)
  * ----------------------------------------------------------------------- */
 // bcrypt with a salt derived from the password rather than random_bytes(),
 // because the file has to be reproducible: `--check` in CI compares the
 // generated output byte for byte, and a fresh salt on every run would report
 // the committed file as stale forever. The hash is still a real bcrypt hash at
 // cost 12 that password_verify() accepts and that PHP rehashes on first login.
-$admin_hash = deterministic_bcrypt($opts['admin-password']);
 
 $default_group = null;
 foreach ($capture->rows('price_groups') as $row) {
@@ -407,46 +416,64 @@ if ($default_group === null) {
     exit(1);
 }
 
-$admin_statements = array();
-$admin_statements[] = "INSERT INTO `users`\n"
-    . "  (`id`, `public_id`, `username`, `email`, `password_hash`, `first_name`, `last_name`,\n"
-    . "   `status`, `role`, `price_group_id`, `referral_code`, `timezone`, `locale`,\n"
-    . "   `email_verified_at`, `mfa_enabled`, `created_at`, `updated_at`)\n"
-    . 'VALUES (1, ' . Sql_capture_db::quote(marvy_public_id()) . ', '
-    . Sql_capture_db::quote($opts['admin-username']) . ', '
-    . Sql_capture_db::quote($opts['admin-email']) . ', '
-    . Sql_capture_db::quote($admin_hash) . ", "
-    . Sql_capture_db::quote($opts['admin-first']) . ', '
-    . Sql_capture_db::quote($opts['admin-last']) . ",\n"
-    . "        'ACTIVE', 'SUPER_ADMIN', " . $default_group . ", 'ADMIN-0001', 'UTC', 'en',\n"
-    . '        ' . Sql_capture_db::quote(MARVY_SEED_NOW) . ', 0, '
-    . Sql_capture_db::quote(MARVY_SEED_NOW) . ', '
-    . Sql_capture_db::quote(MARVY_SEED_NOW) . ');';
+$accounts = array(
+    seed_account(1, array(
+        'username' => $opts['admin-username'],
+        'email'    => $opts['admin-email'],
+        'password' => $opts['admin-password'],
+        'first'    => $opts['admin-first'],
+        'last'     => $opts['admin-last'],
+        'role'     => 'SUPER_ADMIN',
+        'referral' => 'ADMIN-0001',
+    ), $default_group),
+    seed_account(2, array(
+        'username' => $opts['demo-username'],
+        'email'    => $opts['demo-email'],
+        'password' => $opts['demo-password'],
+        'first'    => $opts['demo-first'],
+        'last'     => $opts['demo-last'],
+        'role'     => 'CUSTOMER',
+        'referral' => 'DEMO-0001',
+    ), $default_group),
+    seed_account(3, array(
+        'username' => $opts['staff-username'],
+        'email'    => $opts['staff-email'],
+        'password' => $opts['staff-password'],
+        'first'    => $opts['staff-first'],
+        'last'     => $opts['staff-last'],
+        'role'     => 'STAFF',
+        'referral' => 'STAFF-0001',
+    ), $default_group),
+);
 
-$admin_statements[] = "INSERT INTO `wallets`\n"
-    . "  (`public_id`, `user_id`, `balance`, `currency`, `created_at`, `updated_at`)\n"
-    . 'VALUES (' . Sql_capture_db::quote(marvy_public_id()) . ", 1, '0.00000000', 'NGN', "
-    . Sql_capture_db::quote(MARVY_SEED_NOW) . ', '
-    . Sql_capture_db::quote(MARVY_SEED_NOW) . ');';
-
-$admin_statements[] = "INSERT INTO `referral_accounts`\n"
-    . "  (`user_id`, `code`, `commission_percent`, `created_at`, `updated_at`)\n"
-    . "VALUES (1, 'ADMIN-0001', '5.0000', " . Sql_capture_db::quote(MARVY_SEED_NOW) . ', '
-    . Sql_capture_db::quote(MARVY_SEED_NOW) . ');';
+$account_statements = array();
+foreach ($accounts as $account) {
+    foreach ($account['sql'] as $sql) {
+        $account_statements[] = $sql;
+    }
+}
 
 /* --------------------------------------------------------------------------
  * 4. Render
  * ----------------------------------------------------------------------- */
-$out = render_file($schema_sections, $seed_statements, $admin_statements, $schema_version, $opts);
+$out = render_file($schema_sections, $seed_statements, $account_statements, $schema_version, $opts);
+$live = render_live_accounts_file($accounts, $opts);
 
 $target = $root . '/database/marvysocials.sql';
+$live_target = $root . '/database/first_login_accounts.sql';
 if ($check) {
     $current = file_exists($target) ? file_get_contents($target) : '';
     if (trim($current) !== trim($out)) {
         fwrite(STDERR, "database/marvysocials.sql is out of date — run: php tools/build_production_sql.php\n");
         exit(1);
     }
+    $live_current = file_exists($live_target) ? file_get_contents($live_target) : '';
+    if (trim($live_current) !== trim($live)) {
+        fwrite(STDERR, "database/first_login_accounts.sql is out of date — run: php tools/build_production_sql.php\n");
+        exit(1);
+    }
     echo "database/marvysocials.sql is up to date.\n";
+    echo "database/first_login_accounts.sql is up to date.\n";
     exit(0);
 }
 
@@ -454,14 +481,20 @@ if (!is_dir(dirname($target))) {
     mkdir(dirname($target), 0775, true);
 }
 file_put_contents($target, $out);
+file_put_contents($live_target, $live);
 printf(
-    "Wrote %s\n  %d schema statements across %d migrations\n  %d seed rows\n  admin: %s / %s\n",
+    "Wrote %s\n  %d schema statements across %d migrations\n  %d seed rows\n  admin: %s / %s\n  demo:  %s / %s\n  staff: %s / %s\n  live:  %s\n",
     $target,
     array_sum(array_map(function ($s) { return count($s['statements']); }, $schema_sections)),
     count($schema_sections),
     count($seed_statements),
     $opts['admin-username'],
-    $opts['admin-email']
+    $opts['admin-email'],
+    $opts['demo-username'],
+    $opts['demo-email'],
+    $opts['staff-username'],
+    $opts['staff-email'],
+    $live_target
 );
 
 /* --------------------------------------------------------------------------
@@ -487,15 +520,12 @@ function render_file(array $schema_sections, array $seed_statements, array $admi
     $lines[] = '-- After the import the database is fully initialised: schema, indexes,';
     $lines[] = '-- foreign keys, migration bookkeeping (version ' . $schema_version . '), roles,';
     $lines[] = '-- permissions, settings, feature flags, payment methods, email templates,';
-    $lines[] = '-- FAQs, currencies, catalogues and the first administrator. No migration,';
+    $lines[] = '-- FAQs, currencies, catalogues and the first-login accounts. No migration,';
     $lines[] = '-- seed or installer command has to run afterwards.';
     $lines[] = '--';
-    $lines[] = '-- FIRST LOGIN';
-    $lines[] = '--   username: ' . $opts['admin-username'];
-    $lines[] = '--   email:    ' . $opts['admin-email'];
-    $lines[] = '--   password: ' . $opts['admin-password'];
-    $lines[] = '--   Change it immediately (Dashboard -> Account -> Password), or set your';
-    $lines[] = '--   own credentials before first login from /setup with VP_SETUP_TOKEN.';
+    foreach (first_login_header_lines($opts) as $line) {
+        $lines[] = $line;
+    }
     $lines[] = '--';
     $lines[] = '-- Engine: InnoDB · Charset: utf8mb4_unicode_ci · Timestamps: UTC DATETIME';
     $lines[] = '-- Money:  DECIMAL(20,8) everywhere (bcmath in PHP, never floats)';
@@ -546,11 +576,11 @@ function render_file(array $schema_sections, array $seed_statements, array $admi
         $lines[] = '';
     }
 
-    $lines[] = section_header('FIRST ADMINISTRATOR');
-    $lines[] = '-- A SUPER_ADMIN account so the panel can be administered the moment the';
-    $lines[] = '-- import finishes — no CLI user-creation step, because a cPanel account has';
-    $lines[] = '-- no CLI. The password hash is bcrypt; PHP rehashes it to whatever the host';
-    $lines[] = '-- prefers on the first successful login.';
+    $lines[] = section_header('FIRST ACCOUNTS');
+    $lines[] = '-- SUPER_ADMIN (full control of every admin screen), a CUSTOMER so the';
+    $lines[] = '-- dashboard has someone to sign in as, and a STAFF operator. No CLI';
+    $lines[] = '-- user-creation step, because a cPanel account has no CLI. Password hashes';
+    $lines[] = '-- are bcrypt; PHP rehashes them to whatever the host prefers on first login.';
     $lines[] = '';
     foreach ($admin_statements as $sql) {
         $lines[] = $sql;
@@ -611,6 +641,189 @@ function section_header($title)
 {
     $bar = str_repeat('=', 70);
     return "-- {$bar}\n-- {$title}\n-- {$bar}\n";
+}
+
+/**
+ * Documented first-login block. The first `-- password:` line MUST remain the
+ * SUPER_ADMIN password: tools/verify_deployment_package.sh verifies that
+ * password against the first bcrypt hash in the file.
+ */
+function first_login_header_lines(array $opts)
+{
+    return array(
+        '-- FIRST LOGIN',
+        '--   Staff admin (SUPER_ADMIN — full control of the site)',
+        '--     URL:      /admin/login',
+        '--     username: ' . $opts['admin-username'],
+        '--     email:    ' . $opts['admin-email'],
+        '--     password: ' . $opts['admin-password'],
+        '--   Customer dashboard',
+        '--     URL:      /login',
+        '--     username: ' . $opts['demo-username'],
+        '--     email:    ' . $opts['demo-email'],
+        '--     password: ' . $opts['demo-password'],
+        '--   Support staff',
+        '--     URL:      /admin/login',
+        '--     username: ' . $opts['staff-username'],
+        '--     email:    ' . $opts['staff-email'],
+        '--     password: ' . $opts['staff-password'],
+        '--   Change these immediately (Dashboard -> Account -> Password), or set',
+        '--   your own administrator before first login from /setup with VP_SETUP_TOKEN.',
+    );
+}
+
+/**
+ * One first-login user plus the wallet and referral_account rows the panel
+ * joins against. Public ids come from marvy_public_id() so they stay stable
+ * across regenerations.
+ */
+function seed_account($id, array $spec, $default_group)
+{
+    $hash = deterministic_bcrypt($spec['password']);
+    $public_id = marvy_public_id();
+    $wallet_pid = marvy_public_id();
+    $q = function ($v) { return Sql_capture_db::quote($v); };
+    $now = $q(MARVY_SEED_NOW);
+
+    $sql = array();
+    $sql[] = "INSERT INTO `users`\n"
+        . "  (`id`, `public_id`, `username`, `email`, `password_hash`, `first_name`, `last_name`,\n"
+        . "   `status`, `role`, `price_group_id`, `referral_code`, `timezone`, `locale`,\n"
+        . "   `email_verified_at`, `mfa_enabled`, `created_at`, `updated_at`)\n"
+        . 'VALUES (' . (int)$id . ', ' . $q($public_id) . ', '
+        . $q($spec['username']) . ', '
+        . $q($spec['email']) . ', '
+        . $q($hash) . ', '
+        . $q($spec['first']) . ', '
+        . $q($spec['last']) . ",\n"
+        . "        'ACTIVE', " . $q($spec['role']) . ', ' . (int)$default_group . ', '
+        . $q($spec['referral']) . ", 'UTC', 'en',\n"
+        . '        ' . $now . ', 0, ' . $now . ', ' . $now . ');';
+
+    $sql[] = "INSERT INTO `wallets`\n"
+        . "  (`public_id`, `user_id`, `balance`, `currency`, `created_at`, `updated_at`)\n"
+        . 'VALUES (' . $q($wallet_pid) . ', ' . (int)$id . ", '0.00000000', 'NGN', "
+        . $now . ', ' . $now . ');';
+
+    $sql[] = "INSERT INTO `referral_accounts`\n"
+        . "  (`user_id`, `code`, `commission_percent`, `created_at`, `updated_at`)\n"
+        . 'VALUES (' . (int)$id . ', ' . $q($spec['referral']) . ", '5.0000', "
+        . $now . ', ' . $now . ');';
+
+    return array(
+        'id'               => (int)$id,
+        'username'         => $spec['username'],
+        'email'            => $spec['email'],
+        'password'         => $spec['password'],
+        'hash'             => $hash,
+        'first'            => $spec['first'],
+        'last'             => $spec['last'],
+        'role'             => $spec['role'],
+        'referral'         => $spec['referral'],
+        'public_id'        => $public_id,
+        'wallet_public_id' => $wallet_pid,
+        'sql'              => $sql,
+    );
+}
+
+/**
+ * phpMyAdmin-safe companion for a database that already has rows.
+ *
+ * Inserts the customer and staff accounts only when the username/email is
+ * missing. Never overwrites an existing password. Turns off first-login MFA
+ * and email-verification gates so /admin and /dashboard are reachable.
+ */
+function render_live_accounts_file(array $accounts, array $opts)
+{
+    $q = function ($v) { return Sql_capture_db::quote($v); };
+    $now = $q(MARVY_SEED_NOW);
+    $lines = array();
+    $lines[] = '-- MarvySocials — first-login accounts for an EXISTING database';
+    $lines[] = '--';
+    $lines[] = '-- GENERATED FILE — do not edit by hand.';
+    $lines[] = '-- Regenerated with: php tools/build_production_sql.php';
+    $lines[] = '--';
+    $lines[] = '-- Import this in phpMyAdmin on a panel that already has data and';
+    $lines[] = '-- cannot re-import database/marvysocials.sql. It is idempotent:';
+    $lines[] = '-- missing usernames are inserted; existing passwords are left alone.';
+    $lines[] = '--';
+    foreach (first_login_header_lines($opts) as $line) {
+        $lines[] = $line;
+    }
+    $lines[] = '--';
+    $lines[] = 'SET NAMES utf8mb4;';
+    $lines[] = 'SET FOREIGN_KEY_CHECKS = 0;';
+    $lines[] = '';
+    $lines[] = '-- First-login gates. Staff without MFA were being bounced to';
+    $lines[] = '-- /dashboard/security and never reached the admin dashboard.';
+    $lines[] = 'UPDATE `settings` SET `setting_value` = \'{"value":false}\'';
+    $lines[] = "WHERE `setting_key` IN ('admin_mfa_required', 'email_verification_required');";
+    $lines[] = '';
+    $lines[] = "INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)";
+    $lines[] = 'SELECT \'admin_mfa_required\', \'{"value":false}\', \'security\', 0';
+    $lines[] = 'FROM (SELECT 1 AS _x) AS _seed';
+    $lines[] = "WHERE NOT EXISTS (SELECT 1 FROM `settings` WHERE `setting_key` = 'admin_mfa_required');";
+    $lines[] = '';
+    $lines[] = "INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)";
+    $lines[] = 'SELECT \'email_verification_required\', \'{"value":false}\', \'security\', 0';
+    $lines[] = 'FROM (SELECT 1 AS _x) AS _seed';
+    $lines[] = "WHERE NOT EXISTS (SELECT 1 FROM `settings` WHERE `setting_key` = 'email_verification_required');";
+    $lines[] = '';
+    $lines[] = '-- Keep an existing SUPER_ADMIN reachable (do not change its password).';
+    $lines[] = 'UPDATE `users`';
+    $lines[] = "SET `status` = 'ACTIVE',";
+    $lines[] = '    `email_verified_at` = COALESCE(`email_verified_at`, ' . $now . '),';
+    $lines[] = '    `mfa_enabled` = 0';
+    $lines[] = 'WHERE `role` = ' . $q('SUPER_ADMIN') . ';';
+    $lines[] = '';
+
+    $default_group_sql = '(SELECT `id` FROM `price_groups` WHERE `name` = \'Default\' ORDER BY `id` ASC LIMIT 1)';
+
+    foreach ($accounts as $account) {
+        if ($account['role'] === 'SUPER_ADMIN') {
+            // Live already has (or had) an administrator. Do not insert a
+            // second SUPER_ADMIN or reset a password the operator changed.
+            continue;
+        }
+        $lines[] = '-- ' . $account['role'] . ' ' . $account['username'];
+        $lines[] = 'INSERT INTO `users`';
+        $lines[] = '  (`public_id`, `username`, `email`, `password_hash`, `first_name`, `last_name`,';
+        $lines[] = '   `status`, `role`, `price_group_id`, `referral_code`, `timezone`, `locale`,';
+        $lines[] = '   `email_verified_at`, `mfa_enabled`, `created_at`, `updated_at`)';
+        $lines[] = 'SELECT ' . $q($account['public_id']) . ', '
+            . $q($account['username']) . ', '
+            . $q($account['email']) . ', '
+            . $q($account['hash']) . ', '
+            . $q($account['first']) . ', '
+            . $q($account['last']) . ',';
+        $lines[] = "       'ACTIVE', " . $q($account['role']) . ', ' . $default_group_sql . ', '
+            . $q($account['referral']) . ", 'UTC', 'en',";
+        $lines[] = '       ' . $now . ', 0, ' . $now . ', ' . $now;
+        $lines[] = 'FROM (SELECT 1 AS _x) AS _seed';
+        $lines[] = 'WHERE NOT EXISTS (';
+        $lines[] = '  SELECT 1 FROM `users`';
+        $lines[] = '  WHERE `username` = ' . $q($account['username']);
+        $lines[] = '     OR `email` = ' . $q($account['email']);
+        $lines[] = '     OR `public_id` = ' . $q($account['public_id']);
+        $lines[] = ');';
+        $lines[] = '';
+        $lines[] = 'INSERT INTO `wallets` (`public_id`, `user_id`, `balance`, `currency`, `created_at`, `updated_at`)';
+        $lines[] = 'SELECT ' . $q($account['wallet_public_id']) . ", u.`id`, '0.00000000', 'NGN', " . $now . ', ' . $now;
+        $lines[] = 'FROM `users` u';
+        $lines[] = 'WHERE u.`username` = ' . $q($account['username']);
+        $lines[] = '  AND NOT EXISTS (SELECT 1 FROM `wallets` w WHERE w.`user_id` = u.`id`);';
+        $lines[] = '';
+        $lines[] = 'INSERT INTO `referral_accounts` (`user_id`, `code`, `commission_percent`, `created_at`, `updated_at`)';
+        $lines[] = 'SELECT u.`id`, ' . $q($account['referral']) . ", '5.0000', " . $now . ', ' . $now;
+        $lines[] = 'FROM `users` u';
+        $lines[] = 'WHERE u.`username` = ' . $q($account['username']);
+        $lines[] = '  AND NOT EXISTS (SELECT 1 FROM `referral_accounts` r WHERE r.`user_id` = u.`id`);';
+        $lines[] = '';
+    }
+
+    $lines[] = 'SET FOREIGN_KEY_CHECKS = 1;';
+    $lines[] = '';
+    return implode("\n", $lines);
 }
 
 function normalize_sql($sql)

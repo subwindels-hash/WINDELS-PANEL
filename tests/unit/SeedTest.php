@@ -95,6 +95,10 @@ class SeedTest extends TestCase
         $this->assertSame('5000000.00000000', $settings['max_deposit'][1]);
         $this->assertArrayHasKey('maintenance_mode', $settings);
         $this->assertFalse($settings['maintenance_mode'][1]);
+        $this->assertFalse($settings['admin_mfa_required'][1],
+            'a fresh import must reach /admin without an authenticator app');
+        $this->assertFalse($settings['email_verification_required'][1],
+            'a fresh import has no mailer; verification cannot be required on first login');
 
         foreach (Core_seeder::default_settings() as $s) {
             $this->assertCount(4, $s, 'setting rows are [key, value, category, is_public]');

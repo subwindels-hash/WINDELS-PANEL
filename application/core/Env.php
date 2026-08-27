@@ -343,6 +343,43 @@ class Env
                 self::put('APP_URL', $guess, true);
             }
         }
+
+        // Safety net for the common cPanel mistake of setting
+        // VP_BASE_URL=http://… on a domain that AutoSSL already serves over
+        // HTTPS. Generated links, asset URLs and cookie flags then disagree
+        // with the browser (mixed content, Secure cookies dropped on the
+        // http:// host). Upgrade the scheme to match the request; leave the
+        // host alone so an intentional www/apex choice is preserved.
+        // Operators should still put https:// in .env — this only covers the
+        // live request, not cron.
+        $configured = (string)self::get('APP_URL');
+        if ($configured !== '' && stripos($configured, 'http://') === 0 && self::request_is_https()) {
+            $upgraded = 'https://' . substr($configured, 7);
+            self::put('APP_URL', $upgraded, true);
+            self::put('VP_BASE_URL', $upgraded, true);
+        }
+    }
+
+    /**
+     * True when this request arrived over TLS.
+     *
+     * Honours `HTTPS`, `X-Forwarded-Proto` (cPanel / Cloudflare / LiteSpeed
+     * proxies) and port 443. CLI with no request context is never HTTPS, so a
+     * mis-set `VP_BASE_URL=http://…` is not rewritten by cron jobs.
+     */
+    public static function request_is_https()
+    {
+        if (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off') {
+            return true;
+        }
+        if (!empty($_SERVER['HTTP_X_FORWARDED_PROTO'])
+            && strtolower((string)$_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https') {
+            return true;
+        }
+        if (!empty($_SERVER['REQUEST_SCHEME']) && strtolower((string)$_SERVER['REQUEST_SCHEME']) === 'https') {
+            return true;
+        }
+        return !empty($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443;
     }
 
     /** Best-effort base URL from the current request. NULL on CLI. */
@@ -351,9 +388,7 @@ class Env
         if (empty($_SERVER['HTTP_HOST'])) {
             return null;
         }
-        $https = (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off')
-            || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https')
-            || (!empty($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443);
+        $https = self::request_is_https();
         $host = preg_replace('/[^A-Za-z0-9\-\._:\[\]]/', '', $_SERVER['HTTP_HOST']);
         $dir = '';
         if (!empty($_SERVER['SCRIPT_NAME'])) {

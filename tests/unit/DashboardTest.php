@@ -170,6 +170,8 @@ class DashboardTest extends TestCase
         $shell = file_get_contents(self::$root.'/application/views/layouts/app.php');
         $this->assertStringContainsString('dashboard/notifications', $shell);
         $this->assertStringContainsString('Mobile bottom nav', $shell);
+        $this->assertStringContainsString('ws-nav-group', $shell);
+        $this->assertStringContainsString('New Order', $shell);
         $this->assertStringContainsString('partials/icon', $shell);
         // Brand component classes used.
         $this->assertStringContainsString('bg-brand-50', $shell);
