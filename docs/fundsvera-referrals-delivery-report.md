@@ -170,9 +170,25 @@ A click never earns. Qualification requires a configured event.
 
 ---
 
+## 8b. Post-delivery completion pass
+
+Four gaps found and closed after the initial delivery, by auditing the code
+rather than trusting the report:
+
+| # | Gap | Why it mattered |
+| --- | --- | --- |
+| 1 | No cron released held earnings | `release_due()` and `expire_stale()` existed but nothing called them, so an earning with a holding period sat PENDING **forever** — the hold was a life sentence, not a delay. Now `earnings_release` (10m) and `fundsvera_expire` (5m), in the schedule *and* in `crontab.example`. |
+| 2 | No admin webhook viewer (§32) | A callback that arrived but could not be verified was invisible. Now Admin → Payments → Webhook events, with health counters and an idempotent Reprocess. |
+| 3 | Bank details never shown to the customer | The deposits page rendered instructions only for `manual`, so a Fundsvera deposit was uncompletable — no account number, no amount. |
+| 4 | `?ref=` captured only on `/register` | An advert pointing at the homepage lost attribution entirely; the campaign looked like it converted nobody. Now captured on every page, with the landing path recorded. |
+
+Plus one pre-existing bug found while testing: `admin_search()` joined `users`
+but `admin_count()` did not, so **any** payment search returned HTTP 500.
+
 ## 9. Test results
 
 **PHP suite: 1,234 tests, 0 failures**, 1 documented platform skip.
+(Re-run after the completion pass above; `fundsvera_check` grew to 34.)
 
 **End-to-end, 220 checks across 10 suites, all passing:**
 
