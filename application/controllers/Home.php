@@ -96,7 +96,11 @@ class Home extends Public_Controller {
         // Fallback if template missing. CI_Loader has no view-exists helper, so
         // check the filesystem directly (AURORA is the guaranteed default).
         if (!is_file(VIEWPATH.$view.'.php')) $view = 'homepages/aurora/index';
-        $this->load->view('layouts/main', array('content_view'=>$view,'data'=>$data));
+        $this->load->view('layouts/public_theme', array('content_view'=>$view,'data'=>$data,
+            'title' => $copy['homepage_hero_title'] ?: 'Grow and manage your social presence',
+            'page_description' => $copy['homepage_meta_description'] ?: 'MarvySocials is a prepaid panel for social media growth services, Nigerian VTU and bills, virtual numbers, identity checks and gift cards. Add funds, place an order, track it from one dashboard.',
+            'brand' => $brand,
+        ));
     }
     private function active_homepage(){
         try {
@@ -112,7 +116,7 @@ class Home extends Public_Controller {
     }
     public function pricing(){
         $this->load->library('SiteOperatorKnowledge');
-        $this->load->view('layouts/main', array('content_view'=>'public/pricing','data'=>array(
+        $this->load->view('layouts/public_theme', array('content_view'=>'public/pricing','data'=>array(
             'title'=>'Pricing',
             'meta_description'=>'Prepaid wallet pricing for MarvySocials. No invented monthly plans — you pay published service rates. Volume groups are assigned by staff.',
         )));
@@ -143,7 +147,7 @@ class Home extends Public_Controller {
                 );
             }
         }
-        $this->load->view('layouts/main', array('content_view'=>'public/faq','data'=>array(
+        $this->load->view('layouts/public_theme', array('content_view'=>'public/faq','data'=>array(
             'title'=>'FAQ',
             'meta_description'=>'Answers about MarvySocials accounts, wallet billing, services, security, the reseller API and the on-site assistant.',
             'faqs'=>$faqs,
@@ -159,7 +163,7 @@ class Home extends Public_Controller {
      * submit. It now posts to contact_submit() below.
      */
     public function contact($data = array()){
-        $this->load->view('layouts/main', array(
+        $this->load->view('layouts/public_theme', array(
             'content_view' => 'public/contact',
             'data' => array_merge(array(
                 'title'           => 'Contact',
@@ -347,7 +351,7 @@ class Home extends Public_Controller {
         }
 
         if ($override) {
-            return $this->load->view('layouts/main', array(
+            return $this->load->view('layouts/public_theme', array(
                 'content_view' => 'public/managed_page',
                 'data' => array(
                     'title' => $override->title ?: $title,
@@ -357,7 +361,7 @@ class Home extends Public_Controller {
             ));
         }
 
-        $this->load->view('layouts/main', array(
+        $this->load->view('layouts/public_theme', array(
             'content_view' => $fallback_view,
             'data' => array('title' => $title, 'meta_description' => $meta),
         ));
@@ -365,7 +369,7 @@ class Home extends Public_Controller {
 
     public function not_found(){
         $this->output->set_status_header(404);
-        $this->load->view('layouts/main', array(
+        $this->load->view('layouts/public_theme', array(
             'content_view' => 'public/not_found',
             'data' => array(
                 'title' => 'Page not found',
@@ -384,7 +388,7 @@ class Home extends Public_Controller {
         if (!$this->auth || !$this->auth->has_role(array('SUPER_ADMIN','ADMIN','STAFF'))) {
             show_404();
         }
-        $this->load->view('layouts/main', array(
+        $this->load->view('layouts/public_theme', array(
             'content_view' => 'public/styleguide',
             'data' => array(
                 'title' => 'Design System',

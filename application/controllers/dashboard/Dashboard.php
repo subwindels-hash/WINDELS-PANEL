@@ -16,7 +16,7 @@ class Dashboard extends Auth_Controller {
     public function index() {
         $stats = $this->dashboardstats->overview($this->current_user->id);
 
-        $this->load->view('layouts/app', array(
+        $this->load->view('layouts/app_theme', array(
             'title'        => 'Dashboard',
             'nav_active'   => 'dashboard',
             'content_view' => 'dashboard/index',
@@ -28,6 +28,7 @@ class Dashboard extends Auth_Controller {
             'orders'       => $stats['recent_orders'],
             'transactions' => $stats['recent_transactions'],
             'notifications'=> $stats['unread'],
+            'page_description' => 'Monitor your account activity, orders, wallet, and recent activity.',
         ));
     }
 }

@@ -42,7 +42,8 @@ $current_type = $filters['service_type'] ?? ($filters['id_type'] ?? ($filters['d
     </p>
   </div>
   <?php if ($can_price): ?>
-    <button class="btn btn-primary" onclick="document.getElementById('ws-new-product').showModal()">+ Add product</button>
+    <button class="btn btn-primary"
+            onclick="var d=document.getElementById('ws-new-product'); if(d){d.showModal?d.showModal():d.open=true;}">+ Add product</button>
   <?php endif; ?>
 </div>
 

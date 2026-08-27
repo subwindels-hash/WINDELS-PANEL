@@ -22,7 +22,10 @@ $csrf_hash = $this->security->get_csrf_hash();
 
   <div class="card">
     <div class="row justify-between"><div><h2 class="card-title">Panel service</h2><p class="text-sm muted mt-1">Set the customer-facing identity, price and availability.</p></div>
-      <?php if (!$is_create): ?><span class="badge <?=$s->status==='ACTIVE'?'badge-success':'badge-default'?>"><?=htmlspecialchars($s->status)?></span><?php endif; ?>
+    
+  <?php if (!$is_create && $s->status !== "ARCHIVED"): ?><form class="mt-3" method="post" action="<?=site_url("admin/services/".$s->public_id."/delete")?>"><input type="hidden" name="<?=htmlspecialchars($csrf_name)?>" value="<?=htmlspecialchars($csrf_hash)?>" readonly><button class="btn btn-danger" type="submit" onclick="return confirm("Are you sure you want to permanently delete this service? This cannot be undone.")">Delete service</button></form><?php endif; ?>
+
+  <?php if (!$is_create): ?><span class="badge <?=$s->status==='ACTIVE'?'badge-success':'badge-default'?>"><?=htmlspecialchars($s->status)?></span><?php endif; ?>
     </div>
     <div class="grid gap-4 md:grid-cols-2 mt-5">
       <label class="field"><span>Name *</span><input class="input" name="name" maxlength="255" required value="<?=htmlspecialchars((string)$s->name)?>" <?=$can_manage?'':'disabled'?>></label>

@@ -27,7 +27,7 @@ class Settings extends Admin_Controller {
     }
 
     public function index() {
-        $this->load->view('layouts/app', array(
+        $this->load->view('layouts/app_theme', array(
             'title'        => 'Settings',
             'nav_active'   => 'admin/settings',
             'content_view' => 'admin/settings/index',
@@ -39,6 +39,7 @@ class Settings extends Admin_Controller {
             'unwired'      => SettingsService::unwired(),
             'readonly'     => SettingsService::readonly_settings(),
             'base_currency'=> marvy_base_currency(),
+            'page_description' => 'Panel-wide configuration. Every change is recorded in the audit log.',
         ));
     }
 
