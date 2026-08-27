@@ -168,10 +168,6 @@ the rest of the site. Customer credentials are refused at `/admin/login`.
 **Change those passwords immediately** (Dashboard → Account → Password), or set
 your own administrator *before* the first login using the setup page below.
 
-If the database was imported earlier and has no `demo`/`staff` rows, import
-`database/first_login_accounts.sql` in phpMyAdmin — it inserts missing
-accounts and does not overwrite existing passwords.
-
 ---
 
 ## Optional: the browser setup page
@@ -297,7 +293,7 @@ serves traffic correctly without it.
 | “Unable to connect to your database server” | Wrong `VP_DB_*` values, or the user is not assigned to the database | cPanel → MySQL Databases → *Add User To Database* → ALL PRIVILEGES. |
 | Homepage loads but every link 404s | `.htaccess` was not extracted (File Manager hides dotfiles by default) | File Manager → Settings → *Show Hidden Files*, confirm `.htaccess` exists next to `index.php`. |
 | Login form reloads without an error | Session cookies are `Secure` but the site is on plain http | Install the free certificate in cPanel → SSL/TLS Status, then set `VP_BASE_URL=https://…`. |
-| Admin login works but every `/admin` page bounces to Security | `admin_mfa_required` is on and the account has no authenticator yet | Import `database/first_login_accounts.sql`, or turn the setting off in Admin → Settings after enabling MFA. |
+| Admin login works but every `/admin` page bounces to Security | `admin_mfa_required` is on and the account has no authenticator yet | Turn the setting off in Admin → Settings, or update `admin_mfa_required=0` in the `settings` table. |
 | Provider keys stopped working after a move | `VP_ENCRYPTION_KEY` changed | Restore the old key in `.env`. |
 | Uploaded images 404 | `assets/uploads/` missing or not writable | Create it in File Manager and set 755/775. |
 
@@ -324,8 +320,7 @@ application-deployment.zip
 ├── storage/                  logs/ and cache/ (writable, pre-guarded)
 ├── cron/                     crontab example for cPanel → Cron Jobs
 └── database/
-    ├── marvysocials.sql           the complete database: schema + data + accounts
-    └── first_login_accounts.sql   phpMyAdmin paste for an existing live database
+    └── marvysocials.sql           the complete database: schema + data + accounts
 ```
 
 `index.php` auto-detects the framework in `system/` first and

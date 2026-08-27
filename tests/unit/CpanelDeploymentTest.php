@@ -432,22 +432,6 @@ class CpanelDeploymentTest extends TestCase
             'the staff password must verify against its bcrypt hash');
     }
 
-    public function testLiveAccountsSqlIsIdempotentAndDoesNotOverwritePasswords()
-    {
-        $path = self::$root.'/database/first_login_accounts.sql';
-        $this->assertFileExists($path,
-            'an existing live database cannot re-import marvysocials.sql; this file is the phpMyAdmin paste');
-        $sql = file_get_contents($path);
-        $this->assertStringContainsString('WHERE NOT EXISTS', $sql);
-        $this->assertStringNotContainsStringIgnoringCase('DROP TABLE', $sql);
-        $this->assertStringNotContainsStringIgnoringCase('CREATE DATABASE', $sql);
-        $this->assertStringContainsString('admin_mfa_required', $sql);
-        $this->assertDoesNotMatchRegularExpression('/UPDATE `users`\s+SET[^;]*password_hash/is', $sql,
-            'never reset a live password the operator may already have changed');
-        $this->assertStringContainsString("'demo'", $sql);
-        $this->assertStringContainsString("'staff'", $sql);
-    }
-
     public function testProductionSqlImportsIntoADatabaseTheOperatorAlreadyCreated()
     {
         $this->assertStringNotContainsStringIgnoringCase('CREATE DATABASE', self::$sql,
@@ -468,7 +452,6 @@ class CpanelDeploymentTest extends TestCase
         $src = file_get_contents($script);
 
         foreach (array('index.php', 'application', 'assets', 'database/marvysocials.sql',
-                       'database/first_login_accounts.sql',
                        '.env.example', '.htaccess') as $needed) {
             $this->assertStringContainsString($needed, $src, "the package must contain {$needed}");
         }

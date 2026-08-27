@@ -69,6 +69,63 @@ class MY_Security extends CI_Security {
     }
 
     /**
+     * Set the CSRF cookie safely across HTTP and HTTPS.
+     *
+     * In stock CodeIgniter 3, if `cookie_secure` is enabled and `is_https()` is
+     * false, `csrf_set_cookie()` immediately returns FALSE without setting any
+     * cookie. As a result, any visitor loading a page over plain HTTP (or behind
+     * a reverse proxy / Cloudflare where HTTPS is not directly detected by CI)
+     * never gets the CSRF cookie, causing all form POSTs to fail with
+     * "Your security token expired" (419).
+     *
+     * Here, if `cookie_secure` is configured but the connection is plain HTTP,
+     * we drop the Secure flag so the cookie is still set and accepted by browsers,
+     * ensuring login and forms work seamlessly. Also uses configured cookie_samesite
+     * rather than CI3's hardcoded 'Strict'.
+     */
+    public function csrf_set_cookie()
+    {
+        $expire = time() + $this->_csrf_expire;
+        $secure_cookie = (bool) config_item('cookie_secure');
+
+        if ($secure_cookie && ! is_https()) {
+            $secure_cookie = false;
+        }
+
+        $samesite = config_item('cookie_samesite') ?: 'Lax';
+
+        if (is_php('7.3')) {
+            setcookie(
+                $this->_csrf_cookie_name,
+                $this->_csrf_hash,
+                array(
+                    'expires'  => $expire,
+                    'path'     => config_item('cookie_path'),
+                    'domain'   => config_item('cookie_domain'),
+                    'secure'   => $secure_cookie,
+                    'httponly' => config_item('cookie_httponly'),
+                    'samesite' => $samesite,
+                )
+            );
+        } else {
+            $domain = trim((string) config_item('cookie_domain'));
+            header('Set-Cookie: ' . $this->_csrf_cookie_name . '=' . $this->_csrf_hash
+                . '; Expires=' . gmdate('D, d-M-Y H:i:s T', $expire)
+                . '; Max-Age=' . $this->_csrf_expire
+                . '; Path=' . rawurlencode(config_item('cookie_path'))
+                . ($domain === '' ? '' : '; Domain=' . $domain)
+                . ($secure_cookie ? '; Secure' : '')
+                . (config_item('cookie_httponly') ? '; HttpOnly' : '')
+                . '; SameSite=' . $samesite
+            );
+        }
+
+        log_message('info', 'CSRF cookie sent');
+
+        return $this;
+    }
+
+    /**
      * Refuse the request in a form the caller can act on.
      *
      * CI3 calls this from csrf_verify(); overriding it is the supported way to

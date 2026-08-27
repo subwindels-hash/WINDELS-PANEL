@@ -140,6 +140,13 @@ class Env
         self::apply_aliases();
         self::apply_defaults();
         self::ensure_writable_paths();
+
+        // If the request arrived over HTTPS (direct TLS, X-Forwarded-Proto,
+        // Cloudflare HTTP_CF_VISITOR, port 443, etc.), ensure $_SERVER['HTTPS'] = 'on'
+        // so CodeIgniter's internal is_https() and all helper functions recognize HTTPS.
+        if (self::request_is_https()) {
+            $_SERVER['HTTPS'] = 'on';
+        }
     }
 
     /** The deployment root, even from code that only has APPPATH. */
@@ -344,20 +351,25 @@ class Env
             }
         }
 
-        // Safety net for the common cPanel mistake of setting
-        // VP_BASE_URL=http://… on a domain that AutoSSL already serves over
-        // HTTPS. Generated links, asset URLs and cookie flags then disagree
-        // with the browser (mixed content, Secure cookies dropped on the
-        // http:// host). Upgrade the scheme to match the request; leave the
-        // host alone so an intentional www/apex choice is preserved.
-        // Operators should still put https:// in .env — this only covers the
-        // live request, not cron.
+        // Safety net for scheme mismatches:
+        // When AutoSSL / TLS is active, upgrade an http:// VP_BASE_URL to https://.
+        // Conversely, if a visitor opens the panel over plain HTTP, downgrade an
+        // https:// VP_BASE_URL to http:// for the duration of that request so that
+        // generated form actions, redirect targets, and CSRF cookies stay on the
+        // same transport as the visitor's browser (preventing cross-scheme cookie drops).
         $configured = (string)self::get('APP_URL');
-        if ($configured !== '' && stripos($configured, 'http://') === 0 && self::request_is_https()) {
-            $upgraded = 'https://' . substr($configured, 7);
-            self::put('APP_URL', $upgraded, true);
-            self::put('VP_BASE_URL', $upgraded, true);
-            $configured = $upgraded;
+        if ($configured !== '' && !self::is_cli()) {
+            if (stripos($configured, 'http://') === 0 && self::request_is_https()) {
+                $upgraded = 'https://' . substr($configured, 7);
+                self::put('APP_URL', $upgraded, true);
+                self::put('VP_BASE_URL', $upgraded, true);
+                $configured = $upgraded;
+            } elseif (stripos($configured, 'https://') === 0 && !self::request_is_https()) {
+                $downgraded = 'http://' . substr($configured, 8);
+                self::put('APP_URL', $downgraded, true);
+                self::put('VP_BASE_URL', $downgraded, true);
+                $configured = $downgraded;
+            }
         }
 
         // The other half of the same cPanel trap: VP_BASE_URL says www.X but
@@ -391,6 +403,12 @@ class Env
         }
     }
 
+    /** True when running under CLI/cron, false for web requests. */
+    public static function is_cli()
+    {
+        return php_sapi_name() === 'cli' || defined('STDIN');
+    }
+
     /**
      * True when this request arrived over TLS.
      *
@@ -400,11 +418,22 @@ class Env
      */
     public static function request_is_https()
     {
+        if (self::is_cli()) {
+            return false;
+        }
         if (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off') {
             return true;
         }
         if (!empty($_SERVER['HTTP_X_FORWARDED_PROTO'])
             && strtolower((string)$_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https') {
+            return true;
+        }
+        if (!empty($_SERVER['HTTP_CF_VISITOR'])
+            && stripos((string)$_SERVER['HTTP_CF_VISITOR'], '"scheme":"https"') !== false) {
+            return true;
+        }
+        if (!empty($_SERVER['HTTP_X_FORWARDED_SSL'])
+            && strtolower((string)$_SERVER['HTTP_X_FORWARDED_SSL']) === 'on') {
             return true;
         }
         if (!empty($_SERVER['REQUEST_SCHEME']) && strtolower((string)$_SERVER['REQUEST_SCHEME']) === 'https') {

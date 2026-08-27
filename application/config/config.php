@@ -67,14 +67,15 @@ $config['sess_regenerate_destroy'] = FALSE;
 $config['cookie_prefix'] = '';
 $config['cookie_domain'] = '';
 $config['cookie_path'] = '/';
-// Secure cookies in production, and also on any deployment whose own base URL
-// is https — a panel can be served over TLS long before anyone remembers to
-// set CI_ENV, and the cookie flag should follow the transport that is actually
-// in use rather than a label. (A production panel still on plain http gets
-// Secure cookies and therefore no working login: that is deliberate, and the
-// fix is the free AutoSSL certificate in cPanel -> SSL/TLS Status.)
-$config['cookie_secure'] = (env_str('APP_ENV') === 'production')
-    || (stripos((string) Env::get('APP_URL', ''), 'https://') === 0);
+// Secure cookies: respect VP_COOKIE_SECURE when explicitly configured.
+// In production or when the base URL is HTTPS, cookies are Secure whenever
+// the connection is HTTPS. On plain HTTP, cookies must NOT have the Secure
+// flag set, otherwise browsers reject them and CodeIgniter refuses to set
+// the CSRF cookie — locking users out with a 419 token expired error.
+$config['cookie_secure'] = Env::has('COOKIE_SECURE')
+    ? Env::get_bool('COOKIE_SECURE')
+    : (Env::request_is_https() && ((env_str('APP_ENV') === 'production')
+        || (stripos((string) Env::get('APP_URL', ''), 'https://') === 0)));
 $config['cookie_httponly'] = TRUE;
 $config['cookie_samesite'] = 'Lax';
 
