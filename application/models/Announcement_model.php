@@ -13,10 +13,12 @@ class Announcement_model extends MY_Model {
             ->group_end()
             ->group_start()
                 ->where('ends_at IS NULL', null, false)->or_where('ends_at >=', $now)
-            ->group_end()
-            ->group_start()
-                ->where('audience', 'all')->or_where('audience', $audience)
             ->group_end();
+        if ($audience !== '*') {
+            $this->db->group_start()
+                ->where('audience', 'all')->or_where('audience', $audience)->or_where('audience IS NULL', null, false)
+            ->group_end();
+        }
         return $this->db->order_by('severity', 'DESC')->order_by('created_at','DESC')->get($this->table)->result();
     }
 
