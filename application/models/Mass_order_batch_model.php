@@ -17,7 +17,7 @@ class Mass_order_batch_model extends MY_Model {
 
         $now = $this->now_utc();
         $inserted = $this->db->insert($this->table, array(
-            'public_id' => windels_public_id(),
+            'public_id' => marvy_public_id(),
             'user_id' => (int)$user_id,
             'token_hash' => (string)$token_hash,
             'request_hash' => (string)$request_hash,

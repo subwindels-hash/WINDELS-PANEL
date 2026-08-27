@@ -1,4 +1,4 @@
-# WINDELS PANEL — Session 14: Affiliate / Referral
+# MarvySocials — Session 14: Affiliate / Referral
 
 > First-touch referral attribution, a bcmath commission engine with a hold
 > window, idempotent payouts through LedgerService, and the customer + admin
@@ -17,7 +17,7 @@
 | Accrual / reversal hooks | `libraries/OrderService.php` (`sync_affiliate()`) |
 | Reseller API | `controllers/Api_v1.php` → `GET /api/v1/referrals` |
 | Payout worker | `controllers/Cron.php::affiliate_payouts()`, `cron/crontab.example` |
-| Settings / flag / seeds | `seeds/Core_seeder.php`, `seeds/Demo_seeder.php`, `config/windels.php` |
+| Settings / flag / seeds | `seeds/Core_seeder.php`, `seeds/Demo_seeder.php`, `config/marvy.php` |
 | Tests | `tests/unit/AffiliateTest.php` (32 tests) |
 
 ## Lifecycle
@@ -71,7 +71,7 @@ off, accrual, payout and the cron worker all short-circuit.
   and recent commissions.
 * **Cron** — `php index.php cron affiliate_payouts` pays everything past the
   hold window (batched, 500 per run); wired into `cron/crontab.example` and the
-  `config/windels.php` cron map.
+  `config/marvy.php` cron map.
 
 ## Safety
 

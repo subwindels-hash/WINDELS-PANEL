@@ -8,15 +8,15 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  */
 require_once APPPATH.'core/Env.php';
 Env::bootstrap(rtrim(realpath(APPPATH.'..'), DIRECTORY_SEPARATOR));
-$windels_paths = Env::writable_paths();
+$marvy_paths = Env::writable_paths();
 
 $config['storage'] = array(
     'driver'     => Env::get('STORAGE_DRIVER', 'local'),
-    'path'       => $windels_paths['uploads'],
+    'path'       => $marvy_paths['uploads'],
     'public_url' => rtrim((string) Env::get('UPLOAD_URL', rtrim((string) Env::get('APP_URL', ''), '/').'/assets/uploads'), '/'),
     'endpoint'   => Env::get('STORAGE_ENDPOINT'),
     'region'     => Env::get('STORAGE_REGION', 'us-east-1'),
-    'bucket'     => Env::get('STORAGE_BUCKET', 'windels-panel'),
+    'bucket'     => Env::get('STORAGE_BUCKET', 'marvysocials'),
     'access_key' => Env::get('STORAGE_ACCESS_KEY'),
     'secret_key' => Env::get('STORAGE_SECRET_KEY'),
     'url'        => Env::get('STORAGE_URL'),

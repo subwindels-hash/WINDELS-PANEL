@@ -369,11 +369,11 @@ class VtuService {
         if (bccomp($amount, '0', 8) <= 0) return 'Enter an amount greater than zero';
         if ($product->min_amount !== null
             && bccomp($amount, $this->money($product->min_amount), 8) < 0) {
-            return 'Minimum is '.windels_money($product->min_amount);
+            return 'Minimum is '.marvy_money($product->min_amount);
         }
         if ($product->max_amount !== null
             && bccomp($amount, $this->money($product->max_amount), 8) > 0) {
-            return 'Maximum is '.windels_money($product->max_amount);
+            return 'Maximum is '.marvy_money($product->max_amount);
         }
         return null;
     }

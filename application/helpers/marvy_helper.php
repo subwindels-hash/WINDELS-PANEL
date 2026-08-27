@@ -12,29 +12,29 @@ if (!defined('BASEPATH')
     exit('No direct script access allowed');
 }
 
-if (!function_exists('windels_public_id')) {
-    function windels_public_id(){
+if (!function_exists('marvy_public_id')) {
+    function marvy_public_id(){
         if (class_exists(\Robbins\Ulid\Ulid::class)) return (string)\Robbins\Ulid\Ulid::generate();
         if (class_exists(\Ramsey\Uuid\Uuid::class)) return \Ramsey\Uuid\Uuid::uuid4()->toString();
         return bin2hex(random_bytes(13));
     }
 }
-if (!function_exists('windels_site_name')) {
+if (!function_exists('marvy_site_name')) {
     /**
      * Single source of truth for the public-facing brand name.
      *
-     * Reads application/config/windels.php -> public_name so a deployment can
+     * Reads application/config/marvy.php -> public_name so a deployment can
      * change the marketing site without touching dozens of views. Falls back to
      * the internal product name, then to the codebase default.
      */
-    function windels_site_name(){
+    function marvy_site_name(){
         static $name = null;
         if ($name !== null) return $name;
-        $name = 'WINDELS PANEL';
+        $name = 'MarvySocials';
         if (function_exists('get_instance')) {
             $ci = @get_instance();
             if ($ci && isset($ci->config)) {
-                $cfg = $ci->config->item('windels');
+                $cfg = $ci->config->item('marvy');
                 if (is_array($cfg) && !empty($cfg['public_name'])) {
                     $name = (string)$cfg['public_name'];
                 } elseif (is_array($cfg) && !empty($cfg['name'])) {
@@ -46,18 +46,18 @@ if (!function_exists('windels_site_name')) {
     }
 }
 
-if (!function_exists('windels_site_tagline')) {
+if (!function_exists('marvy_site_tagline')) {
     /**
-     * Public-facing tagline, same config-driven source as windels_site_name().
+     * Public-facing tagline, same config-driven source as marvy_site_name().
      */
-    function windels_site_tagline(){
+    function marvy_site_tagline(){
         static $tagline = null;
         if ($tagline !== null) return $tagline;
         $tagline = 'Prepaid commerce for social media, VTU, virtual numbers, identity, gift cards and digital goods';
         if (function_exists('get_instance')) {
             $ci = @get_instance();
             if ($ci && isset($ci->config)) {
-                $cfg = $ci->config->item('windels');
+                $cfg = $ci->config->item('marvy');
                 if (is_array($cfg) && !empty($cfg['public_tagline'])) {
                     $tagline = (string)$cfg['public_tagline'];
                 } elseif (is_array($cfg) && !empty($cfg['tagline'])) {
@@ -66,23 +66,23 @@ if (!function_exists('windels_site_tagline')) {
             }
         }
         // Admin → Settings `site_tagline` overrides the config default.
-        if (function_exists('windels_brand_setting')) {
-            $setting = windels_brand_setting('site_tagline');
+        if (function_exists('marvy_brand_setting')) {
+            $setting = marvy_brand_setting('site_tagline');
             if ($setting !== null && $setting !== '') $tagline = (string)$setting;
         }
         return $tagline;
     }
 }
 
-if (!function_exists('windels_brand_logo')) {
+if (!function_exists('marvy_brand_logo')) {
     /**
      * Public logo with the configured brand name baked in at render time.
      *
      * The SVG partial accepts variant/height; this helper keeps the header,
      * footer and auth shell from each hardcoding a different asset path.
      */
-    function windels_brand_logo($variant = 'horizontal', $height = 32){
-        // Canonical WINDELS PANEL mark set. Variant-first, then a safe fallback
+    function marvy_brand_logo($variant = 'horizontal', $height = 32){
+        // Canonical MarvySocials mark set. Variant-first, then a safe fallback
         // to the primary horizontal logo so a missing asset can't white-screen.
         $map = array(
             'icon'       => 'logo-icon.svg',
@@ -97,13 +97,13 @@ if (!function_exists('windels_brand_logo')) {
     }
 }
 
-if (!function_exists('windels_brand_setting')) {
+if (!function_exists('marvy_brand_setting')) {
     /**
      * Read a branding setting (brand_logo_url, brand_favicon_url, …) saved
      * through Admin → Appearance. Returns NULL when unset or the database is
      * unavailable, so callers always have a bundled fallback.
      */
-    function windels_brand_setting($key, $default = null) {
+    function marvy_brand_setting($key, $default = null) {
         static $cache = array();
         if (array_key_exists($key, $cache)) {
             return $cache[$key] !== null ? $cache[$key] : $default;
@@ -123,7 +123,7 @@ if (!function_exists('windels_brand_setting')) {
     }
 }
 
-if (!function_exists('windels_default_theme')) {
+if (!function_exists('marvy_default_theme')) {
     /**
      * The site-wide default theme: 'system', 'light' or 'dark'.
      *
@@ -132,12 +132,12 @@ if (!function_exists('windels_default_theme')) {
      * can override it in their browser (stored in localStorage) via the theme
      * toggle; the initial paint uses this value so there is no flash.
      */
-    function windels_default_theme(){
+    function marvy_default_theme(){
         static $theme = null;
         if ($theme !== null) return $theme;
         $theme = 'system';
-        if (function_exists('windels_brand_setting')) {
-            $v = windels_brand_setting('default_theme');
+        if (function_exists('marvy_brand_setting')) {
+            $v = marvy_brand_setting('default_theme');
             if ($v !== null && $v !== '') {
                 $v = strtolower(trim((string)$v));
                 if (in_array($v, array('system', 'light', 'dark'), true)) $theme = $v;
@@ -147,23 +147,23 @@ if (!function_exists('windels_default_theme')) {
     }
 }
 
-if (!function_exists('windels_base_currency')) {
+if (!function_exists('marvy_base_currency')) {
     /**
      * The panel's base currency code.
      *
      * Every wallet, order and service transaction is denominated in this.
-     * Reads application/config/windels.php so a deployment can redenominate in
+     * Reads application/config/marvy.php so a deployment can redenominate in
      * one place; falls back to NGN when the config is unavailable (CLI helpers,
      * early bootstrap) rather than guessing a foreign currency.
      */
-    function windels_base_currency(){
+    function marvy_base_currency(){
         static $code = NULL;
         if ($code !== NULL) return $code;
         $code = 'NGN';
         if (function_exists('get_instance')) {
             $ci = @get_instance();
             if ($ci && isset($ci->config)) {
-                $cfg = $ci->config->item('windels');
+                $cfg = $ci->config->item('marvy');
                 if (is_array($cfg) && !empty($cfg['base_currency'])) {
                     $code = strtoupper($cfg['base_currency']);
                 }
@@ -172,15 +172,15 @@ if (!function_exists('windels_base_currency')) {
         return $code;
     }
 }
-if (!function_exists('windels_money')) {
-    function windels_money($amount, $currency=NULL){
-        if ($currency === NULL) $currency = windels_base_currency();
+if (!function_exists('marvy_money')) {
+    function marvy_money($amount, $currency=NULL){
+        if ($currency === NULL) $currency = marvy_base_currency();
         $formatted = number_format((float)$amount, 2, '.', ',');
         // Admin → Settings `currency_display` (symbol|code). `code` prints
         // "NGN 1,234.56" instead of "₦1,234.56". Fail open to the symbol.
         $display = 'symbol';
-        if (function_exists('windels_brand_setting')) {
-            $setting = windels_brand_setting('currency_display');
+        if (function_exists('marvy_brand_setting')) {
+            $setting = marvy_brand_setting('currency_display');
             if ($setting !== null && strtolower(trim((string)$setting)) === 'code') $display = 'code';
         }
         if ($display === 'code') return strtoupper($currency).' '.$formatted;
@@ -188,8 +188,8 @@ if (!function_exists('windels_money')) {
         return $sym . $formatted;
     }
 }
-if (!function_exists('windels_request_id')) {
-    function windels_request_id(){ return bin2hex(random_bytes(8)); }
+if (!function_exists('marvy_request_id')) {
+    function marvy_request_id(){ return bin2hex(random_bytes(8)); }
 }
 
 if (!function_exists('csp_nonce')) {
@@ -200,7 +200,7 @@ if (!function_exists('csp_nonce')) {
      * request (CLI, tests) so views degrade rather than fatal.
      */
     function csp_nonce() {
-        return isset($GLOBALS['__windels_csp_nonce']) ? $GLOBALS['__windels_csp_nonce'] : '';
+        return isset($GLOBALS['__marvy_csp_nonce']) ? $GLOBALS['__marvy_csp_nonce'] : '';
     }
 }
 
@@ -236,7 +236,7 @@ if (!function_exists('env_bool')) {
     }
 }
 
-if (!function_exists('windels_load_database')) {
+if (!function_exists('marvy_load_database')) {
     /**
      * Connect to MySQL without killing the request.
      *
@@ -245,7 +245,7 @@ if (!function_exists('windels_load_database')) {
      * mysqli warning on the output buffer — those warnings used to become
      * "headers already sent" on top of the database error page.
      */
-    function windels_load_database() {
+    function marvy_load_database() {
         if (!function_exists('get_instance')) {
             return false;
         }
@@ -254,7 +254,7 @@ if (!function_exists('windels_load_database')) {
             return true;
         }
 
-        if (!windels_db_reachable()) {
+        if (!marvy_db_reachable()) {
             return false;
         }
 
@@ -277,7 +277,7 @@ if (!function_exists('windels_load_database')) {
     }
 
     /** Cheap TCP/auth probe so we never let CI's mysqli driver emit warnings. */
-    function windels_db_reachable() {
+    function marvy_db_reachable() {
         if (!function_exists('mysqli_init')) {
             return false;
         }
@@ -322,5 +322,100 @@ if (!function_exists('env_str')) {
         if ($raw === false) return $default;
         $raw = trim($raw);
         return $raw === '' ? $default : $raw;
+    }
+}
+
+if (!function_exists('marvy_migration_config')) {
+    /**
+     * The contents of application/config/migration.php as an array.
+     *
+     * `migration.php` is not in the autoloaded config set, and CI3 loads it
+     * *into the Migration library*, not into the global config registry — so
+     * `$this->config->item('migration_version')` reads NULL from a controller
+     * unless the file has been explicitly loaded into its own index first.
+     * Anything that needs the expected schema version (the migrate CLI, the
+     * readiness probe, deploy preflight) has to go through here or it silently
+     * compares against 0.
+     *
+     * @return array
+     */
+    function marvy_migration_config() {
+        static $cache = null;
+        if ($cache !== null) return $cache;
+
+        $cache = array();
+        if (function_exists('get_instance')) {
+            $ci =& get_instance();
+            if ($ci && isset($ci->config) && is_object($ci->config)) {
+                try {
+                    $ci->config->load('migration', TRUE, TRUE);
+                    $loaded = $ci->config->item('migration');
+                    if (is_array($loaded)) $cache = $loaded;
+                } catch (Throwable $e) { /* fall through to the file read */ }
+            }
+        }
+
+        if (!$cache && defined('APPPATH') && is_file(APPPATH.'config/migration.php')) {
+            $config = array();
+            include APPPATH.'config/migration.php';
+            if (is_array($config)) $cache = $config;
+        }
+        return $cache;
+    }
+}
+
+if (!function_exists('marvy_migration_item')) {
+    /** One key from the migration config, with a fallback. */
+    function marvy_migration_item($key, $default = null) {
+        $cfg = marvy_migration_config();
+        return array_key_exists($key, $cfg) ? $cfg[$key] : $default;
+    }
+}
+
+if (!function_exists('marvy_allocate_user_code')) {
+    /**
+     * Allocate an unused six-digit account number.
+     *
+     * The customer-facing account handle: short enough to read over the phone,
+     * quotable to support, and usable as a sign-in identifier alongside the
+     * username and email. The ULID `public_id` remains the canonical internal
+     * identifier — this never replaces it.
+     *
+     * Random rather than sequential. A sequential code would leak the customer
+     * count and growth rate, and would let anyone enumerate accounts by
+     * counting upwards. Starting at 100000 keeps every code six digits, so a
+     * leading zero cannot be lost when it is written down or pasted into a
+     * spreadsheet.
+     *
+     * Lives in the helper because three separate paths create users — customer
+     * registration, the setup wizard and the demo seeder — and a code that only
+     * some of them allocate is worse than none.
+     *
+     * @param object|null $db CI database instance; defaults to the loaded one
+     * @return string|null the code, or NULL if none could be allocated
+     */
+    function marvy_allocate_user_code($db = null) {
+        if ($db === null) {
+            if (!function_exists('get_instance')) return null;
+            $ci =& get_instance();
+            if (!isset($ci->db) || !is_object($ci->db)) return null;
+            $db = $ci->db;
+        }
+
+        for ($attempt = 0; $attempt < 50; $attempt++) {
+            $code = (string) random_int(100000, 999999);
+            try {
+                if ((int) $db->where('user_code', $code)->count_all_results('users') === 0) {
+                    return $code;
+                }
+            } catch (Exception $e) {
+                // Column not present yet (pre-migration install): the caller
+                // simply gets no code rather than a fatal.
+                return null;
+            }
+        }
+
+        log_message('error', 'could not allocate a free user_code after 50 attempts');
+        return null;
     }
 }

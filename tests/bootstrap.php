@@ -38,8 +38,8 @@ if (is_file(__DIR__.'/../vendor/autoload.php')) {
  * Production and CI cron always execute on native PHP, where the pinned
  * behaviour is the behaviour the OS provides.
  */
-if (!function_exists('windels_runtime_is_wasm')) {
-    function windels_runtime_is_wasm()
+if (!function_exists('marvy_runtime_is_wasm')) {
+    function marvy_runtime_is_wasm()
     {
         return php_sapi_name() === 'wasm'
             || stripos((string)php_uname('s'), 'Emscripten') === 0

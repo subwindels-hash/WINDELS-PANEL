@@ -233,7 +233,7 @@ class ActivityFeed {
             'status'     => (string)$status,
             'amount'     => (string)$amount,
             'refunded'   => (string)($refunded ?? '0'),
-            'currency'   => (string)($currency ?: windels_base_currency()),
+            'currency'   => (string)($currency ?: marvy_base_currency()),
             'created_at' => (string)$created_at,
             'username'   => $username,
             'url'        => $url,

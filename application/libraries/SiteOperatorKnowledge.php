@@ -14,12 +14,12 @@ class SiteOperatorKnowledge {
     const UPDATED_DATE   = '22 August 2026';
 
     public static function site_name() {
-        if (function_exists('windels_site_name')) return windels_site_name();
-        return 'WINDELS PANEL';
+        if (function_exists('marvy_site_name')) return marvy_site_name();
+        return 'MarvySocials';
     }
 
     public static function tagline() {
-        if (function_exists('windels_site_tagline')) return windels_site_tagline();
+        if (function_exists('marvy_site_tagline')) return marvy_site_tagline();
         return 'Prepaid commerce for social media, VTU, virtual numbers, identity, gift cards and digital goods';
     }
 

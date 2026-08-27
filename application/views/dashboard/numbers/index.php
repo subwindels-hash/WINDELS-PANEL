@@ -8,7 +8,7 @@
   <?php $this->load->view('dashboard/numbers/_flash'); ?>
 
   <p class="muted text-sm mb-4">Wallet balance:
-    <strong><?=windels_money($wallet->balance)?></strong></p>
+    <strong><?=marvy_money($wallet->balance)?></strong></p>
 
   <?php if (empty($countries) || empty($products)): ?>
     <?php $this->load->view('partials/empty_state', array(
@@ -42,7 +42,7 @@
     <select class="select mb-4" id="service" name="service" required>
       <?php foreach ($products as $p): ?>
         <option value="<?=htmlspecialchars($p->service_code)?>">
-          <?=htmlspecialchars($p->service_name)?> — <?=windels_money($p->price)?>
+          <?=htmlspecialchars($p->service_name)?> — <?=marvy_money($p->price)?>
           <?php if ($p->stock !== null): ?>(<?=number_format((int)$p->stock)?> available)<?php endif; ?>
         </option>
       <?php endforeach; ?>

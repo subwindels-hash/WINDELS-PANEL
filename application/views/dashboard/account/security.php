@@ -22,6 +22,61 @@
       <?=form_close()?>
     </div>
 
+    <div class="card">
+      <div class="row justify-between">
+        <div>
+          <h2 class="card-title">Transaction PIN</h2>
+          <p class="muted text-sm">
+            A four-digit PIN, separate from your password, for confirming sensitive actions.
+          </p>
+        </div>
+        <?php if (!empty($pin_set)): ?>
+          <span class="badge badge-success badge-dot">Set</span>
+        <?php else: ?>
+          <span class="badge badge-default">Not set</span>
+        <?php endif; ?>
+      </div>
+
+      <?php if (!empty($pin_locked)): ?>
+      <div class="alert alert-warning mt-3">
+        Your PIN is locked after repeated incorrect attempts. It unlocks automatically in
+        about <?=max(1, (int)ceil($pin_locked / 60))?> minute<?=((int)ceil($pin_locked / 60) === 1) ? '' : 's'?>,
+        or support can lift the lock for you.
+      </div>
+      <?php endif; ?>
+
+      <?=form_open('dashboard/security', array('class'=>'mt-4 stack'))?>
+        <input type="hidden" name="action" value="set_pin">
+        <?php if (!empty($pin_set)): ?>
+        <label class="field">
+          <span class="label">Current PIN</span>
+          <input class="input mono" type="password" name="current_pin" required
+                 inputmode="numeric" pattern="\d{4}" maxlength="4" autocomplete="off">
+        </label>
+        <?php endif; ?>
+        <label class="field">
+          <span class="label"><?=!empty($pin_set) ? 'New PIN' : 'Choose a PIN'?></span>
+          <input class="input mono" type="password" name="new_pin" required
+                 inputmode="numeric" pattern="\d{4}" maxlength="4" autocomplete="off">
+          <span class="hint">Exactly four digits. Avoid 1111 or 1234 — they are rejected.</span>
+        </label>
+        <label class="field">
+          <span class="label">Confirm PIN</span>
+          <input class="input mono" type="password" name="confirm_pin" required
+                 inputmode="numeric" pattern="\d{4}" maxlength="4" autocomplete="off">
+        </label>
+        <div>
+          <button class="btn btn-primary" type="submit">
+            <?=!empty($pin_set) ? 'Update PIN' : 'Set PIN'?>
+          </button>
+        </div>
+        <p class="muted text-xs">
+          Your PIN is stored as a one-way hash. Nobody — including our staff — can read it. If you forget it,
+          support can clear it so you can choose a new one.
+        </p>
+      <?=form_close()?>
+    </div>
+
     <div class="card" id="ws-mfa-section"
          data-endpoint-setup="<?=htmlspecialchars(site_url('auth/mfa/setup'))?>"
          data-endpoint-confirm="<?=htmlspecialchars(site_url('auth/mfa/confirm'))?>"

@@ -118,7 +118,7 @@ class Numbers extends Auth_Controller {
             $this->session->set_flashdata('error', $res['error']);
         } else {
             $this->session->set_flashdata('success', $res['refunded']
-                ? 'Reservation cancelled — '.windels_money($res['refunded']).' returned to your wallet.'
+                ? 'Reservation cancelled — '.marvy_money($res['refunded']).' returned to your wallet.'
                 : 'Reservation cancelled.');
         }
         redirect('dashboard/numbers/'.$public_id);
@@ -143,7 +143,7 @@ class Numbers extends Auth_Controller {
             $this->session->set_flashdata('error', $res['error']);
         } else {
             $this->session->set_flashdata('success', $res['refunded']
-                ? 'Reported as unusable — '.windels_money($res['refunded']).' returned to your wallet.'
+                ? 'Reported as unusable — '.marvy_money($res['refunded']).' returned to your wallet.'
                 : 'Reported as unusable.');
         }
         redirect('dashboard/numbers/'.$public_id);

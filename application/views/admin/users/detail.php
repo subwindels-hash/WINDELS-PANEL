@@ -28,6 +28,10 @@ $nonce = bin2hex(random_bytes(8));
     </h2>
     <p class="muted text-sm">
       <?=htmlspecialchars((string)$user->email)?>
+      <?php if (!empty($user->user_code)): ?>
+      · <span title="Six-digit account number — the customer can sign in and quote support with this">ID
+        <span class="mono"><?=htmlspecialchars((string)$user->user_code)?></span></span>
+      <?php endif; ?>
       · <span class="mono text-xs"><?=htmlspecialchars((string)$user->public_id)?></span>
       · joined <?=htmlspecialchars(date('M j, Y', strtotime($user->created_at)))?>
     </p>
@@ -35,7 +39,7 @@ $nonce = bin2hex(random_bytes(8));
   <div class="text-right">
     <div class="muted text-xs">Wallet balance</div>
     <div style="font-size:1.5rem;font-weight:600" class="mono">
-      <?=windels_money($user->wallet->balance, $user->wallet->currency)?>
+      <?=marvy_money($user->wallet->balance, $user->wallet->currency)?>
     </div>
   </div>
 </div>
@@ -54,11 +58,11 @@ $nonce = bin2hex(random_bytes(8));
 <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:.75rem" class="mb-4">
   <div class="card">
     <div class="muted text-xs">Lifetime deposited</div>
-    <div class="mono" style="font-size:1.1rem"><?=windels_money($user->wallet->total_deposited, $user->wallet->currency)?></div>
+    <div class="mono" style="font-size:1.1rem"><?=marvy_money($user->wallet->total_deposited, $user->wallet->currency)?></div>
   </div>
   <div class="card">
     <div class="muted text-xs">Lifetime spent</div>
-    <div class="mono" style="font-size:1.1rem"><?=windels_money($user->wallet->total_spent, $user->wallet->currency)?></div>
+    <div class="mono" style="font-size:1.1rem"><?=marvy_money($user->wallet->total_spent, $user->wallet->currency)?></div>
   </div>
   <div class="card">
     <div class="muted text-xs">Role</div>
@@ -131,6 +135,71 @@ $nonce = bin2hex(random_bytes(8));
   </div>
 </div>
 
+<?php
+// Credentials panel. Everything here is a reset — there is deliberately no
+// control that displays a password or a PIN, because both are stored as
+// one-way hashes and staff must never be able to learn a customer's secret.
+$pin_set = !empty($user->pin_hash);
+$pin_locked = !empty($user->pin_locked_until) && strtotime($user->pin_locked_until.' UTC') > time();
+?>
+<?php if (!$self && $can_edit): ?>
+<div class="card mb-4">
+  <h3 style="font-size:1rem;font-weight:600" class="mb-1">Credentials</h3>
+  <p class="muted text-xs mb-3">
+    Passwords and security PINs are stored as one-way hashes. They cannot be displayed here or anywhere
+    else — these controls reset them so the customer can choose a new one.
+  </p>
+
+  <div class="row mb-3" style="gap:1.25rem;flex-wrap:wrap">
+    <div>
+      <div class="muted text-xs">Security PIN</div>
+      <div class="text-sm">
+        <?php if (!$pin_set): ?>
+          Not set
+        <?php elseif ($pin_locked): ?>
+          Set · <span style="color:var(--color-danger,#dc2626)">locked until
+            <?=htmlspecialchars(date('H:i', strtotime($user->pin_locked_until.' UTC')))?> UTC</span>
+        <?php else: ?>
+          Set<?php if ((int)$user->pin_failed_attempts > 0): ?>
+            · <?=(int)$user->pin_failed_attempts?> failed attempt<?=(int)$user->pin_failed_attempts === 1 ? '' : 's'?>
+          <?php endif; ?>
+        <?php endif; ?>
+      </div>
+    </div>
+    <div>
+      <div class="muted text-xs">Two-factor</div>
+      <div class="text-sm"><?=((int)$user->mfa_enabled === 1) ? 'Enabled' : 'Not enabled'?></div>
+    </div>
+    <div>
+      <div class="muted text-xs">Email verified</div>
+      <div class="text-sm"><?=$user->email_verified_at ? 'Yes' : 'No'?></div>
+    </div>
+  </div>
+
+  <div class="row" style="gap:.5rem;flex-wrap:wrap">
+    <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/password-reset')?>" style="margin:0">
+      <?=$csrf()?>
+      <button class="btn btn-secondary btn-sm" type="submit">Email a password-reset link</button>
+    </form>
+
+    <?php if ($pin_set): ?>
+    <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/pin-reset')?>" style="margin:0">
+      <?=$csrf()?>
+      <input type="hidden" name="reason" value="Reset from the customer file">
+      <button class="btn btn-secondary btn-sm" type="submit">Clear security PIN</button>
+    </form>
+    <?php endif; ?>
+
+    <?php if ($pin_locked): ?>
+    <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/pin-unlock')?>" style="margin:0">
+      <?=$csrf()?>
+      <button class="btn btn-secondary btn-sm" type="submit">Lift PIN lockout</button>
+    </form>
+    <?php endif; ?>
+  </div>
+</div>
+<?php endif; ?>
+
 <?php if ($can_impersonate && !$self && $user->status === 'ACTIVE' && $user->role === 'CUSTOMER'): ?>
 <div class="card mb-4" style="border-color:var(--color-warning,#f59e0b)">
   <h3 style="font-size:1rem;font-weight:600" class="mb-1">Read-only customer impersonation</h3>
@@ -169,7 +238,7 @@ $nonce = bin2hex(random_bytes(8));
         <option value="DEBIT">Debit — take funds back</option>
       </select>
     </label>
-    <label class="field"><span class="label">Amount (<?=htmlspecialchars(windels_base_currency())?>)</span>
+    <label class="field"><span class="label">Amount (<?=htmlspecialchars(marvy_base_currency())?>)</span>
       <input class="input mono" type="number" name="amount" step="0.01" min="0.01" required
              placeholder="0.00" style="max-width:9rem">
     </label>
@@ -197,9 +266,9 @@ $nonce = bin2hex(random_bytes(8));
           <td class="text-xs muted whitespace-nowrap"><?=htmlspecialchars(date('M j, H:i', strtotime($m->created_at)))?></td>
           <td class="text-xs"><?=htmlspecialchars(DashboardStats::transaction_label($m))?></td>
           <td class="text-right mono <?=$m->direction === 'CREDIT' ? 'text-green-600' : ''?>">
-            <?=$m->direction === 'CREDIT' ? '+' : '−'?><?=windels_money($m->amount, $m->currency)?>
+            <?=$m->direction === 'CREDIT' ? '+' : '−'?><?=marvy_money($m->amount, $m->currency)?>
           </td>
-          <td class="text-right mono muted"><?=windels_money($m->balance_after, $m->currency)?></td>
+          <td class="text-right mono muted"><?=marvy_money($m->balance_after, $m->currency)?></td>
           <td class="text-xs muted"><?=htmlspecialchars((string)($m->note ?? ''))?></td>
         </tr>
       <?php endforeach; ?>
@@ -221,7 +290,7 @@ $nonce = bin2hex(random_bytes(8));
           <tr>
             <td><a class="mono text-xs" href="<?=site_url('admin/orders/'.$o->public_id)?>"><?=htmlspecialchars($o->public_id)?></a></td>
             <td class="text-xs"><?=htmlspecialchars((string)($o->service_name ?? ''))?></td>
-            <td class="text-right mono text-xs"><?=windels_money($o->charge, $o->currency ?? null)?></td>
+            <td class="text-right mono text-xs"><?=marvy_money($o->charge, $o->currency ?? null)?></td>
             <td><span class="<?=DashboardStats::status_badge($o->status)?>"><?=htmlspecialchars($o->status)?></span></td>
           </tr>
         <?php endforeach; ?>
@@ -241,7 +310,7 @@ $nonce = bin2hex(random_bytes(8));
           <tr>
             <td class="mono text-xs"><?=htmlspecialchars($s->public_id)?></td>
             <td class="text-xs"><?=htmlspecialchars((string)$s->service_domain)?> · <?=htmlspecialchars((string)$s->service_type)?></td>
-            <td class="text-right mono text-xs"><?=windels_money($s->amount, $s->currency ?? null)?></td>
+            <td class="text-right mono text-xs"><?=marvy_money($s->amount, $s->currency ?? null)?></td>
             <td><span class="<?=DashboardStats::status_badge($s->status)?>"><?=htmlspecialchars($s->status)?></span></td>
           </tr>
         <?php endforeach; ?>

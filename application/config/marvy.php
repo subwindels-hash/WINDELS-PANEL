@@ -3,21 +3,21 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 
 // Config is parsed before helpers are autoloaded, so pull in env_bool()/env_str()
 // directly. Both are no-ops if the helper is already loaded.
-require_once APPPATH.'helpers/windels_helper.php';
+require_once APPPATH.'helpers/marvy_helper.php';
 
 /*
- * WINDELS PANEL — Application config
+ * MarvySocials — Application config
  * No license keys (§81). Homepage switcher (§60).
  */
-$config['windels'] = array(
-    'name' => 'WINDELS PANEL',
+$config['marvy'] = array(
+    'name' => 'MarvySocials',
     // Public-facing brand used by the marketing site, the shared header/footer
     // and the on-site assistant. Single source of truth for every rendered
-    // brand string via windels_site_name().
-    'public_name' => 'WINDELS PANEL',
-    'tagline' => 'Enterprise SMM Reseller Platform',
-    'public_tagline' => 'Prepaid commerce for social media, VTU, virtual numbers, identity, gift cards and digital goods',
-    'support_email' => getenv('MAIL_FROM_ADDRESS') ?: 'support@windels.local',
+    // brand string via marvy_site_name().
+    'public_name' => 'MarvySocials',
+    'tagline' => 'Grow and manage your social presence',
+    'public_tagline' => 'Social media growth services, VTU, virtual numbers, identity checks and gift cards from one prepaid dashboard',
+    'support_email' => getenv('MAIL_FROM_ADDRESS') ?: 'support@marvysocials.com',
     'active_homepage' => 'AURORA', // AURORA | NEXUS | PULSE — overridden by settings table
     'homepages' => array('AURORA', 'NEXUS', 'PULSE'),
     'base_currency' => 'NGN',
@@ -63,7 +63,7 @@ $config['giftcard_countries'] = env_str('GIFTCARD_COUNTRIES', 'US,GB,NG');
 $config['giftcard_give_up_minutes'] = 60;
 
 /* Where cron jobs keep their exclusive lock files (see JobRunner). */
-$config['cron_lock_dir'] = sys_get_temp_dir().'/windels-locks';
+$config['cron_lock_dir'] = sys_get_temp_dir().'/marvy-locks';
 
 /* Cron schedules (for crontab.example + Cron controller) */
 $config['cron'] = array(
@@ -78,6 +78,10 @@ $config['cron'] = array(
     'provider_health' => '*/5 * * * *',
     'refill_status' => '*/5 * * * *',
     'payment_reconciliation' => '*/5 * * * *',
+    // Earnings sit PENDING until their holding period elapses; without this
+    // sweep they would never become withdrawable.
+    'earnings_release'       => '*/10 * * * *',
+    'fundsvera_expire'       => '*/5 * * * *',
     'email_queue' => '*/5 * * * *',
     'analytics' => '0 * * * *',
     'provider_sync' => '*/60 * * * *',

@@ -15,11 +15,11 @@ $effective_price = $on_sale ? $listing->promo_price : $listing->price;
   </div>
   <aside class="card" style="height:max-content">
     <h3 class="card-title">Order</h3>
-    <p style="font-size:1.5rem;font-weight:700"><?=windels_money($effective_price)?><span class="text-sm muted"> each</span>
-      <?php if ($on_sale): ?><br><span class="text-sm muted" style="text-decoration:line-through;font-weight:400"><?=windels_money($listing->price)?></span> <span class="badge badge-warning">Promo</span><?php endif; ?>
+    <p style="font-size:1.5rem;font-weight:700"><?=marvy_money($effective_price)?><span class="text-sm muted"> each</span>
+      <?php if ($on_sale): ?><br><span class="text-sm muted" style="text-decoration:line-through;font-weight:400"><?=marvy_money($listing->price)?></span> <span class="badge badge-warning">Promo</span><?php endif; ?>
     </p>
     <p class="text-sm muted"><?=($listing->product_type === 'PHYSICAL' ? 'Ships' : 'Digital delivery')?> within <?=(int)$listing->delivery_days?> day(s). <?=($listing->stock === null ? 'Unlimited availability.' : number_format((int)$listing->stock).' currently available.')?></p>
-    <p class="text-sm muted">Wallet balance: <strong><?=windels_money($wallet->balance)?></strong></p>
+    <p class="text-sm muted">Wallet balance: <strong><?=marvy_money($wallet->balance)?></strong></p>
     <?php if ($listing->stock !== null && (int)$listing->stock < 1): ?>
       <div class="alert alert-warning">This listing is sold out.</div>
     <?php else: ?>

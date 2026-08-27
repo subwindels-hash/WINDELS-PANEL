@@ -131,7 +131,7 @@ class OrderService {
         // A prepaid child order (drip-feed / subscription run) skips this: its
         // parent already reserved the full charge.
         $wallet = $this->ci->Wallet_model->for_user($user->id);
-        $charge_idem = $idem ?: ('order:charge:'.$user->id.':'.windels_public_id());
+        $charge_idem = $idem ?: ('order:charge:'.$user->id.':'.marvy_public_id());
         if (!$prepaid) {
             $charged = $this->ci->ledgerservice->charge(
                 $wallet->id, $charge, 'ORDER', null, $charge_idem
@@ -334,12 +334,7 @@ class OrderService {
      * (settings `partial_refund_enabled`, default on).
      */
     private function partial_refund_enabled() {
-        try {
-            $this->ci->load->model('Setting_model');
-            $v = $this->ci->Setting_model->get('partial_refund_enabled', true);
-        } catch (Throwable $e) { return true; }
-        if ($v === null || $v === '') return true;
-        return in_array(strtolower(trim((string)$v)), array('1','true','yes','on'), true);
+        return $this->setting_flag('partial_refund_enabled');
     }
 
     /**
@@ -416,7 +411,7 @@ class OrderService {
         // Persist inside a transaction; the wallet charge already committed in
         // the ledger, but we still want the order + history atomically.
         $this->ci->db->trans_start();
-        $public_id = windels_public_id();
+        $public_id = marvy_public_id();
         $this->ci->db->insert('orders', array(
             'public_id'         => $public_id,
             'user_id'           => $user->id,
@@ -429,7 +424,7 @@ class OrderService {
             'charge'            => $ctx['charge'],
             'rate_at_order'     => $ctx['rate'],
             'provider_charge'   => $ctx['provider_charge'],
-            'currency'          => windels_base_currency(),
+            'currency'          => marvy_base_currency(),
             'fields'            => !empty($ctx['input']['fields']) ? json_encode($ctx['input']['fields']) : null,
             'source'            => $ctx['input']['source'] ?? 'WEB',
             'note'              => $ctx['input']['note'] ?? null,
@@ -455,11 +450,32 @@ class OrderService {
      * default on). Fail open so an unreadable setting never strands orders.
      */
     private function auto_submit_enabled() {
+        return $this->setting_flag('order_auto_submit');
+    }
+
+    /**
+     * Read a boolean setting, defaulting to on.
+     *
+     * load->model() succeeding does not guarantee the property exists — under
+     * a test double, or a loader that resolved the model onto a different
+     * name, reading $this->ci->Setting_model raises "Undefined property"
+     * rather than throwing, so a try/catch never fires and the warning leaks
+     * into output. Check the property before touching it.
+     *
+     * Fails open: an unreadable setting must never strand orders.
+     */
+    private function setting_flag($key) {
         try {
             $this->ci->load->model('Setting_model');
-            $v = $this->ci->Setting_model->get('order_auto_submit', true);
-        } catch (Throwable $e) { return true; }
+            if (!isset($this->ci->Setting_model) || !is_object($this->ci->Setting_model)) {
+                return true;
+            }
+            $v = $this->ci->Setting_model->get($key, true);
+        } catch (Throwable $e) {
+            return true;
+        }
         if ($v === null || $v === '') return true;
+        if (is_bool($v)) return $v;
         return in_array(strtolower(trim((string)$v)), array('1','true','yes','on'), true);
     }
 
@@ -565,11 +581,33 @@ class OrderService {
         return $row ? (int)$row->$flag === 1 : false;
     }
 
+    /**
+     * Tell the referral system this customer placed an order.
+     *
+     * FIRST_ORDER is the default qualifying event, so this is the hook that
+     * turns most referrals into earnings. Never fatal: the order is already
+     * placed and paid for.
+     */
+    private function referral_first_order($user) {
+        try {
+            $this->ci->load->library('ReferralService');
+            // load->library() succeeding does not guarantee the property
+            // exists under a test double; reading it blind raises a warning
+            // that a try/catch cannot see. This method returns nothing, so an
+            // early return here is safe.
+            if (!isset($this->ci->referralservice)) return;
+            $this->ci->referralservice->record_event($user->id, 'FIRST_ORDER');
+        } catch (Throwable $e) {
+            log_message('error', 'referral FIRST_ORDER hook failed: '.$e->getMessage());
+        }
+    }
+
     private function notify($user, $order) {
+        $this->referral_first_order($user);
         try {
             $this->ci->load->model('Notification_model');
             $this->ci->db->insert('notifications', array(
-                'public_id' => windels_public_id(),
+                'public_id' => marvy_public_id(),
                 'user_id'   => $user->id,
                 'type'      => 'order.created',
                 'channel'   => 'IN_APP',

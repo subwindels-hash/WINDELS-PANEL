@@ -36,7 +36,7 @@
       <div class="card p-5">
         <div class="text-sm text-slate-500">Available balance</div>
         <div class="mt-1 text-2xl font-semibold text-slate-900">
-          <?=htmlspecialchars($wallet->currency ?? windels_base_currency())?>
+          <?=htmlspecialchars($wallet->currency ?? marvy_base_currency())?>
           <?=number_format((float)($wallet->balance ?? 0), 2)?>
         </div>
         <a href="<?=site_url('dashboard/add-funds')?>" class="mt-3 inline-flex text-sm font-medium text-brand-700 hover:underline">Add funds</a>
@@ -134,7 +134,7 @@
               <code class="block mt-1 text-[11px] text-slate-500"><?=htmlspecialchars($service->public_id)?></code>
             </td>
             <td><?=number_format((int)$service->min_quantity)?> &ndash; <?=number_format((int)$service->max_quantity)?></td>
-            <td class="text-right"><?=htmlspecialchars($wallet->currency ?? windels_base_currency())?> <?=number_format((float)($service_rates[(int)$service->id] ?? $service->rate), 2)?></td>
+            <td class="text-right"><?=htmlspecialchars($wallet->currency ?? marvy_base_currency())?> <?=number_format((float)($service_rates[(int)$service->id] ?? $service->rate), 2)?></td>
           </tr>
         <?php endforeach; ?>
         <?php if (!$services): ?><tr><td colspan="4" class="text-center text-slate-500 py-8">No active services are available.</td></tr><?php endif; ?>

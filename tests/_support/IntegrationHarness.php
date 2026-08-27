@@ -558,10 +558,10 @@ class HarnessConfig
     private $items;
     public function __construct(array $items = array())
     {
-        // Real defaults from config/windels.php matter to pricing and orders,
+        // Real defaults from config/marvy.php matter to pricing and orders,
         // so load the file rather than inventing values.
         $config = array();
-        $path = dirname(dirname(__DIR__)).'/application/config/windels.php';
+        $path = dirname(dirname(__DIR__)).'/application/config/marvy.php';
         if (file_exists($path)) {
             $BASEPATH = true;
             include $path;

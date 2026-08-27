@@ -25,7 +25,7 @@ probing the runtime directly (sapi `wasm`, `uname -s` = `Emscripten`,
 A permanently red test in a suite that is otherwise green is worse than a
 skip: it teaches reviewers that red can be ignored, and the next real
 regression hides behind it. So the test now calls `markTestSkipped()` —
-**only when `windels_runtime_is_wasm()` positively detects the WASM runtime**
+**only when `marvy_runtime_is_wasm()` positively detects the WASM runtime**
 (`tests/bootstrap.php`) — with the reason spelled out in the skip message. On
 native PHP (developer machines and GitHub Actions, which run the full suite
 against real MySQL on every push) every assertion executes unchanged. The skip
@@ -117,7 +117,7 @@ platform-scoped skip above.
 
 | File | Change |
 | --- | --- |
-| `tests/bootstrap.php` | `windels_runtime_is_wasm()` runtime probe, with the rationale |
+| `tests/bootstrap.php` | `marvy_runtime_is_wasm()` runtime probe, with the rationale |
 | `tests/unit/CronWorkersTest.php` | WASM-scoped `markTestSkipped` on the mutual-exclusion test; native assertions untouched |
 | `application/libraries/JobRunner.php` | lock-contract docblock: kernel guarantee, WASM asymmetry, no production impact |
 | `application/views/dashboard/placeholder.php` | deleted (dead scaffold) |

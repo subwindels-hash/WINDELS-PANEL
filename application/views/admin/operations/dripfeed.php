@@ -71,7 +71,7 @@ $base_url = 'admin/drip-feed';
             <?=number_format($done)?><?=$total_runs > 0 ? ' / '.number_format($total_runs) : ''?>
             <?php if ($total_runs > 0): ?><span class="muted"> (<?=$pct?>%)</span><?php endif; ?>
           </td>
-          <td class="text-right mono"><?=windels_money($r->charge, $r->currency ?? null)?></td>
+          <td class="text-right mono"><?=marvy_money($r->charge, $r->currency ?? null)?></td>
           <td class="text-xs muted whitespace-nowrap">
             <?=$r->next_run_at ? htmlspecialchars(date('M j, H:i', strtotime($r->next_run_at))) : '—'?>
           </td>

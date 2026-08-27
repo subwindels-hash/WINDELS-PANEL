@@ -1,6 +1,6 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
 $percent  = rtrim(rtrim(number_format((float)$stats['percent'], 4, '.', ''), '0'), '.');
-$currency = windels_base_currency();
+$currency = marvy_base_currency();
 ?>
 <?php if (empty($stats['enabled'])): ?>
   <div class="alert alert-warning">The referral program is currently paused. Existing commissions are unaffected.</div>
@@ -31,15 +31,15 @@ $currency = windels_base_currency();
         </div>
         <div class="card">
           <div class="muted text-sm">Pending</div>
-          <div class="text-2xl font-bold"><?=windels_money($stats['pending'], $currency)?></div>
+          <div class="text-2xl font-bold"><?=marvy_money($stats['pending'], $currency)?></div>
           <div class="hint">Clears after <?=(int)$stats['hold_hours']?>h</div>
         </div>
         <div class="card">
           <div class="muted text-sm">Paid to wallet</div>
-          <div class="text-2xl font-bold"><?=windels_money($stats['paid'], $currency)?></div>
+          <div class="text-2xl font-bold"><?=marvy_money($stats['paid'], $currency)?></div>
         </div>
       </div>
-      <p class="hint mt-3">Lifetime earned: <strong><?=windels_money($stats['earned'], $currency)?></strong></p>
+      <p class="hint mt-3">Lifetime earned: <strong><?=marvy_money($stats['earned'], $currency)?></strong></p>
     </div>
 
     <div class="card">
@@ -64,7 +64,7 @@ $currency = windels_base_currency();
               <td><?=htmlspecialchars($c->referred_username ?? '—')?></td>
               <td class="mono text-xs"><?=$c->order_public_id ? htmlspecialchars(substr($c->order_public_id, 0, 10)).'…' : '—'?></td>
               <td><span class="badge <?=$c->status === 'PAID' ? 'badge-success' : ($c->status === 'PENDING' ? 'badge-warning' : 'badge-default')?>"><?=htmlspecialchars($c->status)?></span></td>
-              <td class="text-right mono font-semibold"><?=windels_money($c->amount, $c->currency)?></td>
+              <td class="text-right mono font-semibold"><?=marvy_money($c->amount, $c->currency)?></td>
             </tr>
           <?php endforeach; ?>
           </tbody>
@@ -86,8 +86,8 @@ $currency = windels_base_currency();
             <tr>
               <td><?=htmlspecialchars($r->username)?></td>
               <td class="text-xs muted"><?=date('M j, Y', strtotime($r->joined_at ?? $r->created_at))?></td>
-              <td class="text-right mono muted"><?=windels_money($r->pending ?? '0', $currency)?></td>
-              <td class="text-right mono font-semibold"><?=windels_money($r->earned ?? '0', $currency)?></td>
+              <td class="text-right mono muted"><?=marvy_money($r->pending ?? '0', $currency)?></td>
+              <td class="text-right mono font-semibold"><?=marvy_money($r->earned ?? '0', $currency)?></td>
             </tr>
           <?php endforeach; ?>
           </tbody>

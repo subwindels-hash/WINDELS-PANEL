@@ -1,6 +1,6 @@
 <?php
 /**
- * verify_database.php — audit the codebase against database/windels_panel.sql.
+ * verify_database.php — audit the codebase against database/marvysocials.sql.
  *
  * Guarantees the flood-fill question of every deployment — "does the shipped
  * database actually match the code?" — has a mechanical answer:
@@ -24,7 +24,7 @@ error_reporting(E_ALL & ~E_DEPRECATED);
 
 if (!defined('BASEPATH')) define('BASEPATH', dirname(__DIR__) . '/system/');  // standalone CLI
 $ROOT = dirname(__DIR__);
-$SQL  = $ROOT . '/database/windels_panel.sql';
+$SQL  = $ROOT . '/database/marvysocials.sql';
 $QUIET = in_array('--quiet', $argv, true);
 
 require_once $ROOT . '/application/libraries/SchemaManifest.php';
@@ -256,7 +256,7 @@ foreach (array_keys($referenced_tables) as $t) {
     if (isset($SYSTEM_CATALOGS[$t])) continue;
     if (!isset($TABLES[$t])) {
         err('table', implode(', ', array_keys($referenced_tables[$t])),
-            "code references table '{$t}' — not present in database/windels_panel.sql");
+            "code references table '{$t}' — not present in database/marvysocials.sql");
     }
 }
 
@@ -304,8 +304,8 @@ $counts = array('table'=>0,'column'=>0,'type'=>0,'fk'=>0,'index'=>0);
 foreach ($errors as $e) $counts[$e[0]]++;
 
 if (!$QUIET || $errors) {
-    echo "WINDELS PANEL — database ↔ code audit\n";
-    echo "schema: database/windels_panel.sql — " . count($TABLES) . " tables\n";
+    echo "MarvySocials — database ↔ code audit\n";
+    echo "schema: database/marvysocials.sql — " . count($TABLES) . " tables\n";
     echo "code:   " . count($files) . " PHP files scanned\n";
     echo str_repeat('-', 68) . "\n";
 }

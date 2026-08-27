@@ -24,7 +24,7 @@ $user_rate = $user_rate ?? null;
                 data-step="<?= (int)($s->increment_step ?: 1)?>"
                 data-name="<?=htmlspecialchars($s->name)?>"
                 <?= (isset($old['service']) && $old['service']==$s->public_id) || ($svc && $svc->id==$s->id) ? 'selected' : ''?>>
-                <?=htmlspecialchars($s->name)?> — <?=windels_money($s->rate)?>/1k
+                <?=htmlspecialchars($s->name)?> — <?=marvy_money($s->rate)?>/1k
               </option>
             <?php endforeach; ?>
           </select>
@@ -71,7 +71,7 @@ $user_rate = $user_rate ?? null;
   <aside class="space-y-6">
     <div class="card">
       <h3 class="card-title">Wallet</h3>
-      <div class="text-3xl font-bold" style="font-family:var(--font-display)"><?=windels_money($wallet->balance ?? '0', $wallet->currency ?? windels_base_currency())?></div>
+      <div class="text-3xl font-bold" style="font-family:var(--font-display)"><?=marvy_money($wallet->balance ?? '0', $wallet->currency ?? marvy_base_currency())?></div>
       <?php if (bccomp($wallet->balance ?? '0', '0', 8) <= 0): ?>
         <div class="alert alert-warning mt-3 mb-0">Your wallet is empty. Add funds before placing an order.</div>
       <?php endif; ?>
@@ -113,7 +113,7 @@ $user_rate = $user_rate ?? null;
 
   // Service metadata is embedded on the option; live lookup is purely client-side.
   // Currency symbol from the server so live totals match server-rendered prices.
-  var sym=<?=json_encode(trim(str_replace(array('0','.',','), '', windels_money(0))))?>;
+  var sym=<?=json_encode(trim(str_replace(array('0','.',','), '', marvy_money(0))))?>;
   function fmt(v){return sym+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
   function recalc(){
     var opt=sel.options[sel.selectedIndex], rate=0, min=1, max=0, step=1;

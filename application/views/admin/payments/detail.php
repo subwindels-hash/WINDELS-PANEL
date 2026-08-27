@@ -31,12 +31,12 @@ $actionable = in_array($tx->status, array('CREATED','PENDING'), true);
             <span class="muted text-xs"><?=htmlspecialchars((string)$tx->email)?></span></td></tr>
         <tr><th>Method</th><td><?=htmlspecialchars((string)$tx->method_name)?>
             <span class="badge badge-default"><?=htmlspecialchars((string)$tx->method_type)?></span></td></tr>
-        <tr><th>Amount paid</th><td class="mono"><?=windels_money($tx->amount)?> <?=htmlspecialchars($tx->currency)?></td></tr>
-        <tr><th>Fee</th><td class="mono"><?=windels_money($tx->fee)?></td></tr>
+        <tr><th>Amount paid</th><td class="mono"><?=marvy_money($tx->amount)?> <?=htmlspecialchars($tx->currency)?></td></tr>
+        <tr><th>Fee</th><td class="mono"><?=marvy_money($tx->fee)?></td></tr>
         <?php if (bccomp((string)$tx->bonus, '0', 8) > 0): ?>
-        <tr><th>Bonus</th><td class="mono"><?=windels_money($tx->bonus)?></td></tr>
+        <tr><th>Bonus</th><td class="mono"><?=marvy_money($tx->bonus)?></td></tr>
         <?php endif; ?>
-        <tr><th>Credits to wallet</th><td class="mono font-bold"><?=windels_money($tx->credited_amount ?? $tx->amount)?></td></tr>
+        <tr><th>Credits to wallet</th><td class="mono font-bold"><?=marvy_money($tx->credited_amount ?? $tx->amount)?></td></tr>
         <?php if ($tx->provider_tx_id): ?>
         <tr><th>Reference</th><td class="mono text-xs"><?=htmlspecialchars($tx->provider_tx_id)?></td></tr>
         <?php endif; ?>
@@ -53,19 +53,19 @@ $actionable = in_array($tx->status, array('CREATED','PENDING'), true);
       <p class="muted text-sm">You have read-only access to payments.</p>
     <?php elseif ($tx->status === 'SUCCESS'): ?>
       <div class="alert alert-success">
-        Credited <?=windels_money($tx->credited_amount ?? $tx->amount)?> to this customer's wallet.
+        Credited <?=marvy_money($tx->credited_amount ?? $tx->amount)?> to this customer's wallet.
         Reverse it with a wallet adjustment rather than re-approving.
       </div>
     <?php elseif (!$actionable): ?>
       <div class="alert alert-warning">This deposit is <?=htmlspecialchars($tx->status)?> and cannot be actioned.</div>
     <?php else: ?>
       <p class="text-sm muted mb-2">
-        Approving credits <strong><?=windels_money($tx->credited_amount ?? $tx->amount)?></strong>
+        Approving credits <strong><?=marvy_money($tx->credited_amount ?? $tx->amount)?></strong>
         to <?=htmlspecialchars((string)$tx->username)?>'s wallet through the ledger. Confirm the funds
         have actually arrived first — this cannot be undone from here.
       </p>
       <form method="post" action="<?=site_url('admin/payments/'.$tx->public_id.'/approve')?>" class="mb-4"
-            onsubmit="return confirm('Credit <?=htmlspecialchars(windels_money($tx->credited_amount ?? $tx->amount))?> to this wallet?')">
+            onsubmit="return confirm('Credit <?=htmlspecialchars(marvy_money($tx->credited_amount ?? $tx->amount))?> to this wallet?')">
         <?=$csrf()?>
         <input class="input mb-2" name="provider_tx_id" placeholder="Bank reference (optional)"
                value="<?=htmlspecialchars((string)$tx->provider_tx_id)?>">

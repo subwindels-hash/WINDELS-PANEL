@@ -1,8 +1,8 @@
 {
-  "name": "windels-panel-assets",
+  "name": "marvysocials-assets",
   "version": "0.4.0",
   "private": true,
-  "description": "WINDELS PANEL — frontend asset build (Tailwind CLI). PHP views render with assets/css/design-system.css even without a build.",
+  "description": "MarvySocials — frontend asset build (Tailwind CLI). PHP views render with assets/css/design-system.css even without a build.",
   "scripts": {
     "build:css": "tailwindcss -i ./assets/css/app.css -o ./assets/css/tailwind.css --minified",
     "watch:css": "tailwindcss -i ./assets/css/app.css -o ./assets/css/tailwind.css --watch",

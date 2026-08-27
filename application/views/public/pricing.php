@@ -11,7 +11,7 @@ $plans = SiteOperatorKnowledge::pricing_plans();
       <div>
         <p class="ws-kicker">Pricing</p>
         <h1>Prepaid wallet. Published rates. No fake plans.</h1>
-        <p class="ws-lede">WINDELS PANEL does not sell a public monthly subscription. You add funds and pay the rate shown on each service or product. Volume groups exist, but staff assign them — they are not something you check out.</p>
+        <p class="ws-lede">MarvySocials does not sell a public monthly subscription. You add funds and pay the rate shown on each service or product. Volume groups exist, but staff assign them — they are not something you check out.</p>
       </div>
       <div class="ws-hero-media">
         <img src="<?=base_url('assets/images/services/marketplace.jpg')?>" alt="Quiet digital storefront of glass product tiles — a visual for prepaid catalogue pricing, not a plan grid." width="800" height="600" fetchpriority="high">

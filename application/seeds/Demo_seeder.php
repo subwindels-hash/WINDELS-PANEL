@@ -31,9 +31,9 @@ class Demo_seeder extends Seeder {
         $this->seed_content($user_ids);
 
         $this->out('demo seed complete — login with any demo account:');
-        $this->out('  admin@windels.local / '.$this->password.'   (SUPER_ADMIN)');
-        $this->out('  staff@windels.local / '.$this->password.'   (STAFF)');
-        $this->out('  demo@windels.local  / '.$this->password.'   (CUSTOMER)');
+        $this->out('  admin@marvy.local / '.$this->password.'   (SUPER_ADMIN)');
+        $this->out('  staff@marvy.local / '.$this->password.'   (STAFF)');
+        $this->out('  demo@marvy.local  / '.$this->password.'   (CUSTOMER)');
         $this->out('Set DEMO_PASSWORD in .env to pin this value.');
     }
 
@@ -48,7 +48,7 @@ class Demo_seeder extends Seeder {
             'api_key_encrypted'     => $enc,
             'api_type'              => 'MOCK',
             'status'                => 'ACTIVE',
-            'currency'              => windels_base_currency(),
+            'currency'              => marvy_base_currency(),
             'balance'               => '1000.00000000',
             'timeout_ms'            => 15000,
             'retry_policy'          => json_encode(array('maxRetries'=>3,'backoffMs'=>array(500,1500,4000))),
@@ -363,10 +363,10 @@ class Demo_seeder extends Seeder {
 
     private function seed_users() {
         $accounts = array(
-            array('admin','admin@windels.local','SUPER_ADMIN','Ada','Windels'),
-            array('staff','staff@windels.local','STAFF','Sam','Support'),
-            array('demo','demo@windels.local','CUSTOMER','Dana','Demo'),
-            array('reseller','reseller@windels.local','CUSTOMER','Rio','Reseller'),
+            array('admin','admin@marvy.local','SUPER_ADMIN','Ada','Marvy'),
+            array('staff','staff@marvy.local','STAFF','Sam','Support'),
+            array('demo','demo@marvy.local','CUSTOMER','Dana','Demo'),
+            array('reseller','reseller@marvy.local','CUSTOMER','Rio','Reseller'),
         );
         $default_group  = $this->ci->db->where('name','Default')->get('price_groups')->row();
         $reseller_group = $this->ci->db->where('name','Reseller')->get('price_groups')->row();
@@ -389,6 +389,23 @@ class Demo_seeder extends Seeder {
                 'timezone'          => 'UTC',
                 'locale'            => 'en',
             ));
+
+            // Allocated after the upsert and only when missing: re-running the
+            // seed must not hand an existing demo account a different account
+            // number every time.
+            if ($ids[$username]) {
+                $row = $this->ci->db->where('id', $ids[$username])->get('users')->row();
+                if ($row && empty($row->user_code)) {
+                    // Allocate first, then build the UPDATE: the allocator runs
+                    // its own query, which would otherwise consume the pending
+                    // where('id') and update every row in the table.
+                    $code = marvy_allocate_user_code($this->ci->db);
+                    if ($code !== null) {
+                        $this->ci->db->where('id', $ids[$username])
+                            ->update('users', array('user_code' => $code));
+                    }
+                }
+            }
         }
 
         // referral: reseller was referred by demo
@@ -415,7 +432,7 @@ class Demo_seeder extends Seeder {
             $wallet_id = $this->insert_once('wallets', array('user_id'=>$uid), array(
                 'public_id' => $this->pid(),
                 'balance'   => '0.00000000',
-                'currency'  => windels_base_currency(),
+                'currency'  => marvy_base_currency(),
             ));
             $target = $balances[$username] ?? '0.00000000';
             if (bccomp($target, '0', 8) <= 0) continue;
@@ -433,7 +450,7 @@ class Demo_seeder extends Seeder {
                 'amount'          => $target,
                 'balance_before'  => '0.00000000',
                 'balance_after'   => $target,
-                'currency'        => windels_base_currency(),
+                'currency'        => marvy_base_currency(),
                 'reference_type'  => 'Seed',
                 'reference_id'    => 'demo',
                 'note'            => 'Demo opening balance',
@@ -449,7 +466,7 @@ class Demo_seeder extends Seeder {
                     'account'               => $entry[0],
                     'direction'             => $entry[1],
                     'amount'                => $target,
-                    'currency'              => windels_base_currency(),
+                    'currency'              => marvy_base_currency(),
                     'created_at'            => $this->now(),
                 ));
                 $this->bump('ledger_entries','inserted');
@@ -466,10 +483,10 @@ class Demo_seeder extends Seeder {
         if (empty($user_ids['demo']) || empty($service_ids)) return;
 
         $plan = array(
-            array('instagram-followers-real-mix', 1000, 'COMPLETED', 'https://instagram.com/windelsdemo'),
-            array('tiktok-likes',                 2500, 'IN_PROGRESS', 'https://tiktok.com/@windelsdemo/video/123'),
+            array('instagram-followers-real-mix', 1000, 'COMPLETED', 'https://instagram.com/marvydemo'),
+            array('tiktok-likes',                 2500, 'IN_PROGRESS', 'https://tiktok.com/@marvydemo/video/123'),
             array('youtube-views-high-retention', 5000, 'PARTIAL', 'https://youtube.com/watch?v=demo123'),
-            array('telegram-post-views',         10000, 'PENDING', 'https://t.me/windelsdemo/42'),
+            array('telegram-post-views',         10000, 'PENDING', 'https://t.me/marvydemo/42'),
             array('instagram-likes-high-quality',  500, 'CANCELED', 'https://instagram.com/p/demo'),
         );
         $user_id = $user_ids['demo'];
@@ -496,7 +513,7 @@ class Demo_seeder extends Seeder {
                 'charge'              => $charge,
                 'rate_at_order'       => $service->rate,
                 'provider_charge'     => $pcharge,
-                'currency'            => windels_base_currency(),
+                'currency'            => marvy_base_currency(),
                 'start_count'         => ($status === 'PENDING') ? NULL : 1000 + $i * 37,
                 'remains'             => ($status === 'PARTIAL') ? (int)round($qty * 0.2) : (($status === 'COMPLETED') ? 0 : NULL),
                 'refunded_amount'     => ($status === 'PARTIAL') ? bcmul($charge, '0.2', 8) : '0.00000000',
@@ -556,7 +573,7 @@ class Demo_seeder extends Seeder {
             'order_id'    => $order ? $order->id : NULL,
         ), array(
             'amount'   => $amount,
-            'currency' => windels_base_currency(),
+            'currency' => marvy_base_currency(),
             'status'   => 'PENDING',
         ));
     }
@@ -575,7 +592,7 @@ class Demo_seeder extends Seeder {
             array('Drip-Feed vs. Instant Delivery: Which Should You Use?','dripfeed-vs-instant-delivery',
                 'Drip-feed spreads delivery over time so growth looks organic. Here is when each option wins.'),
             array('Reseller API: From First Key to First 1,000 Orders','reseller-api-first-1000-orders',
-                'Everything you need to automate ordering against the WINDELS reseller API.'),
+                'Everything you need to automate ordering against the MARVYSOCIALS reseller API.'),
         );
         foreach ($posts as $i => $p) {
             $this->insert_once('blog_posts', array('slug'=>$p[1]), array(
@@ -592,7 +609,7 @@ class Demo_seeder extends Seeder {
             ));
         }
 
-        $this->insert_once('announcements', array('title'=>'Welcome to the WINDELS demo panel'), array(
+        $this->insert_once('announcements', array('title'=>'Welcome to the MARVYSOCIALS demo panel'), array(
             'public_id' => $this->pid(),
             'content'   => 'You are viewing seeded demo data. Providers are mocked and no real orders are placed.',
             'severity'  => 'INFO',

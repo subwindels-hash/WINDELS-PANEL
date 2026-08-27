@@ -1,4 +1,4 @@
-# Deploying WINDELS PANEL on cPanel
+# Deploying MarvySocials on cPanel
 
 **Upload the files → create the database → import one SQL file → edit `.env` →
 open the domain.** That is the whole process. No Terminal, no SSH, no Composer,
@@ -16,7 +16,7 @@ server.
 | --- | --- |
 | Hosting | cPanel with PHP **8.1+** and MySQL 5.7+ / MariaDB 10.4+ |
 | PHP extensions | `mysqli`, `mbstring`, `openssl`, `curl`, `json`, `bcmath` (cPanel → Select PHP Version → Extensions) |
-| The package | `application-deployment.zip` — published as a **release artifact** (GitHub → Releases), or built locally with `bash tools/build_deployment_package.sh`. It is a build artifact and is not committed to git. Contains index.php, application/, system/, assets/, storage/, cron/, database/windels_panel.sql and .env.example. |
+| The package | `application-deployment.zip` — published as a **release artifact** (GitHub → Releases), or built locally with `bash tools/build_deployment_package.sh`. It is a build artifact and is not committed to git. Contains index.php, application/, system/, assets/, storage/, cron/, database/marvysocials.sql and .env.example. |
 
 Nothing else. The framework is inside the package, so `composer install` is
 never required; the CSS is pre-built, so `npm install` is never required.
@@ -59,7 +59,7 @@ Write down the three prefixed values: **database name**, **user name**,
 
 1. Select the database you just created in the left-hand list.
 2. Open the **Import** tab.
-3. **Choose file** → `database/windels_panel.sql` from the extracted package
+3. **Choose file** → `database/marvysocials.sql` from the extracted package
    (download it from File Manager first if your browser needs a local copy).
 4. Press **Go**.
 
@@ -73,7 +73,7 @@ first administrator account.
 finished when the import finishes.
 
 > If phpMyAdmin refuses the upload because the file is larger than the host's
-> limit, compress it first (`windels_panel.sql.zip`) — phpMyAdmin imports zipped
+> limit, compress it first (`marvysocials.sql.zip`) — phpMyAdmin imports zipped
 > SQL directly.
 
 ---
@@ -128,7 +128,7 @@ It checks, and names the exact fix for anything red:
 - writable runtime directories (with real write probes, not guesses)
 - `.env` — required values present, secrets non-default, https base URL
 - database credentials **and a live connection**, including whether the
-  `windels_panel.sql` import actually ran (table count)
+  `marvysocials.sql` import actually ran (table count)
 
 **Delete `deploy-verify.php` when everything is green** — File Manager →
 right-click → Delete. (Or set `VP_VERIFY_DISABLE=1` in `.env` to disable it
@@ -142,7 +142,7 @@ exits 0/1, so monitoring can gate on it.
 Visit `https://yourdomain.com`.
 
 The homepage should render. Sign in at `/login` with the credentials printed in
-the header of `database/windels_panel.sql`:
+the header of `database/marvysocials.sql`:
 
 ```
 username: admin
@@ -220,7 +220,7 @@ Same five steps, with two differences.
 4. Upload and extract the files (step 1), and upload the contents of
    `assets/uploads/` if you compressed the app without them.
 5. Create the new database and user (step 2).
-6. Import **your exported dump**, not `database/windels_panel.sql` — your dump
+6. Import **your exported dump**, not `database/marvysocials.sql` — your dump
    already contains the schema *and* your live data.
 7. Edit `.env` (step 4) with the **new** database name/user/password and the
    new domain, and paste the **old** `VP_ENCRYPTION_KEY` and `VP_AUTH_SECRET`
@@ -303,7 +303,7 @@ application-deployment.zip
 ├── storage/                  logs/ and cache/ (writable, pre-guarded)
 ├── cron/                     crontab example for cPanel → Cron Jobs
 └── database/
-    └── windels_panel.sql        the complete database: schema + data + admin
+    └── marvysocials.sql        the complete database: schema + data + admin
 ```
 
 `index.php` auto-detects the framework in `system/` first and
@@ -321,7 +321,7 @@ The zip is committed so that an operator can download it without tooling. After
 changing application code, a migration or the core seed:
 
 ```bash
-php tools/build_production_sql.php          # regenerate database/windels_panel.sql
+php tools/build_production_sql.php          # regenerate database/marvysocials.sql
 bash tools/build_deployment_package.sh      # regenerate application-deployment.zip
 bash tools/verify_deployment_package.sh     # extract it into a scratch account and prove it boots
 ```
@@ -329,6 +329,6 @@ bash tools/verify_deployment_package.sh     # extract it into a scratch account 
 `CpanelDeploymentTest` fails when the committed zip no longer matches the tree:
 its staleness check compares every packaged application file (views, layouts,
 assets, config, controllers, models, libraries, database dump, runtime
-guards) hash-for-hash against the working tree, not just `windels_panel.sql` and
+guards) hash-for-hash against the working tree, not just `marvysocials.sql` and
 `index.php`. CI runs all three of the above plus a real MySQL import of
-`database/windels_panel.sql`.
+`database/marvysocials.sql`.

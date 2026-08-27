@@ -14,7 +14,7 @@ foreach ($products as $p) $by_type[$p->id_type][] = $p;
   <?php $this->load->view('dashboard/identity/_flash'); ?>
 
   <p class="muted text-sm mb-4">Wallet balance:
-    <strong><?=windels_money($wallet->balance)?></strong></p>
+    <strong><?=marvy_money($wallet->balance)?></strong></p>
 
   <?php if (empty($products)): ?>
     <p class="muted">Identity checks are not on sale yet. Check back shortly.</p>
@@ -32,7 +32,7 @@ foreach ($products as $p) $by_type[$p->id_type][] = $p;
         <?php foreach ($rows as $p): ?>
           <option value="<?=htmlspecialchars($p->code)?>"
                   <?=($selected === $p->code) ? 'selected' : ''?>>
-            <?=htmlspecialchars($p->name)?> — <?=windels_money($p->price)?>
+            <?=htmlspecialchars($p->name)?> — <?=marvy_money($p->price)?>
           </option>
         <?php endforeach; ?>
         </optgroup>

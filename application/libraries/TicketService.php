@@ -43,7 +43,7 @@ class TicketService {
 
         $this->ci->db->trans_start();
         $ticket = $this->ci->Ticket_model->create(array(
-            'public_id'   => windels_public_id(),
+            'public_id'   => marvy_public_id(),
             'user_id'     => $user->id,
             'subject'     => $subject,
             'status'      => 'OPEN',
@@ -157,7 +157,7 @@ class TicketService {
         // is forced visible so nothing a customer writes can be hidden.
         $internal = ($is_staff && $is_internal_note) ? 1 : 0;
         $msg = $this->ci->Ticket_message_model->create(array(
-            'public_id'        => windels_public_id(),
+            'public_id'        => marvy_public_id(),
             'ticket_id'        => $ticket_id,
             'author_id'        => $author_id,
             'message'          => $body,

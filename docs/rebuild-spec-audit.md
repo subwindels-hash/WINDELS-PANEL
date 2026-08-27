@@ -1,6 +1,6 @@
 # Master Rebuild Specification — Audit & Gap Analysis
 
-Audit of the existing codebase against the WINDELS PANEL Master Rebuild
+Audit of the existing codebase against the MarvySocials Master Rebuild
 Specification (PHP / CodeIgniter 3.x Edition), performed before any code was
 written, as §36 directs.
 
@@ -128,14 +128,14 @@ file count matching `migration_version`", keeping the ordering guarantee.
 
 ### 6.2 Base currency is USD; the spec shows ₦ — **RESOLVED (session 22)**
 
-`config/windels.php` set `base_currency = 'USD'` and both money tables defaulted
+`config/marvy.php` set `base_currency = 'USD'` and both money tables defaulted
 `currency CHAR(3) NOT NULL DEFAULT 'USD'`. §16 shows balances as `₦XX,XXX.XX`,
 and VTU/NIN/BVN/exam-PIN services are Nigeria-specific.
 
 **Resolved:** the panel is now denominated in Naira. See
 `docs/session-22-currency.md`. Migration `011_base_currency_ngn` moves the column
 defaults and relabels existing rows; `currencies` is rebased so NGN sits at 1.0;
-`windels_base_currency()` is now the single source of truth and the ~20 hardcoded
+`marvy_base_currency()` is now the single source of truth and the ~20 hardcoded
 `'USD'` fallbacks scattered through libraries, controllers, models and views were
 replaced with calls to it.
 

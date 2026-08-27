@@ -113,7 +113,7 @@ class MarketplaceService {
             $id = $listing->id;
             $action = 'marketplace.listing.update';
         } else {
-            $fields['public_id'] = windels_public_id();
+            $fields['public_id'] = marvy_public_id();
             $fields['created_at'] = gmdate('Y-m-d H:i:s');
             $id = $this->ci->Marketplace_listing_model->create($fields);
             $before = null;
@@ -163,7 +163,7 @@ class MarketplaceService {
             'detail' => function ($transaction_id) use ($listing, $buyer_id, $quantity, $gross,
                                                          $order_model, &$order_id, $unit_price) {
                 $order_id = $order_model->create(array(
-                    'public_id' => windels_public_id(),
+                    'public_id' => marvy_public_id(),
                     'service_transaction_id' => $transaction_id,
                     'listing_id' => $listing->id,
                     'buyer_id' => $buyer_id,
@@ -479,7 +479,7 @@ class MarketplaceService {
             $actor_id ?: null, $action, $resource, (string)$resource_id, $before, $after,
             $input ? $input->ip_address() : null,
             $input ? $input->user_agent() : null,
-            function_exists('windels_request_id') ? windels_request_id() : null
+            function_exists('marvy_request_id') ? marvy_request_id() : null
         );
     }
 

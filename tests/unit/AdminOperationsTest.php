@@ -35,7 +35,7 @@ class AdminOperationsTest extends TestCase
         }
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         require_once self::$root.'/application/core/MY_Model.php';
-        require_once self::$root.'/application/helpers/windels_helper.php';
+        require_once self::$root.'/application/helpers/marvy_helper.php';
     }
 
     /** A customer with a completed order, plus an admin who is not them. */

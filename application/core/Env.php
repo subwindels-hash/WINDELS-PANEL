@@ -2,7 +2,7 @@
 /**
  * Env — the one place server-specific configuration comes from.
  *
- * WINDELS PANEL is deployed two ways, and both have to work from the same
+ * MarvySocials is deployed two ways, and both have to work from the same
  * tree: a container stack where the orchestrator injects real environment
  * variables, and a shared cPanel account where the only thing an operator can
  * edit is a `.env` file next to `index.php`. This class is what makes the
@@ -59,6 +59,10 @@ class Env
 
         // Database
         'VP_DB_DRIVER'          => array('DB_DRIVER'),
+        // Full PDO DSN. Optional and empty by default: hosts that need a
+        // socket path, a non-default charset or a PDO subdriver can set it
+        // instead of the discrete host/port pair, and CI3 uses it verbatim.
+        'VP_DB_DSN'             => array('DB_DSN'),
         'VP_DB_HOST'            => array('DB_HOST'),
         'VP_DB_PORT'            => array('DB_PORT'),
         'VP_DB_NAME'            => array('DB_NAME'),

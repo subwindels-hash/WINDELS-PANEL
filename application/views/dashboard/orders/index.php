@@ -40,7 +40,7 @@ $statuses = array(''=>'All','PENDING'=>'Pending','IN_PROGRESS'=>'In progress','C
           <td><?=htmlspecialchars($o->service_name ?? 'Service #'.$o->service_id)?></td>
           <td class="text-xs muted truncate max-w-[180px]"><a href="<?=htmlspecialchars($o->link)?>" target="_blank" rel="noopener nofollow"><?=htmlspecialchars($o->link)?></a></td>
           <td><?=number_format($o->quantity)?></td>
-          <td><?=windels_money($o->charge, $o->currency)?></td>
+          <td><?=marvy_money($o->charge, $o->currency)?></td>
           <td><span class="<?=DashboardStats::status_badge($o->status)?>"><?=htmlspecialchars(ucwords(strtolower(str_replace('_',' ',$o->status))))?></span></td>
           <td class="text-xs muted"><?=date('M j, Y', strtotime($o->created_at))?></td>
           <td><a class="btn btn-ghost btn-sm" href="<?=site_url('dashboard/orders/'.$o->public_id)?>">View</a></td>

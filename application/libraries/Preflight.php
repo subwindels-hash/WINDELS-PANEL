@@ -198,7 +198,7 @@ class Preflight {
 
     private function check_default_db_password($is_prod) {
         $pw = (string)env_str('DB_PASSWORD', '');
-        $weak = array('', 'windels_secret', 'root', 'password', 'secret');
+        $weak = array('', 'marvy_secret', 'root', 'password', 'secret');
         $is_weak = in_array($pw, $weak, TRUE);
         if (!$is_weak) {
             return $this->result('db_password', self::OK, 'not a known default');
@@ -327,8 +327,11 @@ class Preflight {
             || !is_object($this->ci->config) || !method_exists($this->ci->config, 'item')) {
             return $this->result('schema', self::WARN, 'no database connection to check');
         }
-        $expected = (int)$this->ci->config->item('migration_version');
-        $table = $this->ci->config->item('migration_table') ?: 'migrations';
+        // Read through the helper: migration.php lives outside the autoloaded
+        // config set, so config->item() returns NULL here and preflight would
+        // compare the live schema against version 0 and always fail.
+        $expected = (int)marvy_migration_item('migration_version', 0);
+        $table = marvy_migration_item('migration_table', 'migrations') ?: 'migrations';
         try {
             if (!$this->ci->db->table_exists($table)) {
                 return $this->result('schema', self::FAIL, 'no migrations table',

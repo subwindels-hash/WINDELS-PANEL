@@ -173,7 +173,7 @@ class Users extends Admin_Controller {
 
         $this->audit('wallet.adjusted', $user, $res['before'], $res['after']);
         $this->done($user, 'Wallet adjusted. New balance '
-            .windels_money($res['wallet']->balance, $res['wallet']->currency).'.');
+            .marvy_money($res['wallet']->balance, $res['wallet']->currency).'.');
     }
 
     /**
@@ -200,6 +200,66 @@ class Users extends Admin_Controller {
         $this->session->set_flashdata('success',
             'Read-only customer impersonation started. End it from the persistent banner when finished.');
         redirect('dashboard');
+    }
+
+    /**
+     * POST /admin/customers/:id/pin-reset — clear a customer's security PIN.
+     *
+     * A reset, never a reveal. The stored value is a one-way hash, so there is
+     * nothing to show even if an operator asked: the customer sets a new PIN
+     * themselves from Account → Security.
+     */
+    public function pin_reset($public_id) {
+        $user = $this->guard($public_id, 'users.edit');
+
+        $this->load->library('PinService');
+        $res = $this->pinservice->admin_reset(
+            $user,
+            $this->current_user,
+            trim((string)$this->input->post('reason', true)) ?: null
+        );
+        if (empty($res['ok'])) return $this->fail($user, $res['error']);
+
+        // The audit payload records that a reset happened, never the secret.
+        $this->audit('user.pin_reset', $user, array('pin_set' => true), array('pin_set' => false));
+        $this->done($user, 'Security PIN cleared. The customer must set a new one before their next PIN-protected action.');
+    }
+
+    /**
+     * POST /admin/customers/:id/pin-unlock — lift a PIN lockout.
+     *
+     * Separate from the reset because they answer different questions: the
+     * customer who mistyped five times still knows their PIN and only needs
+     * the lock lifted.
+     */
+    public function pin_unlock($public_id) {
+        $user = $this->guard($public_id, 'users.edit');
+
+        $this->load->library('PinService');
+        $res = $this->pinservice->admin_unlock($user, $this->current_user);
+        if (empty($res['ok'])) return $this->fail($user, $res['error']);
+
+        $this->audit('user.pin_unlocked', $user, null, null);
+        $this->done($user, 'PIN lockout cleared.');
+    }
+
+    /**
+     * POST /admin/customers/:id/password-reset — send a reset link.
+     *
+     * Deliberately issues the customer's own reset flow rather than setting a
+     * password the operator would then know. Staff never handle a customer
+     * credential.
+     */
+    public function password_reset($public_id) {
+        $user = $this->guard($public_id, 'users.edit');
+
+        $res = $this->auth->begin_password_reset($user->email, $this->input->ip_address());
+        if (empty($res['ok'])) {
+            return $this->fail($user, $res['error'] ?? 'Could not start a password reset.');
+        }
+
+        $this->audit('user.password_reset_sent', $user, null, array('email' => $user->email));
+        $this->done($user, 'A password-reset link has been emailed to '.$user->email.'.');
     }
 
     /* ------------------------------ helpers ----------------------------- */

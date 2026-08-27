@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate database/windels_panel.sql — the file cPanel operators import.
+"""Validate database/marvysocials.sql — the file cPanel operators import.
 
 `tools/validate_schema.py` already checks the schema house rules. This script
 checks the thing that is new about production.sql: that it is a *complete and

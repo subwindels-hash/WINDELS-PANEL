@@ -51,7 +51,7 @@ class SubscriptionService {
         $expires = ($posts || $runs) ? date('Y-m-d H:i:s', strtotime($start.' +'.($interval*max(1,(int)($runs?:$posts))).' minutes')) : null;
 
         $this->ci->db->trans_start();
-        $public_id = windels_public_id();
+        $public_id = marvy_public_id();
         $this->ci->db->insert('subscriptions', array(
             'public_id' => $public_id,
             'user_id' => $user->id,

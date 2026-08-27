@@ -225,7 +225,7 @@ class FiveSimAdapter implements NumberProviderInterface {
             'balance'     => $converted !== null ? $converted
                 : number_format((float)$data['balance'], 8, '.', ''),
             'currency'    => $converted !== null
-                ? ($this->provider->currency ?? windels_base_currency()) : 'RUB',
+                ? ($this->provider->currency ?? marvy_base_currency()) : 'RUB',
             'raw_balance' => (string)$data['balance'],
         );
     }

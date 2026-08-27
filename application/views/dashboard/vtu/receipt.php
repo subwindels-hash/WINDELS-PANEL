@@ -17,7 +17,7 @@ $class = $badge[$tx->status] ?? 'badge-muted';
       <tbody>
         <tr><th>Reference</th><td class="mono text-xs"><?=htmlspecialchars($tx->public_id)?></td></tr>
         <tr><th>Service</th><td><?=htmlspecialchars($tx->service_type)?></td></tr>
-        <tr><th>Amount</th><td><strong><?=windels_money($tx->amount)?></strong></td></tr>
+        <tr><th>Amount</th><td><strong><?=marvy_money($tx->amount)?></strong></td></tr>
         <?php if ($detail): ?>
           <tr><th>Recipient</th><td><?=htmlspecialchars($detail->recipient)?></td></tr>
           <?php if (!empty($detail->recipient_name)): ?>
@@ -31,7 +31,7 @@ $class = $badge[$tx->status] ?? 'badge-muted';
           <?php endif; ?>
         <?php endif; ?>
         <?php if (bccomp((string)$tx->refunded_amount, '0', 8) > 0): ?>
-          <tr><th>Refunded</th><td><?=windels_money($tx->refunded_amount)?></td></tr>
+          <tr><th>Refunded</th><td><?=marvy_money($tx->refunded_amount)?></td></tr>
         <?php endif; ?>
         <?php if (!empty($tx->failure_reason)): ?>
           <tr><th>Reason</th><td><?=htmlspecialchars($tx->failure_reason)?></td></tr>

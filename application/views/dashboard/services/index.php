@@ -60,7 +60,7 @@ $fav_ids = $favorites ?? array();
         </h3>
         <p class="muted text-sm"><?=htmlspecialchars($s->average_time ?: '—')?></p>
         <div class="row justify-between mt-2">
-          <strong style="color:var(--brand-700)"><?=windels_money($s->rate)?> / 1k</strong>
+          <strong style="color:var(--brand-700)"><?=marvy_money($s->rate)?> / 1k</strong>
           <a class="btn btn-primary btn-sm" href="<?=site_url('dashboard/new-order?service='.$s->public_id)?>">Order</a>
         </div>
         <p class="hint"><?=number_format($s->min_quantity)?> – <?=number_format($s->max_quantity)?> units</p>

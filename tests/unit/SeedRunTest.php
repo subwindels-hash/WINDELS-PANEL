@@ -22,7 +22,7 @@ class SeedRunTest extends TestCase
         if (!function_exists('log_message')) { eval('function log_message($l, $m) {}'); }
 
         require_once self::$root.'/tests/_support/FakeDb.php';
-        require_once self::$root.'/application/helpers/windels_helper.php';
+        require_once self::$root.'/application/helpers/marvy_helper.php';
 
         // Build the in-memory schema from every migration's DDL.
         $statements = array();

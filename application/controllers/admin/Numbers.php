@@ -156,7 +156,7 @@ class Numbers extends Admin_Controller {
         $this->audit('numbers.refunded', $tx, $before,
             array('status' => 'REFUNDED', 'refunded' => $refunded, 'reason' => $reason));
         $this->session->set_flashdata('success', $refunded
-            ? 'Reservation refunded — '.windels_money($refunded).' returned to the wallet.'
+            ? 'Reservation refunded — '.marvy_money($refunded).' returned to the wallet.'
             : 'Reservation marked refunded. No money moved: nothing was charged.');
         redirect('admin/numbers/'.$tx->public_id);
     }

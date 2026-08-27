@@ -13,12 +13,27 @@ class User_model extends MY_Model {
     }
 
     /** Login identifier may be either the email or the username. */
+    /**
+     * Find the account a sign-in identifier refers to.
+     *
+     * Accepts an email address, a username, or the six-digit account number.
+     * The numeric branch is only added when the input actually looks like a
+     * code, so a username of "123456" still resolves by username first and a
+     * normal username can never accidentally match a stranger's code.
+     */
     public function find_by_identifier($identifier) {
-        return $this->db->group_start()
-                            ->where('email', $identifier)
-                            ->or_where('username', $identifier)
-                        ->group_end()
-                        ->get($this->table)->row();
+        $identifier = trim((string) $identifier);
+        if ($identifier === '') return null;
+
+        $this->db->group_start()
+                     ->where('email', $identifier)
+                     ->or_where('username', $identifier);
+        if (preg_match('/^\d{6}$/', $identifier)) {
+            $this->db->or_where('user_code', $identifier);
+        }
+        $this->db->group_end();
+
+        return $this->db->get($this->table)->row();
     }
 
     public function find_by_referral_code($code) {

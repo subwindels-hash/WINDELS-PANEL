@@ -1,6 +1,6 @@
 <?php
 /**
- * build_production_sql.php — render database/windels_panel.sql.
+ * build_production_sql.php — render database/marvysocials.sql.
  *
  * One importable file that leaves the database completely initialised:
  * schema, indexes, foreign keys, the applied-migration bookkeeping, all core
@@ -72,21 +72,21 @@ define('ENVIRONMENT', 'production');
  * would fail on every commit. Anything the seeder derives from time() or
  * random_bytes() is therefore pinned here.
  */
-define('WINDELS_SEED_NOW', '2026-01-01 00:00:00');
+define('MARVY_SEED_NOW', '2026-01-01 00:00:00');
 
 /**
- * Deterministic stand-in for windels_public_id().
+ * Deterministic stand-in for marvy_public_id().
  *
  * Defined *before* the helper file is loaded; every generator there is guarded
  * with function_exists(), so this one wins. The shape matches a ULID
  * (26 chars, Crockford base32) because that is what the CHAR(26) public_id
  * columns and the URL routes expect.
  */
-function windels_public_id()
+function marvy_public_id()
 {
     static $n = 0;
     $alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-    $seed = 'WINDELSPRODUCTIONSEED' . (++$n);
+    $seed = 'MARVYSOCIALSPRODUCTIONSEED' . (++$n);
     $hash = hash('sha256', $seed);
     $out = '';
     for ($i = 0; $i < 26; $i++) {
@@ -95,12 +95,12 @@ function windels_public_id()
     return $out;
 }
 
-function windels_base_currency()
+function marvy_base_currency()
 {
     return 'NGN';
 }
 
-require_once APPPATH . 'helpers/windels_helper.php';
+require_once APPPATH . 'helpers/marvy_helper.php';
 
 /** Minimal stand-in so migration classes load outside CodeIgniter. */
 if (!class_exists('CI_Migration')) {
@@ -309,12 +309,12 @@ class Sql_capture_ci
 }
 
 $capture = new Sql_capture_db();
-$GLOBALS['__windels_capture_ci'] = new Sql_capture_ci($capture);
+$GLOBALS['__marvy_capture_ci'] = new Sql_capture_ci($capture);
 
 if (!function_exists('get_instance')) {
     function get_instance()
     {
-        return $GLOBALS['__windels_capture_ci'];
+        return $GLOBALS['__marvy_capture_ci'];
     }
 }
 if (!function_exists('log_message')) {
@@ -334,12 +334,12 @@ class Production_seeder extends Core_seeder
 {
     protected function now()
     {
-        return WINDELS_SEED_NOW;
+        return MARVY_SEED_NOW;
     }
 
     protected function pid()
     {
-        return windels_public_id();
+        return marvy_public_id();
     }
 
     protected function out($msg)
@@ -412,41 +412,41 @@ $admin_statements[] = "INSERT INTO `users`\n"
     . "  (`id`, `public_id`, `username`, `email`, `password_hash`, `first_name`, `last_name`,\n"
     . "   `status`, `role`, `price_group_id`, `referral_code`, `timezone`, `locale`,\n"
     . "   `email_verified_at`, `mfa_enabled`, `created_at`, `updated_at`)\n"
-    . 'VALUES (1, ' . Sql_capture_db::quote(windels_public_id()) . ', '
+    . 'VALUES (1, ' . Sql_capture_db::quote(marvy_public_id()) . ', '
     . Sql_capture_db::quote($opts['admin-username']) . ', '
     . Sql_capture_db::quote($opts['admin-email']) . ', '
     . Sql_capture_db::quote($admin_hash) . ", "
     . Sql_capture_db::quote($opts['admin-first']) . ', '
     . Sql_capture_db::quote($opts['admin-last']) . ",\n"
     . "        'ACTIVE', 'SUPER_ADMIN', " . $default_group . ", 'ADMIN-0001', 'UTC', 'en',\n"
-    . '        ' . Sql_capture_db::quote(WINDELS_SEED_NOW) . ', 0, '
-    . Sql_capture_db::quote(WINDELS_SEED_NOW) . ', '
-    . Sql_capture_db::quote(WINDELS_SEED_NOW) . ');';
+    . '        ' . Sql_capture_db::quote(MARVY_SEED_NOW) . ', 0, '
+    . Sql_capture_db::quote(MARVY_SEED_NOW) . ', '
+    . Sql_capture_db::quote(MARVY_SEED_NOW) . ');';
 
 $admin_statements[] = "INSERT INTO `wallets`\n"
     . "  (`public_id`, `user_id`, `balance`, `currency`, `created_at`, `updated_at`)\n"
-    . 'VALUES (' . Sql_capture_db::quote(windels_public_id()) . ", 1, '0.00000000', 'NGN', "
-    . Sql_capture_db::quote(WINDELS_SEED_NOW) . ', '
-    . Sql_capture_db::quote(WINDELS_SEED_NOW) . ');';
+    . 'VALUES (' . Sql_capture_db::quote(marvy_public_id()) . ", 1, '0.00000000', 'NGN', "
+    . Sql_capture_db::quote(MARVY_SEED_NOW) . ', '
+    . Sql_capture_db::quote(MARVY_SEED_NOW) . ');';
 
 $admin_statements[] = "INSERT INTO `referral_accounts`\n"
     . "  (`user_id`, `code`, `commission_percent`, `created_at`, `updated_at`)\n"
-    . "VALUES (1, 'ADMIN-0001', '5.0000', " . Sql_capture_db::quote(WINDELS_SEED_NOW) . ', '
-    . Sql_capture_db::quote(WINDELS_SEED_NOW) . ');';
+    . "VALUES (1, 'ADMIN-0001', '5.0000', " . Sql_capture_db::quote(MARVY_SEED_NOW) . ', '
+    . Sql_capture_db::quote(MARVY_SEED_NOW) . ');';
 
 /* --------------------------------------------------------------------------
  * 4. Render
  * ----------------------------------------------------------------------- */
 $out = render_file($schema_sections, $seed_statements, $admin_statements, $schema_version, $opts);
 
-$target = $root . '/database/windels_panel.sql';
+$target = $root . '/database/marvysocials.sql';
 if ($check) {
     $current = file_exists($target) ? file_get_contents($target) : '';
     if (trim($current) !== trim($out)) {
-        fwrite(STDERR, "database/windels_panel.sql is out of date — run: php tools/build_production_sql.php\n");
+        fwrite(STDERR, "database/marvysocials.sql is out of date — run: php tools/build_production_sql.php\n");
         exit(1);
     }
-    echo "database/windels_panel.sql is up to date.\n";
+    echo "database/marvysocials.sql is up to date.\n";
     exit(0);
 }
 
@@ -471,7 +471,7 @@ printf(
 function render_file(array $schema_sections, array $seed_statements, array $admin_statements, $schema_version, array $opts)
 {
     $lines = array();
-    $lines[] = '-- WINDELS PANEL — complete production database';
+    $lines[] = '-- MarvySocials — complete production database';
     $lines[] = '--';
     $lines[] = '-- GENERATED FILE — do not edit by hand.';
     $lines[] = '-- Sources: application/migrations/*.php  +  application/seeds/Core_seeder.php';
@@ -594,7 +594,7 @@ function tables_with_surrogate_key(array $schema_sections)
 function deterministic_bcrypt($password)
 {
     $alphabet = './ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    $digest = hash('sha256', 'windels-production-seed:' . $password, true);
+    $digest = hash('sha256', 'marvy-production-seed:' . $password, true);
     $salt = '';
     for ($i = 0; $i < 22; $i++) {
         $salt .= $alphabet[ord($digest[$i]) % 64];

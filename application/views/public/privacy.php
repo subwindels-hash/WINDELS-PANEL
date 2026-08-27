@@ -27,7 +27,7 @@ $toc = array(
   <div class="container">
     <p class="ws-kicker">Legal</p>
     <h1>Privacy Policy</h1>
-    <p class="ws-lede">This policy describes the data this WINDELS PANEL instance actually handles — accounts, sessions, orders, optional payment and fulfilment providers, and the on-site assistant. It is written from the codebase, not copied from a generic template.</p>
+    <p class="ws-lede">This policy describes the data this MarvySocials instance actually handles — accounts, sessions, orders, optional payment and fulfilment providers, and the on-site assistant. It is written from the codebase, not copied from a generic template.</p>
     <p class="hint">Effective <?=htmlspecialchars($effective)?> · Last updated <?=htmlspecialchars($updated)?></p>
   </div>
 </section>

@@ -253,7 +253,7 @@ class IdentityService {
             $actor_id, 'identity.result.reveal', 'identity_check', $check->id,
             null, array('id_type' => $check->id_type, 'last4' => $check->identifier_last4,
                         'by' => $reason),
-            null, null, function_exists('windels_request_id') ? windels_request_id() : null);
+            null, null, function_exists('marvy_request_id') ? marvy_request_id() : null);
 
         return array('ok' => true, 'entity' => $this->safe_entity($entity));
     }

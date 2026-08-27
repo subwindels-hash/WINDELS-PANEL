@@ -4,22 +4,11 @@
  * Search-first, bold rose/amber accent, category pills, mobile-first tap targets.
  */
 $chips = array('Instagram','TikTok','YouTube','X','Facebook','Telegram');
-$categories = array(
-  array('Followers','👥','SMM catalogue'),array('Likes','❤️','SMM catalogue'),
-  array('Views','👁️','SMM catalogue'),array('Comments','💬','SMM catalogue'),
-  array('Shares','🔗','SMM catalogue'),array('Saves','🔖','SMM catalogue'),
-  array('Subscribers','📺','SMM catalogue'),array('Live viewers','📡','SMM catalogue'),
-);
-$trending = array(
-  array('Instagram','Followers — HQ',4.9,'1.20','0–5 min','50','100k'),
-  array('TikTok','Likes — Instant',4.8,'0.45','Instant','20','50k'),
-  array('YouTube','Views — Non-drop',4.7,'2.10','1–2 hrs','100','1M'),
-  array('Spotify','Monthly Listeners',4.9,'4.00','0–24 hrs','1000','50k'),
-  array('X (Twitter)','Retweets',4.6,'1.80','0–1 hr','100','20k'),
-  array('Telegram','Channel Members',4.8,'3.20','0–6 hrs','100','100k'),
-  array('Facebook','Page Likes',4.5,'2.60','0–12 hrs','50','25k'),
-  array('Twitch','Live Viewers',4.7,'6.00','Instant','50','5k'),
-);
+// Live categories and services from Home::index(). These sections used to be
+// literal arrays: invented service names, invented star ratings, and prices
+// printed with a "$" on a panel whose base currency is NGN.
+$categories = isset($data['categories']) && is_array($data['categories']) ? $data['categories'] : array();
+$trending = isset($data['showcase']) && is_array($data['showcase']) ? $data['showcase'] : array();
 $reviews = array(
   array('Search first','Find a service, paste a public link, pay from the wallet. No fake review scores.'),
   array('Refill when marked','Services that support refill expose the action on the order — it is not a slogan.'),
@@ -47,18 +36,40 @@ $faqs = array(
         <a class="ws-chip" href="<?=site_url('services?platform='.urlencode($chip))?>"><?=htmlspecialchars($chip)?></a>
       <?php endforeach; ?>
     </div>
-    <p class="muted mt-2">Popular: <a href="<?=site_url('services')?>">Instagram Followers</a> · <a href="<?=site_url('services')?>">YouTube Views</a></p>
+    <?php if ($trending): ?>
+    <p class="muted mt-2">Popular:
+      <?php foreach (array_slice($trending, 0, 2) as $i => $svc): ?>
+        <?=$i ? ' · ' : ''?><a href="<?=site_url('services/'.$svc->slug)?>"><?=htmlspecialchars($svc->name)?></a>
+      <?php endforeach; ?>
+    </p>
+    <?php endif; ?>
   </div>
 </section>
+
+<?php if ($trending): ?>
+<section class="ws-pulse-showcase" aria-hidden="true">
+  <div class="container" style="max-width:1080px">
+    <?php // Decorative supporting image. Sits between the search hero and the
+          // category rail rather than behind the centred hero text, where a
+          // photograph would fight the search field for contrast. ?>
+    <img src="<?=base_url('assets/images/home/hero-pulse.jpg')?>" alt=""
+         width="1200" height="675" loading="lazy" decoding="async">
+  </div>
+</section>
+<?php endif; ?>
 
 <section class="py-8">
   <div class="container" style="max-width:1080px">
     <div class="ws-cat-scroll" aria-label="Categories">
       <?php foreach ($categories as $c): ?>
-      <a class="ws-cat-pill" href="<?=site_url('services')?>">
-        <span class="ws-cat-emoji"><?=$c[1]?></span>
-        <span class="ws-cat-name"><?=htmlspecialchars($c[0])?></span>
-        <span class="ws-cat-count"><?=htmlspecialchars($c[2])?></span>
+      <a class="ws-cat-pill" href="<?=site_url('services?category='.rawurlencode($c->slug))?>">
+        <?php if (!empty($c->icon)): ?>
+          <span class="ws-cat-emoji" aria-hidden="true">
+            <?php $this->load->view('partials/icon', array('name' => $c->icon, 'class' => 'w-5 h-5')); ?>
+          </span>
+        <?php endif; ?>
+        <span class="ws-cat-name"><?=htmlspecialchars($c->name)?></span>
+        <span class="ws-cat-count"><?=number_format((int)$c->service_count)?> service<?=(int)$c->service_count === 1 ? '' : 's'?></span>
       </a>
       <?php endforeach; ?>
     </div>
@@ -71,23 +82,34 @@ $faqs = array(
       <h2 class="mb-0">🔥 Trending now</h2>
       <a class="btn btn-ghost btn-sm" href="<?=site_url('services')?>">See all →</a>
     </div>
+    <?php if ($trending): ?>
     <div class="grid grid-4 mt-4">
-      <?php foreach ($trending as $s): ?>
+      <?php foreach ($trending as $svc): ?>
       <article class="card card-hover">
         <div class="row justify-between">
-          <span class="badge badge-default"><?=htmlspecialchars($s[0])?></span>
-          <span class="muted" aria-label="Example catalogue card">Example</span>
+          <?php if (!empty($svc->category_name)): ?>
+            <span class="badge badge-default"><?=htmlspecialchars($svc->category_name)?></span>
+          <?php endif; ?>
         </div>
-        <h3 class="card-title mt-2"><?=htmlspecialchars($s[1])?></h3>
-        <p class="muted" style="font-size:.85rem">⏱ <?=htmlspecialchars($s[4])?></p>
+        <h3 class="card-title mt-2"><?=htmlspecialchars($svc->name)?></h3>
+        <?php if (!empty($svc->average_time)): ?>
+          <p class="muted" style="font-size:.85rem">Average start: <?=htmlspecialchars($svc->average_time)?></p>
+        <?php endif; ?>
         <div class="row justify-between mt-2">
-          <strong style="color:var(--danger-600);font-size:1.15rem">$<?=htmlspecialchars($s[3])?> <span class="muted" style="font-weight:400;font-size:.8rem">/ 1k</span></strong>
-          <a class="btn btn-danger btn-sm" href="<?=site_url('register')?>" rel="nofollow">Order</a>
+          <strong style="color:var(--danger-600);font-size:1.15rem"><?=marvy_money($svc->rate)?>
+            <span class="muted" style="font-weight:400;font-size:.8rem">/ 1k</span></strong>
+          <a class="btn btn-danger btn-sm" href="<?=site_url('services/'.$svc->slug)?>">View</a>
         </div>
-        <p class="hint"><?=number_format((int)$s[5])?> – <?=number_format((int)$s[6])?> units</p>
+        <p class="hint"><?=number_format((int)$svc->min_quantity)?> – <?=number_format((int)$svc->max_quantity)?> units</p>
       </article>
       <?php endforeach; ?>
     </div>
+    <?php else: ?>
+    <p class="muted mt-4">
+      No services have been published yet. This row lists the live catalogue, so it stays empty rather
+      than advertising services that cannot be ordered.
+    </p>
+    <?php endif; ?>
   </div>
 </section>
 
@@ -96,27 +118,46 @@ $faqs = array(
     <div class="ws-fastorder card">
       <div class="text-center">
         <h2>Quick order</h2>
-        <p class="muted">Pick a category and service, paste your link, and see the price live.</p>
+        <p class="muted">Pick a service and a quantity to see what it costs, before you sign up.</p>
       </div>
-      <form class="grid ws-fast-grid" onsubmit="return false">
-        <label class="field"><span class="label">Category</span>
-          <select class="select"><option>Followers</option><option>Likes</option><option>Views</option></select>
-        </label>
+      <?php if ($trending): ?>
+      <?php // A real estimator over real services. It deliberately does not
+            // pretend to place the order: ordering needs an account and a
+            // funded wallet, so the button goes to registration and the form
+            // never posts anywhere that would fail. ?>
+      <div class="grid ws-fast-grid">
         <label class="field"><span class="label">Service</span>
-          <select class="select"><option>Instagram Followers — HQ (₦1.20/1k)</option></select>
-        </label>
-        <label class="field"><span class="label">Link</span>
-          <input class="input" placeholder="https://instagram.com/yourhandle">
+          <select class="select" id="ws-qo-service">
+            <?php foreach ($trending as $svc): ?>
+            <option value="<?=htmlspecialchars($svc->public_id)?>"
+                    data-rate="<?=htmlspecialchars($svc->rate)?>"
+                    data-min="<?=(int)$svc->min_quantity?>"
+                    data-max="<?=(int)$svc->max_quantity?>"
+                    data-slug="<?=htmlspecialchars($svc->slug)?>">
+              <?=htmlspecialchars($svc->name)?> — <?=marvy_money($svc->rate)?>/1k
+            </option>
+            <?php endforeach; ?>
+          </select>
         </label>
         <label class="field"><span class="label">Quantity</span>
-          <input id="ws-qty" class="input" type="number" min="50" value="1000" inputmode="numeric">
+          <input id="ws-qty" class="input" type="number" inputmode="numeric"
+                 min="<?=(int)$trending[0]->min_quantity?>"
+                 max="<?=(int)$trending[0]->max_quantity?>"
+                 value="<?=(int)$trending[0]->min_quantity?>">
+          <span class="hint" id="ws-qo-range"></span>
         </label>
-      </form>
-      <div class="row justify-between ws-fast-total">
-        <div><span class="muted">Total</span> <strong id="ws-total">₦1.20</strong></div>
-        <a class="btn btn-danger btn-lg" href="<?=site_url('register')?>">Place order →</a>
       </div>
-      <p class="hint text-center">Live price is an estimate; the exact total is frozen at checkout (no provider calls on this page).</p>
+      <div class="row justify-between ws-fast-total">
+        <div><span class="muted">Estimated total</span> <strong id="ws-total"></strong></div>
+        <a class="btn btn-danger btn-lg" id="ws-qo-cta" href="<?=site_url('register')?>">Get started →</a>
+      </div>
+      <p class="hint text-center">
+        An estimate from the published rate. Sign in to place the order — the exact charge is shown and
+        frozen before you confirm.
+      </p>
+      <?php else: ?>
+      <p class="muted text-center">The catalogue has no published services yet.</p>
+      <?php endif; ?>
     </div>
   </div>
 </section>
@@ -200,19 +241,53 @@ $faqs = array(
   .ws-pulse-search .btn{border-radius:0;width:100%}
   .ws-fast-grid{grid-template-columns:1fr}
 }
+/* Supporting hero band. Capped in height so it never pushes the category rail
+   and trending services below the fold on a laptop. */
+.ws-pulse-showcase{padding:.5rem 0 1.5rem}
+.ws-pulse-showcase img{width:100%;height:clamp(180px,26vw,320px);object-fit:cover;
+  border-radius:var(--radius-xl);box-shadow:var(--shadow-card)}
+@media(max-width:640px){.ws-pulse-showcase img{height:150px}}
 </style>
 <script <?=csp_nonce_attr()?>>
-// Live quick-order estimate (no network call — pricing is illustrative).
+// Quick-order estimate over the real catalogue. Rates, minimums and maximums
+// come from the selected service's own row, so the figure shown here is the
+// same arithmetic the dashboard performs — no invented pricing.
 (function(){
-  var qty=document.getElementById('ws-qty'), total=document.getElementById('ws-total');
-  if(!qty||!total) return;
-  // Currency symbol from the server so live totals match server-rendered prices.
-  var sym=<?=json_encode(trim(str_replace(array('0','.',','), '', windels_money(0))))?>;
+  var sel=document.getElementById('ws-qo-service'),
+      qty=document.getElementById('ws-qty'),
+      total=document.getElementById('ws-total'),
+      range=document.getElementById('ws-qo-range'),
+      cta=document.getElementById('ws-qo-cta');
+  if(!sel||!qty||!total) return;
+
+  var sym=<?=json_encode(trim(str_replace(array('0','.',','), '', marvy_money(0))))?>;
   function fmt(v){return sym+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+
   function recalc(){
-    var q=Math.max(50,parseInt(qty.value||'0',10)||0);
-    total.textContent=fmt(q*1.20/1000);
+    var opt=sel.options[sel.selectedIndex];
+    if(!opt) return;
+    var rate=parseFloat(opt.getAttribute('data-rate'))||0,
+        min=parseInt(opt.getAttribute('data-min'),10)||1,
+        max=parseInt(opt.getAttribute('data-max'),10)||0;
+
+    qty.min=min; if(max) qty.max=max;
+    var q=parseInt(qty.value||'0',10)||0;
+    if(range) range.textContent='Min '+min.toLocaleString('en-US')+(max?' · Max '+max.toLocaleString('en-US'):'');
+
+    // Clamp only for the estimate; leave what the visitor typed in the box.
+    var effective=Math.min(Math.max(q,min),max||q);
+    total.textContent=fmt(effective*rate/1000);
   }
-  qty.addEventListener('input',recalc); recalc();
+
+  sel.addEventListener('change',function(){
+    var opt=sel.options[sel.selectedIndex];
+    if(opt){
+      qty.value=opt.getAttribute('data-min')||qty.value;
+      if(cta) cta.setAttribute('href', <?=json_encode(site_url('services/'))?>+opt.getAttribute('data-slug'));
+    }
+    recalc();
+  });
+  qty.addEventListener('input',recalc);
+  sel.dispatchEvent(new Event('change'));
 })();
 </script>

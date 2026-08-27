@@ -40,7 +40,7 @@ class SecureHttpClient {
 
     public function request($method, $url, $data=null, $headers=array(), $options=array()){
         $attempt=0; $last_error=''; $backoffs=array(500,1500,4000);
-        $request_id = $options['request_id'] ?? windels_request_id();
+        $request_id = $options['request_id'] ?? marvy_request_id();
 
         $rejection = $this->reject_url($url);
         if ($rejection !== null) {

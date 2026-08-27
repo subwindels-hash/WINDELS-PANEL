@@ -84,9 +84,9 @@ $now = time();
             <?php if ($overdue): ?><div>overdue</div><?php endif; ?>
           </td>
           <td class="text-right mono">
-            <?=windels_money($t->amount, $t->currency)?>
+            <?=marvy_money($t->amount, $t->currency)?>
             <?php if (bccomp((string)$t->refunded_amount, '0', 8) > 0): ?>
-              <div class="text-xs muted">−<?=windels_money($t->refunded_amount, $t->currency)?> refunded</div>
+              <div class="text-xs muted">−<?=marvy_money($t->refunded_amount, $t->currency)?> refunded</div>
             <?php endif; ?>
           </td>
           <td><span class="<?=DashboardStats::status_badge($t->status)?>"><?=htmlspecialchars($t->status)?></span></td>

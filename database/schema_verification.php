@@ -1,7 +1,7 @@
 <?php
 /**
  * schema_verification.php — prove the imported database matches
- * database/windels_panel.sql, table for table and column for column.
+ * database/marvysocials.sql, table for table and column for column.
  *
  * Where it runs:
  *   CLI:     php database/schema_verification.php          (exit 0 = match)
@@ -36,14 +36,14 @@ require_once $ROOT . '/application/libraries/SchemaManifest.php';
 $CHECK = new InstallCheck($ROOT);
 
 /* ------------------------------------------------------------------ */
-echo "WINDELS PANEL — schema verification\n";
+echo "MarvySocials — schema verification\n";
 echo str_repeat('-', 68) . "\n";
 
 /* 1. the expectation */
-$sql_file = $ROOT . '/database/windels_panel.sql';
+$sql_file = $ROOT . '/database/marvysocials.sql';
 $manifest = SchemaManifest::from_file($sql_file);
 if ($manifest['error']) { echo "FAIL  {$manifest['error']}\n"; exit(1); }
-printf("expectation: database/windels_panel.sql — %d tables\n", count($manifest['tables']));
+printf("expectation: database/marvysocials.sql — %d tables\n", count($manifest['tables']));
 
 /* 2. the live database */
 $creds = array(
@@ -80,8 +80,8 @@ foreach ($CHECK->rows() as $r) {
 }
 echo str_repeat('-', 68) . "\n";
 if ($counts['fail']) {
-    echo "RESULT: FAIL — the live database does not match database/windels_panel.sql.\n";
-    echo "Fix:    re-import database/windels_panel.sql through phpMyAdmin (idempotent).\n";
+    echo "RESULT: FAIL — the live database does not match database/marvysocials.sql.\n";
+    echo "Fix:    re-import database/marvysocials.sql through phpMyAdmin (idempotent).\n";
     exit(1);
 }
 echo "RESULT: PASS — every table, column, index and foreign key matches the shipped schema.\n";

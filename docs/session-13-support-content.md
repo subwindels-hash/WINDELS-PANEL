@@ -1,4 +1,4 @@
-# WINDELS PANEL — Session 13: Support & Content
+# MarvySocials — Session 13: Support & Content
 
 > Customer support tickets (with messages) plus public content — FAQ, blog and
 > site announcements — backed by the migration-008 tables.

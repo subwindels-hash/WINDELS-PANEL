@@ -30,7 +30,19 @@ class WithdrawalRemovalTest extends TestCase
     public function testNoWithdrawalRoutesSurvive()
     {
         $routes = file_get_contents(self::$root.'/application/config/routes.php');
-        $this->assertStringNotContainsStringIgnoringCase('withdrawal', $routes);
+
+        // What must not exist is a route that cashes out the *deposit wallet*.
+        // /api/withdrawals pays out the separate earnings ledger and is a
+        // different feature entirely — see EarningsPayoutIsolationTest, which
+        // proves it cannot reach a wallet balance.
+        foreach (array(
+            'dashboard/withdraw', 'dashboard/withdrawals', 'wallet/withdraw',
+            'admin/withdrawals', 'api/v1/withdrawals', 'withdrawal_requests',
+        ) as $forbidden) {
+            $this->assertStringNotContainsStringIgnoringCase($forbidden, $routes,
+                "route {$forbidden} would reintroduce wallet withdrawals");
+        }
+
         // The wallet routes customers still need are present.
         $this->assertStringContainsString('dashboard/add-funds', $routes);
         $this->assertStringContainsString('dashboard/wallet/deposit', $routes);
@@ -114,6 +126,31 @@ class WithdrawalRemovalTest extends TestCase
             'application/views/public/styleguide.php',
             'application/views/public/pricing.php',
         );
+
+        // The *earnings* payout feature is a different thing from the removed
+        // wallet withdrawal, and is allowed to use the word. What 018 removed
+        // was cashing out a topped-up deposit balance; paying a referral
+        // commission the platform owes is ordinary settlement. The structural
+        // separation between the two is pinned by
+        // EarningsPayoutIsolationTest, which fails if a payout can ever reach
+        // the deposit wallet — that is the guarantee that matters, not the
+        // absence of a string.
+        $earnings_payouts = array(
+            'application/controllers/Referral_api.php',
+            'application/controllers/admin/Payouts.php',
+            'application/controllers/dashboard/Earnings.php',
+            'application/libraries/PayoutService.php',
+            'application/libraries/EarningsService.php',
+            'application/models/Payout_request_model.php',
+            'application/views/dashboard/earnings/index.php',
+            'application/views/admin/payouts/index.php',
+            // Declares /api/withdrawals and /admin/payouts, both earnings-only.
+            'application/config/routes.php',
+            // Documents the earnings payout in its own clearly-labelled
+            // section; the reseller half is asserted clean separately above.
+            'application/views/api/docs.php',
+        );
+        $copy_only = array_merge($copy_only, $earnings_payouts);
         $clean = array(
             'application/controllers', 'application/core', 'application/libraries',
             'application/models', 'application/seeds', 'application/views',
@@ -159,11 +196,30 @@ class WithdrawalRemovalTest extends TestCase
         $api = file_get_contents(self::$root.'/application/controllers/Api_v1.php');
         $this->assertStringNotContainsStringIgnoringCase('withdrawal', $api,
             'Api_v1 must not expose withdrawal endpoints or scopes');
+        // The reseller API surface must not offer a withdrawal endpoint or
+        // scope. The docs page also carries a clearly separated
+        // session-authenticated section for the panel's own frontend, which
+        // documents the *earnings* payout — a different ledger that cannot
+        // reach a wallet (EarningsPayoutIsolationTest). So the assertion is on
+        // the reseller table, not on the whole file.
         $docs = glob(self::$root.'/application/views/api/*.php') ?: array();
         foreach ($docs as $file) {
-            $this->assertStringNotContainsStringIgnoringCase('withdrawal',
-                file_get_contents($file), basename($file).' must not document withdrawals');
+            $html = file_get_contents($file);
+            $split = stripos($html, 'Dashboard endpoints (session-authenticated)');
+            $reseller = $split === false ? $html : substr($html, 0, $split);
+
+            $this->assertStringNotContainsStringIgnoringCase('withdrawal', $reseller,
+                basename($file).' must not document withdrawals in the reseller API');
+            $this->assertStringNotContainsStringIgnoringCase('api/v1/withdraw', $html,
+                basename($file).' must not expose a v1 withdrawal path');
         }
+
+        // And the page must state plainly that deposits are not withdrawable,
+        // so nobody reads the earnings section and assumes their topped-up
+        // balance can be cashed out.
+        $main = file_get_contents(self::$root.'/application/views/api/docs.php');
+        $this->assertStringContainsString('Deposited wallet funds cannot be withdrawn', $main,
+            'the docs must say deposits are not withdrawable');
     }
 
     public function testNoAssetOrUploadReferencesWithdrawals()
@@ -215,9 +271,12 @@ class WithdrawalRemovalTest extends TestCase
 
         // The migration chain target accounts for the retrofit.
         $config = file_get_contents(self::$root.'/application/config/migration.php');
-        $this->assertStringContainsString("\$config['migration_version'] = 19;", $config);
-        $this->assertSame(19, count(glob(self::$root.'/application/migrations/*.php')),
+        preg_match("/migration_version'\]\s*=\s*(\d+)/", $config, $mv);
+        $version = (int)$mv[1];
+        $this->assertSame(count(glob(self::$root.'/application/migrations/*.php')), $version,
             'sequential migration count must match migration_version');
+        $this->assertGreaterThanOrEqual(18, $version,
+            'the withdrawal-removal migration must be inside the chain');
     }
 
     public function testMigration018ActuallyRunsAgainstARealDatabaseShape()

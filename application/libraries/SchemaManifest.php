@@ -2,7 +2,7 @@
 defined('BASEPATH') OR exit('No direct script access allowed');
 
 /**
- * SchemaManifest — parse database/windels_panel.sql into a machine-readable
+ * SchemaManifest — parse database/marvysocials.sql into a machine-readable
  * manifest every verifier can share.
  *
  * The SQL file is machine-generated (tools/build_production_sql.php), so its

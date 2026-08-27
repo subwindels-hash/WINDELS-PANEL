@@ -5,12 +5,12 @@ use PHPUnit\Framework\TestCase;
  * Portable cPanel deployment (no terminal, no Composer, no CLI installer).
  *
  * The contract these tests defend is one sentence: **upload the files, create
- * the database, import `database/windels_panel.sql`, edit `.env`, open the
+ * the database, import `database/marvysocials.sql`, edit `.env`, open the
  * domain.** Everything below is a way that contract has historically been
  * broken —
  *
  *   - a config file reading a value an installer generated rather than `.env`
- *   - a schema change that landed in a migration but never in windels_panel.sql,
+ *   - a schema change that landed in a migration but never in marvysocials.sql,
  *     so a fresh import comes up missing a table
  *   - seed data that only exists in the CLI seeder, so a freshly imported
  *     panel has no roles and nobody can log in
@@ -31,7 +31,7 @@ class CpanelDeploymentTest extends TestCase
         if (!defined('APPPATH'))  define('APPPATH', self::$root.'/application/');
         if (!defined('BASEPATH')) define('BASEPATH', self::$root.'/system/');
         require_once self::$root.'/application/core/Env.php';
-        self::$sql = file_get_contents(self::$root.'/database/windels_panel.sql');
+        self::$sql = file_get_contents(self::$root.'/database/marvysocials.sql');
     }
 
     /* ===================== .env is the only configuration ================= */
@@ -45,7 +45,7 @@ class CpanelDeploymentTest extends TestCase
             'export VP_DB_USER=cpaneluser_admin',
             "VP_DB_PASS='p@ss word#not-a-comment'",
             'VP_BASE_URL="https://example.test"',
-            'VP_MAIL_FROM_NAME=WINDELS PANEL   # trailing comment',
+            'VP_MAIL_FROM_NAME=MarvySocials   # trailing comment',
             'VP_SESSION_SAVE_PATH=${VP_BASE_URL}/x',
             'not a variable line',
         )));
@@ -55,7 +55,7 @@ class CpanelDeploymentTest extends TestCase
         $this->assertSame('p@ss word#not-a-comment', $parsed['VP_DB_PASS'],
             'a # inside a quoted value is part of the password, not a comment');
         $this->assertSame('https://example.test', $parsed['VP_BASE_URL']);
-        $this->assertSame('WINDELS PANEL', $parsed['VP_MAIL_FROM_NAME'],
+        $this->assertSame('MarvySocials', $parsed['VP_MAIL_FROM_NAME'],
             'an unquoted value ends at the trailing comment');
         $this->assertSame('https://example.test/x', $parsed['VP_SESSION_SAVE_PATH'],
             '${VAR} interpolation');
@@ -164,7 +164,7 @@ class CpanelDeploymentTest extends TestCase
 
     public function testRuntimeDirectoriesAreCreatedWithoutACommand()
     {
-        $root = sys_get_temp_dir().'/windels-deploy-'.bin2hex(random_bytes(4));
+        $root = sys_get_temp_dir().'/marvy-deploy-'.bin2hex(random_bytes(4));
         mkdir($root.'/application', 0775, true);
 
         $this->withEnv(array('VP_STORAGE_PATH' => $root.'/storage'), function () use ($root) {
@@ -222,7 +222,7 @@ class CpanelDeploymentTest extends TestCase
             $this->assertMatchesRegularExpression(
                 '/CREATE TABLE(?: IF NOT EXISTS)? `?'.preg_quote($table, '/').'`?/i',
                 self::$sql,
-                "windels_panel.sql is missing {$table} — a fresh import would boot into a broken schema");
+                "marvysocials.sql is missing {$table} — a fresh import would boot into a broken schema");
         }
     }
 
@@ -252,19 +252,19 @@ class CpanelDeploymentTest extends TestCase
         foreach (Core_seeder::permission_catalog() as $keys) {
             foreach ($keys as $key) {
                 $this->assertStringContainsString("'{$key}'", self::$sql,
-                    "permission {$key} is defined in the seeder but missing from windels_panel.sql");
+                    "permission {$key} is defined in the seeder but missing from marvysocials.sql");
             }
         }
         foreach (Core_seeder::default_settings() as $setting) {
             $this->assertStringContainsString("'{$setting[0]}'", self::$sql,
-                "setting {$setting[0]} is missing from windels_panel.sql");
+                "setting {$setting[0]} is missing from marvysocials.sql");
         }
         foreach (array('feature_flags', 'payment_methods', 'email_templates', 'faqs',
                        'currencies', 'price_groups', 'vtu_networks', 'vtu_products',
                        'number_countries', 'number_services', 'identity_products',
                        'giftcard_brands', 'marketplace_categories') as $table) {
             $this->assertStringContainsString("INSERT INTO `{$table}`", self::$sql,
-                "{$table} has no seeded rows in windels_panel.sql");
+                "{$table} has no seeded rows in marvysocials.sql");
         }
     }
 
@@ -299,7 +299,7 @@ class CpanelDeploymentTest extends TestCase
         $this->assertFileExists($script);
         $src = file_get_contents($script);
 
-        foreach (array('index.php', 'application', 'assets', 'database/windels_panel.sql',
+        foreach (array('index.php', 'application', 'assets', 'database/marvysocials.sql',
                        '.env.example', '.htaccess') as $needed) {
             $this->assertStringContainsString($needed, $src, "the package must contain {$needed}");
         }
@@ -317,7 +317,7 @@ class CpanelDeploymentTest extends TestCase
             'the demo seeder must never ship to a live panel');
         $this->assertStringContainsString('build_production_sql.php', $src);
         $this->assertStringContainsString('--check', $src,
-            'a package built from a stale windels_panel.sql is a broken deployment');
+            'a package built from a stale marvysocials.sql is a broken deployment');
     }
 
     public function testZipValidatorRefusesAPackageWithoutTheFramework()
@@ -341,7 +341,7 @@ class CpanelDeploymentTest extends TestCase
     public function testSchemaManifestDoesNotTreatConstraintsAsColumns()
     {
         require_once self::$root.'/application/libraries/SchemaManifest.php';
-        $manifest = SchemaManifest::from_file(self::$root.'/database/windels_panel.sql');
+        $manifest = SchemaManifest::from_file(self::$root.'/database/marvysocials.sql');
         $this->assertNull($manifest['error'], $manifest['error'] ?: '');
         $this->assertArrayHasKey('wallets', $manifest['tables']);
         $this->assertArrayNotHasKey('CONSTRAINT', $manifest['tables']['wallets']['columns'],
@@ -374,7 +374,7 @@ class CpanelDeploymentTest extends TestCase
         $this->assertTrue($zip->open($zip_path) === true);
 
         foreach (array('index.php', '.htaccess', '.env.example', 'system/core/CodeIgniter.php',
-                       'database/windels_panel.sql', 'README-DEPLOYMENT.txt') as $entry) {
+                       'database/marvysocials.sql', 'README-DEPLOYMENT.txt') as $entry) {
             $this->assertNotFalse($zip->locateName($entry), "the package is missing {$entry}");
         }
         $this->assertFalse($zip->locateName('composer.json'), 'nothing to install on the host');
@@ -517,7 +517,7 @@ class CpanelDeploymentTest extends TestCase
         $this->assertFileExists($guide);
         $text = file_get_contents($guide);
         foreach (array('File Manager', 'MySQL Databases', 'phpMyAdmin',
-                       'database/windels_panel.sql', '.env') as $needle) {
+                       'database/marvysocials.sql', '.env') as $needle) {
             $this->assertStringContainsString($needle, $text);
         }
         $this->assertDoesNotMatchRegularExpression('/^\s*composer install/mi', $text,
@@ -530,7 +530,7 @@ class CpanelDeploymentTest extends TestCase
     {
         $ht = file_get_contents(self::$root.'/.htaccess');
         $this->assertMatchesRegularExpression('/\bdatabase\b/', $ht,
-            'database/windels_panel.sql contains the schema and the admin hash');
+            'database/marvysocials.sql contains the schema and the admin hash');
         $this->assertStringContainsString('\\.sql', $ht);
         $this->assertStringContainsString('(^|/)\\.', $ht, 'dotfiles, including .env');
     }
@@ -576,7 +576,7 @@ class CpanelDeploymentTest extends TestCase
      */
     private function withEnv(array $vars, callable $fn, $root = null)
     {
-        $root = $root ?: sys_get_temp_dir().'/windels-env-'.bin2hex(random_bytes(4));
+        $root = $root ?: sys_get_temp_dir().'/marvy-env-'.bin2hex(random_bytes(4));
         $created = !is_dir($root);
         if ($created) mkdir($root, 0775, true);
 

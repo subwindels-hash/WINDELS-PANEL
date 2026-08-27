@@ -15,6 +15,23 @@ class Payment_transaction_model extends MY_Model {
         return $this->db->where('idempotency_key',$key)->get($this->table)->row();
     }
     public function find_by_id($id){ return $this->db->where('id',$id)->get($this->table)->row(); }
+    /**
+     * One payment belonging to this customer, by either reference form.
+     *
+     * Always scoped by user_id: a guessed reference that belongs to someone
+     * else must return nothing rather than another customer's payment. Accepts
+     * the internal_reference (what the provider and support quote) or the
+     * public_id (what older links carry).
+     */
+    public function for_user_reference($user_id, $reference){
+        return $this->db->where('user_id', (int)$user_id)
+                        ->group_start()
+                            ->where('internal_reference', $reference)
+                            ->or_where('public_id', $reference)
+                        ->group_end()
+                        ->get($this->table)->row();
+    }
+
     public function find_public_for_user($public_id, $user_id){
         return $this->db->where('public_id',$public_id)->where('user_id',$user_id)->get($this->table)->row();
     }
@@ -35,10 +52,11 @@ class Payment_transaction_model extends MY_Model {
      */
     public function admin_search(array $filters, $limit = 25, $offset = 0){
         $this->admin_filters($filters);
+        // users is already joined by admin_filters(); joining it twice is a
+        // SQL error.
         return $this->db
             ->select('payment_transactions.*, users.username, users.email,
                       payment_methods.name AS method_name, payment_methods.type AS method_type', false)
-            ->join('users', 'users.id = payment_transactions.user_id', 'left')
             ->join('payment_methods', 'payment_methods.id = payment_transactions.payment_method_id', 'left')
             ->order_by('payment_transactions.created_at', 'DESC')
             ->limit($limit, $offset)
@@ -50,14 +68,28 @@ class Payment_transaction_model extends MY_Model {
         return (int)$this->db->count_all_results();
     }
 
+    /**
+     * Shared WHERE clauses for the admin grid and its count.
+     *
+     * The join is applied here, not only in admin_search(): the search filter
+     * matches on users.email/username, so a count that omitted the join threw
+     * "no such column: users.email" and turned any search into a 500. Both
+     * queries must see the same tables or they cannot agree on the same rows.
+     */
     private function admin_filters(array $f){
-        $this->db->from($this->table);
+        $this->db->from($this->table)
+                 ->join('users', 'users.id = payment_transactions.user_id', 'left');
         if (!empty($f['status']))    $this->db->where('payment_transactions.status', $f['status']);
         if (!empty($f['method_id'])) $this->db->where('payment_transactions.payment_method_id', (int)$f['method_id']);
         if (!empty($f['search'])) {
             $term = trim((string)$f['search']);
             $this->db->group_start()
                 ->like('payment_transactions.public_id', $term)
+                // internal_reference is what the customer sees, what we send
+                // the provider as request_id, and therefore what support is
+                // given when someone asks about a payment. Omitting it made
+                // the search useless for the most common question.
+                ->or_like('payment_transactions.internal_reference', $term)
                 ->or_like('payment_transactions.provider_tx_id', $term)
                 ->or_like('users.email', $term)
                 ->or_like('users.username', $term)

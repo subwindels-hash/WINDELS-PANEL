@@ -1,4 +1,4 @@
-# WINDELS PANEL — Session 05: Three Homepages
+# MarvySocials — Session 05: Three Homepages
 
 > Builds the complete, responsive marketing homepages on the Session 04 design
 > system. Each page has a distinct identity per the approved wireframes

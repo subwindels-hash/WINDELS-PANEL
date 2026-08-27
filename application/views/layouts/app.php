@@ -20,7 +20,9 @@ $nav = $is_admin ? array(
     array('admin/payments',     'Payments',   'payments.view',   'credit-card'),
     array('admin/tickets',      'Tickets',    'tickets.view',    'message-square'),
     array('admin/affiliates',   'Affiliates', 'affiliates.view', 'gift'),
+    array('admin/payouts',      'Payouts',    'payouts.review',  'wallet'),
     array('admin/blog',         'Content',    'blog.manage',     'list'),
+    array('admin/pages',        'Website pages','content.pages', 'globe'),
     array('admin/staff',        'Staff',      'staff.manage',    'shield'),
     array('admin/media',        'Media',      'media.manage',    'star'),
     array('admin/categories',   'System',     'audit.view',      'globe'),
@@ -45,6 +47,7 @@ $nav = $is_admin ? array(
     array('dashboard/transactions','Transactions', null, 'list'),
     array('dashboard/tickets',   'Support',    null, 'message-square'),
     array('dashboard/referrals', 'Referrals',  null, 'gift'),
+    array('dashboard/earnings',  'Earnings',   null, 'wallet'),
     array('dashboard/api',       'API',        null, 'key'),
     array('dashboard/security',  'Security',   null, 'shield'),
 );
@@ -80,7 +83,7 @@ try {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title><?=htmlspecialchars($title ?? 'WINDELS PANEL')?></title>
+<title><?=htmlspecialchars($title ?? 'MarvySocials')?></title>
 <?php if (!empty($brand['brand_favicon_url'])): ?>
 <link rel="icon" href="<?=htmlspecialchars($brand['brand_favicon_url'])?>">
 <?php else: ?>
@@ -116,7 +119,9 @@ try {
 <div role="alert" aria-live="assertive" style="position:sticky;top:var(--ws-announce-h);z-index:1000;background:#7f1d1d;color:#fff;border-bottom:4px solid #fbbf24;padding:.75rem 1rem;box-shadow:0 4px 12px rgba(0,0,0,.3)">
   <div class="row justify-between" style="align-items:center;gap:1rem;flex-wrap:wrap;max-width:90rem;margin:0 auto">
     <div>
-      <strong style="display:block;letter-spacing:.03em">IMPERSONATING CUSTOMER — READ-ONLY SUPPORT SESSION</strong>
+      <strong style="display:block;letter-spacing:.03em">
+        Administrator Mode — You are currently viewing this account as an administrator.
+      </strong>
       <span class="text-sm">
         Staff: <?=htmlspecialchars((string)($__imp_actor->username ?? 'staff'))?> ·
         Customer: <?=htmlspecialchars((string)($current_user->username ?? 'customer'))?> ·
@@ -128,7 +133,7 @@ try {
       <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>"
              value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
       <button class="btn btn-sm" type="submit" style="background:#fff;color:#7f1d1d;border:2px solid #fff;font-weight:700;white-space:nowrap">
-        End impersonation and return to staff
+        Return to Admin Dashboard
       </button>
     </form>
   </div>
@@ -140,11 +145,11 @@ try {
     <div class="h-16 flex items-center px-6 border-b">
       <a href="<?=site_url()?>" class="ws-brand">
         <?php if (!empty($brand['brand_logo_url'])): ?>
-          <img src="<?=htmlspecialchars($brand['brand_logo_url'])?>" alt="WINDELS PANEL"
+          <img src="<?=htmlspecialchars($brand['brand_logo_url'])?>" alt="MarvySocials"
                style="max-height:2rem;max-width:10rem">
         <?php else: ?>
           <?php $this->load->view('partials/brand_logo', array('variant'=>'icon','height'=>32,'force_legacy'=>true)); ?>
-          <span class="font-bold tracking-tight">WINDELS</span>
+          <span class="font-bold tracking-tight">MARVYSOCIALS</span>
         <?php endif; ?>
       </a>
     </div>

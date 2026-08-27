@@ -38,7 +38,7 @@ class Settings extends Admin_Controller {
             'values'       => $this->settingsservice->current(),
             'unwired'      => SettingsService::unwired(),
             'readonly'     => SettingsService::readonly_settings(),
-            'base_currency'=> windels_base_currency(),
+            'base_currency'=> marvy_base_currency(),
         ));
     }
 

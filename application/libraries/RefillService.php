@@ -68,7 +68,7 @@ class RefillService {
 
     private function persist($order, $user_id, $provider_refill_id, $status, $error) {
         $this->ci->db->trans_start();
-        $public_id = windels_public_id();
+        $public_id = marvy_public_id();
         $this->ci->db->insert('refills', array(
             'public_id'          => $public_id,
             'order_id'           => $order->id,

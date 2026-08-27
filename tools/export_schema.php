@@ -91,7 +91,7 @@ function count_statements(array $sections)
 function render(array $sections)
 {
     $lines = array();
-    $lines[] = '-- WINDELS PANEL — MySQL / MariaDB schema';
+    $lines[] = '-- MarvySocials — MySQL / MariaDB schema';
     $lines[] = '--';
     $lines[] = '-- GENERATED FILE — do not edit by hand.';
     $lines[] = '-- Source of truth: application/migrations/*.php';

@@ -3,12 +3,12 @@
 // marquee). One message is visible at a time and it lingers long enough to be
 // read; the previous ticker duplicated its content and scrolled it on a loop,
 // which made each line hard to read.
-$site_name = function_exists('windels_site_name') ? windels_site_name() : 'WINDELS PANEL';
+$site_name = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials';
 if (!isset($announcements)) {
     $announcements = array();
     try {
         $CI =& get_instance();
-        if (!function_exists('windels_load_database') || !windels_load_database()) {
+        if (!function_exists('marvy_load_database') || !marvy_load_database()) {
             throw new RuntimeException('database unavailable');
         }
         $CI->load->model('Announcement_model');

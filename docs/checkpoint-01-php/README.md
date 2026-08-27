@@ -1,7 +1,7 @@
-# WINDELS PANEL — Checkpoint 01 (REVISED): Foundation Review — PHP MVC / CodeIgniter 3.x
+# MarvySocials — Checkpoint 01 (REVISED): Foundation Review — PHP MVC / CodeIgniter 3.x
 
 > **Date:** 2026-08-16 (revised)
-> **Branch:** `arena/01a00cd1-windels-panel`
+> **Branch:** `arena/01a00cd1-marvysocials`
 > **Stack:** **CodeIgniter 3.x + MySQL/MariaDB + PHP 8.1 + Redis + S3/R2 + Tailwind (PHP views)**
 > **Required action:** REVIEW & APPROVE before implementation
 > This revision **supersedes** `docs/checkpoint-01/` (Node stack withdrawn per correction).

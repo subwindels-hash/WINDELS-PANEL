@@ -1,11 +1,11 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
 // One logo partial used by the public shell, auth shell and authenticated app
-// shell. Every variant resolves to the WINDELS PANEL mark by default, but an
+// shell. Every variant resolves to the MarvySocials mark by default, but an
 // administrator can override the horizontal/wordmark logo via Admin →
 // Appearance (brand_logo_url). The icon mark stays bundled so the favicon and
 // compact logo never lose their shape.
 $variant = isset($variant) ? $variant : 'horizontal';
-$site = function_exists('windels_site_name') ? windels_site_name() : 'WINDELS PANEL';
+$site = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials';
 $files = array(
     'icon'       => 'logo-icon.svg',
     'dark'       => 'logo-dark.svg',
@@ -17,7 +17,7 @@ if (!is_file(FCPATH.'assets/brand/'.$file)) {
     $file = $files['horizontal'];
 }
 
-$custom = function_exists('windels_brand_setting') ? windels_brand_setting('brand_logo_url') : null;
+$custom = function_exists('marvy_brand_setting') ? marvy_brand_setting('brand_logo_url') : null;
 $src = (!empty($custom) && $variant !== 'icon') ? $custom : base_url('assets/brand/'.$file);
 $h = isset($height) ? (int)$height : ($variant === 'icon' ? 32 : 36);
 $alt = ($variant === 'icon') ? '' : $site;

@@ -1,8 +1,8 @@
-# WINDELS PANEL — Certification Audit (2026-08-19)
+# MarvySocials — Certification Audit (2026-08-19)
 
 A full runtime-style verification of the repository: not a structural skim, but an
 attempt to actually *execute* everything and prove what passes. Conducted on branch
-`arena/01a017d5-windels-panel` against the merge of `main` @ `ada9ef8`.
+`arena/01a017d5-marvysocials` against the merge of `main` @ `ada9ef8`.
 
 ## Methodology note (transparency)
 

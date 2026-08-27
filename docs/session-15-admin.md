@@ -1,4 +1,4 @@
-# WINDELS PANEL — Session 15: Admin panel (operational core)
+# MarvySocials — Session 15: Admin panel (operational core)
 
 > The back office staff actually work in: the order queue, the manual-deposit
 > approval queue, and the staff ticket queue — plus a real admin landing page.

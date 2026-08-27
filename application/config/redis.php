@@ -15,6 +15,6 @@ $config['redis'] = array(
     'port'     => Env::get_int('REDIS_PORT', 6379),
     'password' => Env::get('REDIS_PASSWORD'),
     'database' => Env::get_int('REDIS_DB', 0),
-    'prefix'   => Env::get('REDIS_PREFIX', 'windels:'),
+    'prefix'   => Env::get('REDIS_PREFIX', 'marvy:'),
     'timeout'  => 2,
 );

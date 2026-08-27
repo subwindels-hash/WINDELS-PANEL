@@ -240,13 +240,21 @@ class Auth extends MY_Controller {
             return redirect('login');
         }
 
+        // ?ref= is captured for every page by MY_Controller::capture_referral(),
+        // so by the time we get here the code is already held in the session
+        // whether the visitor landed on /register or on the homepage.
+        $this->load->library('ReferralService');
+        $incoming = $this->input->get('ref', true);
+
         if ($this->input->method(true) === 'POST') {
             return $this->register_post();
         }
 
         $this->render_auth('auth/register', array(
-            'title' => 'Create your account',
-            'referral' => $this->input->get('ref'),
+            'title'    => 'Create your account',
+            // Prefer the session over the query string so the field stays
+            // filled after a validation error redirects back here.
+            'referral' => $this->referralservice->pending_code() ?: $incoming,
         ));
     }
 
@@ -306,6 +314,19 @@ class Auth extends MY_Controller {
             return redirect('register');
         }
 
+        // Attribute the referral before the session is replaced by the login:
+        // the pending code lives in this session, and attribute() consumes it.
+        // Never fatal — a broken referral must not cost someone their account.
+        try {
+            $this->load->library('ReferralService');
+            $this->referralservice->attribute(
+                $result['user'],
+                $this->input->post('ref', true) ?: $this->referralservice->pending_code()
+            );
+        } catch (Throwable $e) {
+            log_message('error', 'referral attribution failed at registration: '.$e->getMessage());
+        }
+
         // Auto-login the new customer (email verification gates sensitive
         // actions, not the session itself).
         $this->auth->attempt_login($data['email'], $data['password'], $ip, $this->input->user_agent());
@@ -314,7 +335,7 @@ class Auth extends MY_Controller {
             $this->send_verification_email($result['user']);
             $this->session->set_flashdata('success', 'Account created. Please verify your email — we sent a link.');
         } else {
-            $this->session->set_flashdata('success', 'Welcome to WINDELS PANEL.');
+            $this->session->set_flashdata('success', 'Welcome to MarvySocials.');
         }
         redirect('dashboard');
     }
@@ -322,6 +343,22 @@ class Auth extends MY_Controller {
     /* -------------------------------------------------------------- */
     /* Email verification                                            */
     /* -------------------------------------------------------------- */
+
+    /**
+     * Tell the referral system an account reached a qualifying milestone.
+     *
+     * Fired unconditionally from the places these events happen; the service
+     * ignores it unless the user was referred and this is the event their code
+     * requires.
+     */
+    private function referral_event($user_id, $event) {
+        try {
+            $this->load->library('ReferralService');
+            $this->referralservice->record_event($user_id, $event);
+        } catch (Throwable $e) {
+            log_message('error', 'referral event '.$event.' failed: '.$e->getMessage());
+        }
+    }
 
     public function verify_email($token = null) {
         if (!$token) {
@@ -342,6 +379,10 @@ class Auth extends MY_Controller {
             $this->session->set_flashdata('error', 'That verification link is invalid or has expired.');
             return redirect('login');
         }
+        if (!empty($result['user']) && !empty($result['user']->id)) {
+            $this->referral_event($result['user']->id, 'EMAIL_VERIFIED');
+        }
+
         $this->session->set_flashdata('success', 'Your email has been verified.');
         if ($this->auth->check()) {
             return redirect('dashboard');

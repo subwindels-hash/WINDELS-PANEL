@@ -38,7 +38,7 @@ class AdminSettingsTest extends TestCase
         }
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         require_once self::$root.'/application/core/MY_Model.php';
-        require_once self::$root.'/application/helpers/windels_helper.php';
+        require_once self::$root.'/application/helpers/marvy_helper.php';
     }
 
     protected function setUp(): void
@@ -71,7 +71,7 @@ class AdminSettingsTest extends TestCase
 
         $this->assertTrue($res['ok'], $res['error'] ?? '');
         $this->assertArrayHasKey('site_name', $res['changed']);
-        $this->assertSame('WINDELS PANEL', $res['changed']['site_name']['before']);
+        $this->assertSame('MarvySocials', $res['changed']['site_name']['before']);
         $this->assertSame('Naija Panel', $res['changed']['site_name']['after']);
 
         Setting_model::flush_cache();
@@ -99,7 +99,7 @@ class AdminSettingsTest extends TestCase
     {
         $app = $this->app();
 
-        $res = $app->settingsservice->save(array('site_name' => 'WINDELS PANEL'));
+        $res = $app->settingsservice->save(array('site_name' => 'MarvySocials'));
 
         $this->assertTrue($res['ok']);
         $this->assertSame(array(), $res['changed'],
@@ -117,7 +117,7 @@ class AdminSettingsTest extends TestCase
         $app->settingsservice->save(array('site_name' => 'Renamed'));
         Setting_model::flush_cache();
 
-        $this->assertSame('support@windels.local', $app->Setting_model->get('support_email'),
+        $this->assertSame('support@marvy.local', $app->Setting_model->get('support_email'),
             'an absent key must keep its value, not be blanked');
         $this->assertSame('500.00000000', $app->Setting_model->get('min_deposit'));
     }
@@ -133,7 +133,7 @@ class AdminSettingsTest extends TestCase
         $this->assertFalse($res['ok']);
         $this->assertStringContainsString('email', strtolower($res['error']));
         Setting_model::flush_cache();
-        $this->assertSame('support@windels.local', $app->Setting_model->get('support_email'),
+        $this->assertSame('support@marvy.local', $app->Setting_model->get('support_email'),
             'a refused save must not half-apply');
     }
 
@@ -305,7 +305,7 @@ class AdminSettingsTest extends TestCase
 
     /**
      * base_currency stays read-only. Editing the row would change nothing —
-     * windels_base_currency() reads config — and actually switching the
+     * marvy_base_currency() reads config — and actually switching the
      * currency would reinterpret every stored amount.
      */
     public function testBaseCurrencyIsNotEditable()
@@ -317,7 +317,7 @@ class AdminSettingsTest extends TestCase
         $app = $this->app();
         $app->settingsservice->save(array('base_currency' => 'USD'));
         Setting_model::flush_cache();
-        $this->assertSame('NGN', windels_base_currency(),
+        $this->assertSame('NGN', marvy_base_currency(),
             'the panel must stay denominated in the currency its ledger was written in');
     }
 

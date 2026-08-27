@@ -34,7 +34,7 @@ $plain_id = $plain ? (int)$plain['card_id'] : 0;
 <?php elseif ($status === 'FAILED'): ?>
 <div class="alert alert-error mb-4">
   This order could not be completed<?=$order && $order->failure_reason ? ': '.htmlspecialchars((string)$order->failure_reason) : '.'?>
-  <?=$refunded ? ' You have been refunded '.windels_money($tx->refunded_amount, $tx->currency).'.' : ''?>
+  <?=$refunded ? ' You have been refunded '.marvy_money($tx->refunded_amount, $tx->currency).'.' : ''?>
 </div>
 <?php endif; ?>
 
@@ -48,9 +48,9 @@ $plain_id = $plain ? (int)$plain['card_id'] : 0;
         <tr><th>Status</th><td>
           <span class="badge <?=$badge[$status] ?? 'badge-muted'?>"><?=htmlspecialchars($status)?></span>
         </td></tr>
-        <tr><th>Paid</th><td class="mono"><?=windels_money($tx->amount, $tx->currency)?>
+        <tr><th>Paid</th><td class="mono"><?=marvy_money($tx->amount, $tx->currency)?>
           <?php if ($refunded): ?>
-            <div class="muted text-xs">refunded <?=windels_money($tx->refunded_amount, $tx->currency)?></div>
+            <div class="muted text-xs">refunded <?=marvy_money($tx->refunded_amount, $tx->currency)?></div>
           <?php endif; ?>
         </td></tr>
         <tr><th>Reference</th><td class="mono text-xs"><?=htmlspecialchars($tx->public_id)?></td></tr>

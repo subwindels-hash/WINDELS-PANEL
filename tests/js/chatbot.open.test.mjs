@@ -17,7 +17,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const appJs = readFileSync(resolve(root, 'assets/js/app.js'), 'utf8');
 
 const html = `<!doctype html><html><head>
-<meta name="csrf-name" content="csrf_windels">
+<meta name="csrf-name" content="csrf_marvy">
 <meta name="csrf-token" content="test-token-123">
 <meta name="csrf-endpoint" content="/csrf">
 </head><body>
@@ -34,7 +34,7 @@ const html = `<!doctype html><html><head>
     <div class="ws-bubble ws-bubble-assistant">Welcome</div>
   </div>
   <div class="ws-suggest" id="ws-assistant-suggest">
-    <button type="button" data-suggest="What is WINDELS PANEL?">What is WINDELS PANEL?</button>
+    <button type="button" data-suggest="What is MarvySocials?">What is MarvySocials?</button>
   </div>
   <div class="ws-assistant-status" id="ws-assistant-status" aria-live="polite"></div>
   <form class="ws-assistant-form" id="ws-assistant-form">
@@ -69,14 +69,14 @@ window.fetch = async (input) => {
     return makeResponse({
       success: true,
       data: {
-        reply: 'WINDELS PANEL is a prepaid commerce platform. Recent data from the test harness.',
+        reply: 'MarvySocials is a prepaid commerce platform. Recent data from the test harness.',
         intent: 'about',
         links: [{ label: 'Services', href: '/services' }],
         suggestions: ['What services do you offer?', 'How do I sign up?'],
       },
     });
   }
-  return makeResponse({ success: true, data: { name: 'csrf_windels', hash: 'test-token-123' } });
+  return makeResponse({ success: true, data: { name: 'csrf_marvy', hash: 'test-token-123' } });
 };
 
 if (!window.XMLHttpRequest || !window.XMLHttpRequest.prototype) {
@@ -112,7 +112,7 @@ assert(focused, 'chat input receives focus after opening');
 
 const input = window.document.getElementById('ws-assistant-input');
 const form = window.document.getElementById('ws-assistant-form');
-input.value = 'What is WINDELS PANEL?';
+input.value = 'What is MarvySocials?';
 form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
 
 // Allow the CSRF token resolution + fetch to resolve.
@@ -125,7 +125,7 @@ const assistantBubble = log.querySelector('.ws-bubble-assistant:not(:first-child
 
 assert(assistantHits === 1, 'assistant endpoint is called once');
 assert(userBubble !== null, 'user message bubble is rendered');
-assert(assistantBubble !== null && assistantBubble.textContent.indexOf('WINDELS PANEL') !== -1,
+assert(assistantBubble !== null && assistantBubble.textContent.indexOf('MarvySocials') !== -1,
   'assistant reply bubble is rendered from JSON');
 
 // Close path.

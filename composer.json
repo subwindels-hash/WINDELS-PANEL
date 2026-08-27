@@ -1,6 +1,6 @@
 {
-  "name": "windels/panel",
-  "description": "WINDELS PANEL \u2014 Enterprise SMM Reseller Platform (CodeIgniter 3.x + MySQL/MariaDB)",
+  "name": "marvysocials/panel",
+  "description": "MarvySocials \u2014 Enterprise SMM Reseller Platform (CodeIgniter 3.x + MySQL/MariaDB)",
   "type": "project",
   "require": {
     "php": ">=7.4",
@@ -19,10 +19,10 @@
   },
   "autoload": {
     "psr-4": {
-      "Windels\\": "application/libraries/"
+      "Marvy\\": "application/libraries/"
     },
     "files": [
-      "application/helpers/windels_helper.php"
+      "application/helpers/marvy_helper.php"
     ],
     "classmap": [
       "application/libraries/Seeder.php"

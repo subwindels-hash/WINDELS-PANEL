@@ -19,7 +19,7 @@ $money = function ($column) use ($p) {
     if (!$p || !isset($p->$column) || $p->$column === null) return '';
     return rtrim(rtrim(number_format((float)$p->$column, 8, '.', ''), '0'), '.');
 };
-$cur = windels_base_currency();
+$cur = marvy_base_currency();
 $variable_vtu = $domain === 'vtu' && $p && in_array($p->service_type, array('AIRTIME','ELECTRICITY'), true);
 ?>
 

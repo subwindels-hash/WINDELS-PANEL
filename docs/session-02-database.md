@@ -1,4 +1,4 @@
-# WINDELS PANEL — Session 02: Database (Migrations + Seed)
+# MarvySocials — Session 02: Database (Migrations + Seed)
 
 > Implements Checkpoint 01 / Artifact 2 (`docs/checkpoint-01-php/02-database-schema.md`).
 > Stack: **CodeIgniter 3.1.13 + MySQL 8 / MariaDB 10.6**, InnoDB, `utf8mb4_unicode_ci`, UTC `DATETIME`.

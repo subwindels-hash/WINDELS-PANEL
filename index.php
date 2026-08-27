@@ -1,6 +1,6 @@
 <?php
 /**
- * WINDELS PANEL — Front Controller (CodeIgniter 3.x)
+ * MarvySocials — Front Controller (CodeIgniter 3.x)
  *
  * Boot order matters and is deliberate:
  *
@@ -118,7 +118,7 @@ if (!is_dir($system_path) || !is_file($system_path . 'core' . DIRECTORY_SEPARATO
     foreach ($system_candidates as $candidate) {
         $probed[] = rtrim((string) $candidate, '/\\') . '/core/CodeIgniter.php';
     }
-    echo '<!doctype html><html><head><meta charset="utf-8"><title>WINDELS PANEL — framework missing</title>'
+    echo '<!doctype html><html><head><meta charset="utf-8"><title>MarvySocials — framework missing</title>'
         . '<style>body{font:16px/1.5 system-ui,sans-serif;margin:2em auto;max-width:44em;padding:0 1em;color:#222}'
         . 'code{background:#f3f3f3;padding:1px 5px;border-radius:4px}li{margin:.25em 0}</style></head><body>'
         . '<h1>CodeIgniter framework files are missing</h1>'
@@ -169,6 +169,13 @@ if (!isset($view_folder[0]) && is_dir($application_folder . DIRECTORY_SEPARATOR 
 
 define('SELF', pathinfo(__FILE__, PATHINFO_BASENAME));
 define('BASEPATH', $system_path);
+// The front-controller directory — i.e. the web root, the directory this file
+// lives in. Stock CodeIgniter defines it here and application code relies on
+// it for anything that touches a file served over HTTP: the brand logo
+// partial, MediaService uploads, the favicon probe. It was missing from this
+// front controller, so every one of those call sites raised
+// "Undefined constant FCPATH" and took the page down with it.
+define('FCPATH', __DIR__ . DIRECTORY_SEPARATOR);
 define('APPPATH', $application_folder . DIRECTORY_SEPARATOR);
 define('VIEWPATH', $view_folder . DIRECTORY_SEPARATOR);
 

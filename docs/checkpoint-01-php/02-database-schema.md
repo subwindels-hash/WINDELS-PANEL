@@ -1,4 +1,4 @@
-# WINDELS PANEL — Artifact 2 (REVISED): MySQL / MariaDB Schema Plan — CodeIgniter 3.x Migrations
+# MarvySocials — Artifact 2 (REVISED): MySQL / MariaDB Schema Plan — CodeIgniter 3.x Migrations
 
 > Revised 2026-08-16 | Engine: **MySQL 8 / MariaDB 10.6**, `InnoDB`, `utf8mb4_unicode_ci`, all timestamps `DATETIME` stored UTC.
 > Money: `DECIMAL(20,8)` everywhere. No JS-float handling — PHP uses `bcmath` / string arithmetic. Supersedes Prisma plan.

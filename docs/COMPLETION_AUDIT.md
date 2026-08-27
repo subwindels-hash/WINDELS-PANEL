@@ -1,6 +1,6 @@
-# WINDELS-PANEL — Completion Audit (2026-08-19)
+# MarvySocials — Completion Audit (2026-08-19)
 
-Branch: `arena/01a0198c-windels-panel`  
+Branch: `arena/01a0198c-marvysocials`  
 Latest commit: `cfc1b36` (fixes applied: README 018→019, CI activated)  
 Auditor: agent mode — direct file inspection + build verification + documented environment limits.
 

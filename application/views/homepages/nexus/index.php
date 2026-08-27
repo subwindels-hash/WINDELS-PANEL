@@ -11,12 +11,10 @@ $providers = array(
   array('Provider Epsilon','healthy','12s ago','₦512.22'),
   array('Provider Zeta','healthy','30s ago','₦175.40'),
 );
-$explorer = array(
-  array('100291','Instagram Followers — HQ','Default','₦1.20 / 1k','100 – 100k','Alpha'),
-  array('100312','TikTok Likes — Instant','Instant','₦0.45 / 1k','20 – 50k','Beta'),
-  array('100488','YouTube Views — WW','Slow','₦2.10 / 1k','100 – 1M','Delta'),
-  array('100512','Spotify Monthly Listeners','Geo','₦4.00 / 1k','1k – 50k','Epsilon'),
-);
+// Live catalogue rows supplied by Home::index(). The explorer used to list
+// invented service IDs and prices, which read as real inventory on a public
+// page — anything shown here now exists and is orderable at that rate.
+$explorer = isset($data['showcase']) && is_array($data['showcase']) ? $data['showcase'] : array();
 $automation = array(
   array('Order sync','CLI cron workers pull provider status with Redis distributed locks — no web cron URLs.'),
   array('Wallet ledger','Every movement is double-entry, DECIMAL(20,8), and reconciles to the wallet balance.'),
@@ -29,7 +27,13 @@ $faqs = array(
 );
 ?>
 <section class="ws-nexus-hero">
-  <div class="container" style="max-width:1180px">
+  <?php // Decorative only: the hero's meaning is carried by the heading and the
+        // flow diagram, so this is aria-hidden and empty-alt rather than
+        // described to a screen reader. Loaded eagerly with high priority
+        // because it is the largest paint on the page. ?>
+  <img class="ws-nexus-hero-bg" src="<?=base_url('assets/images/home/hero-nexus.jpg')?>"
+       alt="" aria-hidden="true" width="1200" height="675" fetchpriority="high" decoding="async">
+  <div class="container" style="max-width:1180px;position:relative;z-index:1">
     <div class="ws-nexus-grid">
       <div>
         <p class="ws-nexus-eyebrow">// ENTERPRISE SMM INFRASTRUCTURE</p>
@@ -44,7 +48,7 @@ $faqs = array(
         <div class="ws-flow-node ws-flow-customer">Customer</div>
         <div class="ws-flow-arrow">↓</div>
         <div class="ws-flow-node ws-flow-core">
-          <span>WINDELS PANEL</span>
+          <span>MarvySocials</span>
           <small>Queue · Ledger · State machine</small>
         </div>
         <div class="ws-flow-arrow">↓</div>
@@ -91,22 +95,36 @@ $faqs = array(
   <div class="container" style="max-width:1180px">
     <h2 class="ws-section-title">Service explorer</h2>
     <div class="ws-explorer" role="region" tabindex="0" aria-label="Service explorer">
+      <?php if ($explorer): ?>
       <table class="table ws-table">
-        <thead><tr><th>ID</th><th>Service</th><th>Type</th><th>Rate</th><th>Min / Max</th><th>Provider</th><th></th></tr></thead>
+        <thead><tr><th>Service</th><th>Category</th><th>Rate</th><th>Min / Max</th><th>Options</th><th></th></tr></thead>
         <tbody>
           <?php foreach ($explorer as $r): ?>
           <tr>
-            <td class="mono"><?=htmlspecialchars($r[0])?></td>
-            <td style="color:#e2e8f0"><?=htmlspecialchars($r[1])?></td>
-            <td><span class="badge badge-info"><?=htmlspecialchars($r[2])?></span></td>
-            <td class="mono" style="color:#22d3ee"><?=htmlspecialchars($r[3])?></td>
-            <td class="mono"><?=htmlspecialchars($r[4])?></td>
-            <td><?=htmlspecialchars($r[5])?></td>
-            <td><a class="btn ws-nexus-cta btn-sm" href="<?=site_url('register')?>">Order</a></td>
+            <td style="color:#e2e8f0"><?=htmlspecialchars($r->name)?></td>
+            <td><?php if (!empty($r->category_name)): ?><span class="badge badge-info"><?=htmlspecialchars($r->category_name)?></span><?php endif; ?></td>
+            <td class="mono" style="color:#22d3ee"><?=marvy_money($r->rate)?> / 1k</td>
+            <td class="mono"><?=number_format((int)$r->min_quantity)?> – <?=number_format((int)$r->max_quantity)?></td>
+            <td class="text-xs">
+              <?php
+                $opts = array();
+                if ((int)$r->refill_supported === 1) $opts[] = 'refill';
+                if ((int)$r->cancel_supported === 1) $opts[] = 'cancel';
+                if ((int)$r->dripfeed_supported === 1) $opts[] = 'drip-feed';
+                echo $opts ? htmlspecialchars(implode(' · ', $opts)) : '—';
+              ?>
+            </td>
+            <td><a class="btn ws-nexus-cta btn-sm" href="<?=site_url('services/'.$r->slug)?>">View</a></td>
           </tr>
           <?php endforeach; ?>
         </tbody>
       </table>
+      <?php else: ?>
+      <p class="muted" style="color:#94a3b8;padding:1.25rem">
+        No services have been published yet. This table lists the live catalogue, so it stays empty
+        rather than showing example rows that cannot be ordered.
+      </p>
+      <?php endif; ?>
     </div>
   </div>
 </section>
@@ -155,7 +173,7 @@ $faqs = array(
 </section>
 
 <style>
-.ws-nexus-hero{background:#0b0f1a;color:#e2e8f0;padding:4.5rem 0 3rem;
+.ws-nexus-hero{background:#0b0f1a;color:#e2e8f0;padding:4.5rem 0 3rem;position:relative;overflow:hidden;
   background-image:
    linear-gradient(rgba(34,211,238,.04) 1px,transparent 1px),
    linear-gradient(90deg,rgba(34,211,238,.04) 1px,transparent 1px),
@@ -210,4 +228,18 @@ $faqs = array(
 .ws-neon-cta{text-align:center;border:1px solid rgba(34,211,238,.4);border-radius:var(--radius-xl);padding:2.5rem;background:radial-gradient(600px 200px at 50% 0,rgba(34,211,238,.08),transparent)}
 @media(max-width:880px){.ws-nexus-grid{grid-template-columns:1fr}.ws-nexus-stats{grid-template-columns:repeat(2,1fr)}}
 @media(prefers-reduced-motion:reduce){.ws-dot::after{animation:none}}
+/* The photograph sits behind the hero. It is anchored right so the artwork's
+   bright routing wall stays clear of the left-hand text column, and a gradient
+   scrim guarantees text contrast regardless of how the image crops. */
+.ws-nexus-hero-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  object-position:right center;opacity:.55}
+.ws-nexus-hero::after{content:'';position:absolute;inset:0;
+  background:linear-gradient(90deg,#0b0f1a 0%,rgba(11,15,26,.92) 38%,rgba(11,15,26,.35) 100%)}
+.ws-nexus-hero>.container{position:relative;z-index:1}
+@media(max-width:900px){
+  /* On a narrow screen the text sits over the busiest part of the image, so
+     fade it further rather than letting contrast degrade. */
+  .ws-nexus-hero-bg{opacity:.28}
+  .ws-nexus-hero::after{background:linear-gradient(180deg,rgba(11,15,26,.85),rgba(11,15,26,.96))}
+}
 </style>

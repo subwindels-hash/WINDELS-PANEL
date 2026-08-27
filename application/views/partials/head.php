@@ -2,8 +2,8 @@
 // Global <head> for the public shell. The layout passes $page_* values; this
 // partial owns metadata, CSRF tags and the two stylesheets so no page can
 // accidentally load a third CSS file or a different font stack.
-$site_name  = function_exists('windels_site_name') ? windels_site_name() : 'WINDELS PANEL';
-$site_tag   = function_exists('windels_site_tagline') ? windels_site_tagline() : 'Prepaid commerce for digital goods';
+$site_name  = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials';
+$site_tag   = function_exists('marvy_site_tagline') ? marvy_site_tagline() : 'Prepaid commerce for digital goods';
 $title      = !empty($page_title) ? $page_title : (!empty($title) ? $title : $site_name);
 $desc       = !empty($page_desc) ? $page_desc : (!empty($meta_description) ? $meta_description : $site_tag);
 $canonical  = !empty($page_canonical) ? $page_canonical : (!empty($canonical) ? $canonical : (isset($this->uri) ? trim((string)$this->uri->uri_string(), '/') : ''));
@@ -17,13 +17,13 @@ $canonical_url = site_url($canonical);
 <?php // Theme init — runs before first paint so there is no flash of the wrong
       // theme. Reads the site default (default_theme: system|light|dark) and a
       // per-visitor localStorage override, then resolves 'system' against the
-      // OS preference. The toggle lives in the nav; WINDELS.setTheme() updates
+      // OS preference. The toggle lives in the nav; MARVYSOCIALS.setTheme() updates
       // both the class and localStorage. ?>
 <script <?=csp_nonce_attr()?>>
 (function(){
   var saved = null;
   try { saved = localStorage.getItem('ws-theme'); } catch(e) {}
-  var def = <?=json_encode(function_exists('windels_default_theme') ? windels_default_theme() : 'system')?>;
+  var def = <?=json_encode(function_exists('marvy_default_theme') ? marvy_default_theme() : 'system')?>;
   var t = (saved === 'light' || saved === 'dark') ? saved : def;
   var dark = false;
   if (t === 'dark') dark = true;

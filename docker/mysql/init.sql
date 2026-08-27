@@ -7,12 +7,12 @@
 -- grants the same user access to it. Schema itself comes from migrations
 -- (`php index.php migrate`), never from here.
 
-CREATE DATABASE IF NOT EXISTS `windels_panel`
+CREATE DATABASE IF NOT EXISTS `marvysocials`
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-CREATE DATABASE IF NOT EXISTS `windels_panel_test`
+CREATE DATABASE IF NOT EXISTS `marvysocials_test`
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-GRANT ALL PRIVILEGES ON `windels_panel`.*      TO 'windels'@'%';
-GRANT ALL PRIVILEGES ON `windels_panel_test`.* TO 'windels'@'%';
+GRANT ALL PRIVILEGES ON `marvysocials`.*      TO 'marvy'@'%';
+GRANT ALL PRIVILEGES ON `marvysocials_test`.* TO 'marvy'@'%';
 FLUSH PRIVILEGES;

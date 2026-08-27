@@ -5,9 +5,9 @@ $t = $totals;
   <div class="card">
     <div class="card-meta">Wallet balance</div>
     <div class="mt-1 text-3xl font-bold tracking-tight" style="font-family:var(--font-display)">
-      <?=windels_money($wallet->balance ?? '0', $wallet->currency ?? windels_base_currency())?>
+      <?=marvy_money($wallet->balance ?? '0', $wallet->currency ?? marvy_base_currency())?>
     </div>
-    <p class="text-xs muted mt-1">WINDELS Wallet Balance — use your available balance to pay for services, orders, and other supported purchases within the platform.</p>
+    <p class="text-xs muted mt-1">MARVYSOCIALS Wallet Balance — use your available balance to pay for services, orders, and other supported purchases within the platform.</p>
     <div class="row mt-3">
       <a href="<?=site_url('dashboard/add-funds')?>" class="btn btn-primary btn-sm">Add funds</a>
       <a href="<?=site_url('dashboard/transactions')?>" class="btn btn-ghost btn-sm">History</a>
@@ -22,13 +22,13 @@ $t = $totals;
 
   <div class="card">
     <div class="card-meta">Total spent</div>
-    <div class="mt-1 text-3xl font-bold" style="font-family:var(--font-display)"><?=windels_money($t['spent'])?></div>
+    <div class="mt-1 text-3xl font-bold" style="font-family:var(--font-display)"><?=marvy_money($t['spent'])?></div>
     <div class="mt-3 text-sm muted">across completed orders</div>
   </div>
 
   <div class="card">
     <div class="card-meta">Total deposited</div>
-    <div class="mt-1 text-3xl font-bold" style="font-family:var(--font-display)"><?=windels_money($t['deposited'])?></div>
+    <div class="mt-1 text-3xl font-bold" style="font-family:var(--font-display)"><?=marvy_money($t['deposited'])?></div>
     <div class="mt-3"><a href="<?=site_url('dashboard/new-order')?>" class="btn btn-secondary btn-sm">Place an order →</a></div>
   </div>
 </div>
@@ -61,7 +61,7 @@ $t = $totals;
             <td class="mono text-xs"><?=htmlspecialchars(substr($o->public_id,0,10))?>…</td>
             <td class="truncate max-w-[220px]"><?=htmlspecialchars($o->service_name ?? 'Service #'.$o->service_id)?></td>
             <td><?=number_format($o->quantity)?></td>
-            <td><?=windels_money($o->charge, $o->currency)?></td>
+            <td><?=marvy_money($o->charge, $o->currency)?></td>
             <td><span class="<?=DashboardStats::status_badge($o->status)?> badge-dot"><?=htmlspecialchars(str_replace('_',' ',$o->status))?></span></td>
             <td><a class="text-sm" href="<?=site_url('dashboard/orders/'.$o->public_id)?>">View</a></td>
           </tr>
@@ -85,7 +85,7 @@ $t = $totals;
         <li class="row justify-between text-sm" style="gap:.5rem">
           <span><?=htmlspecialchars(DashboardStats::transaction_label($tx))?></span>
           <span class="mono font-medium" style="color: $tx->direction==='CREDIT' ? 'var(--success-700)' : 'var(--slate-700)'">
-            <?=$tx->direction==='CREDIT' ? '+' : '−'?><?=windels_money($tx->amount, $tx->currency)?>
+            <?=$tx->direction==='CREDIT' ? '+' : '−'?><?=marvy_money($tx->amount, $tx->currency)?>
           </span>
         </li>
       <?php endforeach; ?>

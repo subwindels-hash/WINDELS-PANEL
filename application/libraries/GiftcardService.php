@@ -405,7 +405,7 @@ class GiftcardService {
             null, array('order' => (int)$card->giftcard_order_id,
                         'card' => (int)$card->card_index,
                         'last4' => $card->card_last4, 'by' => $reason),
-            null, null, function_exists('windels_request_id') ? windels_request_id() : null);
+            null, null, function_exists('marvy_request_id') ? marvy_request_id() : null);
 
         return array('ok' => true, 'card' => array(
             'card_number'    => $number,
@@ -494,7 +494,7 @@ class GiftcardService {
     private function sender_name() {
         $configured = $this->ci->Setting_model->get('giftcard_sender_name');
         $configured = trim((string)$configured);
-        return $configured !== '' ? $configured : 'WINDELS PANEL';
+        return $configured !== '' ? $configured : 'MarvySocials';
     }
 
     /**

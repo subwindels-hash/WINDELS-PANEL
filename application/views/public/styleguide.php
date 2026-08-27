@@ -2,7 +2,7 @@
 <section class="ws-page-hero">
   <div class="container" style="max-width:1080px">
     <p class="ws-kicker">Product UI</p>
-    <h1><?=htmlspecialchars(function_exists('windels_site_name') ? windels_site_name() : 'WINDELS PANEL')?> <span class="gradient-text">Design System</span></h1>
+    <h1><?=htmlspecialchars(function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials')?> <span class="gradient-text">Design System</span></h1>
     <p class="ws-lede">The tokens and component classes the live site uses. Source of truth: <code>assets/css/design-system.css</code>, mirrored in <code>tailwind.config.js</code>. This page is a reference, not a separate visual language.</p>
   </div>
 </section>
@@ -80,12 +80,12 @@
       <h1>Display heading — Fraunces</h1>
       <h2>Section heading — Grow inside one panel</h2>
       <h3>Subsection heading</h3>
-      <p>Body copy in Inter. Money renders as <strong><?=function_exists('windels_money')?windels_money(1200):'₦1,200.00'?></strong> and identifiers such as <code>DECIMAL(20,8)</code> stay monospaced.
+      <p>Body copy in Inter. Money renders as <strong><?=function_exists('marvy_money')?marvy_money(1200):'₦1,200.00'?></strong> and identifiers such as <code>DECIMAL(20,8)</code> stay monospaced.
         <a href="<?=site_url('services')?>">Inline links</a> use the brand colour.</p>
       <p class="muted">Muted secondary text for metadata and helper copy.</p>
       <p class="ws-lede">Lede text for page introductions.</p>
       <pre style="background:var(--slate-900);color:#e2e8f0;padding:1rem;border-radius:.75rem;overflow:auto"><code>// monospaced code
-$windels = ['panel' =&gt; 'ready'];</code></pre>
+$marvy = ['panel' =&gt; 'ready'];</code></pre>
     </div>
   </section>
 
@@ -208,8 +208,8 @@ $windels = ['panel' =&gt; 'ready'];</code></pre>
       <table class="table">
         <thead><tr><th>Order</th><th>Service</th><th>Amount</th><th>Status</th></tr></thead>
         <tbody>
-          <tr><td>#10293</td><td>Example row</td><td><?=function_exists('windels_money')?windels_money(12):'₦12.00'?></td><td><span class="badge badge-success badge-dot">Completed</span></td></tr>
-          <tr><td>#10294</td><td>Example row</td><td><?=function_exists('windels_money')?windels_money(3.4):'₦3.40'?></td><td><span class="badge badge-warning badge-dot">In progress</span></td></tr>
+          <tr><td>#10293</td><td>Example row</td><td><?=function_exists('marvy_money')?marvy_money(12):'₦12.00'?></td><td><span class="badge badge-success badge-dot">Completed</span></td></tr>
+          <tr><td>#10294</td><td>Example row</td><td><?=function_exists('marvy_money')?marvy_money(3.4):'₦3.40'?></td><td><span class="badge badge-warning badge-dot">In progress</span></td></tr>
         </tbody>
       </table>
     </div>

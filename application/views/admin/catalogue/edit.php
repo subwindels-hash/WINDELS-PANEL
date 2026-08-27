@@ -45,20 +45,20 @@ $margin = ($product->price !== null && $product->provider_cost !== null)
           <tr><th>Price</th><td class="muted">Customer names the amount</td></tr>
           <tr><th>Discount</th><td class="mono"><?=htmlspecialchars(rtrim(rtrim((string)$product->discount_percent, '0'), '.'))?>%</td></tr>
           <tr><th>Limits</th><td class="mono">
-            <?=$product->min_amount === null ? 'no minimum' : windels_money($product->min_amount)?>
+            <?=$product->min_amount === null ? 'no minimum' : marvy_money($product->min_amount)?>
             –
-            <?=$product->max_amount === null ? 'no maximum' : windels_money($product->max_amount)?>
+            <?=$product->max_amount === null ? 'no maximum' : marvy_money($product->max_amount)?>
           </td></tr>
         <?php else: ?>
           <tr><th>Price</th><td class="mono">
-            <?=$product->price === null ? '<span class="badge badge-warning">not set</span>' : windels_money($product->price)?>
+            <?=$product->price === null ? '<span class="badge badge-warning">not set</span>' : marvy_money($product->price)?>
           </td></tr>
           <tr><th>Vendor cost</th><td class="mono">
-            <?=$product->provider_cost === null ? '—' : windels_money($product->provider_cost)?>
+            <?=$product->provider_cost === null ? '—' : marvy_money($product->provider_cost)?>
           </td></tr>
           <tr><th>Margin</th><td class="mono">
             <?php if ($margin === null): ?>—<?php else: ?>
-              <span class="<?=bccomp($margin, '0', 8) < 0 ? 'badge badge-danger' : ''?>"><?=windels_money($margin)?></span>
+              <span class="<?=bccomp($margin, '0', 8) < 0 ? 'badge badge-danger' : ''?>"><?=marvy_money($margin)?></span>
             <?php endif; ?>
           </td></tr>
         <?php endif; ?>

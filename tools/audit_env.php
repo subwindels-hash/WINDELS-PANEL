@@ -49,9 +49,9 @@ foreach ($scopes['php'] as $path) {
         // getenv('NAME')
         if (preg_match_all('/getenv\(\s*[\'"]([A-Z][A-Z0-9_]*)[\'"]/', $code, $m))
             foreach ($m[1] as $n) if (substr($n, -1) !== '_') $read[$n][$rel] = true;
-        // dynamic: getenv('WINDELS_'.strtoupper($g).'_WEBHOOK_SECRET')
-        if (strpos($code, "getenv('WINDELS_'") !== false)
-            $read['WINDELS_<GATEWAY>_WEBHOOK_SECRET'][$rel] = true;
+        // dynamic: getenv('MARVYSOCIALS_'.strtoupper($g).'_WEBHOOK_SECRET')
+        if (strpos($code, "getenv('MARVYSOCIALS_'") !== false)
+            $read['MARVYSOCIALS_<GATEWAY>_WEBHOOK_SECRET'][$rel] = true;
     }
 }
 /* infra consumers (compose files): ${VAR} and ${VAR:-x} / ${VAR:?x} */
@@ -143,7 +143,7 @@ foreach ($documented as $file => $keys) {
 }
 
 /* ---- report ---------------------------------------------------------------- */
-echo "WINDELS PANEL — environment audit\n";
+echo "MarvySocials — environment audit\n";
 echo "code references: " . count($read) . " distinct variables\n";
 foreach ($documented as $file => $keys)
     echo "{$file}: " . count($keys) . " documented keys\n";

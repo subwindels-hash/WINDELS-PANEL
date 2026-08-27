@@ -20,16 +20,16 @@ $qs = function (array $over = array()) use ($filters, $page) {
 <div class="grid mb-4" style="grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));gap:.75rem">
   <div class="card">
     <div class="muted text-xs">Total held — a liability</div>
-    <div class="mono" style="font-size:1.4rem;font-weight:600"><?=windels_money($totals['held'])?></div>
+    <div class="mono" style="font-size:1.4rem;font-weight:600"><?=marvy_money($totals['held'])?></div>
     <div class="muted text-xs">across <?=number_format($totals['wallets'])?> wallets</div>
   </div>
   <div class="card">
     <div class="muted text-xs">Lifetime deposited</div>
-    <div class="mono" style="font-size:1.1rem"><?=windels_money($totals['deposited'])?></div>
+    <div class="mono" style="font-size:1.1rem"><?=marvy_money($totals['deposited'])?></div>
   </div>
   <div class="card">
     <div class="muted text-xs">Lifetime spent</div>
-    <div class="mono" style="font-size:1.1rem"><?=windels_money($totals['spent'])?></div>
+    <div class="mono" style="font-size:1.1rem"><?=marvy_money($totals['spent'])?></div>
   </div>
 </div>
 
@@ -50,9 +50,9 @@ $qs = function (array $over = array()) use ($filters, $page) {
             <div class="font-medium text-slate-900"><?=htmlspecialchars((string)$u->username)?></div>
             <div class="text-xs muted"><?=htmlspecialchars((string)$u->email)?></div>
           </td>
-          <td class="text-right mono"><?=windels_money($u->balance ?? '0', $u->currency ?? null)?></td>
-          <td class="text-right mono muted"><?=windels_money($u->total_deposited ?? '0', $u->currency ?? null)?></td>
-          <td class="text-right mono muted"><?=windels_money($u->total_spent ?? '0', $u->currency ?? null)?></td>
+          <td class="text-right mono"><?=marvy_money($u->balance ?? '0', $u->currency ?? null)?></td>
+          <td class="text-right mono muted"><?=marvy_money($u->total_deposited ?? '0', $u->currency ?? null)?></td>
+          <td class="text-right mono muted"><?=marvy_money($u->total_spent ?? '0', $u->currency ?? null)?></td>
           <td><a class="btn btn-ghost btn-sm" href="<?=site_url('admin/customers/'.$u->public_id)?>">Open →</a></td>
         </tr>
       <?php endforeach; ?>

@@ -41,6 +41,12 @@ class PaymentService {
         if (!class_exists('ManualGateway', false)) {
             require_once APPPATH.'libraries/ManualGateway.php';
         }
+        if (!class_exists('BlockonomicsGateway', false)) {
+            require_once APPPATH.'libraries/BlockonomicsGateway.php';
+        }
+        if (!class_exists('FundsveraGateway', false)) {
+            require_once APPPATH.'libraries/FundsveraGateway.php';
+        }
     }
 
     /**
@@ -62,7 +68,7 @@ class PaymentService {
         if ($method->max_amount !== null && bccomp($amount, (string)$method->max_amount, 8) > 0)
             return array('ok'=>false,'error'=>'Maximum is '.$method->max_amount,'code'=>'AMOUNT_TOO_HIGH');
 
-        $currency = strtoupper($input['currency'] ?? windels_base_currency());
+        $currency = strtoupper($input['currency'] ?? marvy_base_currency());
         if (!preg_match('/^[A-Z]{3}$/', $currency)) return array('ok'=>false,'error'=>'Bad currency','code'=>'BAD_CURRENCY');
 
         $idem = $this->normalise_idem($input['idempotency_key'] ?? null, $user);
@@ -75,8 +81,16 @@ class PaymentService {
         $bonus = $this->calculate_bonus($method, $amount);
         $credited = bcadd(bcsub($amount, $fee, 8), $bonus, 8);
 
+        $public_id = marvy_public_id();
         $tx = $this->persist_transaction(array(
-            'public_id'          => windels_public_id(),
+            'public_id'          => $public_id,
+            // Fundsvera requires a >= 20-character reference that is unique per
+            // business; every provider gets the same stable value so support
+            // can search one column regardless of gateway.
+            'internal_reference' => 'MVS-'.strtoupper($public_id),
+            'provider'           => $method->code,
+            'payment_method'     => $method->type ? strtolower((string)$method->type) : null,
+            'initiated_at'       => gmdate('Y-m-d H:i:s'),
             'user_id'            => $user->id,
             'payment_method_id'  => $method->id,
             'amount'             => $amount,
@@ -141,19 +155,45 @@ class PaymentService {
             'status' => self::STATUS_SUCCESS,
             'wallet_transaction_id' => $wt ? $wt->id : null,
             'verified_at' => gmdate('Y-m-d H:i:s'),
+            'paid_at' => gmdate('Y-m-d H:i:s'),
         );
         if ($provider_tx_id) $update['provider_tx_id'] = substr((string)$provider_tx_id, 0, 128);
         $this->ci->Payment_transaction_model->update_status($tx->id, $update);
         $this->transition($tx->id, $tx->status, self::STATUS_SUCCESS, $source, 'Confirmed');
         $this->ci->db->trans_complete();
 
+        // A confirmed deposit may be the event that qualifies a referral.
+        // Outside the transaction and never fatal: the deposit has already
+        // succeeded, and a referral bookkeeping problem must not roll it back.
+        $this->referral_event($tx->user_id, 'FIRST_DEPOSIT');
+
         return array('ok'=>true,'transaction'=>$this->ci->Payment_transaction_model->find_by_id($tx->id));
+    }
+
+    /**
+     * Notify the referral system, without ever affecting the caller.
+     *
+     * Its own method so an early return here cannot skip the calling method's
+     * return value. load->library() succeeding does not guarantee the property
+     * exists — under a test double, or a loader that resolved it under another
+     * name, reading it blind raises a warning a try/catch cannot see.
+     */
+    private function referral_event($user_id, $event) {
+        try {
+            $this->ci->load->library('ReferralService');
+            if (!isset($this->ci->referralservice)) return;
+            $this->ci->referralservice->record_event($user_id, $event);
+        } catch (Throwable $e) {
+            log_message('error', 'referral '.$event.' hook failed: '.$e->getMessage());
+        }
     }
 
     /** Mark a transaction failed (terminal). */
     public function mark_failed($tx_id, $reason = null) {
         $tx = $this->ci->Payment_transaction_model->find_by_id($tx_id);
         if (!$tx || in_array($tx->status, array(self::STATUS_SUCCESS, self::STATUS_FAILED), true)) return;
+        $this->ci->Payment_transaction_model->update_status($tx->id,
+            array('failed_at' => gmdate('Y-m-d H:i:s')));
         $this->transition($tx->id, $tx->status, self::STATUS_FAILED, 'SYSTEM', $reason);
     }
 
@@ -163,16 +203,27 @@ class PaymentService {
      * @return array{ok:bool, already_seen?:bool, transaction?:object, error?:string}
      */
     public function record_webhook($gateway_type, $raw_body, array $headers) {
-        // Only 'manual' has a real adapter today. Anything else is handled by
-        // the generic HMAC/JSON envelope below until its adapter ships, so an
-        // unconfigured gateway can never silently accept a forged callback.
-        $gateway = $gateway_type === 'manual' ? new ManualGateway() : null;
+        // Gateways with a real adapter verify and parse their own callbacks.
+        // Anything else goes through the generic HMAC envelope, which is
+        // fail-closed: no configured secret means the event is stored but no
+        // money moves.
+        $gateway = in_array($gateway_type, $this->implemented_gateways(), true)
+            ? $this->gateway_for_code($gateway_type)
+            : null;
+
         $sig_ok = $gateway
             ? $gateway->verify_webhook($raw_body, $headers)
             : $this->verify_generic_signature($gateway_type, $raw_body, $headers);
-        $event = $gateway
-            ? $gateway->parse_event($raw_body)
-            : $this->parse_generic_event($raw_body);
+
+        if ($gateway instanceof BlockonomicsGateway) {
+            // Blockonomics reports progress in the query string, so its parser
+            // needs the headers too.
+            $event = $gateway->parse_event($raw_body, $headers);
+        } elseif ($gateway) {
+            $event = $gateway->parse_event($raw_body);
+        } else {
+            $event = $this->parse_generic_event($raw_body);
+        }
 
         $id = $this->ci->Payment_webhook_model->record_once(
             $gateway_type,
@@ -203,13 +254,36 @@ class PaymentService {
         }
 
         $terminal = strtolower($event['status'] ?? '');
+
+        // A confirmed-but-short payment is a real event that must be visible to
+        // staff, and must never credit as though it were complete.
+        if ($terminal === 'underpaid') {
+            $this->ci->db->where('id', $id)->update('payment_webhooks', array(
+                'processed' => 1,
+                'processed_at' => gmdate('Y-m-d H:i:s'),
+                'error' => 'underpaid: amount received is less than the amount quoted',
+            ));
+            return array('ok'=>true,'underpaid'=>true);
+        }
+
         if (!in_array($terminal, array('success','succeeded','completed','paid','approved'), true)) {
             $this->ci->db->where('id', $id)->update('payment_webhooks', array('processed'=>1,'processed_at'=>gmdate('Y-m-d H:i:s')));
             return array('ok'=>true,'ignored'=>true);
         }
 
+        // Resolution order matters. An adapter that can name the transaction
+        // directly (a crypto callback resolves it from the receive address it
+        // issued) is authoritative and is tried first: matching on
+        // provider_tx_id alone can land on a *different, older* transaction
+        // that happens to carry the same id, and silently no-op because that
+        // one is already SUCCESS.
         $tx = null;
-        if (!empty($event['provider_tx_id'])) {
+        if (!empty($event['metadata']['payment_transaction_id'])) {
+            $tx = $this->ci->Payment_transaction_model->find_by_id(
+                (int) $event['metadata']['payment_transaction_id']
+            );
+        }
+        if (!$tx && !empty($event['provider_tx_id'])) {
             $tx = $this->ci->Payment_transaction_model->find_by_provider_tx($event['provider_tx_id']);
         }
         if (!$tx && !empty($event['metadata']['idempotency_key'])) {
@@ -273,12 +347,30 @@ class PaymentService {
         return $this->gateway_for_code($method->code, $method);
     }
 
+    /**
+     * The adapter that handles a payment-method code.
+     *
+     * Only adapters that are actually implemented and wired are routed here.
+     * Everything else falls back to ManualGateway, which marks the deposit
+     * PENDING for admin review — a deposit that waits for a human is always
+     * safer than one handed to an untested integration.
+     */
     private function gateway_for_code($code, $method_row = null) {
-        if ($code === 'manual') return new ManualGateway($method_row);
-        // External gateways (stripe/paypal/...) ship with their own adapters in
-        // later iterations; fall back to a safe "unconfigured" manual adapter
-        // so the code path never calls an undefined class.
-        return new ManualGateway($method_row);
+        switch ($code) {
+            case 'blockonomics':
+            case 'btc':
+                return new BlockonomicsGateway($method_row);
+            case 'fundsvera':
+                return new FundsveraGateway($method_row);
+            case 'manual':
+            default:
+                return new ManualGateway($method_row);
+        }
+    }
+
+    /** Payment-method codes that have a real, wired adapter. */
+    public function implemented_gateways() {
+        return array('manual', 'blockonomics', 'fundsvera');
     }
 
     private function persist_transaction(array $data) {
@@ -321,7 +413,7 @@ class PaymentService {
         if ($sig === null || $sig === '') return false;
 
         $secret = $this->ci->Setting_model->get('payments.'.$gateway_type.'.webhook_secret');
-        if (!$secret) $secret = getenv('WINDELS_'.strtoupper($gateway_type).'_WEBHOOK_SECRET') ?: null;
+        if (!$secret) $secret = getenv('MARVYSOCIALS_'.strtoupper($gateway_type).'_WEBHOOK_SECRET') ?: null;
         if (!$secret) return null;
 
         $expected = hash_hmac('sha256', (string)$raw_body, (string)$secret);
@@ -362,7 +454,7 @@ class PaymentService {
     }
 
     private function normalise_idem($key, $user) {
-        if (!$key) return 'deposit:'.$user->id.':'.windels_public_id();
+        if (!$key) return 'deposit:'.$user->id.':'.marvy_public_id();
         $clean = preg_replace('/[^a-zA-Z0-9._\-]/', '', (string)$key);
         return substr(self::IDEM_SCOPE.':'.$clean, 0, 128);
     }

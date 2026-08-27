@@ -13,10 +13,10 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 require_once APPPATH.'core/Env.php';
 Env::bootstrap(rtrim(realpath(APPPATH.'..'), DIRECTORY_SEPARATOR));
 
-$windels_mail_driver = strtolower((string) Env::get('MAIL_DRIVER', 'mail'));
+$marvy_mail_driver = strtolower((string) Env::get('MAIL_DRIVER', 'mail'));
 
-$config['protocol']    = in_array($windels_mail_driver, array('smtp', 'sendmail', 'mail'), TRUE)
-    ? $windels_mail_driver
+$config['protocol']    = in_array($marvy_mail_driver, array('smtp', 'sendmail', 'mail'), TRUE)
+    ? $marvy_mail_driver
     : 'mail';
 $config['smtp_host']   = (string) Env::get('SMTP_HOST', '');
 $config['smtp_port']   = Env::get_int('SMTP_PORT', 587);

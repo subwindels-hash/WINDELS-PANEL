@@ -35,10 +35,10 @@ $can_refund = OrderStateMachine::can($order->status, 'REFUNDED');
         <tr><th>Link</th><td class="mono text-xs" style="word-break:break-all"><?=htmlspecialchars((string)$order->link)?></td></tr>
         <tr><th>Quantity</th><td class="mono"><?=number_format((int)$order->quantity)?>
             <?php if ($order->remains !== null): ?><span class="muted">(<?=number_format((int)$order->remains)?> remaining)</span><?php endif; ?></td></tr>
-        <tr><th>Charge</th><td class="mono"><?=windels_money($order->charge)?>
-            <span class="muted text-xs">@ <?=windels_money($order->rate_at_order)?>/1000</span></td></tr>
+        <tr><th>Charge</th><td class="mono"><?=marvy_money($order->charge)?>
+            <span class="muted text-xs">@ <?=marvy_money($order->rate_at_order)?>/1000</span></td></tr>
         <?php if (bccomp((string)$order->refunded_amount, '0', 8) > 0): ?>
-        <tr><th>Refunded</th><td class="mono"><?=windels_money($order->refunded_amount)?></td></tr>
+        <tr><th>Refunded</th><td class="mono"><?=marvy_money($order->refunded_amount)?></td></tr>
         <?php endif; ?>
         <tr><th>Provider</th><td>
           <?=$order->provider_name ? htmlspecialchars($order->provider_name) : '<span class="muted">— not submitted</span>'?>

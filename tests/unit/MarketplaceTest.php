@@ -27,7 +27,7 @@ class MarketplaceTest extends TestCase
         }
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         require_once self::$root.'/application/core/MY_Model.php';
-        require_once self::$root.'/application/helpers/windels_helper.php';
+        require_once self::$root.'/application/helpers/marvy_helper.php';
     }
 
     /** Active finite-stock platform listing and a funded buyer. */
@@ -649,8 +649,16 @@ class MarketplaceTest extends TestCase
     {
         if (!class_exists('CI_Migration')) eval('class CI_Migration { public $db; }');
         require_once self::$root.'/application/migrations/015_marketplace.php';
+        // The chain target must cover this migration and stay in step with the
+        // files on disk. Pinning the literal number here made every later
+        // migration fail an unrelated marketplace test; the invariant that
+        // actually matters is "version == number of migrations, and >= mine".
         $config = file_get_contents(self::$root.'/application/config/migration.php');
-        $this->assertStringContainsString("\$config['migration_version'] = 19;", $config);
+        preg_match("/migration_version'\]\s*=\s*(\d+)/", $config, $mv);
+        $version = (int)$mv[1];
+        $this->assertSame(count(glob(self::$root.'/application/migrations/*.php')), $version,
+            'migration_version must match the number of migration files');
+        $this->assertGreaterThanOrEqual(15, $version, 'the marketplace migration must be inside the chain');
         $schema = file_get_contents(self::$root.'/docs/database.sql');
         $this->assertStringContainsString('-- migration 015_marketplace', $schema);
         foreach (Migration_Marketplace::tables() as $table) {

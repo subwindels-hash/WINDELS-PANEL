@@ -302,14 +302,14 @@ class InstallCheck {
     }
 
     /**
-     * Compare the LIVE database against database/windels_panel.sql:
+     * Compare the LIVE database against database/marvysocials.sql:
      * every table, every column (+type family), every index, every FK.
      *
      * @param \mysqli $link
-     * @param null|string $sql_path  defaults to <root>/database/windels_panel.sql
+     * @param null|string $sql_path  defaults to <root>/database/marvysocials.sql
      */
     public function check_schema($link, $sql_path = null) {
-        $sql_path = $sql_path ?: $this->root . '/database/windels_panel.sql';
+        $sql_path = $sql_path ?: $this->root . '/database/marvysocials.sql';
         require_once dirname(__FILE__) . '/SchemaManifest.php';
         $manifest = SchemaManifest::from_file($sql_path);
         if ($manifest['error']) {
@@ -327,14 +327,14 @@ class InstallCheck {
         if ($res) while ($row = mysqli_fetch_row($res)) $live_tables[$row[0]] = true;
         if (!$live_tables) {
             return $this->add('fail', 'schema', 'database is empty — the schema was never imported', '',
-                'cPanel → phpMyAdmin → select the database → Import → database/windels_panel.sql → Go.');
+                'cPanel → phpMyAdmin → select the database → Import → database/marvysocials.sql → Go.');
         }
 
         $missing_t = array_diff(array_keys($expected), array_keys($live_tables));
         if ($missing_t) {
             $this->add('fail', 'schema', count($missing_t) . ' table(s) missing from the database',
                 implode(', ', array_slice($missing_t, 0, 8)) . (count($missing_t) > 8 ? '…' : ''),
-                'Re-import database/windels_panel.sql in phpMyAdmin (it is idempotent).');
+                'Re-import database/marvysocials.sql in phpMyAdmin (it is idempotent).');
         } else {
             $this->add('pass', 'schema', 'all ' . count($expected) . ' required tables exist in the database');
         }
@@ -365,7 +365,7 @@ class InstallCheck {
         if ($missing_c || $type_mismatch) {
             $this->add('fail', 'schema', "{$missing_c} missing column(s), {$type_mismatch} type mismatch(es)",
                 implode(' · ', $examples),
-                'Re-import database/windels_panel.sql; it upgrades the schema in place.');
+                'Re-import database/marvysocials.sql; it upgrades the schema in place.');
         } elseif (!$missing_t) {
             $this->add('pass', 'schema', 'all columns present with compatible types (every table verified)');
         }
@@ -392,7 +392,7 @@ class InstallCheck {
         }
         if ($missing_i || $missing_f) {
             $this->add('fail', 'schema', "{$missing_i} missing index(es), {$missing_f} missing foreign key(s)",
-                implode(' · ', $notes), 'Re-import database/windels_panel.sql.');
+                implode(' · ', $notes), 'Re-import database/marvysocials.sql.');
         } elseif (!$missing_t) {
             $this->add('pass', 'schema', 'all indexes and foreign keys present');
         }

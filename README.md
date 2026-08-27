@@ -1,4 +1,4 @@
-# WINDELS PANEL
+# MarvySocials
 
 Enterprise SMM / VTU / digital-goods reseller platform. One panel sells social-media
 services, airtime & data (VTU), virtual numbers, identity verification, gift cards,
@@ -8,16 +8,16 @@ API, and a full admin back office.
 **Stack:** PHP ≥ 7.4 / CodeIgniter 3.1.13 · MySQL 8 (or MariaDB) · Redis 7 ·
 Tailwind CSS (PHP-rendered views — no JS framework) · Docker Compose.
 
-> **WINDELS-PANEL is a traditional PHP MVC enterprise reseller and commerce
+> **MarvySocials is a traditional PHP MVC enterprise reseller and commerce
 > platform built on CodeIgniter 3.x, using MySQL/MariaDB as its primary
 > database. Redis is used for supporting caching or background-processing
 > functionality where required. The application is served through PHP-FPM and
 > Nginx. Node.js/npm is used only for optional frontend asset compilation
 > (Tailwind CSS) and is not part of the application's backend architecture.**
 
-**The wallet is a platform spending balance.** WINDELS-PANEL does not support
+**The wallet is a platform spending balance.** MarvySocials does not support
 customer wallet withdrawals: customers add funds and spend that balance on
-services and supported products within the WINDELS-PANEL ecosystem.
+services and supported products within the MarvySocials ecosystem.
 
 ---
 
@@ -82,7 +82,7 @@ There are two supported ways to run this panel, and they share one source tree:
 |---|---|---|
 | Who it is for | operators deploying a live panel | developers and self-managed servers |
 | What you run | nothing — File Manager, MySQL Databases, phpMyAdmin, `.env` | `composer`, `npm`, `docker compose`, `migrate`, `seed` |
-| Database setup | import `database/windels_panel.sql` once | `php index.php migrate && php index.php seed core` |
+| Database setup | import `database/marvysocials.sql` once | `php index.php migrate && php index.php seed core` |
 | Guide | **[INSTALLATION.md](INSTALLATION.md)** — step-by-step · [docs/cpanel-deployment.md](docs/cpanel-deployment.md) — + migration | below |
 
 ### Shared hosting / cPanel (no terminal)
@@ -92,7 +92,7 @@ Upload application-deployment.zip   (cPanel → File Manager → Extract)
         ↓
 Create database + user              (cPanel → MySQL Databases)
         ↓
-Import database/windels_panel.sql      (cPanel → phpMyAdmin → Import)
+Import database/marvysocials.sql      (cPanel → phpMyAdmin → Import)
         ↓
 Edit .env                           (VP_BASE_URL, VP_DB_*, VP_ENCRYPTION_KEY, VP_AUTH_SECRET)
         ↓
@@ -106,7 +106,7 @@ creation, and **no symlinks**: the CodeIgniter framework ships inside the
 package as real files at *both* locations the front controller auto-detects
 (`system/` first, then `vendor/codeigniter/framework/system`), plus a fallback
 `vendor/autoload.php` so the request path never needs the package manager.
-`database/windels_panel.sql` is the complete initialised database
+`database/marvysocials.sql` is the complete initialised database
 (schema, indexes, foreign keys, roles, permissions, settings, catalogues **and**
 the first administrator), `application/core/Env.php` reads `.env` without
 phpdotenv, and the runtime directories are created on the first request.
@@ -128,7 +128,7 @@ encryption keys intact: **[docs/cpanel-deployment.md](docs/cpanel-deployment.md)
 Every command a new developer needs, end to end:
 
 ```bash
-git clone <repo-url> WINDELS-PANEL && cd WINDELS-PANEL
+git clone <repo-url> MarvySocials && cd MarvySocials
 
 cp .env.example .env        # fill at minimum: APP_URL, ENCRYPTION_KEY, DB_*
                             # generate the key: php -r "echo bin2hex(random_bytes(32)),PHP_EOL;"
@@ -389,7 +389,7 @@ Operator checklist:
 | Area | Production rule |
 |---|---|
 | Environment variables | from `.env.production.example`; `APP_ENV=production`, `APP_DEBUG=false`, HTTPS `APP_URL` |
-| Secrets | secret manager (1Password/SSM/Vault). **Never** `root`, `windels_secret`, `minioadmin` — preflight fails known defaults |
+| Secrets | secret manager (1Password/SSM/Vault). **Never** `root`, `marvy_secret`, `minioadmin` — preflight fails known defaults |
 | Database | MySQL 8 / MariaDB with PITR (binlog, 7 days in the prod compose); managed RDS/Aurora is the low-risk option |
 | Redis | `--requirepass` set by compose; sessions carry `?auth=`; internal network only |
 | Object storage | managed S3/R2 bucket, TLS, least-privilege key; no MinIO |
@@ -468,7 +468,7 @@ ci.yml.workflow-ready / deployment-package.yml.workflow-ready
                       staged CI + release pipelines (rename into .github/workflows/ to activate)
 docs/                 database.sql (canonical schema), deployment, backups,
                       impersonation, certification reports, session logs
-database/             windels_panel.sql (complete importable database),
+database/             marvysocials.sql (complete importable database),
                       schema_verification.php (live DB ↔ SQL audit), README
 deploy-verify.php     browser/CLI deployment diagnostics (ships in the package)
 tests/                unit suite, FakeDb, IntegrationHarness, provider fixtures
@@ -484,9 +484,9 @@ index.php             front controller (.env boot + ENVIRONMENT detection)
 | Document | Purpose |
 |---|---|
 | `INSTALLATION.md` | **step-by-step installation guide** — from downloading the zip to a live, secured panel on cPanel (no terminal) |
-| `docs/cpanel-deployment.md` | **shared-hosting deployment and migration with no terminal** — upload, create database, import `database/windels_panel.sql`, edit `.env` |
+| `docs/cpanel-deployment.md` | **shared-hosting deployment and migration with no terminal** — upload, create database, import `database/marvysocials.sql`, edit `.env` |
 | `docs/deployment.md` | operations runbook for the container/server path: preflight reference, runtime directories, upgrade flow |
-| `database/windels_panel.sql` | the complete importable database: schema, migration bookkeeping, all seed data, first administrator (generated by `tools/build_production_sql.php`) |
+| `database/marvysocials.sql` | the complete importable database: schema, migration bookkeeping, all seed data, first administrator (generated by `tools/build_production_sql.php`) |
 | `database/README.md` | the database contract: what ships, how to import it, how to verify it (`tools/verify_database.php`, `database/schema_verification.php`) |
 | `docs/backups.md` | backup & disaster-recovery plan + restore rehearsal |
 | `docs/database.sql` | canonical exported schema (19 migrations) |

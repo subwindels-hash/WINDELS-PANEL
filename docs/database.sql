@@ -1,4 +1,4 @@
--- WINDELS PANEL — MySQL / MariaDB schema
+-- MarvySocials — MySQL / MariaDB schema
 --
 -- GENERATED FILE — do not edit by hand.
 -- Source of truth: application/migrations/*.php
@@ -1550,5 +1550,283 @@ ADD COLUMN product_type VARCHAR(16) NOT NULL DEFAULT 'DIGITAL' COMMENT 'DIGITAL|
 -- ---------------------------------------------------------------------
 -- migration 019_remove_marketplace_vendors
 -- ---------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------
+-- migration 020_user_code_pin_blockonomics
+-- ---------------------------------------------------------------------
+
+ALTER TABLE users
+ADD COLUMN user_code CHAR(6) NULL COMMENT 'human-facing six-digit account number';
+
+ALTER TABLE users
+ADD COLUMN pin_hash VARCHAR(255) NULL COMMENT 'password_hash of the 4-digit PIN; never reversible',
+ADD COLUMN pin_set_at DATETIME NULL,
+ADD COLUMN pin_failed_attempts INT UNSIGNED NOT NULL DEFAULT 0,
+ADD COLUMN pin_locked_until DATETIME NULL;
+
+CREATE TABLE IF NOT EXISTS blockonomics_addresses (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  payment_transaction_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  crypto VARCHAR(8) NOT NULL DEFAULT 'BTC' COMMENT 'BTC|USDT',
+  address VARCHAR(128) NOT NULL UNIQUE,
+  expected_crypto_amount DECIMAL(20,8) NULL COMMENT 'quoted at initiation',
+  received_crypto_amount DECIMAL(20,8) NOT NULL DEFAULT 0.00000000,
+  fiat_amount DECIMAL(20,8) NOT NULL,
+  fiat_currency CHAR(3) NOT NULL,
+  rate_used DECIMAL(20,8) NULL COMMENT 'fiat per 1 crypto unit at initiation',
+  confirmations INT NOT NULL DEFAULT 0,
+  required_confirmations INT NOT NULL DEFAULT 2,
+  txid VARCHAR(128) NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'AWAITING' COMMENT 'AWAITING|PARTIAL|CONFIRMING|PAID|EXPIRED',
+  expires_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_blk_status (status, created_at),
+  INDEX idx_blk_user (user_id, created_at),
+  CONSTRAINT fk_blk_tx FOREIGN KEY (payment_transaction_id) REFERENCES payment_transactions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_blk_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- migration 021_managed_pages
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS managed_pages (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  page_key VARCHAR(64) NOT NULL UNIQUE COMMENT 'terms|privacy|refund-policy|acceptable-use|about',
+  title VARCHAR(160) NOT NULL,
+  body_html MEDIUMTEXT NOT NULL COMMENT 'sanitised on write by ContentService',
+  meta_description VARCHAR(320) NULL,
+  is_published TINYINT(1) NOT NULL DEFAULT 1,
+  updated_by_id BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_managed_pages_published (is_published),
+  CONSTRAINT fk_managed_pages_author FOREIGN KEY (updated_by_id)
+    REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- migration 022_fundsvera_payments
+-- ---------------------------------------------------------------------
+
+ALTER TABLE payment_transactions
+ADD COLUMN internal_reference VARCHAR(64) NULL COMMENT 'our reference sent to the provider as request_id';
+
+ALTER TABLE payment_transactions
+ADD COLUMN provider VARCHAR(32) NULL COMMENT 'gateway code that owns this transaction';
+
+ALTER TABLE payment_transactions
+ADD COLUMN payment_method VARCHAR(32) NULL COMMENT 'bank_transfer|virtual_account|manual|...';
+
+ALTER TABLE payment_transactions
+ADD COLUMN initiated_at DATETIME NULL;
+
+ALTER TABLE payment_transactions
+ADD COLUMN paid_at DATETIME NULL;
+
+ALTER TABLE payment_transactions
+ADD COLUMN failed_at DATETIME NULL;
+
+CREATE TABLE IF NOT EXISTS fundsvera_virtual_accounts (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  user_id BIGINT UNSIGNED NOT NULL UNIQUE,
+  account_number VARCHAR(32) NOT NULL,
+  account_name VARCHAR(160) NOT NULL,
+  bank_name VARCHAR(120) NOT NULL,
+  bank_code VARCHAR(16) NOT NULL,
+  account_status VARCHAR(24) NOT NULL DEFAULT 'Active',
+  customer_email VARCHAR(255) NOT NULL,
+  customer_phone VARCHAR(32) NULL,
+  raw_response MEDIUMTEXT NULL COMMENT 'provider payload, for support',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_fva_account (account_number, bank_code),
+  CONSTRAINT fk_fva_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS fundsvera_checkouts (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  payment_transaction_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  request_id VARCHAR(64) NOT NULL UNIQUE COMMENT 'sent to Fundsvera; >= 20 chars',
+  trx_ref VARCHAR(128) NULL COMMENT 'provider reference returned at initiation',
+  expected_amount DECIMAL(20,8) NOT NULL COMMENT 'what the webhook must match',
+  currency CHAR(3) NOT NULL DEFAULT 'NGN',
+  account_number VARCHAR(32) NULL,
+  account_name VARCHAR(160) NULL,
+  bank_name VARCHAR(120) NULL,
+  checkout_url VARCHAR(512) NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING|PAID|EXPIRED|FAILED',
+  amount_paid DECIMAL(20,8) NULL,
+  settlement_amount DECIMAL(20,8) NULL,
+  provider_fee DECIMAL(20,8) NULL,
+  expires_at DATETIME NULL,
+  paid_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_fvc_status (status, created_at),
+  INDEX idx_fvc_user (user_id, created_at),
+  INDEX idx_fvc_trx (trx_ref),
+  CONSTRAINT fk_fvc_tx FOREIGN KEY (payment_transaction_id) REFERENCES payment_transactions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_fvc_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- migration 023_referral_earnings_payouts
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS referral_codes (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  user_id BIGINT UNSIGNED NULL COMMENT 'NULL for a platform/campaign code',
+  code VARCHAR(32) NOT NULL,
+  label VARCHAR(120) NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  total_visits INT UNSIGNED NOT NULL DEFAULT 0,
+  total_signups INT UNSIGNED NOT NULL DEFAULT 0,
+  total_qualified INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_referral_code (code),
+  INDEX idx_rc_user (user_id, is_active),
+  CONSTRAINT fk_refcode_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS referral_campaigns (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  name VARCHAR(160) NOT NULL,
+  code VARCHAR(32) NOT NULL UNIQUE,
+  source VARCHAR(64) NULL COMMENT 'facebook|instagram|tiktok|influencer|partner',
+  campaign_type VARCHAR(32) NOT NULL DEFAULT 'ACQUISITION',
+  reward_amount DECIMAL(20,8) NOT NULL DEFAULT 0.00000000,
+  reward_percent DECIMAL(10,4) NOT NULL DEFAULT 0.0000,
+  qualify_event VARCHAR(32) NOT NULL DEFAULT 'FIRST_ORDER'
+    COMMENT 'REGISTERED|EMAIL_VERIFIED|FIRST_DEPOSIT|FIRST_ORDER',
+  hold_hours INT UNSIGNED NOT NULL DEFAULT 72,
+  max_rewards INT UNSIGNED NULL COMMENT 'NULL = unlimited',
+  budget DECIMAL(20,8) NULL COMMENT 'NULL = uncapped',
+  spent DECIMAL(20,8) NOT NULL DEFAULT 0.00000000,
+  cost DECIMAL(20,8) NULL COMMENT 'what the advert itself cost, for ROI',
+  geo_allow VARCHAR(255) NULL COMMENT 'comma-separated ISO-2, NULL = anywhere',
+  starts_at DATETIME NULL,
+  ends_at DATETIME NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE|PAUSED|ENDED',
+  total_visits INT UNSIGNED NOT NULL DEFAULT 0,
+  total_signups INT UNSIGNED NOT NULL DEFAULT 0,
+  total_qualified INT UNSIGNED NOT NULL DEFAULT 0,
+  created_by_id BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_camp_status (status, starts_at, ends_at),
+  CONSTRAINT fk_camp_creator FOREIGN KEY (created_by_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS referral_visits (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(32) NOT NULL,
+  referral_code_id BIGINT UNSIGNED NULL,
+  campaign_id BIGINT UNSIGNED NULL,
+  visitor_hash CHAR(64) NOT NULL COMMENT 'salted hash of IP+UA; never the raw IP',
+  landing_path VARCHAR(255) NULL,
+  converted_user_id BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_visit_code_created (code, created_at),
+  INDEX idx_visit_campaign (campaign_id, created_at),
+  INDEX idx_visit_hash (visitor_hash, created_at),
+  CONSTRAINT fk_visit_code FOREIGN KEY (referral_code_id) REFERENCES referral_codes(id) ON DELETE SET NULL,
+  CONSTRAINT fk_visit_campaign FOREIGN KEY (campaign_id) REFERENCES referral_campaigns(id) ON DELETE SET NULL,
+  CONSTRAINT fk_visit_user FOREIGN KEY (converted_user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS referral_signups (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  referrer_user_id BIGINT UNSIGNED NULL COMMENT 'NULL for a pure campaign signup',
+  referred_user_id BIGINT UNSIGNED NOT NULL UNIQUE COMMENT 'one attribution per account, ever',
+  referral_code VARCHAR(32) NOT NULL,
+  referral_code_id BIGINT UNSIGNED NULL,
+  campaign_id BIGINT UNSIGNED NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING'
+    COMMENT 'PENDING|QUALIFIED|REWARDED|REJECTED|FRAUD_REVIEW',
+  fraud_flags VARCHAR(255) NULL,
+  signup_ip_hash CHAR(64) NULL,
+  qualified_at DATETIME NULL,
+  rewarded_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_signup_referrer (referrer_user_id, status),
+  INDEX idx_signup_campaign (campaign_id, status),
+  INDEX idx_signup_status (status, created_at),
+  CONSTRAINT fk_signup_referrer FOREIGN KEY (referrer_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_signup_referred FOREIGN KEY (referred_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_signup_code FOREIGN KEY (referral_code_id) REFERENCES referral_codes(id) ON DELETE SET NULL,
+  CONSTRAINT fk_signup_campaign FOREIGN KEY (campaign_id) REFERENCES referral_campaigns(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS earnings (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  user_id BIGINT UNSIGNED NOT NULL,
+  source VARCHAR(32) NOT NULL COMMENT 'REFERRAL|CAMPAIGN|PARTNER|AFFILIATE|MANUAL|REVERSAL',
+  referral_signup_id BIGINT UNSIGNED NULL,
+  campaign_id BIGINT UNSIGNED NULL,
+  amount DECIMAL(20,8) NOT NULL COMMENT 'negative for a reversal',
+  currency CHAR(3) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING'
+    COMMENT 'PENDING|AVAILABLE|LOCKED|PAID|REVERSED',
+  description VARCHAR(255) NULL,
+  idempotency_key VARCHAR(160) NOT NULL UNIQUE
+    COMMENT 'the duplicate-earning guard; one key per earning event',
+  payout_request_id BIGINT UNSIGNED NULL,
+  available_at DATETIME NULL COMMENT 'end of the holding period',
+  paid_out_at DATETIME NULL,
+  reversed_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_earn_user_status (user_id, status),
+  INDEX idx_earn_release (status, available_at),
+  INDEX idx_earn_campaign (campaign_id),
+  CONSTRAINT fk_earn_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_earn_signup FOREIGN KEY (referral_signup_id) REFERENCES referral_signups(id) ON DELETE SET NULL,
+  CONSTRAINT fk_earn_campaign FOREIGN KEY (campaign_id) REFERENCES referral_campaigns(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS payout_requests (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  user_id BIGINT UNSIGNED NOT NULL,
+  amount DECIMAL(20,8) NOT NULL,
+  currency CHAR(3) NOT NULL,
+  method VARCHAR(32) NOT NULL DEFAULT 'BANK_TRANSFER'
+    COMMENT 'BANK_TRANSFER (manual) | WALLET_CREDIT (spend on the panel)',
+  destination VARCHAR(255) NULL COMMENT 'bank account, masked in views',
+  destination_name VARCHAR(160) NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'REQUESTED'
+    COMMENT 'REQUESTED|APPROVED|REJECTED|PAID|CANCELLED',
+  idempotency_key VARCHAR(160) NOT NULL UNIQUE,
+  reviewed_by_id BIGINT UNSIGNED NULL,
+  review_note VARCHAR(500) NULL,
+  payout_reference VARCHAR(160) NULL COMMENT 'bank/provider reference, recorded on payment',
+  requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  reviewed_at DATETIME NULL,
+  paid_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_payout_status (status, requested_at),
+  INDEX idx_payout_user (user_id, status),
+  CONSTRAINT fk_payout_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_payout_reviewer FOREIGN KEY (reviewed_by_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE earnings
+ADD CONSTRAINT fk_earn_payout FOREIGN KEY (payout_request_id)
+REFERENCES payout_requests(id) ON DELETE SET NULL;
 
 SET FOREIGN_KEY_CHECKS = 1;

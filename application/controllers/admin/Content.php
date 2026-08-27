@@ -38,8 +38,101 @@ class Content extends Admin_Controller {
         $this->load->library(array('ContentService', 'DashboardStats'));
         $this->load->model(array(
             'Blog_post_model', 'Blog_category_model', 'Faq_model',
-            'Announcement_model', 'Audit_log_model',
+            'Announcement_model', 'Audit_log_model', 'Managed_page_model',
         ));
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Managed pages (Terms, Privacy, Refund, Acceptable use, About)       */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * GET /admin/pages — the list of overridable public pages.
+     *
+     * These are the pages an operator must be able to change without a
+     * developer: policy text moves for legal reasons, not release reasons.
+     */
+    public function pages() {
+        $this->require_perm('content.pages');
+
+        $this->render('pages', 'admin/content/pages', 'Website pages', array(
+            'catalogue' => Managed_page_model::catalogue(),
+            'overrides' => $this->Managed_page_model->all_by_key(),
+        ));
+    }
+
+    /** GET /admin/pages/:key — edit one page. */
+    public function page_edit($key) {
+        $this->require_perm('content.pages');
+        if (!Managed_page_model::is_page($key)) show_404();
+
+        $this->render('pages', 'admin/content/page_form',
+            'Edit '.Managed_page_model::label($key), array(
+                'page_key'  => $key,
+                'page_label'=> Managed_page_model::label($key),
+                'override'  => $this->Managed_page_model->find($key),
+            ));
+    }
+
+    /** POST /admin/pages/:key — save the override. */
+    public function page_save($key) {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm('content.pages');
+        if (!Managed_page_model::is_page($key)) show_404();
+
+        $title = trim((string)$this->input->post('title', true));
+        // post(null-escaped) would mangle the markup, so the body is read raw
+        // and then sanitised — the allowlist is the security boundary, not the
+        // input filter.
+        $body  = $this->contentservice->sanitize_html((string)$this->input->post('body_html', false));
+        $meta  = trim((string)$this->input->post('meta_description', true));
+
+        if ($title === '') {
+            $this->session->set_flashdata('error', 'A page title is required.');
+            return redirect('admin/pages/'.$key);
+        }
+        if (trim(strip_tags($body)) === '') {
+            $this->session->set_flashdata('error',
+                'The page body cannot be empty. To restore the bundled text, use “Reset to default”.');
+            return redirect('admin/pages/'.$key);
+        }
+
+        $before = $this->Managed_page_model->find($key);
+        $this->Managed_page_model->store($key, array(
+            'title'            => mb_substr($title, 0, 160),
+            'body_html'        => $body,
+            'meta_description' => $meta !== '' ? mb_substr($meta, 0, 320) : null,
+            'is_published'     => $this->input->post('is_published') ? 1 : 0,
+        ), $this->current_user->id);
+
+        $this->Audit_log_model->record(
+            $this->current_user->id, 'content.page_saved', 'managed_pages', $key,
+            $before ? array('title' => $before->title, 'bytes' => strlen($before->body_html)) : null,
+            array('title' => $title, 'bytes' => strlen($body)),
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
+
+        $this->session->set_flashdata('success',
+            Managed_page_model::label($key).' updated. The change is live on the website now.');
+        redirect('admin/pages/'.$key);
+    }
+
+    /** POST /admin/pages/:key/reset — drop the override. */
+    public function page_reset($key) {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm('content.pages');
+        if (!Managed_page_model::is_page($key)) show_404();
+
+        $this->Managed_page_model->clear($key);
+        $this->Audit_log_model->record(
+            $this->current_user->id, 'content.page_reset', 'managed_pages', $key,
+            null, null,
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
+
+        $this->session->set_flashdata('success',
+            Managed_page_model::label($key).' restored to the text that ships with the panel.');
+        redirect('admin/pages');
     }
 
     public function index() {

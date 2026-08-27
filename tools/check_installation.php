@@ -7,7 +7,7 @@
  * vendor/autoload.php, the auto-detected CodeIgniter system path, writable
  * directories, .env required values, a live database connection, and the
  * imported schema (tables, columns, indexes, foreign keys) verified against
- * database/windels_panel.sql.
+ * database/marvysocials.sql.
  *
  *   php tools/check_installation.php            # full report
  *   php tools/check_installation.php --quiet    # failures + summary only
@@ -45,7 +45,7 @@ if (!$NODB) {
 $rows = $CHECK->rows();
 $counts = $CHECK->counts();
 
-echo "WINDELS PANEL — installation check\n";
+echo "MarvySocials — installation check\n";
 echo "root: {$ROOT}\n" . str_repeat('-', 68) . "\n";
 $section = null;
 foreach ($rows as $r) {

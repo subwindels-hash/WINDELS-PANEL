@@ -20,7 +20,7 @@ class AffiliateTest extends TestCase
         if (!function_exists('get_instance')) eval('function &get_instance(){ return $GLOBALS["__fake_ci"]; }');
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         if (!function_exists('site_url')) eval('function site_url($u=""){ return "https://panel.test/".ltrim($u,"/"); }');
-        if (!function_exists('windels_public_id')) require_once self::$root.'/application/helpers/windels_helper.php';
+        if (!function_exists('marvy_public_id')) require_once self::$root.'/application/helpers/marvy_helper.php';
         require_once self::$root.'/application/libraries/LedgerService.php';
         require_once self::$root.'/application/libraries/AffiliateService.php';
         // Only the constants are needed from the model class.

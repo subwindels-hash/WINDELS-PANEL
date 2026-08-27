@@ -258,8 +258,15 @@ $route['admin/customers/(:any)/status'] = 'admin/users/status/$1';
 $route['admin/customers/(:any)/role'] = 'admin/users/role/$1';
 $route['admin/customers/(:any)/price-group'] = 'admin/users/price_group/$1';
 $route['admin/customers/(:any)/adjust'] = 'admin/users/adjust/$1';
+// Credential maintenance. All three are resets, never reveals: staff can
+// clear a PIN or send a reset link, and can never read either secret.
+$route['admin/customers/(:any)/pin-reset'] = 'admin/users/pin_reset/$1';
+$route['admin/customers/(:any)/pin-unlock'] = 'admin/users/pin_unlock/$1';
+$route['admin/customers/(:any)/password-reset'] = 'admin/users/password_reset/$1';
 $route['admin/customers/(:any)'] = 'admin/users/detail/$1';
 $route['admin/payments'] = 'admin/payments/index';
+$route['admin/payments/webhooks'] = 'admin/payments/webhooks';
+$route['admin/payments/webhooks/(:num)/reprocess'] = 'admin/payments/reprocess_webhook/$1';
 $route['admin/payments/(:any)/approve'] = 'admin/payments/approve/$1';
 $route['admin/payments/(:any)/reject'] = 'admin/payments/reject/$1';
 $route['admin/payments/(:any)'] = 'admin/payments/detail/$1';
@@ -311,6 +318,13 @@ $route['admin/staff/permissions/(:any)'] = 'admin/staff/save_permissions/$1';
 $route['admin/audit-logs'] = 'admin/system/audit_logs';
 $route['admin/appearance'] = 'admin/media/appearance';
 $route['admin/appearance/save'] = 'admin/media/save_appearance';
+// Administrator-managed public pages (Terms, Privacy, Refund, About, ...).
+// These exist so policy text can change without a code deploy.
+$route['admin/pages'] = 'admin/content/pages';
+$route['admin/pages/(:any)/reset'] = 'admin/content/page_reset/$1';
+$route['admin/pages/(:any)/save'] = 'admin/content/page_save/$1';
+$route['admin/pages/(:any)'] = 'admin/content/page_edit/$1';
+
 $route['admin/settings'] = 'admin/settings/index';
 $route['admin/settings/save'] = 'admin/settings/save';
 $route['admin/blacklist'] = 'admin/system/blacklist';
@@ -337,7 +351,47 @@ $route['api/docs'] = 'api_v1/docs';
 $route['api/docs/json'] = 'api_v1/docs_json';
 
 // Webhooks
+// Gateway callbacks. POST for signed-body gateways; Blockonomics uses an
+// authenticated GET (see Webhooks::GET_CALLBACK_GATEWAYS), so the route must
+// not be verb-restricted here — the controller enforces the per-gateway rule.
 $route['webhook/(:any)'] = 'webhooks/index/$1';
+
+// Fundsvera's configured callback URL. Same handler as /webhook/fundsvera —
+// this is the path the provider profile points at, kept explicit so the URL an
+// operator pastes into their Fundsvera dashboard is stable and greppable.
+$route['api/payments/webhooks/fundsvera'] = 'webhooks/index/fundsvera';
+$route['api/payments/fundsvera/initialize'] = 'payments/initialize';
+$route['api/payments/history'] = 'payments/history';
+$route['api/payments/(:any)'] = 'payments/show/$1';
+
+// Referral, earnings and withdrawal APIs (session-authenticated; the reseller
+// API with its own key auth stays under /api/v1).
+$route['api/referrals/my-code'] = 'referral_api/my_code';
+$route['api/referrals/validate'] = 'referral_api/validate';
+$route['api/referrals/dashboard'] = 'referral_api/dashboard';
+$route['api/referrals/history'] = 'referral_api/history';
+$route['api/earnings'] = 'referral_api/earnings';
+$route['api/earnings/history'] = 'referral_api/earnings_history';
+$route['api/withdrawals'] = 'referral_api/withdrawals';
+$route['api/withdrawals/history'] = 'referral_api/withdrawals_history';
+
+// Customer earnings dashboard.
+$route['dashboard/earnings'] = 'dashboard/earnings/index';
+$route['dashboard/earnings/history'] = 'dashboard/earnings/history';
+$route['dashboard/earnings/withdraw'] = 'dashboard/earnings/withdraw';
+$route['dashboard/earnings/payouts/(:any)/cancel'] = 'dashboard/earnings/cancel_payout/$1';
+
+// Admin: payouts, the earnings ledger and referral review.
+$route['admin/payouts'] = 'admin/payouts/index';
+$route['admin/payouts/(:any)/approve'] = 'admin/payouts/approve/$1';
+$route['admin/payouts/(:any)/reject'] = 'admin/payouts/reject/$1';
+$route['admin/payouts/(:any)/paid'] = 'admin/payouts/paid/$1';
+$route['admin/earnings'] = 'admin/payouts/earnings';
+$route['admin/earnings/(:any)/reverse'] = 'admin/payouts/reverse_earning/$1';
+$route['admin/referrals'] = 'admin/payouts/referrals';
+$route['admin/referrals/(:any)/review'] = 'admin/payouts/review_signup/$1';
+$route['admin/campaigns'] = 'admin/payouts/create_campaign';
+$route['admin/campaigns/(:any)/status'] = 'admin/payouts/campaign_status/$1';
 
 // No web installer: provisioning is CLI-only (preflight / migrate / seed),
 // so /install intentionally falls through to 404.

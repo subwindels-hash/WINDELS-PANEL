@@ -35,7 +35,7 @@ $filters = array(''=>'All','PENDING'=>'Pending','PAID'=>'Paid','REVERSED'=>'Reve
           <td class="mono text-xs"><?=$c->order_public_id ? htmlspecialchars(substr($c->order_public_id, 0, 12)).'…' : '—'?></td>
           <td><span class="badge <?=$c->status === 'PAID' ? 'badge-success' : ($c->status === 'PENDING' ? 'badge-warning' : 'badge-default')?>"><?=htmlspecialchars($c->status)?></span></td>
           <td class="text-xs muted"><?=$c->paid_at ? date('M j, Y', strtotime($c->paid_at)) : '—'?></td>
-          <td class="text-right mono font-semibold"><?=windels_money($c->amount, $c->currency)?></td>
+          <td class="text-right mono font-semibold"><?=marvy_money($c->amount, $c->currency)?></td>
         </tr>
       <?php endforeach; ?>
       </tbody>

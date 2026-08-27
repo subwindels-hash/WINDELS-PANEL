@@ -57,7 +57,7 @@ $qs = function (array $over = array()) use ($filters, $page) {
           </td>
           <td><?=htmlspecialchars((string)$o->service_name)?></td>
           <td class="text-right mono"><?=number_format((int)$o->quantity)?></td>
-          <td class="text-right mono"><?=windels_money($o->charge)?></td>
+          <td class="text-right mono"><?=marvy_money($o->charge)?></td>
           <td><span class="<?=DashboardStats::status_badge($o->status)?>"><?=htmlspecialchars($o->status)?></span></td>
           <td class="text-xs muted"><?=htmlspecialchars((string)$o->created_at)?></td>
         </tr>

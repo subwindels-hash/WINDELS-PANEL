@@ -86,7 +86,7 @@ $completed = $not_found + $verified;
               <?php endif; ?>
             <?php else: ?>—<?php endif; ?>
           </td>
-          <td class="text-right mono"><?=windels_money($t->amount, $t->currency)?></td>
+          <td class="text-right mono"><?=marvy_money($t->amount, $t->currency)?></td>
           <td><span class="<?=DashboardStats::status_badge($t->status)?>"><?=htmlspecialchars($t->status)?></span></td>
           <td class="text-xs muted"><?=htmlspecialchars((string)$t->created_at)?></td>
         </tr>

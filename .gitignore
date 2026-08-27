@@ -39,3 +39,6 @@
 # or produced locally with `bash tools/build_deployment_package.sh`.
 /build/
 /application-deployment.zip
+
+# Dev database file created by tools/devdb (never part of a deployment).
+/storage/devdb/

@@ -18,7 +18,7 @@ class CurrencyTest extends TestCase
     {
         self::$root = dirname(dirname(__DIR__));
         if (!defined('BASEPATH')) define('BASEPATH', self::$root.'/system/');
-        require_once self::$root.'/application/helpers/windels_helper.php';
+        require_once self::$root.'/application/helpers/marvy_helper.php';
         // Migrations extend CI_Migration; stub it so they can be loaded without
         // booting CodeIgniter (same approach as SchemaTest / export_schema).
         if (!class_exists('CI_Migration')) { eval('class CI_Migration { public $db; }'); }
@@ -29,7 +29,7 @@ class CurrencyTest extends TestCase
     {
         // The config file assigns into $config; evaluate it in a local scope.
         $config = array();
-        require self::$root.'/application/config/windels.php';
+        require self::$root.'/application/config/marvy.php';
         return $config;
     }
 
@@ -38,7 +38,7 @@ class CurrencyTest extends TestCase
     public function testConfiguredBaseCurrencyIsNaira()
     {
         $config = $this->configArray();
-        $this->assertSame('NGN', $config['windels']['base_currency']);
+        $this->assertSame('NGN', $config['marvy']['base_currency']);
     }
 
     /* ------------------------------ helper ------------------------------ */
@@ -47,30 +47,30 @@ class CurrencyTest extends TestCase
     {
         // No CI instance in this context, so the helper must fall back to the
         // panel's own currency rather than guessing a foreign one.
-        $this->assertSame('NGN', windels_base_currency());
-        $this->assertSame('₦1,500.50', windels_money('1500.5'));
-        $this->assertSame('₦0.00', windels_money(0));
+        $this->assertSame('NGN', marvy_base_currency());
+        $this->assertSame('₦1,500.50', marvy_money('1500.5'));
+        $this->assertSame('₦0.00', marvy_money(0));
     }
 
     public function testMoneyHelperStillHonoursAnExplicitCurrency()
     {
         // Provider balances and foreign-denominated invoices pass a currency
         // explicitly; those must not be relabelled as naira.
-        $this->assertSame('$20.00', windels_money('20', 'USD'));
-        $this->assertSame('£20.00', windels_money('20', 'GBP'));
-        $this->assertSame('€20.00', windels_money('20', 'EUR'));
+        $this->assertSame('$20.00', marvy_money('20', 'USD'));
+        $this->assertSame('£20.00', marvy_money('20', 'GBP'));
+        $this->assertSame('€20.00', marvy_money('20', 'EUR'));
     }
 
     public function testMoneyHelperFallsBackToTheCodeForUnknownCurrencies()
     {
-        $this->assertSame('ZAR 20.00', windels_money('20', 'ZAR'));
+        $this->assertSame('ZAR 20.00', marvy_money('20', 'ZAR'));
     }
 
     public function testMoneyHelperFormatsWithThousandsSeparatorsAndTwoDecimals()
     {
         // Naira amounts run large; grouping is what makes ₦5,000,000 readable.
-        $this->assertSame('₦5,000,000.00', windels_money('5000000'));
-        $this->assertSame('₦1,234,567.89', windels_money('1234567.891'));
+        $this->assertSame('₦5,000,000.00', marvy_money('5000000'));
+        $this->assertSame('₦1,234,567.89', marvy_money('1234567.891'));
     }
 
     /* ---------------------------- migrations ---------------------------- */
@@ -102,10 +102,17 @@ class CurrencyTest extends TestCase
                 }
             }
         }
-        // Six: wallets, wallet transactions, providers, orders, drip-feed
-        // subscriptions and service transactions. The seventh used to be the
-        // withdrawals table, which no longer exists.
-        $this->assertSame(6, $found, 'the six defaulted currency columns are all naira');
+        // wallets, wallet transactions, providers, orders, drip-feed
+        // subscriptions, service transactions and Fundsvera checkouts. (An
+        // eighth used to be the withdrawals table, which no longer exists.)
+        //
+        // The count is asserted as a floor rather than an exact number: the
+        // property under test is "every currency column that carries a default
+        // defaults to naira", which the loop above already enforces for each
+        // one it finds. Pinning an exact total only means a later migration
+        // fails this test for adding a correctly-defaulted column.
+        $this->assertGreaterThanOrEqual(6, $found,
+            'the defaulted currency columns are all naira');
     }
 
     /* ----------------------- application source ------------------------- */

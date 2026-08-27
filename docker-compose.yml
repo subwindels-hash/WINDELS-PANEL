@@ -1,4 +1,4 @@
-# WINDELS PANEL — DEVELOPMENT stack.
+# MarvySocials — DEVELOPMENT stack.
 #
 # One command from a fresh clone:
 #   cp .env.example .env && docker compose up -d --build
@@ -11,15 +11,15 @@
 # Production deployments MUST use docker-compose.production.yml instead
 # (required ${VAR:?} secrets, no MailHog/MinIO, TLS on nginx, log rotation).
 
-name: windels-panel
+name: marvysocials
 
 services:
   app:
     build:
       context: .
       dockerfile: docker/php.Dockerfile
-    image: windels-panel:php
-    container_name: windels_app
+    image: marvysocials:php
+    container_name: marvy_app
     restart: unless-stopped
     working_dir: /var/www/html
     # Create runtime dirs, then refuse to serve if the deployment is unsafe
@@ -39,7 +39,7 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - windels
+      - marvy
     healthcheck:
       # PHP-FPM pool accepting FastCGI connections. Deeper checks app-side:
       # GET /health/live and /health/ready are served through nginx below.
@@ -55,8 +55,8 @@ services:
     build:
       context: .
       dockerfile: docker/php.Dockerfile
-    image: windels-panel:php
-    container_name: windels_cron
+    image: marvysocials:php
+    container_name: marvy_cron
     restart: unless-stopped
     working_dir: /var/www/html
     entrypoint: ["/bin/sh", "-c"]
@@ -75,11 +75,11 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - windels
+      - marvy
 
   nginx:
     image: nginx:1.25-alpine
-    container_name: windels_nginx
+    container_name: marvy_nginx
     restart: unless-stopped
     ports:
       - "8080:80"
@@ -89,7 +89,7 @@ services:
     depends_on:
       - app
     networks:
-      - windels
+      - marvy
     healthcheck:
       # BusyBox wget ships with the alpine image; /health/live bypasses auth.
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health/live"]
@@ -100,16 +100,16 @@ services:
 
   mysql:
     image: mysql:8.0
-    container_name: windels_mysql
+    container_name: marvy_mysql
     restart: unless-stopped
     command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     environment:
       # Development defaults; .env overrides. Not for production (see the
       # production compose file and .env.production.example).
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
-      MYSQL_DATABASE: ${DB_NAME:-windels_panel}
-      MYSQL_USER: ${DB_USER:-windels}
-      MYSQL_PASSWORD: ${DB_PASSWORD:-windels_secret}
+      MYSQL_DATABASE: ${DB_NAME:-marvysocials}
+      MYSQL_USER: ${DB_USER:-marvy}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-marvy_secret}
     ports:
       - "3306:3306"
     volumes:
@@ -123,11 +123,11 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      - windels
+      - marvy
 
   redis:
     image: redis:7-alpine
-    container_name: windels_redis
+    container_name: marvy_redis
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -140,22 +140,22 @@ services:
       timeout: 3s
       retries: 10
     networks:
-      - windels
+      - marvy
 
   # Dev-only SMTP sink. Production has no MailHog — real SMTP_* credentials.
   mailhog:
     image: mailhog/mailhog:v1.0.1
-    container_name: windels_mailhog
+    container_name: marvy_mailhog
     ports:
       - "1025:1025"
       - "8025:8025"
     networks:
-      - windels
+      - marvy
 
   # Dev-only S3-compatible storage. Production: a managed bucket (S3/R2).
   minio:
     image: minio/minio:RELEASE.2024-01-16T16-07-38Z
-    container_name: windels_minio
+    container_name: marvy_minio
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
@@ -171,7 +171,7 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      - windels
+      - marvy
 
 volumes:
   mysql_data:
@@ -179,5 +179,5 @@ volumes:
   minio_data:
 
 networks:
-  windels:
+  marvy:
     driver: bridge

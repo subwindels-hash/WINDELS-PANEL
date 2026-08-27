@@ -28,13 +28,13 @@ $refunded = bccomp((string)$tx->refunded_amount, '0', 8) > 0;
 <?php if ($status === 'NOT_FOUND'): ?>
 <div class="alert alert-warning mb-4">
   No record was found for this number in the national database. You have not
-  been charged<?=$refunded ? ' — ' . windels_money($tx->refunded_amount, $tx->currency) . ' was returned to your wallet' : ''?>.
+  been charged<?=$refunded ? ' — ' . marvy_money($tx->refunded_amount, $tx->currency) . ' was returned to your wallet' : ''?>.
   Check the digits and try again if you think it was a typo.
 </div>
 <?php elseif ($status === 'FAILED'): ?>
 <div class="alert alert-error mb-4">
   This check could not be completed<?=$tx->failure_reason ? ': '.htmlspecialchars($tx->failure_reason) : '.'?>
-  <?=$refunded ? ' You have been refunded '.windels_money($tx->refunded_amount, $tx->currency).'.' : ''?>
+  <?=$refunded ? ' You have been refunded '.marvy_money($tx->refunded_amount, $tx->currency).'.' : ''?>
 </div>
 <?php endif; ?>
 
@@ -53,9 +53,9 @@ $refunded = bccomp((string)$tx->refunded_amount, '0', 8) > 0;
           <span class="badge <?=$status === 'VERIFIED' ? 'badge-success' : ($status === 'NOT_FOUND' ? 'badge-warning' : ($status === 'FAILED' ? 'badge-error' : 'badge-muted'))?>">
             <?=htmlspecialchars($status)?></span>
         </td></tr>
-        <tr><th>Paid</th><td class="mono"><?=windels_money($tx->amount, $tx->currency)?>
+        <tr><th>Paid</th><td class="mono"><?=marvy_money($tx->amount, $tx->currency)?>
           <?php if ($refunded): ?>
-            <div class="muted text-xs">refunded <?=windels_money($tx->refunded_amount, $tx->currency)?></div>
+            <div class="muted text-xs">refunded <?=marvy_money($tx->refunded_amount, $tx->currency)?></div>
           <?php endif; ?>
         </td></tr>
         <tr><th>Reference</th><td class="mono text-xs"><?=htmlspecialchars($tx->public_id)?></td></tr>

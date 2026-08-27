@@ -20,7 +20,7 @@ RUN { \
       echo 'opcache.max_accelerated_files=20000'; \
       echo 'opcache.validate_timestamps=0'; \
       echo 'expose_php=Off'; \
-    } > /usr/local/etc/php/conf.d/zz-windels.ini
+    } > /usr/local/etc/php/conf.d/zz-marvy.ini
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 

@@ -19,7 +19,7 @@ $show_marketing = !empty($show_marketing);
   <div class="container" style="max-width:800px">
     <p class="ws-kicker">What you can buy</p>
     <h1>One wallet for SMM, bills and digital goods</h1>
-    <p class="ws-lede">WINDELS PANEL is for creators, agencies and resellers who want prepaid checkout, a live catalogue and a staff-run back office. It solves scattered provider logins and untracked wallet movement — not by promising fake volume numbers.</p>
+    <p class="ws-lede">MarvySocials is for creators, agencies and resellers who want prepaid checkout, a live catalogue and a staff-run back office. It solves scattered provider logins and untracked wallet movement — not by promising fake volume numbers.</p>
     <div class="row" style="margin-top:1.25rem">
       <a class="btn btn-primary" href="<?=site_url('register')?>">Create an account</a>
       <a class="btn btn-secondary" href="#catalogue">Jump to catalogue</a>
@@ -213,7 +213,7 @@ $show_marketing = !empty($show_marketing);
           <?php if ((int)$s->cancel_supported): ?><span class="badge badge-info" style="padding:.1rem .4rem">cancel</span><?php endif; ?>
         </dl>
         <div class="row justify-between mt-2">
-          <strong style="color:var(--brand-700);font-size:1.1rem"><?=windels_money($s->rate)?> <span class="muted" style="font-weight:400;font-size:.75rem">/ 1k</span></strong>
+          <strong style="color:var(--brand-700);font-size:1.1rem"><?=marvy_money($s->rate)?> <span class="muted" style="font-weight:400;font-size:.75rem">/ 1k</span></strong>
           <a class="btn btn-primary btn-sm" href="<?=site_url('services/'.$s->slug)?>">Order</a>
         </div>
         <p class="hint"><?=number_format($s->min_quantity)?> – <?=number_format($s->max_quantity)?> units</p>

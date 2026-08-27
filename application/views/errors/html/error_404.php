@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Page not found · WINDELS PANEL</title>
+<title>Page not found · MarvySocials</title>
 <style>
 body{margin:0;font-family:Inter,system-ui,sans-serif;color:#0f172a;background:#fff;line-height:1.6}
 .wrap{max-width:36rem;margin:12vh auto;padding:0 1.25rem;text-align:center}
@@ -18,7 +18,7 @@ a{color:#4f46e5}
   <div class="wrap">
     <p>404</p>
     <h1><?php echo htmlspecialchars(isset($heading) ? $heading : 'Page not found'); ?></h1>
-    <p><?php echo isset($message) ? $message : 'That address is not a page on WINDELS PANEL.'; ?></p>
+    <p><?php echo isset($message) ? $message : 'That address is not a page on MarvySocials.'; ?></p>
     <p>
       <a class="btn" href="/">Home</a>
       <a class="btn btn-secondary" href="/services">Services</a>

@@ -56,7 +56,7 @@ class Wallet extends Auth_Controller {
             'methods' => $methods,
             'min_deposit' => $this->Setting_model->get('min_deposit', '500.00000000'),
             'max_deposit' => $this->Setting_model->get('max_deposit', '5000000.00000000'),
-            'base_currency' => windels_base_currency(),
+            'base_currency' => marvy_base_currency(),
         ));
     }
 
@@ -72,7 +72,7 @@ class Wallet extends Auth_Controller {
         $res = $this->paymentservice->deposit($this->current_user, array(
             'payment_method' => $this->input->post('payment_method', true),
             'amount' => $this->input->post('amount'),
-            'currency' => windels_base_currency(),
+            'currency' => marvy_base_currency(),
         ));
         if (empty($res['ok'])) {
             $this->session->set_flashdata('error', $res['error'] ?? 'Could not initiate payment');
@@ -94,6 +94,19 @@ class Wallet extends Auth_Controller {
             ? $this->Payment_transaction_model->find_public_for_user($public_id, $this->current_user->id)
             : null;
         $deposits = $this->Payment_transaction_model->for_user($this->current_user->id, 25);
+
+        // A bank-transfer deposit is useless to the customer without the
+        // account details, and those live on the checkout row rather than on
+        // the transaction. Loaded here so the view stays free of queries.
+        $checkout = null;
+        if ($tx && $tx->status === 'PENDING') {
+            try {
+                $this->load->model('Fundsvera_checkout_model');
+                $checkout = $this->Fundsvera_checkout_model->for_transaction($tx->id);
+            } catch (Throwable $e) {
+                log_message('error', 'could not load checkout details: '.$e->getMessage());
+            }
+        }
         $this->load->view('layouts/app', array(
             'title' => 'Deposits',
             'nav_active' => 'dashboard/add-funds',
@@ -103,6 +116,7 @@ class Wallet extends Auth_Controller {
             'permissions' => $this->auth->permissions(),
             'deposits' => $deposits,
             'active_deposit' => $tx,
+            'checkout' => $checkout,
         ));
     }
 }

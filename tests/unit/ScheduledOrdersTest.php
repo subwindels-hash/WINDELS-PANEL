@@ -21,7 +21,7 @@ class ScheduledOrdersTest extends TestCase
         if (!class_exists('CI_Model')) eval('class CI_Model {}');
         if (!function_exists('get_instance')) eval('function &get_instance(){ return $GLOBALS["__fake_ci"]; }');
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
-        require_once self::$root.'/application/helpers/windels_helper.php';
+        require_once self::$root.'/application/helpers/marvy_helper.php';
         require_once self::$root.'/application/libraries/DripfeedService.php';
         require_once self::$root.'/application/libraries/SubscriptionService.php';
     }

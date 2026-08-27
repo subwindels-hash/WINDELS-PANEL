@@ -57,7 +57,7 @@ class RateLimiter {
      * @param string   $user_agent
      */
     public function record($identifier, $ip, $success, $reason = null, $user_agent = null) {
-        if (!windels_load_database()) {
+        if (!marvy_load_database()) {
             return;
         }
         // A fresh install can have MySQL but not yet have the login_attempts
@@ -101,7 +101,7 @@ class RateLimiter {
      * @return bool
      */
     public function too_many_failures($ip, $identifier = '', $max = 5, $window = 900) {
-        if (!windels_load_database()) {
+        if (!marvy_load_database()) {
             return false;
         }
         try {

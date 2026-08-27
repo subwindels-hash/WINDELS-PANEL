@@ -51,7 +51,7 @@ $total_pages = max(1, (int)ceil($total / $per_page));
                 <?=htmlspecialchars($o->status)?></span>
             <?php else: ?>—<?php endif; ?>
           </td>
-          <td><?=windels_money($t->amount)?>
+          <td><?=marvy_money($t->amount)?>
             <?php if (bccomp((string)$t->refunded_amount, '0', 8) > 0): ?>
               <div class="text-xs muted">refunded</div>
             <?php endif; ?>

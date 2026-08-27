@@ -1,4 +1,4 @@
-# WINDELS PANEL — Session 06: Customer Dashboard
+# MarvySocials — Session 06: Customer Dashboard
 
 > Builds the authenticated customer application on the Session 03 auth boundary
 > and the Session 04 design system. All pages extend `Auth_Controller` and are

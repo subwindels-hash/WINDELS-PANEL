@@ -19,7 +19,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const appJs = readFileSync(resolve(root, 'assets/js/app.js'), 'utf8');
 
 const html = `<!doctype html><html><head>
-<meta name="csrf-name" content="csrf_windels">
+<meta name="csrf-name" content="csrf_marvy">
 <meta name="csrf-token" content="test-token-123">
 <meta name="csrf-endpoint" content="/csrf">
 </head><body>
@@ -39,7 +39,7 @@ function boot(url) {
   const { window } = dom;
   // jsdom has no layout engine: stub the scrolling APIs app.js calls.
   window.Element.prototype.scrollIntoView = function () {};
-  window.fetch = async () => ({ ok: true, json: async () => ({ success: true, data: { name: 'csrf_windels', hash: 'test-token-123' } }) });
+  window.fetch = async () => ({ ok: true, json: async () => ({ success: true, data: { name: 'csrf_marvy', hash: 'test-token-123' } }) });
   window.eval(appJs);
   window.document.dispatchEvent(new window.Event('DOMContentLoaded'));
   return window;

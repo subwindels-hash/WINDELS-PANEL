@@ -1,4 +1,4 @@
-# WINDELS PANEL — Session 08: Providers
+# MarvySocials — Session 08: Providers
 
 > Admin management of upstream SMM providers: list, create, test connection,
 > sync services and balance. Built on the existing provider adapters and

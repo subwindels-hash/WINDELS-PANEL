@@ -160,7 +160,7 @@ class Giftcards extends Admin_Controller {
         $this->audit('giftcard.abandoned', $tx, $before,
             array('status' => 'FAILED', 'refunded' => $refunded, 'reason' => $reason));
         $this->session->set_flashdata('success', $refunded
-            ? 'Order written off — '.windels_money($refunded).' returned to the wallet.'
+            ? 'Order written off — '.marvy_money($refunded).' returned to the wallet.'
             : 'Order written off. No money moved: nothing was charged.');
         redirect('admin/giftcards/'.$tx->public_id);
     }
@@ -182,7 +182,7 @@ class Giftcards extends Admin_Controller {
         $this->audit('giftcard.refunded', $tx, $before,
             array('status' => 'REFUNDED', 'refunded' => $refunded, 'reason' => $reason));
         $this->session->set_flashdata('success', $refunded
-            ? 'Purchase refunded — '.windels_money($refunded).' returned to the wallet.'
+            ? 'Purchase refunded — '.marvy_money($refunded).' returned to the wallet.'
             : 'Purchase marked refunded. No money moved: nothing was charged.');
         redirect('admin/giftcards/'.$tx->public_id);
     }

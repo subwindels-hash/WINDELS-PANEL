@@ -58,7 +58,13 @@ class Core_seeder extends Seeder {
                                   'marketplace.moderate_listings','marketplace.resolve','marketplace.reveal'),
             'payments'   => array('payments.view','payments.manage','wallets.adjust'),
             'support'    => array('tickets.view','tickets.reply','tickets.manage'),
-            'content'    => array('blog.manage','faq.manage','announcements.manage','media.manage'),
+            // content.pages is separate from blog.manage on purpose: being
+            // trusted to write a blog post is not the same as being trusted to
+            // rewrite the Terms of Service.
+            'content'    => array('blog.manage','faq.manage','announcements.manage','media.manage','content.pages'),
+            // Money-adjacent: reviewing payouts and reversing earnings are
+            // separate grants from ordinary affiliate reporting.
+            'earnings'   => array('earnings.view','earnings.manage','payouts.review'),
             'affiliates' => array('affiliates.view','affiliates.manage'),
             'system'     => array('settings.manage','appearance.manage','audit.view','blacklist.manage','api.manage'),
         );
@@ -83,8 +89,9 @@ class Core_seeder extends Seeder {
                 'marketplace.resolve','marketplace.reveal',
                 'payments.view','payments.manage','wallets.adjust',
                 'tickets.view','tickets.reply','tickets.manage',
-                'blog.manage','faq.manage','announcements.manage','media.manage',
+                'blog.manage','faq.manage','announcements.manage','media.manage','content.pages',
                 'affiliates.view','affiliates.manage',
+                'earnings.view','earnings.manage','payouts.review',
                 'settings.manage','appearance.manage','audit.view','blacklist.manage','api.manage',
             ),
             'STAFF'       => array(
@@ -212,7 +219,7 @@ class Core_seeder extends Seeder {
         $ids = array();
         foreach (self::vtu_catalogue() as $n) {
             $ids[$n[0]] = $this->upsert('vtu_networks', array('code' => $n[0]), array(
-                'public_id'       => windels_public_id(),
+                'public_id'       => marvy_public_id(),
                 'name'            => $n[1],
                 'service_type'    => $n[2],
                 'msisdn_prefixes' => $n[3],
@@ -230,7 +237,7 @@ class Core_seeder extends Seeder {
                 'service_type' => $n[2],
                 'code'         => $n[0].'-'.$n[2],
             ), array(
-                'public_id'        => windels_public_id(),
+                'public_id'        => marvy_public_id(),
                 'name'             => $n[1].' '.($is_airtime ? 'Airtime' : 'Units'),
                 'discount_percent' => $is_airtime ? '2.0000' : '1.0000',
                 'min_amount'       => $is_airtime ? '50.00000000' : '500.00000000',
@@ -282,7 +289,7 @@ class Core_seeder extends Seeder {
         $sort = 0;
         foreach (self::number_countries() as $c) {
             $this->upsert('number_countries', array('code' => $c[0]), array(
-                'public_id'   => windels_public_id(),
+                'public_id'   => marvy_public_id(),
                 'name'        => $c[1],
                 'dial_prefix' => $c[2],
                 'flag_emoji'  => $c[3],
@@ -294,7 +301,7 @@ class Core_seeder extends Seeder {
         $sort = 0;
         foreach (self::number_services() as $s) {
             $this->upsert('number_services', array('code' => $s[0]), array(
-                'public_id' => windels_public_id(),
+                'public_id' => marvy_public_id(),
                 'name'      => $s[1],
                 'is_active' => 1,
                 'sorting'   => $sort++,
@@ -330,7 +337,7 @@ class Core_seeder extends Seeder {
         $sort = 0;
         foreach (self::identity_products() as $p) {
             $this->upsert('identity_products', array('code' => $p[0]), array(
-                'public_id'     => windels_public_id(),
+                'public_id'     => marvy_public_id(),
                 'name'          => $p[1],
                 'id_type'       => $p[2],
                 'lookup_field'  => $p[3],
@@ -383,7 +390,7 @@ class Core_seeder extends Seeder {
         $sort = 0;
         foreach (self::giftcard_brands() as $b) {
             $this->upsert('giftcard_brands', array('code' => $b[0]), array(
-                'public_id'           => windels_public_id(),
+                'public_id'           => marvy_public_id(),
                 'name'                => $b[1],
                 'redeem_instructions' => $b[2],
                 'is_active'           => 1,
@@ -395,9 +402,9 @@ class Core_seeder extends Seeder {
     public static function default_settings() {
         return array(
             // general
-            array('site_name','WINDELS PANEL','general',1),
+            array('site_name','MarvySocials','general',1),
             array('site_tagline','Enterprise SMM Reseller Platform','general',1),
-            array('support_email','support@windels.local','general',1),
+            array('support_email','support@marvy.local','general',1),
             array('maintenance_mode',FALSE,'general',1),
             // homepage / appearance
             array('active_homepage','AURORA','homepage',1),
@@ -430,7 +437,7 @@ class Core_seeder extends Seeder {
             // gift cards (§23). The sender name printed on the vendor's
             // receipt: it is what the recipient sees the card came from, so it
             // is a branding decision rather than a constant.
-            array('giftcard_sender_name','WINDELS PANEL','giftcards',0),
+            array('giftcard_sender_name','MarvySocials','giftcards',0),
             // Marketplace policy is snapshotted onto each order at purchase,
             // so later policy edits never rewrite an existing escrow split.
             array('marketplace_auto_release_hours',72,'marketplace',0),
@@ -459,7 +466,7 @@ class Core_seeder extends Seeder {
         foreach ($defaults as $d) {
             list($name, $slug, $sort) = $d;
             $this->insert_once('marketplace_categories', array('slug'=>$slug), array(
-                'public_id'  => windels_public_id(),
+                'public_id'  => marvy_public_id(),
                 'name'       => $name,
                 'status'     => 'ACTIVE',
                 'sort_order' => $sort,
@@ -499,6 +506,14 @@ class Core_seeder extends Seeder {
             array('flutterwave','Flutterwave','FLUTTERWAVE',0,50),
             array('razorpay','Razorpay','RAZORPAY',0,60),
             array('coinpayments','CoinPayments','COINPAYMENTS',0,70),
+            // Bitcoin via Blockonomics. Inactive until an operator supplies an
+            // API key and callback secret; the adapter refuses to initiate
+            // without them, so activating it early cannot take a payment it
+            // has no way to confirm.
+            array('blockonomics','Bitcoin (BTC)','BLOCKONOMICS',0,15),
+            // Nigerian bank transfer via Fundsvera. Inactive until the operator
+            // supplies API keys; the adapter refuses to initiate without them.
+            array('fundsvera','Bank Transfer','FUNDSVERA',0,12),
         );
         foreach ($methods as $m) {
             $this->insert_once('payment_methods', array('code'=>$m[0]), array(
@@ -553,7 +568,7 @@ class Core_seeder extends Seeder {
             array('What is a partial order?', 'If a provider delivers only part of the quantity, the order is marked PARTIAL and the undelivered portion is refunded to your wallet when partial refunds are enabled.', 'orders', 30),
             array('Do you offer an API for resellers?', 'Yes. Create an API key in Dashboard → API and call /api/v1 with the X-Api-Key header. Full docs are at /api/docs.', 'api', 40),
             array('Can I get a refill?', 'Services marked "Refill" support refill requests from the order detail page within the refill window.', 'orders', 50),
-            array('What is WINDELS PANEL?', 'A prepaid reseller platform for SMM services, Nigerian VTU, virtual numbers, identity lookups, gift cards and a platform-owned marketplace.', 'general', 5),
+            array('What is MarvySocials?', 'A prepaid reseller platform for SMM services, Nigerian VTU, virtual numbers, identity lookups, gift cards and a platform-owned marketplace.', 'general', 5),
             array('Can I withdraw wallet funds?', 'No. The wallet is a spending balance for purchases on this panel.', 'payments', 25),
             array('How do I contact support?', 'Signed-in customers should open a ticket. Visitors can use the contact form. Include the public order ID.', 'support', 60),
             array('Is the site assistant a cloud AI?', 'No. It is an embedded operational engine. It does not call a third-party AI API and cannot place orders for you.', 'general', 70),
