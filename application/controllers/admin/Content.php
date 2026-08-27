@@ -135,6 +135,37 @@ class Content extends Admin_Controller {
         redirect('admin/pages');
     }
 
+    /** GET /admin/email-templates */
+    public function email_templates() {
+        $this->require_perm('settings.manage');
+        $rows = $this->db->order_by('template_key', 'ASC')->get('email_templates')->result();
+        $this->render('email', 'admin/content/email_templates', 'Email templates', array(
+            'rows' => $rows,
+            'page_description' => 'Subjects and bodies used by MailService. Variables like {{username}} stay in the text.',
+        ));
+    }
+
+    /** POST /admin/email-templates/:id */
+    public function save_email_template($id) {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm('settings.manage');
+        $row = $this->db->where('id', (int)$id)->get('email_templates')->row();
+        if (!$row) show_404();
+        $this->db->where('id', $row->id)->update('email_templates', array(
+            'subject'   => mb_substr(trim((string)$this->input->post('subject', true)), 0, 255),
+            'body_html' => (string)$this->input->post('body_html', false),
+            'body_text' => (string)$this->input->post('body_text', true),
+            'is_active' => $this->input->post('is_active') ? 1 : 0,
+        ));
+        $this->Audit_log_model->record(
+            $this->current_user->id, 'email_template.updated', 'email_templates', (string)$row->id,
+            array('subject' => $row->subject), array('subject' => $this->input->post('subject', true)),
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
+        $this->session->set_flashdata('success', 'Template '.$row->template_key.' saved.');
+        redirect('admin/email-templates');
+    }
+
     public function index() {
         redirect('admin/blog');
     }

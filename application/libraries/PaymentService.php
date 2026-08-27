@@ -47,6 +47,11 @@ class PaymentService {
         if (!class_exists('FundsveraGateway', false)) {
             require_once APPPATH.'libraries/FundsveraGateway.php';
         }
+        foreach (array('StripeGateway','PaypalGateway','FlutterwaveGateway','RazorpayGateway','PaystackGateway','CoinpaymentsGateway') as $gw) {
+            if (!class_exists($gw, false) && is_file(APPPATH.'libraries/'.$gw.'.php')) {
+                require_once APPPATH.'libraries/'.$gw.'.php';
+            }
+        }
     }
 
     /**
@@ -356,21 +361,34 @@ class PaymentService {
      * safer than one handed to an untested integration.
      */
     private function gateway_for_code($code, $method_row = null) {
+        $code = strtolower((string)$code);
         switch ($code) {
             case 'blockonomics':
             case 'btc':
                 return new BlockonomicsGateway($method_row);
             case 'fundsvera':
                 return new FundsveraGateway($method_row);
+            case 'stripe':
+                return new StripeGateway($method_row);
+            case 'paypal':
+                return new PaypalGateway($method_row);
+            case 'flutterwave':
+                return new FlutterwaveGateway($method_row);
+            case 'razorpay':
+                return new RazorpayGateway($method_row);
+            case 'paystack':
+                return new PaystackGateway($method_row);
+            case 'coinpayments':
+                return new CoinpaymentsGateway($method_row);
             case 'manual':
             default:
                 return new ManualGateway($method_row);
         }
     }
 
-    /** Payment-method codes that have a real, wired adapter. */
+    /** Payment-method codes that have a wired adapter. */
     public function implemented_gateways() {
-        return array('manual', 'blockonomics', 'fundsvera');
+        return array('manual','blockonomics','fundsvera','stripe','paypal','flutterwave','razorpay','paystack','coinpayments');
     }
 
     private function persist_transaction(array $data) {

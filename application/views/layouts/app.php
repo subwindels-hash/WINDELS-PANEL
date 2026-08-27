@@ -9,6 +9,8 @@ $nav_groups = $is_admin ? array(
     )),
     array('Order management', array(
         array('admin/orders',       'Orders',     'orders.view',     'shopping-bag'),
+        array('admin/orders/failed','Failed orders','orders.view',   'shopping-bag'),
+        array('admin/refunds',      'Refunds',    'orders.refund',   'repeat'),
         array('admin/refills',      'Refills / operations', 'orders.refill', 'repeat'),
     )),
     array('Products & services', array(
@@ -23,6 +25,7 @@ $nav_groups = $is_admin ? array(
     )),
     array('User management', array(
         array('admin/customers',    'All users',   'users.view',      'users'),
+        array('admin/administrators','Administrators','staff.manage', 'shield'),
         array('admin/staff',        'Staff',      'staff.manage',    'shield'),
         array('admin/staff/permissions','Roles & permissions','staff.manage','shield'),
         array('admin/affiliates',   'Affiliates', 'affiliates.view', 'gift'),
@@ -34,17 +37,21 @@ $nav_groups = $is_admin ? array(
     array('Content', array(
         array('admin/pages',        'Website pages','content.pages', 'globe'),
         array('admin/blog',         'Blog',    'blog.manage',     'list'),
+        array('admin/email-templates','Email templates','settings.manage','list'),
         array('admin/media',        'Media',      'media.manage',    'star'),
     )),
     array('Developer', array(
         array('admin/api-keys',     'API / reseller API','api.manage',     'key'),
+        array('admin/api-logs',     'API logs',   'api.manage',     'list'),
     )),
     array('Support', array(
         array('admin/tickets',      'Support tickets',    'tickets.view',    'message-square'),
     )),
     array('System', array(
         array('admin/settings',     'Settings',   'settings.manage', 'settings'),
+        array('admin/settings/flags','Feature flags','settings.manage', 'settings'),
         array('admin/categories',   'Categories & logs', 'audit.view',      'globe'),
+        array('admin/logs',         'System logs','audit.view',      'list'),
         array('dashboard/security', 'Security', null,      'shield'),
     )),
 ) : array(

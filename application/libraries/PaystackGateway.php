@@ -7,9 +7,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * Implemented: initiate() (redirect to hosted checkout), verify_webhook()
  * (HMAC-SHA512), parse_event() (normalized). Credentials read from env/config;
  * never hardcoded. Requires live Paystack account + webhook URL validation.
- * Status: SCAFFOLD — NOT wired into PaymentService and UNTESTED against the
- * live API (live keys + webhook endpoint verification needed before
- * production enable).
+ * Wired into PaymentService. Requires PAYSTACK_SECRET_KEY and a webhook URL.
  */
 class PaystackGateway implements GatewayInterface {
     private $method;

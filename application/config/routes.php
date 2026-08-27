@@ -166,6 +166,7 @@ $route['dashboard/security'] = 'dashboard/account/security';
 
 // Admin
 $route['admin'] = 'admin/dashboard/index';
+$route['admin/orders/failed'] = 'admin/orders/failed';
 $route['admin/orders'] = 'admin/orders/index';
 // Action routes must precede the catch-all detail route below.
 $route['admin/orders/(:any)/status'] = 'admin/orders/status/$1';
@@ -328,6 +329,13 @@ $route['admin/pages/(:any)'] = 'admin/content/page_edit/$1';
 
 $route['admin/settings'] = 'admin/settings/index';
 $route['admin/settings/save'] = 'admin/settings/save';
+$route['admin/settings/flags'] = 'admin/settings/flags';
+$route['admin/email-templates'] = 'admin/content/email_templates';
+$route['admin/email-templates/(:num)'] = 'admin/content/save_email_template/$1';
+$route['admin/administrators'] = 'admin/staff/administrators';
+$route['admin/logs'] = 'admin/system/logs';
+$route['admin/api-logs'] = 'admin/system/api_logs';
+$route['admin/refunds'] = 'admin/orders/refunds';
 $route['admin/blacklist'] = 'admin/system/blacklist';
 $route['admin/blacklist/(:any)/add'] = 'admin/system/blacklist_add/$1';
 $route['admin/blacklist/(:any)/(:num)/remove'] = 'admin/system/blacklist_remove/$1/$2';

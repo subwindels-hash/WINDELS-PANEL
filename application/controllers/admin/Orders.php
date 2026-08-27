@@ -27,6 +27,42 @@ class Orders extends Admin_Controller {
         ));
     }
 
+    /** GET /admin/orders/failed */
+    public function failed() {
+        $_GET['status'] = $this->input->get('status') ?: 'FAILED';
+        $this->index();
+    }
+
+    /** GET /admin/refunds — orders with a recorded refund. */
+    public function refunds() {
+        $page = max(1, (int)$this->input->get('page'));
+        $limit = self::PER_PAGE;
+        $this->db->from('orders')->where('refunded_amount >', 0);
+        $total = (int)$this->db->count_all_results();
+        $rows = $this->db->select('orders.*, users.username, services.name AS service_name', false)
+            ->from('orders')
+            ->join('users', 'users.id = orders.user_id', 'left')
+            ->join('services', 'services.id = orders.service_id', 'left')
+            ->where('orders.refunded_amount >', 0)
+            ->order_by('orders.updated_at', 'DESC')
+            ->limit($limit, ($page - 1) * $limit)
+            ->get()->result();
+
+        $this->load->view('layouts/app', array(
+            'title'        => 'Refunds',
+            'nav_active'   => 'admin/orders',
+            'content_view' => 'admin/orders/refunds',
+            'current_user' => $this->current_user,
+            'permissions'  => $this->auth->permissions(),
+            'unread'       => $this->dashboardstats->unread_count($this->current_user->id),
+            'orders'       => $rows,
+            'page'         => $page,
+            'total'        => $total,
+            'total_pages'  => max(1, (int)ceil($total / $limit)),
+            'page_description' => 'Orders that already have a ledger refund recorded.',
+        ));
+    }
+
     public function index() {
         $filters = array(
             'status'  => $this->input->get('status', true),
