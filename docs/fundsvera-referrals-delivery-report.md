@@ -185,10 +185,23 @@ rather than trusting the report:
 Plus one pre-existing bug found while testing: `admin_search()` joined `users`
 but `admin_count()` did not, so **any** payment search returned HTTP 500.
 
+### Second completion pass
+
+| # | Gap | Resolution |
+| --- | --- | --- |
+| 5 | `geo_allow` was stored but never checked | A campaign advertised as region-locked accepted anyone. Now enforced at resolve time from the CDN's country header, **failing open** when no country is known so a restriction cannot silently block the whole world. Admin shows which behaviour is active. |
+| 6 | Dashboard endpoints undocumented | `/api/docs` covered only the key-authenticated reseller API. The session-authenticated payment/referral/earnings/withdrawal endpoints now have their own clearly separated section. |
+
+Audited and found **already correct**, so deliberately left alone: campaign
+`ends_at`/budget/`max_rewards` are enforced at resolve time; the RBAC editor is
+database-driven and already lists `earnings.view`, `earnings.manage` and
+`payouts.review` with none flagged unenforced.
+
 ## 9. Test results
 
 **PHP suite: 1,234 tests, 0 failures**, 1 documented platform skip.
-(Re-run after the completion pass above; `fundsvera_check` grew to 34.)
+**227 end-to-end checks across 10 suites**, all passing and stable across
+repeated runs (`fundsvera_check` now 38, covering geo restrictions).
 
 **End-to-end, 220 checks across 10 suites, all passing:**
 
