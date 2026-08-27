@@ -14,7 +14,7 @@ $csrf = function () {
   <?php if (empty($coupons)): ?><p class="muted text-sm">No coupons yet.</p>
   <?php else: ?>
   <table class="table">
-    <thead><tr><th>Code</th><th>Discount</th><th>Used</th><th>Window</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Code</th><th>Discount</th><th>Used</th><th>Window</th><th>Status</th><th>Listed</th><th></th></tr></thead>
     <tbody>
     <?php foreach ($coupons as $c): ?>
       <tr>
@@ -26,10 +26,15 @@ $csrf = function () {
           <?=$c->ends_at ? htmlspecialchars(date('M j, Y', strtotime($c->ends_at))) : 'no end'?>
         </td>
         <td><?=($c->is_active ? '<span class="badge badge-success badge-dot">Active</span>' : '<span class="badge badge-default">Disabled</span>')?></td>
+        <td><?=(!empty($c->is_public) ? '<span class="badge badge-warning">Public</span>' : '<span class="badge badge-default text-xs">Code only</span>')?></td>
         <td>
           <form method="post" action="<?=site_url('admin/shop/coupons/'.$c->public_id.'/status')?>" style="display:inline">
             <?=$csrf()?><input type="hidden" name="active" value="<?=$c->is_active ? '0' : '1'?>">
             <button class="btn btn-ghost btn-sm" type="submit"><?=$c->is_active ? 'Disable' : 'Enable'?></button>
+          </form>
+          <form method="post" action="<?=site_url('admin/shop/coupons/'.$c->public_id.'/visibility')?>" style="display:inline">
+            <?=$csrf()?><input type="hidden" name="public" value="<?=!empty($c->is_public) ? '0' : '1'?>">
+            <button class="btn btn-ghost btn-sm" type="submit"><?=!empty($c->is_public) ? 'Unlist' : 'List publicly'?></button>
           </form>
         </td>
       </tr>
@@ -61,6 +66,11 @@ $csrf = function () {
       <label class="field" style="flex:1"><span class="label">Ends (optional)</span><input class="input" type="date" name="ends_at"></label>
     </div>
     <label class="row" style="gap:.5rem;align-items:center"><input type="checkbox" name="is_active" value="1" checked><span>Active</span></label>
+    <label class="row" style="gap:.5rem;align-items:center">
+      <input type="checkbox" name="is_public" value="1">
+      <span>List publicly on the cart page (otherwise customers need the code)</span>
+    </label>
     <button class="btn btn-primary" type="submit">Create coupon</button>
   </form>
 </div>
+

@@ -248,6 +248,7 @@ $route['admin/shop/shipping-methods/(:any)/status'] = 'admin/shop/shipping_metho
 $route['admin/shop/coupons'] = 'admin/shop/coupons';
 $route['admin/shop/coupons/save'] = 'admin/shop/save_coupon';
 $route['admin/shop/coupons/(:any)/status'] = 'admin/shop/coupon_status/$1';
+$route['admin/shop/coupons/(:any)/visibility'] = 'admin/shop/coupon_visibility/$1';
 $route['admin/shop/reviews'] = 'admin/shop/reviews';
 $route['admin/shop/reviews/(:any)/moderate'] = 'admin/shop/moderate_review/$1';
 $route['admin/marketplace/orders/(:any)/deliver'] = 'admin/marketplace/deliver/$1';

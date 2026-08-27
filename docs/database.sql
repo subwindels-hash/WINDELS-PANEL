@@ -2060,4 +2060,12 @@ ADD COLUMN currency CHAR(3) NOT NULL DEFAULT 'NGN' COMMENT 'currency of price/pr
 ALTER TABLE marketplace_orders
 ADD COLUMN currency CHAR(3) NOT NULL DEFAULT 'NGN' COMMENT 'currency of unit_price/gross_amount';
 
+-- ---------------------------------------------------------------------
+-- migration 026_coupon_discovery
+-- ---------------------------------------------------------------------
+
+ALTER TABLE coupons
+ADD COLUMN is_public TINYINT(1) NOT NULL DEFAULT 0
+COMMENT 'Shown in the cart page discovery list when 1; still requires is_active + date window + usage limit to actually apply';
+
 SET FOREIGN_KEY_CHECKS = 1;

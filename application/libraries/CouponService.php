@@ -45,13 +45,14 @@ class CouponService {
             'discount_type' => $type,
             'discount_value' => number_format($value, 8, '.', ''),
             'currency' => $type === 'FIXED' ? marvy_base_currency() : null,
-            'min_order_amount' => $input['min_order_amount'] !== '' ? number_format((float)$input['min_order_amount'], 8, '.', '') : null,
+            'min_order_amount' => ($input['min_order_amount'] ?? '') !== '' ? number_format((float)$input['min_order_amount'], 8, '.', '') : null,
             'max_discount_amount' => ($input['max_discount_amount'] ?? '') !== '' ? number_format((float)$input['max_discount_amount'], 8, '.', '') : null,
             'usage_limit' => ($input['usage_limit'] ?? '') !== '' ? max(0, (int)$input['usage_limit']) : null,
             'usage_limit_per_user' => ($input['usage_limit_per_user'] ?? '') !== '' ? max(0, (int)$input['usage_limit_per_user']) : 1,
             'starts_at' => !empty($input['starts_at']) ? gmdate('Y-m-d H:i:s', strtotime($input['starts_at'])) : null,
             'ends_at' => !empty($input['ends_at']) ? gmdate('Y-m-d H:i:s', strtotime($input['ends_at'])) : null,
             'is_active' => !empty($input['is_active']) ? 1 : 0,
+            'is_public' => !empty($input['is_public']) ? 1 : 0,
         );
 
         if ($existing) {
@@ -68,6 +69,14 @@ class CouponService {
         $coupon = $this->ci->db->where('public_id', $public_id)->get('coupons')->row();
         if (!$coupon) return array('ok' => false, 'error' => 'Coupon not found.');
         $this->ci->Coupon_model->update_fields($coupon->id, array('is_active' => $active ? 1 : 0));
+        return array('ok' => true);
+    }
+
+    /** Whether a coupon appears in the /cart "available coupons" list. */
+    public function set_public($public_id, $public) {
+        $coupon = $this->ci->db->where('public_id', $public_id)->get('coupons')->row();
+        if (!$coupon) return array('ok' => false, 'error' => 'Coupon not found.');
+        $this->ci->Coupon_model->update_fields($coupon->id, array('is_public' => $public ? 1 : 0));
         return array('ok' => true);
     }
 }

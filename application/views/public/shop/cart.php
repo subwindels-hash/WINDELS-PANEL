@@ -61,6 +61,27 @@ $csrf = '<input type="hidden" name="'.htmlspecialchars($this->security->get_csrf
             <input class="input" type="text" name="code" placeholder="Coupon code" style="max-width:12rem">
             <button class="btn btn-secondary btn-sm" type="submit">Apply</button>
           </form>
+          <?php if (!empty($available_coupons)): ?>
+          <div class="mt-3">
+            <p class="text-xs muted mb-1">Available right now:</p>
+            <div class="stack" style="gap:.4rem">
+              <?php foreach ($available_coupons as $ac): ?>
+                <form method="post" action="<?=site_url('cart/coupon')?>" class="row justify-between" style="gap:.4rem;align-items:center;border:1px dashed var(--slate-200);border-radius:.5rem;padding:.4rem .6rem">
+                  <?=$csrf?>
+                  <input type="hidden" name="code" value="<?=htmlspecialchars($ac->code)?>">
+                  <div>
+                    <strong class="mono text-sm"><?=htmlspecialchars($ac->code)?></strong>
+                    <div class="text-xs muted">
+                      <?=$ac->discount_type === 'PERCENT' ? number_format((float)$ac->discount_value, 0).'% off' : marvy_money($ac->discount_value, $ac->currency).' off'?>
+                      <?php if ($ac->description): ?> — <?=htmlspecialchars($ac->description)?><?php endif; ?>
+                    </div>
+                  </div>
+                  <button class="btn btn-ghost btn-sm" type="submit">Use this</button>
+                </form>
+              <?php endforeach; ?>
+            </div>
+          </div>
+          <?php endif; ?>
         <?php endif; ?>
       </div>
 

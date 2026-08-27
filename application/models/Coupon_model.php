@@ -22,6 +22,25 @@ class Coupon_model extends MY_Model {
         return $this->db->where('public_id', $public_id)->get($this->table)->row();
     }
 
+    /**
+     * Every coupon currently eligible AND flagged for discovery — the cart
+     * page's "available coupons" list. Applies the exact same
+     * active/date-window/usage-limit rules as find_valid(); listing a coupon
+     * that would actually be refused at apply time would be worse than not
+     * listing one at all.
+     */
+    public function public_valid($limit = 10) {
+        $now = $this->db->escape($this->now_utc());
+        $rows = $this->db->where('is_active', 1)->where('is_public', 1)
+            ->where('(starts_at IS NULL OR starts_at <= '.$now.')', null, false)
+            ->where('(ends_at IS NULL OR ends_at >= '.$now.')', null, false)
+            ->order_by('created_at', 'DESC')->limit($limit)
+            ->get($this->table)->result();
+        return array_values(array_filter($rows, function ($row) {
+            return $row->usage_limit === null || (int)$row->times_used < (int)$row->usage_limit;
+        }));
+    }
+
     /** How many times this user has already redeemed this coupon. */
     public function redemptions_by_user($coupon_id, $user_id) {
         return (int)$this->db->where('coupon_id', (int)$coupon_id)->where('user_id', (int)$user_id)

@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 25), roles,
+-- foreign keys, migration bookkeeping (version 26), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first-login accounts. No migration,
 -- seed or installer command has to run afterwards.
@@ -2097,6 +2097,14 @@ ADD COLUMN currency CHAR(3) NOT NULL DEFAULT 'NGN' COMMENT 'currency of price/pr
 ALTER TABLE marketplace_orders
 ADD COLUMN currency CHAR(3) NOT NULL DEFAULT 'NGN' COMMENT 'currency of unit_price/gross_amount';
 
+-- ---------------------------------------------------------------------
+-- migration 026_coupon_discovery
+-- ---------------------------------------------------------------------
+
+ALTER TABLE coupons
+ADD COLUMN is_public TINYINT(1) NOT NULL DEFAULT 0
+COMMENT 'Shown in the cart page discovery list when 1; still requires is_active + date window + usage limit to actually apply';
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -2111,7 +2119,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (25);
+INSERT INTO migrations (version) VALUES (26);
 
 -- ======================================================================
 -- CORE DATA

@@ -12,11 +12,13 @@ class Cart extends Auth_Controller {
         parent::__construct();
         if (!marvy_feature_enabled('marketplace', true)) show_404();
         $this->load->library('CartService');
+        $this->load->model('Coupon_model');
     }
 
     /** GET /cart */
     public function index() {
         $view = $this->cartservice->view($this->current_user->id);
+        $view['available_coupons'] = $this->Coupon_model->public_valid(10);
         $this->render('Your cart', 'public/shop/cart', $view);
     }
 

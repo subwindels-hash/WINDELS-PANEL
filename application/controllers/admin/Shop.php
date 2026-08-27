@@ -183,6 +183,14 @@ class Shop extends Admin_Controller {
         $this->finish($res, $active ? 'Coupon enabled.' : 'Coupon disabled.', 'admin/shop/coupons');
     }
 
+    /** POST /admin/shop/coupons/:id/visibility — list/unlist on the cart page. */
+    public function coupon_visibility($public_id) {
+        $this->guard('marketplace.manage');
+        $public = (bool)$this->input->post('public');
+        $res = $this->couponservice->set_public($public_id, $public);
+        $this->finish($res, $public ? 'Coupon is now listed on the cart page.' : 'Coupon unlisted.', 'admin/shop/coupons');
+    }
+
     /* ------------------------------ reviews ---------------------------- */
 
     /** GET /admin/shop/reviews */
