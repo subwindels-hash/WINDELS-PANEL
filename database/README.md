@@ -3,7 +3,6 @@
 | File | What it is |
 | --- | --- |
 | **`marvysocials.sql`** | The **complete production database**: full schema (every table, column, index, foreign key) **plus** all required data — roles, permissions, settings, feature flags, payment methods, email templates, currencies, catalogues, the migration bookkeeping row and the first-login accounts (SUPER_ADMIN, customer, staff). Derived from `application/migrations/*.php` + `application/seeds/Core_seeder.php` by `php tools/build_production_sql.php`; never edited by hand. |
-| **`first_login_accounts.sql`** | Idempotent phpMyAdmin paste for a database that **already has data** and cannot re-import the full dump. Inserts the customer and staff accounts if they are missing, leaves existing passwords alone, and turns off the first-login MFA / email-verification gates. |
 | **`schema_verification.php`** | Compares a **live database** against `marvysocials.sql` — every table, column (with type), index and foreign key. CLI: `php database/schema_verification.php`. Read-only. (The same checks run in the browser at `/deploy-verify.php`.) |
 | `README.md` | This file. |
 
@@ -21,8 +20,6 @@ First login credentials are printed at the top of `marvysocials.sql`
 (admin at `/admin/login`, demo customer at `/login`, staff at `/admin/login`).
 Change them immediately (Dashboard → Account → Password), or use the
 `/setup` page with `VP_SETUP_TOKEN` — see `docs/cpanel-deployment.md`.
-On a live database that already has rows, import `first_login_accounts.sql`
-instead of re-importing the full dump.
 
 ## Verify the codebase matches the schema (development / CI)
 

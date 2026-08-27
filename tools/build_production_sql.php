@@ -460,20 +460,13 @@ $out = render_file($schema_sections, $seed_statements, $account_statements, $sch
 $live = render_live_accounts_file($accounts, $opts);
 
 $target = $root . '/database/marvysocials.sql';
-$live_target = $root . '/database/first_login_accounts.sql';
 if ($check) {
     $current = file_exists($target) ? file_get_contents($target) : '';
     if (trim($current) !== trim($out)) {
         fwrite(STDERR, "database/marvysocials.sql is out of date — run: php tools/build_production_sql.php\n");
         exit(1);
     }
-    $live_current = file_exists($live_target) ? file_get_contents($live_target) : '';
-    if (trim($live_current) !== trim($live)) {
-        fwrite(STDERR, "database/first_login_accounts.sql is out of date — run: php tools/build_production_sql.php\n");
-        exit(1);
-    }
     echo "database/marvysocials.sql is up to date.\n";
-    echo "database/first_login_accounts.sql is up to date.\n";
     exit(0);
 }
 
@@ -481,9 +474,8 @@ if (!is_dir(dirname($target))) {
     mkdir(dirname($target), 0775, true);
 }
 file_put_contents($target, $out);
-file_put_contents($live_target, $live);
 printf(
-    "Wrote %s\n  %d schema statements across %d migrations\n  %d seed rows\n  admin: %s / %s\n  demo:  %s / %s\n  staff: %s / %s\n  live:  %s\n",
+    "Wrote %s\n  %d schema statements across %d migrations\n  %d seed rows\n  admin: %s / %s\n  demo:  %s / %s\n  staff: %s / %s\n",
     $target,
     array_sum(array_map(function ($s) { return count($s['statements']); }, $schema_sections)),
     count($schema_sections),
@@ -493,8 +485,7 @@ printf(
     $opts['demo-username'],
     $opts['demo-email'],
     $opts['staff-username'],
-    $opts['staff-email'],
-    $live_target
+    $opts['staff-email']
 );
 
 /* --------------------------------------------------------------------------
