@@ -62,6 +62,12 @@ if (empty($faqs)) {
 .ws-aurora .ws-landing-hero.ms-hero h1.gradient-text{
   background:none;-webkit-background-clip:border-box;background-clip:border-box;
   color:#000;-webkit-text-fill-color:#000;}
+/* The snapshot strip used to be pulled up 1rem so it grazed the hero. It now
+   clears the hero and sits as its own band. */
+.ws-aurora .ws-landing-stats{margin-top:0;padding:3.25rem 0 3rem;}
+@media(max-width:880px){
+  .ws-aurora .ws-landing-stats{padding:2rem 0 2.25rem;}
+}
 </style>
 
 <div class="ws-aurora">
