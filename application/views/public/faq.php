@@ -11,14 +11,14 @@ foreach ($faqs as $f) {
 ?>
 <section class="ws-page-hero">
   <div class="container" style="max-width:1100px">
-    <div class="ws-hero-split">
-      <div>
-    <p class="ws-kicker">Help</p>
-    <h1>Frequently asked questions</h1>
-    <p class="ws-lede">Answers about the actual panel: accounts, wallet billing, SMM and VTU, security, the API and the on-site assistant.</p>
-    <div class="ws-searchwrap mt-4" style="position:relative;max-width:28rem">
-      <label class="sr-only" for="ws-faq-search">Search questions</label>
-      <input class="input" id="ws-faq-search" type="search" placeholder="Search questions…">
+    <div class="ws-faq-hero">
+      <p class="ws-kicker">Help</p>
+      <h1>Frequently asked questions</h1>
+      <p class="ws-lede">Answers about the actual panel: accounts, wallet billing, SMM and VTU, security, the API and the on-site assistant.</p>
+      <div class="ws-searchwrap mt-4">
+        <label class="sr-only" for="ws-faq-search">Search questions</label>
+        <input class="input" id="ws-faq-search" type="search" placeholder="Search questions…">
+      </div>
     </div>
   </div>
 </section>

@@ -39,6 +39,37 @@ class PublicSiteContentTest extends TestCase
         $this->assertStringContainsString('ws-faq-search', $faq);
     }
 
+    /**
+     * The FAQ intro used to sit in a two-column `.ws-hero-split` grid whose
+     * second cell was empty, so the kicker, heading, lede and search box hugged
+     * the left edge — and the grid's two wrappers were never closed, leaving
+     * the browser to guess where the hero ended. It is now one centred column.
+     */
+    public function testFaqIntroIsACentredBalancedBlock()
+    {
+        $faq = $this->view('public/faq.php');
+        $this->assertStringContainsString('ws-faq-hero', $faq);
+        $this->assertStringNotContainsString('ws-hero-split', $faq,
+            'a split grid with one child left half the hero empty');
+
+        $start = strpos($faq, '<section class="ws-page-hero">');
+        $end   = strpos($faq, '<section class="ws-section-sm">');
+        $this->assertNotFalse($start);
+        $this->assertNotFalse($end);
+        $hero = substr($faq, $start, $end - $start);
+        $this->assertSame(substr_count($hero, '<div'), substr_count($hero, '</div>'),
+            'every wrapper in the FAQ hero must be closed');
+        $this->assertSame(substr_count($hero, '<section'), substr_count($hero, '</section>'));
+
+        $css = preg_replace('/\s+/', ' ',
+            file_get_contents(self::$root.'/assets/css/design-system.css'));
+        $this->assertMatchesRegularExpression('/\.ws-faq-hero\{[^}]*margin-inline:auto/', $css);
+        $this->assertMatchesRegularExpression('/\.ws-faq-hero\{[^}]*text-align:center/', $css);
+        $this->assertMatchesRegularExpression(
+            '/\.ws-faq-hero \.ws-searchwrap\{[^}]*margin-inline:auto/', $css,
+            'the search box centres with the words above it');
+    }
+
     public function testNavAndFooterHaveNoHashPlaceholders()
     {
         // partials/public_nav.php is a backward-compatible wrapper for the

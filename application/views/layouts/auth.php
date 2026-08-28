@@ -56,9 +56,15 @@ $auth_site = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySoci
       <aside class="ws-auth-visual">
         <img src="<?=base_url('assets/images/home/hero.jpg')?>" alt="" width="960" height="1200" aria-hidden="true">
         <div class="ws-auth-visual-inner">
-          <?php $this->load->view('partials/brand_logo', array('variant'=>'dark','height'=>40,'class'=>'ws-logo')); ?>
-          <h2><?=htmlspecialchars($visual_title)?></h2>
-          <p><?=htmlspecialchars($visual_text)?></p>
+          <?php // The mark is its own block above a rule: a logo pressed against a
+                // heading reads as the first word of that heading. ?>
+          <div class="ws-auth-visual-brand">
+            <?php $this->load->view('partials/brand_logo', array('variant'=>'dark','height'=>40,'class'=>'ws-logo')); ?>
+          </div>
+          <div class="ws-auth-visual-copy">
+            <h2><?=htmlspecialchars($visual_title)?></h2>
+            <p><?=htmlspecialchars($visual_text)?></p>
+          </div>
         </div>
       </aside>
       <div class="flex items-start justify-center px-4 py-12">

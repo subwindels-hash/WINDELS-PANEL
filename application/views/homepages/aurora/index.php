@@ -53,6 +53,30 @@ if (empty($faqs)) {
 .ws-aurora .ms-hero{background:
   radial-gradient(900px 320px at 8% -10%,rgba(99,102,241,.18),transparent 60%),
   radial-gradient(700px 260px at 92% 0,rgba(192,38,211,.14),transparent 55%);}
+/* Hero write-up (eyebrow, headline, lede) reads solid black on the light wash.
+   Overrides the white-on-gradient hero text from marketing.css and the purple
+   gradient-clipped headline above. */
+.ws-aurora .ws-landing-hero.ms-hero .ws-kicker,
+.ws-aurora .ws-landing-hero.ms-hero h1,
+.ws-aurora .ws-landing-hero.ms-hero .lede{color:#000;}
+.ws-aurora .ws-landing-hero.ms-hero h1.gradient-text{
+  background:none;-webkit-background-clip:border-box;background-clip:border-box;
+  color:#000;-webkit-text-fill-color:#000;}
+/* "View services" is a white-on-gradient button in marketing.css — on this
+   light hero that left white type on a near-white wash. Solid black label on a
+   white face, with a visible border instead of a white one. */
+.ws-aurora .ws-landing-hero.ms-hero .btn-secondary{
+  background:#fff;border:1px solid rgba(15,23,42,.22);
+  color:#000;-webkit-text-fill-color:#000;}
+.ws-aurora .ws-landing-hero.ms-hero .btn-secondary:hover{
+  background:var(--surface-muted,#f1f5f9);border-color:rgba(15,23,42,.35);
+  color:#000;-webkit-text-fill-color:#000;}
+/* The snapshot strip used to be pulled up 1rem so it grazed the hero. It now
+   clears the hero and sits as its own band. */
+.ws-aurora .ws-landing-stats{margin-top:0;padding:3.25rem 0 3rem;}
+@media(max-width:880px){
+  .ws-aurora .ws-landing-stats{padding:2rem 0 2.25rem;}
+}
 </style>
 
 <div class="ws-aurora">
@@ -92,7 +116,7 @@ if (empty($faqs)) {
 
 <!-- Trusted-by / platforms marquee (SMMHub-style) -->
 <section class="ms-marquee" aria-label="Platforms supported">
-  <p class="muted text-sm text-center">Trusted by resellers growing audiences on</p>
+  <p class="muted text-sm text-center">Trusted by resellers growing audiences on the world&rsquo;s biggest social platforms</p>
   <div class="ms-marquee-track" aria-hidden="true">
     <span>Instagram</span><span>TikTok</span><span>YouTube</span><span>Telegram</span>
     <span>Facebook</span><span>X / Twitter</span><span>Spotify</span><span>LinkedIn</span>

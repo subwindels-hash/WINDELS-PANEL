@@ -80,7 +80,6 @@ if (!$items) {
         $site_name.' is a prepaid platform — add funds to spend on services.',
         'Create an account, browse Services, then place an order from your dashboard.',
         'Need help? Open FAQ, Contact, or a support ticket from your account.',
-        'Staff sign in at Admin login. Customer passwords cannot open the back office.',
     );
 }
 
