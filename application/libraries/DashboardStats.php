@@ -53,7 +53,17 @@ class DashboardStats {
             ->select("COALESCE(SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END),0) AS pending", false)
             ->select("COALESCE(SUM(CASE WHEN status IN ('PROCESSING','IN_PROGRESS') THEN 1 ELSE 0 END),0) AS processing", false)
             ->select("COALESCE(SUM(CASE WHEN status IN ('CANCELED','CANCELLED') THEN 1 ELSE 0 END),0) AS cancelled", false)
-            ->select("COALESCE(SUM(CASE WHEN status IN ('COMPLETED','PARTIAL') THEN charge ELSE 0 END),0) AS spent", false)
+            // "Spent" is what left the wallet and stayed gone: every order is
+            // charged when it is placed, and anything given back is recorded in
+            // refunded_amount. Counting only COMPLETED/PARTIAL charges — which
+            // is what this did — showed a customer with a half-delivered order
+            // the FULL price as spent even though half had already been
+            // refunded to them, and showed nothing at all for the money
+            // currently held against orders still in progress. Neither figure
+            // agreed with the wallet, which is the number the customer can see
+            // for themselves.
+            ->select("COALESCE(SUM(charge),0) AS charged", false)
+            ->select("COALESCE(SUM(refunded_amount),0) AS refunded", false)
             ->where('user_id', $user_id)
             ->get('orders')->row();
 
@@ -75,7 +85,10 @@ class DashboardStats {
             'pending'    => (int)($row->pending ?? 0),
             'processing' => (int)($row->processing ?? 0),
             'cancelled'  => (int)($row->cancelled ?? 0),
-            'spent'      => (string)($row->spent ?? '0.00000000'),
+            // Subtracted in PHP with bcmath rather than in SQL: these are
+            // DECIMAL strings and the difference must not go through a float.
+            'spent'      => bcsub((string)($row->charged ?? '0'), (string)($row->refunded ?? '0'), 8),
+            'refunded'   => number_format((float)($row->refunded ?? 0), 8, '.', ''),
             'deposited' => $deposited,
         );
     }

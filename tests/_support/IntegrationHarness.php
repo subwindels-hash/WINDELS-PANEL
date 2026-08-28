@@ -492,6 +492,10 @@ class IntegrationHarness
         $this->db->insert('wallets', array(
             'public_id' => 'WAL'.str_pad((string)$id, 23, '0', STR_PAD_LEFT),
             'user_id' => $id, 'balance' => '0.00000000', 'currency' => 'NGN',
+            // MySQL applies the DEFAULT 0.00000000 on these two; FakeDb leaves
+            // an omitted column NULL, so spell them out or the lifetime
+            // counters look broken here in a way they are not in production.
+            'total_deposited' => '0.00000000', 'total_spent' => '0.00000000',
             'created_at' => $now, 'updated_at' => $now,
         ));
         return $this->db->where('id', $id)->get('users')->row();

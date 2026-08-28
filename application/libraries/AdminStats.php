@@ -25,10 +25,30 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  */
 class AdminStats {
 
-    /** Statuses in which money has actually been earned, per table. */
+    /**
+     * Statuses in which money has actually been earned, per table.
+     *
+     * This constant existed from the start and **was never used by a single
+     * query**: every revenue figure counted every row created in the window,
+     * so a failed VTU top-up, an order cancelled before it was submitted and a
+     * deposit-less PENDING order all reported as revenue. The headline number
+     * on the first screen an operator sees was the *volume of attempts*, not
+     * income, and it was always too high.
+     *
+     * What belongs here:
+     *
+     *  - delivered, or being delivered — the sale stands;
+     *  - REFUNDED — the sale happened and the money was given back, so it must
+     *    appear in gross AND in refunded, or a goodwill refund would be
+     *    invisible in the reporting;
+     *
+     * and what does not: PENDING (charged but not yet delivered — the action
+     * queue's job, not revenue's), FAILED / ERROR / CANCELED / EXPIRED (a wash:
+     * charged, then refunded, no income either way).
+     */
     private static $earned = array(
-        'orders'               => array('COMPLETED', 'PARTIAL', 'IN_PROGRESS', 'PROCESSING'),
-        'service_transactions' => array('SUCCESSFUL', 'PROCESSING'),
+        'orders'               => array('COMPLETED', 'PARTIAL', 'IN_PROGRESS', 'PROCESSING', 'REFUNDED'),
+        'service_transactions' => array('SUCCESSFUL', 'PROCESSING', 'REFUNDED'),
     );
 
     private $ci;
@@ -53,6 +73,7 @@ class AdminStats {
             ->select('COALESCE(SUM(charge),0) AS gross', false)
             ->select('COALESCE(SUM(refunded_amount),0) AS refunded', false)
             ->where('created_at >=', $since)
+            ->where_in('status', self::$earned['orders'])
             ->get('orders')->row();
 
         $services = $this->ci->db
@@ -60,7 +81,18 @@ class AdminStats {
             ->select('COALESCE(SUM(amount),0) AS gross', false)
             ->select('COALESCE(SUM(refunded_amount),0) AS refunded', false)
             ->where('created_at >=', $since)
+            ->where_in('status', self::$earned['service_transactions'])
             ->get('service_transactions')->row();
+
+        // Attempts that earned nothing. Reported, not hidden: an operator who
+        // sees 40 sales and 60 attempts knows to look at delivery, and it
+        // stops anyone reading a suddenly smaller revenue figure as data loss.
+        $unearned = (int)$this->ci->db->where('created_at >=', $since)
+                ->where_not_in('status', self::$earned['orders'])
+                ->count_all_results('orders')
+            + (int)$this->ci->db->where('created_at >=', $since)
+                ->where_not_in('status', self::$earned['service_transactions'])
+                ->count_all_results('service_transactions');
 
         $gross    = bcadd($this->money($smm->gross ?? 0),    $this->money($services->gross ?? 0), 8);
         $refunded = bcadd($this->money($smm->refunded ?? 0), $this->money($services->refunded ?? 0), 8);
@@ -74,6 +106,7 @@ class AdminStats {
             'gross'    => $gross,
             'refunded' => $refunded,
             'net'      => bcsub($gross, $refunded, 8),
+            'unearned' => $unearned,
         );
     }
 
@@ -101,6 +134,7 @@ class AdminStats {
             ->select('COALESCE(SUM(provider_charge),0) AS cost', false)
             ->select('COALESCE(SUM(CASE WHEN provider_charge IS NOT NULL THEN 1 ELSE 0 END),0) AS costed', false)
             ->where('created_at >=', $since)
+            ->where_in('status', self::$earned['orders'])
             ->get('orders')->row();
         if ((int)($smm->n ?? 0) > 0) $out['SMM'] = $this->shape($smm);
 
@@ -112,6 +146,7 @@ class AdminStats {
             ->select('COALESCE(SUM(provider_cost),0) AS cost', false)
             ->select('COALESCE(SUM(CASE WHEN provider_cost IS NOT NULL THEN 1 ELSE 0 END),0) AS costed', false)
             ->where('created_at >=', $since)
+            ->where_in('status', self::$earned['service_transactions'])
             ->group_by('service_domain')
             ->get('service_transactions')->result();
         foreach ($rows as $r) $out[$r->service_domain] = $this->shape($r);
@@ -130,7 +165,7 @@ class AdminStats {
      * into one figure — a backlog in gift cards and a backlog in airtime need
      * different people to look at them.
      */
-    public function domain_health($stuck_after_minutes = 30) {
+    public function domain_health($stuck_after_minutes = 30, $smm_stuck_after_minutes = 1440) {
         $cutoff = gmdate('Y-m-d H:i:s', time() - ((int)$stuck_after_minutes * 60));
 
         $rows = $this->ci->db
@@ -176,7 +211,46 @@ class AdminStats {
             $out[$r->service_domain]['stuck'] = (int)$r->n;
         }
 
+        // SMM comes from `orders` and was missing from this table entirely —
+        // the panel's largest domain had a revenue row on this page and no
+        // delivery row, so an SMM backlog was the one thing the delivery-health
+        // widget could not show. Its own window is far wider on purpose: an SMM
+        // order in flight for half an hour is ordinary, while a gift card in
+        // that state means a customer has paid and has no code.
+        $smm = $this->smm_health($smm_stuck_after_minutes);
+        if ($smm !== null) $out = array('SMM' => $smm) + $out;
+
         return $out;
+    }
+
+    /** The `orders` half of domain_health(), in the same shape. */
+    private function smm_health($stuck_after_minutes) {
+        $row = $this->ci->db
+            ->select('COUNT(*) AS n', false)
+            ->select("COALESCE(SUM(CASE WHEN status IN ('PENDING','PROCESSING','IN_PROGRESS') THEN 1 ELSE 0 END),0) AS in_flight", false)
+            ->select("COALESCE(SUM(CASE WHEN status IN ('COMPLETED','PARTIAL') THEN 1 ELSE 0 END),0) AS successful", false)
+            ->select("COALESCE(SUM(CASE WHEN status IN ('FAILED','ERROR') THEN 1 ELSE 0 END),0) AS failed", false)
+            ->select("COALESCE(SUM(CASE WHEN status = 'REFUNDED' THEN 1 ELSE 0 END),0) AS refunded", false)
+            ->get('orders')->row();
+        if (!$row || (int)$row->n === 0) return null;
+
+        $settled = (int)$row->successful + (int)$row->failed;
+        $stuck = (int)$this->ci->db
+            ->where_in('status', array('PENDING', 'PROCESSING', 'IN_PROGRESS'))
+            ->where('created_at <', gmdate('Y-m-d H:i:s', time() - ((int)$stuck_after_minutes * 60)))
+            ->count_all_results('orders');
+
+        return array(
+            'total'        => (int)$row->n,
+            'in_flight'    => (int)$row->in_flight,
+            'successful'   => (int)$row->successful,
+            'failed'       => (int)$row->failed,
+            'refunded'     => (int)$row->refunded,
+            // A cancellation is neither a delivery nor a fault, so it is left
+            // out of the denominator exactly as in-flight rows are.
+            'success_rate' => $settled > 0 ? round(((int)$row->successful / $settled) * 100, 1) : null,
+            'stuck'        => $stuck,
+        );
     }
 
     /**
@@ -227,10 +301,21 @@ class AdminStats {
     /**
      * Daily revenue for a sparkline, oldest first.
      *
-     * Grouped in PHP over two already-filtered queries rather than with a
-     * per-day SQL group, because the two tables would each need their own
-     * DATE() grouping and then a merge anyway — and a DATE() call on the
-     * column defeats the index on `created_at`.
+     * Aggregated in SQL. It used to `SELECT` every order and every service
+     * transaction in the window and add them up in PHP — on a panel doing a
+     * few thousand sales a day that is tens of thousands of rows materialised
+     * on **every admin page load**, because the landing page draws this chart
+     * too. Grouping by the date prefix costs the index on the GROUP BY (it
+     * cannot use one either way) but keeps the range scan in the WHERE, and
+     * returns at most one row per day per table.
+     *
+     * `SUBSTR(created_at, 1, 10)` rather than `DATE()`: both MySQL and the
+     * SQLite-backed dev database implement it identically for a DATETIME
+     * column, and the values are UTC in both, matching the keys built below.
+     *
+     * It also applies the same earned-status filter as the cards above it. A
+     * chart that counted cancelled orders while the summary did not would have
+     * the page disagreeing with itself.
      */
     public function revenue_series($days = 14) {
         $days  = max(1, (int)$days);
@@ -242,21 +327,26 @@ class AdminStats {
         }
 
         $sources = array(
-            array('orders', 'charge'),
-            array('service_transactions', 'amount'),
+            array('orders', 'charge', self::$earned['orders']),
+            array('service_transactions', 'amount', self::$earned['service_transactions']),
         );
         foreach ($sources as $source) {
-            list($table, $column) = $source;
+            list($table, $column, $statuses) = $source;
             $rows = $this->ci->db
-                ->select('created_at, '.$column.' AS amount, refunded_amount', false)
+                ->select('SUBSTR(created_at, 1, 10) AS day', false)
+                ->select('COUNT(*) AS sales', false)
+                ->select('COALESCE(SUM('.$column.'),0) AS gross', false)
+                ->select('COALESCE(SUM(refunded_amount),0) AS refunded', false)
                 ->where('created_at >=', $since)
+                ->where_in('status', $statuses)
+                ->group_by('day', false)
                 ->get($table)->result();
             foreach ($rows as $r) {
-                $day = substr((string)$r->created_at, 0, 10);
+                $day = (string)$r->day;
                 if (!isset($series[$day])) continue;
                 $series[$day]['net'] = bcadd($series[$day]['net'],
-                    bcsub($this->money($r->amount), $this->money($r->refunded_amount), 8), 8);
-                $series[$day]['sales']++;
+                    bcsub($this->money($r->gross), $this->money($r->refunded), 8), 8);
+                $series[$day]['sales'] += (int)$r->sales;
             }
         }
         return $series;

@@ -410,8 +410,23 @@ function refreshUniqueRegistry() {
   }
 }
 
+/**
+ * The MySQL column type advertised for a value.
+ *
+ * A non-integer JS number MUST NOT be advertised as LONGLONG. SQLite returns
+ * SUM() over a DECIMAL-as-TEXT column as a float, and this function used to
+ * label every number LONGLONG — so the client cast the perfectly good text
+ * "16215.60500004" to an integer and handed the application 16215. Every money
+ * aggregate read through the dev database silently lost its decimals: revenue
+ * cards, refund totals, wallet sums. Real MySQL returns those as DECIMAL, so
+ * the bug existed only here — which is worse, because it makes correct code
+ * look wrong (and could make wrong code look right).
+ */
 function columnTypeFor(value) {
-  if (typeof value === 'number' || typeof value === 'bigint') return proto.TYPE_LONGLONG;
+  if (typeof value === 'bigint') return proto.TYPE_LONGLONG;
+  if (typeof value === 'number') {
+    return Number.isInteger(value) ? proto.TYPE_LONGLONG : proto.TYPE_NEWDECIMAL;
+  }
   if (Buffer.isBuffer(value)) return proto.TYPE_BLOB;
   return proto.TYPE_VAR_STRING;
 }

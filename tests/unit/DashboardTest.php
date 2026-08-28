@@ -137,7 +137,9 @@ class DashboardTest extends TestCase
         $this->assertSame(3, $out['totals']['orders']);
         $this->assertSame(2, $out['totals']['completed']);
         $this->assertSame(1, $out['totals']['active']);
-        $this->assertSame('13.20000000', $out['totals']['spent']);
+        $this->assertSame('12.00000000', $out['totals']['spent'],
+            'spent is what left the wallet and stayed gone: charges minus refunds');
+        $this->assertSame('1.20000000', $out['totals']['refunded']);
         $this->assertSame('100.00000000', $out['totals']['deposited']);
         $this->assertCount(2, $out['recent_orders']);
         $this->assertCount(2, $out['recent_transactions']);
@@ -279,8 +281,13 @@ class DashboardFakeDb {
             // If we selected aggregate columns, return the aggregate row.
             $sel = implode(' ', $selects);
             if (strpos($sel, 'COUNT(*)') !== false) {
+                // charged/refunded, not a pre-computed `spent`: the library now
+                // nets refunds itself, which is the whole point — a customer
+                // whose half-delivered order was partly refunded used to be
+                // shown the full price as spent.
                 return new DashboardFakeResult(array(
-                    (object)array('orders'=>3,'completed'=>2,'active'=>1,'pending'=>0,'spent'=>'13.20000000'),
+                    (object)array('orders'=>3,'completed'=>2,'active'=>1,'pending'=>0,
+                                  'charged'=>'13.20000000','refunded'=>'1.20000000'),
                 ));
             }
             return new DashboardFakeResult(array(

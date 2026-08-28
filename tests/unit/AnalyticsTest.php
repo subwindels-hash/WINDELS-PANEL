@@ -167,6 +167,109 @@ class AnalyticsTest extends TestCase
         $this->assertSame('0.00000000', $revenue['net']);
     }
 
+    /* ============== what is revenue, and what is only an attempt ========= */
+
+    /**
+     * The defect this section exists for: `AdminStats::$earned` was declared
+     * from day one and used by nothing. Every figure counted every row created
+     * in the window, so failed VTU top-ups and orders cancelled before they
+     * were ever submitted were reported as income on the admin landing page.
+     */
+    public function testFailedAndCancelledAttemptsAreNotCountedAsRevenue()
+    {
+        list($app, $user) = $this->app();
+        $this->order($app, $user,   array('charge' => '2000.00000000'));                       // real
+        $this->order($app, $user,   array('charge' => '5000.00000000', 'status' => 'CANCELED'));
+        $this->order($app, $user,   array('charge' => '7000.00000000', 'status' => 'FAILED'));
+        $this->service($app, $user, array('amount' => '1000.00000000'));                       // real
+        $this->service($app, $user, array('amount' => '9000.00000000', 'status' => 'FAILED'));
+
+        $revenue = $app->adminstats->revenue(1);
+
+        $this->assertSame('3000.00000000', $revenue['gross'],
+            'a charge that was refunded because nothing was delivered is not income');
+        $this->assertSame(2, $revenue['orders']);
+        $this->assertSame(3, $revenue['unearned'],
+            'the attempts are still reported, so a smaller total reads as honesty not data loss');
+    }
+
+    /** Charged, not yet delivered: the action queue's business, not revenue's. */
+    public function testAPendingSaleIsNotRevenueYet()
+    {
+        list($app, $user) = $this->app();
+        $this->order($app, $user, array('charge' => '2000.00000000', 'status' => 'PENDING'));
+
+        $this->assertSame('0.00000000', $app->adminstats->revenue(1)['gross']);
+        $this->assertSame(1, $app->adminstats->revenue(1)['unearned']);
+    }
+
+    /**
+     * A refunded sale is the opposite case: it DID happen, so hiding it would
+     * make a goodwill refund invisible in the reporting.
+     */
+    public function testARefundedSaleStaysVisibleInGrossAndInRefunded()
+    {
+        list($app, $user) = $this->app();
+        $this->order($app, $user, array('charge' => '2000.00000000', 'status' => 'REFUNDED',
+                                        'refunded_amount' => '2000.00000000'));
+
+        $revenue = $app->adminstats->revenue(1);
+        $this->assertSame('2000.00000000', $revenue['gross']);
+        $this->assertSame('2000.00000000', $revenue['refunded']);
+        $this->assertSame('0.00000000', $revenue['net'], 'it nets to nothing, but it is not hidden');
+    }
+
+    public function testTheDomainBreakdownIgnoresAttemptsThatEarnedNothing()
+    {
+        list($app, $user) = $this->app();
+        $this->service($app, $user, array('amount' => '1000.00000000', 'provider_cost' => '900.00000000'));
+        $this->service($app, $user, array('amount' => '4000.00000000', 'status' => 'FAILED',
+                                          'provider_cost' => '3900.00000000'));
+
+        $vtu = $app->adminstats->revenue_by_domain(30)['VTU'];
+
+        $this->assertSame(1, $vtu['sales']);
+        $this->assertSame('1000.00000000', $vtu['gross']);
+        $this->assertSame('900.00000000', $vtu['cost'],
+            'the vendor cost of an attempt that earned nothing must not be counted against margin either');
+    }
+
+    /** The chart and the cards above it must be the same number. */
+    public function testTheSeriesAppliesTheSameEarnedFilterAsTheSummary()
+    {
+        list($app, $user) = $this->app();
+        $this->order($app, $user,   array('charge' => '2000.00000000'));
+        $this->order($app, $user,   array('charge' => '5000.00000000', 'status' => 'CANCELED'));
+
+        $today = $app->adminstats->revenue_series(7)[gmdate('Y-m-d')];
+
+        $this->assertSame('2000.00000000', $today['net'],
+            'a chart that counted cancellations would have the page disagreeing with itself');
+        $this->assertSame(1, $today['sales']);
+        $this->assertSame($app->adminstats->revenue(1)['net'], $today['net']);
+    }
+
+    /**
+     * The sparkline used to SELECT every order and every service transaction
+     * in the window and add them up in PHP — on every admin page load, because
+     * the landing page draws it too. It must be one grouped query per table
+     * however many sales there are.
+     */
+    public function testTheSeriesIsAggregatedInSqlRatherThanScanningEveryRow()
+    {
+        list($app, $user) = $this->app();
+        for ($i = 0; $i < 40; $i++) $this->order($app, $user, array('charge' => '100.00000000'));
+
+        $before = count($app->db->queries);
+        $series = $app->adminstats->revenue_series(14);
+        $queries = count($app->db->queries) - $before;
+
+        $this->assertSame('4000.00000000', $series[gmdate('Y-m-d')]['net']);
+        $this->assertSame(40, $series[gmdate('Y-m-d')]['sales']);
+        $this->assertLessThanOrEqual(2, $queries,
+            'one grouped query per table — not one row per sale dragged into PHP');
+    }
+
     /* ======================== the domain breakdown ======================= */
 
     public function testTheBreakdownSeparatesDomainsAndComputesMargin()

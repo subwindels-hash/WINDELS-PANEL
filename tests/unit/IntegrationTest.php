@@ -139,6 +139,68 @@ class IntegrationTest extends TestCase
             'a second terminal transition must not refund again');
     }
 
+    /* ==================== the wallet lifetime counters =================== */
+
+    /**
+     * `wallets.total_spent` and `total_deposited` are read by three admin
+     * screens — the customers list, the customer detail page and the platform
+     * wallets summary — and **nothing had ever written total_spent**. Every
+     * customer on every install was shown as having spent ₦0.00 no matter how
+     * much they had bought, and an operator picking who to reward, or
+     * reconciling float against income, was reading a column that was never
+     * maintained.
+     *
+     * They are now kept by LedgerService inside the same locked transaction
+     * that moves the balance, which is the only place that may touch a wallet.
+     */
+    public function testTheWalletLifetimeCountersFollowRealMovements()
+    {
+        list($app, $user) = $this->app('100.00000000');
+        $wallet = function () use ($app, $user) {
+            return $app->db->where('user_id', $user->id)->get('wallets')->row();
+        };
+
+        $this->assertSame('100.00000000', $wallet()->total_deposited, 'the deposit is counted');
+        $this->assertSame('0.00000000', $wallet()->total_spent);
+
+        $placed = $app->orderservice->place($user, array(
+            'service' => 1, 'link' => 'https://x.test/counter', 'quantity' => 1000,
+        ));
+        $charge = (string)$placed['order']->charge;
+        $this->assertSame(0, bccomp($wallet()->total_spent, $charge, 8),
+            'placing an order is money spent');
+
+        $order = $app->db->where('id', $placed['order']->id)->get('orders')->row();
+        $app->orderservice->apply_status($order, 'CANCELED', 'ADMIN', 'provider dead');
+
+        $this->assertSame('0.00000000', $wallet()->total_spent,
+            'money handed back was never spent');
+        $this->assertSame('100.00000000', $wallet()->total_deposited,
+            'and a refund is not a deposit');
+    }
+
+    /** The counters must agree with the movements they summarise. */
+    public function testTheCountersAgreeWithTheMovementHistory()
+    {
+        list($app, $user) = $this->app('100.00000000');
+        for ($i = 0; $i < 3; $i++) {
+            $app->orderservice->place($user, array(
+                'service' => 1, 'link' => 'https://x.test/c'.$i, 'quantity' => 1000,
+            ));
+        }
+        $wallet = $app->db->where('user_id', $user->id)->get('wallets')->row();
+
+        $debits = '0'; $refunds = '0'; $deposits = '0';
+        foreach ($app->rows('wallet_transactions') as $t) {
+            if ($t['direction'] === 'DEBIT') $debits = bcadd($debits, (string)$t['amount'], 8);
+            if ($t['direction'] === 'CREDIT' && $t['type'] === 'REFUND') $refunds = bcadd($refunds, (string)$t['amount'], 8);
+            if ($t['direction'] === 'CREDIT' && $t['type'] === 'DEPOSIT') $deposits = bcadd($deposits, (string)$t['amount'], 8);
+        }
+
+        $this->assertSame(0, bccomp($wallet->total_spent, bcsub($debits, $refunds, 8), 8));
+        $this->assertSame(0, bccomp($wallet->total_deposited, $deposits, 8));
+    }
+
     public function testAnUnaffordableOrderChargesNothing()
     {
         list($app, $user) = $this->app('1.00000000');   // needs 2.00

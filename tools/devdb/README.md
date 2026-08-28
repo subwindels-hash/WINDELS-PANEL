@@ -71,6 +71,7 @@ node tools/devserver/link_crawl.mjs           --password <pw>   # follow every i
 node tools/devserver/image_audit.mjs          --password <pw>   # every <img> resolves
 node tools/devserver/api_check.mjs            --password <pw>   # reseller API: envelope, scopes, idempotency
 node tools/devserver/refunds_check.mjs        --admin-password <pw>   # refills, partial refunds, refused cancellations
+node tools/devserver/analytics_check.mjs      --admin-password <pw>   # every reported figure vs the database
 ```
 
 `smm_provider_check.mjs` and `refunds_check.mjs` stand up
@@ -99,3 +100,8 @@ PHP suite against native PHP and MySQL for exactly this reason.
   SQLite cannot add a foreign key to an existing table.
 - Multi-statement `COM_QUERY` is supported; prepared-statement protocol
   (`COM_STMT_PREPARE`) is not — the CI3 drivers do not use it.
+- `SUM()` over a DECIMAL column comes back from SQLite as a float, so the
+  column is advertised as NEWDECIMAL (not LONGLONG) and the client keeps the
+  fraction. Advertising it as an integer — which this server used to do —
+  silently truncated every money aggregate in development while real MySQL
+  returned it correctly.

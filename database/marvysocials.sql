@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 26), roles,
+-- foreign keys, migration bookkeeping (version 27), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first-login accounts. No migration,
 -- seed or installer command has to run afterwards.
@@ -2105,6 +2105,23 @@ ALTER TABLE coupons
 ADD COLUMN is_public TINYINT(1) NOT NULL DEFAULT 0
 COMMENT 'Shown in the cart page discovery list when 1; still requires is_active + date window + usage limit to actually apply';
 
+-- ---------------------------------------------------------------------
+-- migration 027_wallet_counter_backfill
+-- ---------------------------------------------------------------------
+
+UPDATE wallets SET
+total_deposited = COALESCE((
+  SELECT SUM(wt.amount) FROM wallet_transactions wt
+   WHERE wt.wallet_id = wallets.id
+     AND wt.direction = 'CREDIT' AND wt.type = 'DEPOSIT'), 0),
+total_spent = GREATEST(0, COALESCE((
+  SELECT SUM(wt.amount) FROM wallet_transactions wt
+   WHERE wt.wallet_id = wallets.id AND wt.direction = 'DEBIT'), 0)
+  - COALESCE((
+  SELECT SUM(wt.amount) FROM wallet_transactions wt
+   WHERE wt.wallet_id = wallets.id
+     AND wt.direction = 'CREDIT' AND wt.type = 'REFUND'), 0));
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -2119,7 +2136,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (26);
+INSERT INTO migrations (version) VALUES (27);
 
 -- ======================================================================
 -- CORE DATA

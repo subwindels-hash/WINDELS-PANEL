@@ -47,6 +47,8 @@ class FakeDb
     private $pending_select_all = false;
     private $pending_aliases = array();
     private $pending_aggregates = array();
+    /** Computed SELECT columns (currently SUBSTR), alias => spec. */
+    private $pending_expressions = array();
     private $pending_group = array();
     private $affected = 0;
     private $pending_order = array();
@@ -226,6 +228,19 @@ class FakeDb
         return $this;
     }
 
+    /**
+     * where_not_in('col', array(...)).
+     *
+     * Reporting queries need it as much as where_in does — "every row that did
+     * NOT earn money" is one of them — and a double that silently lacked it
+     * would fail with "undefined method" only once someone wrote the query.
+     */
+    public function where_not_in($key, array $values)
+    {
+        $this->pending_where[$key] = array('__not_in' => array_map('strval', $values));
+        return $this;
+    }
+
     public function get($table = null)
     {
         $table = $table ?: $this->pending_from;
@@ -234,10 +249,12 @@ class FakeDb
         $select_all = $this->pending_select_all;
         $aliases = $this->pending_aliases;
         $aggregates = $this->pending_aggregates;
+        $expressions = $this->pending_expressions; $this->pending_expressions = array();
         $group = $this->pending_group;
         $distinct = $this->pending_distinct; $this->pending_distinct = false;
         $this->pending_from = null; $this->pending_joins = array();
         $this->pending_select = array(); $this->pending_aggregates = array();
+        $this->pending_expressions = array();
         $this->pending_group = array(); $this->pending_select_all = false;
         $this->pending_aliases = array();
 
@@ -262,6 +279,13 @@ class FakeDb
             // A join can fan one base row out into several, as SQL does.
             foreach ($this->applyJoins($this->hydrate($table, $row), $joins) as $full) {
                 $full = $this->applyAliases($full, $aliases);
+                foreach ($expressions as $alias => $spec) {
+                    $source = strpos($spec['column'], '.') !== false
+                        ? substr($spec['column'], strrpos($spec['column'], '.') + 1) : $spec['column'];
+                    // SQL SUBSTR is 1-based; PHP's is 0-based.
+                    $full[$alias] = array_key_exists($source, $full)
+                        ? substr((string)$full[$source], $spec['start'] - 1, $spec['length']) : null;
+                }
                 if (!$this->matches($full, $where, $or, $like, $groups)) continue;
                 // Projection is deferred when there are aggregates: SUM(amount)
                 // needs `amount` on the row, and the projected shape only carries
@@ -442,6 +466,18 @@ class FakeDb
             // "t.*, other.col AS alias" queries return.
             if ($field === '*' || preg_match('/^[\w`]+\.\*$/', $field)) {
                 $this->pending_select_all = true;
+                continue;
+            }
+            // SUBSTR(col, start, len) AS alias — a computed column, used by the
+            // revenue sparkline to bucket rows by day in SQL instead of
+            // dragging every row of the window into PHP. Materialised onto the
+            // row below so GROUP BY can bucket on it like a real column.
+            if (preg_match('/^SUBSTR\(\s*([\w`.]+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)\s+AS\s+(\S+)$/i', $field, $m)) {
+                $alias = trim($m[4], '`');
+                $this->pending_expressions[$alias] = array(
+                    'column' => trim($m[1], '`'), 'start' => (int)$m[2], 'length' => (int)$m[3],
+                );
+                $list[] = $alias;
                 continue;
             }
             // COUNT(*) AS alias.
@@ -659,6 +695,7 @@ class FakeDb
         $this->pending_order = array(); $this->pending_limit = null;
         $this->pending_from = null; $this->pending_joins = array();
         $this->pending_select = array(); $this->pending_aggregates = array();
+        $this->pending_expressions = array();
         $this->pending_group = array(); $this->pending_select_all = false;
         $this->pending_aliases = array();
         return $this;
@@ -787,6 +824,7 @@ class FakeDb
         $joins = $this->pending_joins;
         $this->pending_from = null; $this->pending_joins = array();
         $this->pending_select = array(); $this->pending_aggregates = array();
+        $this->pending_expressions = array();
         $this->pending_group = array(); $this->pending_select_all = false;
         $this->pending_aliases = array();
         $this->assertTable($table, 'count_all_results');
@@ -904,6 +942,9 @@ class FakeDb
 
         if (is_array($value) && isset($value['__in'])) {
             return in_array((string)$row[$key], $value['__in'], true);
+        }
+        if (is_array($value) && isset($value['__not_in'])) {
+            return !in_array((string)$row[$key], $value['__not_in'], true);
         }
 
         $a = $row[$key];
