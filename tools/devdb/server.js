@@ -78,6 +78,16 @@ db.function('LEAST', { varargs: true }, (...v) => {
   const vals = v.filter((x) => x !== null && x !== undefined);
   return vals.length ? vals.reduce((a, b) => (a < b ? a : b)) : null;
 });
+// SUBSTRING_INDEX(str, delim, count) — MySQL's "everything before the Nth
+// delimiter". Migration 028 uses it to recover a rate-limit scope from an
+// identifier like 'assistant:1.2.3.4'.
+db.function('SUBSTRING_INDEX', (str, delim, count) => {
+  if (str === null || str === undefined) return null;
+  const parts = String(str).split(String(delim));
+  const n = Number(count);
+  return n >= 0 ? parts.slice(0, n).join(String(delim))
+                : parts.slice(parts.length + n).join(String(delim));
+});
 db.function('TIMESTAMPDIFF_SECOND', (a, b) =>
   Math.round((Date.parse(b + 'Z') - Date.parse(a + 'Z')) / 1000)
 );

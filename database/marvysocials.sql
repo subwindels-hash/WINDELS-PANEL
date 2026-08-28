@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 27), roles,
+-- foreign keys, migration bookkeeping (version 28), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first-login accounts. No migration,
 -- seed or installer command has to run afterwards.
@@ -2122,6 +2122,22 @@ total_spent = GREATEST(0, COALESCE((
    WHERE wt.wallet_id = wallets.id
      AND wt.direction = 'CREDIT' AND wt.type = 'REFUND'), 0));
 
+-- ---------------------------------------------------------------------
+-- migration 028_rate_limit_scope
+-- ---------------------------------------------------------------------
+
+ALTER TABLE login_attempts
+ADD COLUMN scope VARCHAR(32) NOT NULL DEFAULT 'login'
+COMMENT 'Which limiter wrote this row: login|admin_login|mfa|register|pwreset|assistant';
+
+UPDATE login_attempts
+  SET scope = SUBSTRING_INDEX(email, ':', 1)
+WHERE email LIKE '%:%';
+
+CREATE INDEX idx_la_scope_ip_created ON login_attempts (scope, ip, created_at);
+
+CREATE INDEX idx_la_scope_email_created ON login_attempts (scope, email, created_at);
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -2136,7 +2152,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (27);
+INSERT INTO migrations (version) VALUES (28);
 
 -- ======================================================================
 -- CORE DATA

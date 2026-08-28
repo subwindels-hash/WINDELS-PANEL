@@ -74,6 +74,7 @@ node tools/devserver/refunds_check.mjs        --admin-password <pw>   # refills,
 node tools/devserver/analytics_check.mjs      --admin-password <pw>   # every reported figure vs the database
 node tools/devserver/service_recovery_check.mjs --admin-password <pw> # stuck VTU/number/identity/giftcard purchases
 node tools/devserver/security_check.mjs       --admin-password <pw>   # IDOR, CSRF, privilege escalation, live RBAC matrix
+node tools/devserver/support_check.mjs        --admin-password <pw>   # assistant limits, ticket attachments
 ```
 
 `smm_provider_check.mjs` and `refunds_check.mjs` stand up

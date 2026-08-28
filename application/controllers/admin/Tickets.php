@@ -108,7 +108,11 @@ class Tickets extends Admin_Controller {
         $internal = (bool)$this->input->post('internal');
         $body     = (string)$this->input->post('message', true);
 
-        $result = $this->ticketservice->staff_reply($public_id, $this->current_user, $body, $internal);
+        $upload = $this->ticketservice->attachments_from_upload(
+            $_FILES['attachments'] ?? null, $this->current_user->id);
+        if ($upload['errors']) $this->session->set_flashdata('warning', implode(' ', $upload['errors']));
+        $result = $this->ticketservice->staff_reply($public_id, $this->current_user, $body,
+            $internal, $upload['files']);
         if (empty($result['ok'])) {
             $this->session->set_flashdata('error', $result['error'] ?? 'Could not save the reply.');
             return redirect('admin/tickets/'.$ticket->public_id);

@@ -32,6 +32,15 @@ class FakeDb
     /** @var array<string, array<int, array>> */
     public $rows = array();
     public $queries = array();
+
+    /**
+     * CI's drivers expose the live connection handle here, and application
+     * code checks it to answer "is the database up?" — `marvy_load_database()`
+     * does exactly that before writing a rate-limit row. Without it the double
+     * looked like an unconnected database, so every such write silently
+     * no-opped and the tests around it proved nothing.
+     */
+    public $conn_id = true;
     public $raw_updates = array();
 
     private $pending_where = array();
@@ -717,6 +726,28 @@ class FakeDb
     public function insert_id() { return $this->last_insert_id; }
 
     public function table_exists($table) { return isset($this->schema[$table]); }
+
+    /**
+     * Column metadata, as CI's drivers return it.
+     *
+     * Production code asks this to find out whether a migration has run yet —
+     * RateLimiter does, to decide whether the `scope` column exists. Without
+     * it the double threw, the caller fell back to its pre-migration path, and
+     * the tests exercised code production would never reach.
+     */
+    public function field_data($table)
+    {
+        $this->assertTable($table, 'field_data');
+        $out = array();
+        foreach ($this->schema[$table]['columns'] as $name => $spec) {
+            $field = new stdClass();
+            $field->name       = $name;
+            $field->type       = $spec['type'];
+            $field->primary_key = 0;
+            $out[] = $field;
+        }
+        return $out;
+    }
 
     public function list_tables() { return array_keys($this->schema); }
 

@@ -15,6 +15,9 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  */
 class TicketService {
 
+    /** Files kept per message. Support threads, not file shares. */
+    const MAX_ATTACHMENTS = 5;
+
     private $ci;
 
     public function __construct() {
@@ -176,6 +179,58 @@ class TicketService {
         if (!$ticket) return array('ok'=>false,'error'=>'Ticket not found','code'=>'NO_TICKET');
         $this->ci->Ticket_model->close($ticket->id);
         return array('ok'=>true,'ticket'=>$this->ci->Ticket_model->find_by_id($ticket->id));
+    }
+
+    /**
+     * Turn `$_FILES['attachments']` into the attachment array this service has
+     * always accepted — and which, until now, no caller ever passed.
+     *
+     * The table (`ticket_attachments`), the service parameter and even the
+     * media purpose (`MediaService::PURPOSES` contains 'ticket') all shipped;
+     * nothing connected them, so a customer could not send the screenshot that
+     * is the entire content of most support requests, and staff could not send
+     * a receipt back. Everything goes through MediaService, so a ticket upload
+     * is validated exactly like a media-library one: sniffed MIME, an image
+     * that must actually decode, size cap, generated filename.
+     *
+     * @return array{files:array, errors:array}
+     */
+    public function attachments_from_upload($files, $user_id, $max = self::MAX_ATTACHMENTS) {
+        $out = array('files' => array(), 'errors' => array());
+        if (empty($files) || empty($files['name'])) return $out;
+
+        $this->ci->load->library('MediaService');
+        $names = is_array($files['name']) ? $files['name'] : array($files['name']);
+
+        foreach (array_keys($names) as $i) {
+            if (count($out['files']) >= $max) {
+                $out['errors'][] = 'Only '.$max.' attachments are kept per message.';
+                break;
+            }
+            $one = is_array($files['name'])
+                ? array(
+                    'name'     => $files['name'][$i],
+                    'type'     => $files['type'][$i] ?? '',
+                    'tmp_name' => $files['tmp_name'][$i] ?? '',
+                    'error'    => $files['error'][$i] ?? UPLOAD_ERR_NO_FILE,
+                    'size'     => $files['size'][$i] ?? 0,
+                  )
+                : $files;
+            if (($one['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE || $one['name'] === '') continue;
+
+            $res = $this->ci->mediaservice->store($one, 'ticket', $user_id);
+            if (empty($res['ok'])) {
+                $out['errors'][] = $one['name'].': '.$res['error'];
+                continue;
+            }
+            $out['files'][] = array(
+                'url'  => $res['media']->url,
+                'name' => $res['media']->file_name,
+                'mime' => $res['media']->mime_type,
+                'size' => (int)$res['media']->size,
+            );
+        }
+        return $out;
     }
 
     private function add_message($ticket_id, $author_id, $body, $is_staff, $attachments, $is_internal_note = 0) {

@@ -39,6 +39,8 @@ $sbadge = function ($s) {
             <span><?=htmlspecialchars((string)$m->created_at)?></span>
           </div>
           <div style="white-space:pre-wrap"><?=htmlspecialchars($m->message)?></div>
+          <?php $this->load->view('partials/ticket_attachments',
+                  array('attachments' => $m->attachments ?? array())); ?>
         </div>
       <?php endforeach; ?>
     </div>
@@ -46,10 +48,14 @@ $sbadge = function ($s) {
     <?php if ($has('tickets.reply')): ?>
     <div class="card">
       <h3 class="text-sm font-semibold mb-2">Reply</h3>
-      <form method="post" action="<?=site_url('admin/tickets/'.$ticket->public_id.'/reply')?>">
+      <form method="post" enctype="multipart/form-data"
+            action="<?=site_url('admin/tickets/'.$ticket->public_id.'/reply')?>">
         <?=$csrf()?>
         <textarea class="input mb-2" name="message" rows="5" required
                   placeholder="Write a reply to the customer…"></textarea>
+        <label class="text-sm font-medium" for="staff-attachments">Attach files (optional)</label>
+        <input class="input mb-2" id="staff-attachments" type="file" name="attachments[]" multiple
+               accept="image/jpeg,image/png,image/gif,image/webp,application/pdf">
         <label class="row text-sm mb-2" style="gap:.4rem;align-items:center">
           <input type="checkbox" name="internal" value="1">
           Internal note — visible to staff only, the customer never sees it

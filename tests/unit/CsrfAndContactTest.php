@@ -174,8 +174,11 @@ class CsrfAndContactTest extends TestCase
     {
         $src = file_get_contents(self::$root.'/application/views/dashboard/tickets/detail.php');
 
-        $this->assertSame(
-            substr_count($src, '<?=form_open('), substr_count($src, '<?=form_close()'),
+        // form_open_multipart() counts too: the reply form takes attachments,
+        // and a file input in a form without the multipart encoding sends the
+        // file NAME and no file at all.
+        $opened = substr_count($src, '<?=form_open(') + substr_count($src, '<?=form_open_multipart(');
+        $this->assertSame($opened, substr_count($src, '<?=form_close()'),
             'every form must be opened and closed the same number of times');
         $this->assertSame(0, substr_count($src, '<form method="post"'),
             'hand-rolled <form> tags miss the CSRF field that form_open() adds');
