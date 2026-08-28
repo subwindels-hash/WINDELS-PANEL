@@ -1131,11 +1131,6 @@ video {
   padding-bottom: 0.75rem;
 }
 
-.py-4 {
-  padding-top: 1rem;
-  padding-bottom: 1rem;
-}
-
 .py-8 {
   padding-top: 2rem;
   padding-bottom: 2rem;
@@ -1196,11 +1191,6 @@ video {
 .text-sm {
   font-size: 0.875rem;
   line-height: 1.25rem;
-}
-
-.text-xl {
-  font-size: 1.25rem;
-  line-height: 1.75rem;
 }
 
 .text-xs {

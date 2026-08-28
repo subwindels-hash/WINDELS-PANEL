@@ -36,15 +36,20 @@ $effective_price = $on_sale ? $l->promo_price : $l->price;
           <?php foreach ($reviews as $r): ?>
             <?php
               // Reviewers keep their own picture when they have uploaded one;
-              // otherwise a bundled illustrated avatar is picked from the
-              // username so the same reviewer always looks the same. It is
-              // clearly an illustration — no invented photograph of a person.
+              // otherwise one of four bundled customer portraits is picked
+              // from the username, so the same reviewer always looks the same
+              // review after review. These are stock-style photographs of
+              // people, not illustrations — a review with a cartoon face next
+              // to it reads as fake, which is the opposite of what a review is
+              // for. Nobody depicted is a real customer; the alt text says the
+              // name so a screen reader announces the reviewer, not the photo.
               $__avatar = !empty($r->avatar_url)
                 ? $r->avatar_url
                 : base_url('assets/images/reviews/reviewer-'.((crc32((string)$r->username) % 4) + 1).'.jpg');
             ?>
             <div class="row mb-3" style="gap:.85rem;align-items:flex-start;border-bottom:1px solid var(--color-border);padding-bottom:.75rem">
-              <img src="<?=htmlspecialchars($__avatar)?>" alt="" width="44" height="44" loading="lazy"
+              <img src="<?=htmlspecialchars($__avatar)?>" width="44" height="44" loading="lazy"
+                   alt="<?=htmlspecialchars($r->username)?>"
                    style="width:44px;height:44px;border-radius:50%;object-fit:cover;flex:none">
               <div style="flex:1;min-width:0">
                 <div class="row justify-between" style="gap:.5rem;flex-wrap:wrap">

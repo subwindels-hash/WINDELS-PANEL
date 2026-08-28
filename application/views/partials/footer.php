@@ -7,7 +7,8 @@ $year = date('Y');
     <div class="ws-footer-grid">
       <div class="ws-footer-brand">
         <a class="ws-brand" href="<?=site_url()?>" aria-label="<?=htmlspecialchars($site_name)?> home">
-          <?php $this->load->view('partials/brand_logo', array('variant'=>'full','height'=>40)); ?>
+          <?php // The footer is navy: the light wordmark, not the dark one with a CSS filter over it.
+                $this->load->view('partials/brand_logo', array('variant'=>'dark','height'=>40)); ?>
           <span class="sr-only"><?=htmlspecialchars($site_name)?></span>
         </a>
         <p class="muted mt-2" style="max-width:22rem">

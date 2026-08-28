@@ -28,7 +28,7 @@ $__links = ($is_admin ?? false)
             aria-controls="ws-app-sidebar" aria-expanded="false">Menu</button>
     <a href="<?=site_url()?>" class="ws-brand flex items-center gap-2">
       <?php $this->load->view('partials/brand_logo', array('variant'=>'icon','height'=>26,'force_legacy'=>true)); ?>
-      <span class="font-bold tracking-tight text-purple-400">WINDELSOCIALS</span>
+      <span class="font-bold tracking-tight ws-brand-word"><?=htmlspecialchars(function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials')?></span>
     </a>
   </div>
 

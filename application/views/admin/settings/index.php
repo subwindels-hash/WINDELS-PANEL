@@ -3,6 +3,7 @@ $csrf = function () { return '<input type="hidden" name="'.htmlspecialchars($thi
     .'" value="'.htmlspecialchars($this->security->get_csrf_hash()).'" readonly>'; };
 
 $category_titles = array(
+    'contact'  => 'Contact page',
     'general'   => 'General',
     'homepage'  => 'Homepage content',
     'security'  => 'Registration and security',
@@ -63,6 +64,19 @@ $field = function ($key, $def, $value) {
             echo '<p class="muted text-xs" style="margin:.25rem 0 0">'
                 .'A value is stored. Leave the field untouched to keep it, or clear it to remove it.</p>';
         }
+    } elseif ($type === 'color') {
+        // A native colour picker plus the hex, because operators paste brand
+        // hexes far more often than they pick from a wheel.
+        $hex = (string)$value !== '' ? (string)$value : '#000000';
+        echo '<label class="label" for="'.htmlspecialchars($id).'">'.htmlspecialchars($label).'</label>';
+        echo '<div class="row" style="gap:.5rem;align-items:center">';
+        echo '<input type="color" id="'.htmlspecialchars($id).'-picker" value="'.htmlspecialchars($hex).'"'
+            .' data-color-for="'.htmlspecialchars($id).'"'
+            .' style="width:3rem;height:2.5rem;padding:2px;border:1px solid var(--color-border);border-radius:.5rem;background:var(--color-surface)">';
+        echo '<input class="input mono" type="text" id="'.htmlspecialchars($id).'"'
+            .' name="'.htmlspecialchars($key).'" value="'.htmlspecialchars((string)$value).'"'
+            .' placeholder="#0b1b3a" spellcheck="false" style="max-width:12rem">';
+        echo '</div>';
     } elseif ($type === 'longtext') {
         echo '<label class="label" for="'.htmlspecialchars($id).'">'.htmlspecialchars($label).'</label>';
         echo '<textarea class="textarea" id="'.htmlspecialchars($id).'" name="'.htmlspecialchars($key).'" rows="4">'

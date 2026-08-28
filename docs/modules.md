@@ -1,6 +1,6 @@
 # MarvySocials — module index
 
-Fifteen sessions of repair work, each one module: find the defect, fix it,
+Sixteen sessions of repair work, each one module: find the defect, fix it,
 prove it with a test *and* an end-to-end check, document why it mattered.
 
 Everything below is verifiable with one command:
@@ -29,6 +29,7 @@ bash tools/verify_all.sh --admin-password '…' --with-load
 | 13 | Deployment | Nobody had ever executed the shipped SQL. The dev server served `.env`. Every VTU purchase in a customer's history linked to a 404. | [module-deployment.md](module-deployment.md) |
 | 14 | Pricing and coupons | `usage_limit_per_user` enforced nothing; the minimum spend was only checked when the code was typed; catalogues were priced one service at a time. | [module-pricing-coupons.md](module-pricing-coupons.md) |
 | 15 | Certification | This index, `tools/verify_all.sh`, and the dev server's request-recycling fix. | [COMPLETION_AUDIT.md](COMPLETION_AUDIT.md) |
+| 16 | Site chrome, brand and operations screens | Two competing public headers, `/api/docs` with no navigation at all, a logo whose artwork still said WINDELSOCIALS, sign-in copy hidden from screen readers, a hard-coded announcement bar, no cron screen and no contact map. | [module-site-chrome.md](module-site-chrome.md) |
 
 ## The pattern
 

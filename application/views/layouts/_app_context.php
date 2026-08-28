@@ -83,6 +83,7 @@ $nav_groups = $is_admin ? array(
         array('admin/settings/flags','Feature flags','settings.manage', 'settings'),
         array('admin/categories',   'Categories & logs', 'audit.view',      'globe'),
         array('admin/logs',         'System logs','audit.view',      'list'),
+        array('admin/cron',         'Cron jobs',  'audit.view',      'clock'),
         array('dashboard/security', 'Security', null,      'shield'),
     )),
 ) : array(

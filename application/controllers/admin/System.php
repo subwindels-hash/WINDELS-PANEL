@@ -174,6 +174,69 @@ class System extends Admin_Controller {
         ));
     }
 
+    /* ------------------------------ cron jobs ---------------------------- */
+
+    /**
+     * GET /admin/cron — what is scheduled, and whether it is actually running.
+     *
+     * The panel depends on background work for things customers notice: order
+     * status polling, refill settlement, deposit reconciliation, escrow
+     * release, email delivery. All of it was invisible from the browser — the
+     * only way to answer "is cron running on this host?" was SSH and
+     * `php index.php cron status`. An operator who never installed the crontab
+     * had no way to find out except by noticing that nothing ever settled.
+     *
+     * Read-only, deliberately: this screen reports what the schedule says and
+     * what the last runs did. Running a job by hand belongs on the surface
+     * that owns it (Refills, Payments, and so on), where the permission and
+     * the audit trail already exist.
+     */
+    public function cron() {
+        $this->require_perm('audit.view');
+
+        $schedules = (array)$this->config->item('cron');
+        $runs = $this->db->order_by('started_at', 'DESC')->limit(200)->get('job_runs')->result();
+
+        // Latest run per job, plus a small health verdict per row.
+        $latest = array();
+        foreach ($runs as $row) {
+            if (!isset($latest[$row->job])) $latest[$row->job] = $row;
+        }
+
+        $jobs = array();
+        foreach ($schedules as $job => $schedule) {
+            $last = $latest[$job] ?? null;
+            $age_minutes = $last ? max(0, (int)round((time() - strtotime($last->started_at.' UTC')) / 60)) : null;
+            $jobs[] = array(
+                'job'      => $job,
+                'schedule' => (string)$schedule,
+                'human'    => SystemAdminService::describe_schedule((string)$schedule),
+                'last'     => $last,
+                'age'      => $age_minutes,
+                'state'    => SystemAdminService::job_state((string)$schedule, $last, $age_minutes),
+                'command'  => 'php index.php cron '.$job,
+            );
+        }
+
+        // A job that has run but is not in the schedule is worth surfacing:
+        // it means the crontab and the code have drifted apart.
+        foreach ($latest as $job => $row) {
+            if (isset($schedules[$job])) continue;
+            $jobs[] = array(
+                'job' => $job, 'schedule' => '', 'human' => 'not scheduled',
+                'last' => $row, 'age' => null, 'state' => 'unscheduled',
+                'command' => 'php index.php cron '.$job,
+            );
+        }
+
+        $this->render('Cron jobs', 'admin/system/cron', 'cron', array(
+            'jobs'    => $jobs,
+            'runs'    => array_slice($runs, 0, 40),
+            'crontab' => SystemAdminService::crontab_lines($schedules),
+            'page_description' => 'What background work is scheduled, when it last ran, and the crontab to install.',
+        ));
+    }
+
     /** GET /admin/api-logs */
     public function api_logs() {
         $this->require_perm('api.manage');
@@ -233,6 +296,7 @@ class System extends Admin_Controller {
             'blacklist'  => array('Blacklist',  'admin/blacklist',  $this->auth->can('blacklist.manage')),
             'audit'      => array('Audit log',  'admin/audit-logs', $this->auth->can('audit.view')),
             'logs'       => array('System logs','admin/logs',       $this->auth->can('audit.view')),
+            'cron'       => array('Cron jobs',  'admin/cron',       $this->auth->can('audit.view')),
             'api_logs'   => array('API logs',   'admin/api-logs',   $this->auth->can('api.manage')),
         );
         $this->load->view('layouts/app', array_merge(array(

@@ -780,3 +780,183 @@ button { font-family:inherit; cursor:pointer; }
 .ws-app-footer a{color:inherit;text-decoration:none;opacity:.75}
 .ws-app-footer a:hover{opacity:1;text-decoration:underline}
 .dark .ws-app-footer{border-top-color:rgba(148,163,184,.25)}
+
+/* ===================== Navy chrome: menu + footer ========================
+ *
+ * One navy treatment, written once, applied to every navigation surface and
+ * to the footer. Before this the public site had two different headers (the
+ * shared navbar on some pages, a hand-written one in the themed shell on the
+ * rest) and the footer inherited the page background, so "the menu" looked
+ * different depending on which page you were on.
+ *
+ * The palette is fixed rather than derived from --brand: an operator changing
+ * their accent colour should not be able to make the navigation illegible.
+ * Accent hovers still use the brand colour where it stays readable on navy.
+ */
+:root{
+  --ws-navy-900:#0b1b3a;
+  --ws-navy-800:#102449;
+  --ws-navy-700:#16305c;
+  --ws-navy-600:#1d3c73;
+  --ws-navy-line:rgba(255,255,255,.14);
+  --ws-navy-ink:#ffffff;
+  --ws-navy-ink-dim:rgba(255,255,255,.76);
+}
+
+/* ---- public + auth menus ---- */
+.ws-public-nav,
+.ws-auth-header{
+  background:var(--ws-navy-900);
+  border-bottom:1px solid var(--ws-navy-line);
+  backdrop-filter:none;
+  color:var(--ws-navy-ink);
+}
+.ws-public-nav .ws-brand,
+.ws-auth-header .ws-brand,
+.ws-public-nav .ws-brand-word,
+.ws-public-nav .ws-nav-links a,
+.ws-auth-header .ws-auth-nav a{ color:var(--ws-navy-ink); }
+.ws-public-nav .ws-brand:hover,
+.ws-auth-header .ws-brand:hover{ color:var(--ws-navy-ink); }
+.ws-public-nav .ws-nav-links a:hover,
+.ws-public-nav .ws-nav-links a.is-active,
+.ws-auth-header .ws-auth-nav a:hover{
+  background:var(--ws-navy-700);
+  color:var(--ws-navy-ink);
+}
+.ws-public-nav .ws-nav-toggle,
+.ws-auth-header .ws-nav-toggle{
+  background:var(--ws-navy-700);
+  border-color:var(--ws-navy-line);
+  color:var(--ws-navy-ink);
+}
+.ws-public-nav .ws-nav-panel{
+  background:var(--ws-navy-800);
+  border-bottom-color:var(--ws-navy-line);
+}
+.ws-public-nav .ws-nav-panel a,
+.ws-public-nav .ws-nav-panel button{ color:var(--ws-navy-ink); }
+.ws-public-nav .ws-nav-panel a:hover{ background:var(--ws-navy-700); }
+/* Ghost buttons sit on navy in the nav, so they need light ink. */
+.ws-public-nav .btn-ghost,
+.ws-auth-header .btn-ghost{
+  color:var(--ws-navy-ink);
+  border-color:var(--ws-navy-line);
+  background:transparent;
+}
+.ws-public-nav .btn-ghost:hover,
+.ws-auth-header .btn-ghost:hover{ background:var(--ws-navy-700); }
+
+/* ---- the signed-in sidebar (the app's menu) ---- */
+.ws-sidebar{
+  background:var(--ws-navy-900);
+  border-right:1px solid var(--ws-navy-line);
+  color:var(--ws-navy-ink);
+}
+.ws-sidebar-brand{ border-bottom:1px solid var(--ws-navy-line); }
+.ws-sidebar .ws-brand,
+.ws-sidebar .ws-brand-word{ color:var(--ws-navy-ink); }
+.ws-sidebar .ws-nav-group > summary{ color:rgba(255,255,255,.55); }
+.ws-sidebar .ws-nav-link{ color:var(--ws-navy-ink-dim); }
+.ws-sidebar .ws-nav-link:hover{ background:var(--ws-navy-700); color:var(--ws-navy-ink); }
+.ws-sidebar .ws-nav-link.is-active{
+  background:var(--ws-navy-600);
+  color:var(--ws-navy-ink);
+  font-weight:600;
+}
+.ws-sidebar-user{ border-top:1px solid var(--ws-navy-line); color:var(--ws-navy-ink); }
+.ws-sidebar-user .muted,
+.ws-sidebar-user .text-xs{ color:var(--ws-navy-ink-dim); }
+.ws-sidebar .btn-icon{ color:var(--ws-navy-ink-dim); }
+.ws-sidebar .btn-icon:hover{ color:var(--ws-navy-ink); background:var(--ws-navy-700); }
+
+/* ---- footer ---- */
+.ws-footer,
+.ws-app-footer{
+  background:var(--ws-navy-900);
+  border-top:1px solid var(--ws-navy-line);
+  color:var(--ws-navy-ink);
+}
+.ws-footer h2{ color:rgba(255,255,255,.62); }
+.ws-footer a,
+.ws-app-footer a{ color:var(--ws-navy-ink-dim); }
+.ws-footer a:hover,
+.ws-app-footer a:hover{ color:var(--ws-navy-ink); text-decoration:underline; }
+.ws-footer p,
+.ws-footer .muted,
+.ws-app-footer .muted{ color:var(--ws-navy-ink-dim); }
+.ws-footer-meta{ border-top-color:var(--ws-navy-line); color:var(--ws-navy-ink-dim); }
+/* The footer renders the light wordmark directly (partials/footer asks for the
+   'dark' variant), so no filter trickery is needed — a filtered logo loses the
+   gradient in the mark. */
+
+/* ===================== Sign-in / register split panel ====================
+ *
+ * The copy in the photo panel used to be top-aligned inside a very tall
+ * column, so on a laptop the brand mark, the headline and the sub-line drifted
+ * apart with the paragraph stranded halfway up the image; below 880px the
+ * panel collapsed to a 220px strip and the same three elements overlapped the
+ * photograph. It is now a flex column anchored to the bottom, over a gradient
+ * that guarantees contrast, and on small screens the photo is dropped
+ * altogether in favour of a compact banner above the form.
+ */
+.ws-auth-visual{
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-end;
+  min-height:32rem;
+}
+.ws-auth-visual::after{
+  content:"";
+  position:absolute; inset:0;
+  background:linear-gradient(180deg,rgba(11,27,58,.35) 0%,rgba(11,27,58,.82) 62%,rgba(11,27,58,.95) 100%);
+  z-index:0;
+}
+.ws-auth-visual-inner{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:.9rem;
+  max-width:30rem;
+}
+.ws-auth-visual-inner .ws-logo{ margin:0; }
+.ws-auth-visual h2{
+  margin:0;
+  font-size:clamp(1.35rem,2.2vw,1.9rem);
+  line-height:1.25;
+  text-wrap:balance;
+}
+.ws-auth-visual p{ margin:0; max-width:34ch; line-height:1.6; }
+@media(max-width:880px){
+  /* Squeezing a photo, a logo and two paragraphs into a 220px strip is what
+     made this read as one run-on sentence. Show the words, drop the picture. */
+  .ws-auth-visual{
+    min-height:0;
+    padding:1.25rem 1.25rem 1.4rem;
+    justify-content:flex-start;
+  }
+  .ws-auth-visual img{ display:none; }
+  .ws-auth-visual::after{ background:none; }
+  .ws-auth-visual-inner{ gap:.5rem; max-width:none; }
+  .ws-auth-visual h2{ font-size:1.15rem; }
+  .ws-auth-visual p{ font-size:.9rem; max-width:none; }
+}
+
+/* The announcement strip takes its colours from Admin → Settings (inline
+   style), so the stylesheet only owns layout. A single message is centred
+   rather than marched across the screen. */
+.ws-announce.is-static .ws-announce-viewport{ display:flex; align-items:center; justify-content:center; }
+.ws-announce-static{
+  padding:0 1rem; font-size:.85rem; font-weight:500;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;
+}
+
+/* Contact-page map. Fixed aspect so the card does not jump while the iframe
+   loads, and a placeholder tint so an embed blocked by a corporate proxy
+   still looks deliberate rather than broken. */
+.ws-map{
+  position:relative; width:100%; aspect-ratio:4/3; min-height:260px;
+  border-radius:var(--radius-lg); overflow:hidden;
+  background:var(--slate-100); border:1px solid var(--color-border);
+}
+@media(max-width:880px){ .ws-map{ aspect-ratio:16/10; min-height:220px; } }

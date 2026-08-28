@@ -1,6 +1,6 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
 /**
- * Authenticated shell — WINDELSOCIALS theme.
+ * Authenticated shell — MarvySocials theme.
  *
  * Same contract as layouts/app.php (a controller passes `content_view`,
  * `title`, `current_user`, …); only the chrome differs. Everything the shell

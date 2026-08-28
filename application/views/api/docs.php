@@ -1,14 +1,23 @@
-<?php defined('BASEPATH') OR exit('No direct script access allowed'); ?>
+<?php defined('BASEPATH') OR exit('No direct script access allowed');
+/**
+ * The API reference is a public page and used to be the only one with no
+ * navigation, no footer and no announcement bar — a visitor who arrived here
+ * from a search result had no way back into the site. It now uses the same
+ * chrome as every other public page; the styles below are the ones that are
+ * genuinely specific to reading a reference (method pills, code blocks).
+ */
+$site_name = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials';
+?>
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Reseller API — MarvySocials</title>
-<link rel="stylesheet" href="<?=base_url('assets/css/design-system.css')?>">
+<?php $this->load->view('partials/head', array(
+    'page_title'     => 'Reseller API — '.$site_name,
+    'page_desc'      => 'REST API reference for resellers: authentication, ordering, status and balance.',
+    'page_canonical' => site_url('api/docs'),
+)); ?>
 <style>
-  body{background:var(--slate-50);padding:2rem 1rem}
-  .ws-api{max-width:920px;margin:0 auto}
+  .ws-api{max-width:920px;margin:0 auto;padding:2rem 1rem}
   .ws-method{font-family:var(--font-mono);font-size:.75rem;font-weight:700;padding:.15rem .45rem;border-radius:.35rem}
   .ws-get{background:#dbeafe;color:#1d4ed8}
   .ws-post{background:#dcfce7;color:#166534}
@@ -17,7 +26,11 @@
   table td{vertical-align:top}
 </style>
 </head>
-<body>
+<body class="min-h-screen bg-surface text-slate-900 antialiased ws-public-shell">
+<a class="ws-skip" href="#main">Skip to content</a>
+<?php $this->load->view('partials/announcement'); ?>
+<?php $this->load->view('partials/navbar'); ?>
+<main id="main" tabindex="-1">
 <div class="ws-api stack">
   <div>
     <h1>Reseller API <span class="badge badge-brand">v1</span></h1>
@@ -130,5 +143,8 @@
 
   <p class="muted text-center">All monetary amounts are strings in <code>DECIMAL(20,8)</code> to avoid floating-point errors.</p>
 </div>
+</main>
+<?php $this->load->view('partials/footer'); ?>
+<?php $this->load->view('partials/scripts'); ?>
 </body>
 </html>

@@ -3,7 +3,7 @@
  * Themed sidebar for the authenticated shell.
  *
  * Renders the same navigation tree as partials/navigation/sidebar (built by
- * layouts/_app_context.php) with the WINDELSOCIALS accent treatment. Every
+ * layouts/_app_context.php) with the MarvySocials accent treatment. Every
  * variable is defaulted so a layout that forgets one renders a nav instead of
  * a 500.
  */
@@ -16,10 +16,10 @@ $current_user = $current_user ?? null;
 <div class="ws-sidebar-brand">
   <a href="<?=site_url()?>" class="ws-brand">
     <?php if (!empty($brand['brand_logo_url'])): ?>
-      <img src="<?=htmlspecialchars($brand['brand_logo_url'])?>" alt="WINDELSOCIALS" class="ws-logo">
+      <img src="<?=htmlspecialchars($brand['brand_logo_url'])?>" alt="<?=htmlspecialchars(function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials')?>" class="ws-logo">
     <?php else: ?>
       <?php $this->load->view('partials/brand_logo', array('variant'=>'icon','height'=>32,'force_legacy'=>true)); ?>
-      <span class="font-bold tracking-tight text-purple-400">WINDELSOCIALS</span>
+      <span class="font-bold tracking-tight ws-brand-word"><?=htmlspecialchars(function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials')?></span>
     <?php endif; ?>
   </a>
 </div>

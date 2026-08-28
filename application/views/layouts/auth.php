@@ -15,10 +15,10 @@ $auth_site = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySoci
 <a class="ws-skip" href="#main">Skip to content</a>
 <?php $this->load->view('partials/announcement'); ?>
 <div class="min-h-screen flex flex-col">
-  <header class="border-b bg-surface">
+  <header class="ws-auth-header border-b">
     <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
       <a href="<?=site_url()?>" class="ws-brand">
-        <?php $this->load->view('partials/brand_logo', array('variant'=>'horizontal','height'=>30)); ?>
+        <?php $this->load->view('partials/brand_logo', array('variant'=>'dark','height'=>30)); ?>
         <span class="sr-only"><?=htmlspecialchars($auth_site)?></span>
       </a>
       <nav class="ws-auth-nav" aria-label="Primary">
@@ -41,12 +41,24 @@ $auth_site = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySoci
 
   <main id="main" class="flex-1" tabindex="-1">
     <div class="ws-auth-shell">
-      <aside class="ws-auth-visual" aria-hidden="true">
-        <img src="<?=base_url('assets/images/home/hero.jpg')?>" alt="" width="960" height="1200">
+      <?php
+        // The panel is real content, not decoration: it carries the brand mark
+        // and the one-line pitch. It used to be aria-hidden, which meant a
+        // screen reader skipped the words and — because the logo's alt text
+        // sat inside it — read the brand name straight into the sentence, so
+        // the whole block announced as one run-on line. The copy is also
+        // overridable, so the staff door does not greet an administrator with
+        // a customer sales pitch.
+        $visual_title = $auth_visual_title ?? 'A wallet you can audit. Orders you can follow.';
+        $visual_text  = $auth_visual_text
+            ?? 'Prepaid SMM, VTU and digital goods — same ledger, same staff tools.';
+      ?>
+      <aside class="ws-auth-visual">
+        <img src="<?=base_url('assets/images/home/hero.jpg')?>" alt="" width="960" height="1200" aria-hidden="true">
         <div class="ws-auth-visual-inner">
           <?php $this->load->view('partials/brand_logo', array('variant'=>'dark','height'=>40,'class'=>'ws-logo')); ?>
-          <h2 class="mt-6">A wallet you can audit. Orders you can follow.</h2>
-          <p class="muted" style="color:#cbd5e1">Prepaid SMM, VTU and digital goods — same ledger, same staff tools.</p>
+          <h2><?=htmlspecialchars($visual_title)?></h2>
+          <p><?=htmlspecialchars($visual_text)?></p>
         </div>
       </aside>
       <div class="flex items-start justify-center px-4 py-12">

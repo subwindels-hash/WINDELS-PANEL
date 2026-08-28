@@ -8,10 +8,13 @@ $current_user = $current_user ?? null;
 <div class="ws-sidebar-brand">
   <a href="<?=site_url()?>" class="ws-brand">
     <?php if (!empty($brand['brand_logo_url'])): ?>
-      <img src="<?=htmlspecialchars($brand['brand_logo_url'])?>" alt="MarvySocials" class="ws-logo">
+      <img src="<?=htmlspecialchars($brand['brand_logo_url'])?>"
+           alt="<?=htmlspecialchars(function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials')?>"
+           class="ws-logo">
     <?php else: ?>
       <?php $this->load->view('partials/brand_logo', array('variant'=>'icon','height'=>32,'force_legacy'=>true)); ?>
-      <span class="font-bold tracking-tight">MARVYSOCIALS</span>
+      <span class="font-bold tracking-tight ws-brand-word"><?=htmlspecialchars(
+          strtoupper(function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials'))?></span>
     <?php endif; ?>
   </a>
 </div>

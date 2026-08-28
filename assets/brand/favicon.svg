@@ -1,10 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="WINDELSOCIALS">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" role="img" aria-label="MarvySocials">
   <defs>
-    <linearGradient id="w" x1="12" y1="16" x2="52" y2="52" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#6366F1"/>
-      <stop offset="1" stop-color="#C026D3"/>
+    <linearGradient id="fv" x1="16" y1="12" x2="64" y2="68" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6366F1"/><stop offset="1" stop-color="#C026D3"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="16" fill="#0A0A0F"/>
-  <path d="M12 18h9l5.5 20L32 18h4l5.5 20L47 18h9L45 48h-8l-5-17-5 17h-8L12 18z" fill="url(#w)"/>
+  <rect width="80" height="80" rx="20" fill="#0A0A0F"/>
+  <path d="M18 66V22h12l10 25 10-25h12v44H51V39l-8 20h-6l-8-20v27H18z" fill="url(#fv)"/>
 </svg>

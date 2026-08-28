@@ -287,6 +287,41 @@ class SettingsService {
             'currency_display' => array('choice:symbol|code', 'currency', 'Currency display',
                 'Whether prices render as a symbol (₦1,234.56) or a code (NGN 1,234.56).', 'symbol'),
 
+            // ---- the announcement bar (Admin → Settings → Branding) -------
+            // The ticker used to be built from published announcements with a
+            // hard-coded fallback and hard-coded colours: an operator could
+            // not change the words without creating a CMS entry, and could not
+            // change the colours at all.
+            'announcement_enabled' => array('bool', 'branding', 'Show the announcement bar',
+                'The scrolling strip at the very top of every page. Off removes it everywhere.', true),
+            'announcement_text' => array('longtext', 'branding', 'Announcement text',
+                'One message per line. Each line scrolls in turn. Leave empty to show your published '
+                .'announcements from Content → Announcements instead.', ''),
+            'announcement_bg_color' => array('color', 'branding', 'Announcement background',
+                'Background colour of the announcement bar.', '#0b1b3a'),
+            'announcement_text_color' => array('color', 'branding', 'Announcement text colour',
+                'Text colour of the announcement bar. Keep the contrast high — this strip sits above '
+                .'everything else on the page.', '#ffffff'),
+            'announcement_speed_seconds' => array('int', 'branding', 'Announcement scroll time (seconds)',
+                'How long one full pass of the message takes. Larger is slower; 0 stops the scroll and '
+                .'centres a single message.', 40),
+
+            // ---- the contact page map (Admin → Settings → Contact) --------
+            'contact_map_enabled' => array('bool', 'contact', 'Show a map on the contact page',
+                'Off hides the map entirely — the right choice for a business with no public address.', false),
+            'contact_address' => array('longtext', 'contact', 'Business address',
+                'Shown next to the map and used to place the pin when no explicit map query is set. '
+                .'One line per line of the address.', ''),
+            'contact_map_query' => array('text', 'contact', 'Map location',
+                'What the map should centre on: an address, a place name, or "latitude,longitude". '
+                .'Leave blank to use the business address above.', ''),
+            'contact_map_zoom' => array('int', 'contact', 'Map zoom',
+                'Roughly: 12 shows a city, 15 a district, 17 a street.', 15),
+            'contact_phone' => array('text', 'contact', 'Public phone number',
+                'Shown on the contact page. Leave blank to hide it.', ''),
+            'contact_hours' => array('text', 'contact', 'Support hours',
+                'Free text, e.g. “Mon–Fri, 9:00–18:00 WAT”. Leave blank to hide it.', ''),
+
             'default_theme' => array('choice:system|light|dark', 'branding', 'Default theme',
                 'System follows the visitor\'s OS preference; light and dark force a theme. Visitors can still override it in their browser.', 'system'),
         );
@@ -490,6 +525,20 @@ class SettingsService {
                 }
                 return array('value' => number_format((float)$raw, 4, '.', ''), 'error' => null);
             
+            case 'color':
+                // A colour lands in a `style` attribute, so anything that is
+                // not exactly #rrggbb is refused rather than escaped and
+                // hoped for: this is the one setting that writes into CSS.
+                $raw = strtolower(trim((string)$value));
+                if ($raw === '') return array('value' => '', 'error' => null);
+                if (preg_match('/^#[0-9a-f]{3}$/', $raw)) {
+                    $raw = '#'.$raw[1].$raw[1].$raw[2].$raw[2].$raw[3].$raw[3];
+                }
+                if (!preg_match('/^#[0-9a-f]{6}$/', $raw)) {
+                    return array('value' => null, 'error' => $label.' must be a colour like #0b1b3a.');
+                }
+                return array('value' => $raw, 'error' => null);
+
             case 'secret':
                 // May legitimately be blank (feature not configured yet), and
                 // is allowed to be long — API keys are not 255-char-limited

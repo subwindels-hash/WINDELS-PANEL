@@ -380,6 +380,7 @@ $route['admin/email-templates'] = 'admin/content/email_templates';
 $route['admin/email-templates/(:num)'] = 'admin/content/save_email_template/$1';
 $route['admin/administrators'] = 'admin/staff/administrators';
 $route['admin/logs'] = 'admin/system/logs';
+$route['admin/cron'] = 'admin/system/cron';
 $route['admin/api-logs'] = 'admin/system/api_logs';
 $route['admin/refunds'] = 'admin/orders/refunds';
 $route['admin/blacklist'] = 'admin/system/blacklist';

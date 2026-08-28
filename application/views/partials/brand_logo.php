@@ -30,7 +30,9 @@ $alt = ($variant === 'icon') ? '' : $site;
 $class = isset($class) ? $class : 'ws-logo';
 // Bundled SVGs have a known aspect ratio; an admin-uploaded logo does not, so
 // fix only its height and let the width be intrinsic.
-$ratios = array('icon' => 1, 'horizontal' => 4.875, 'dark' => 4.875, 'full' => 4.881);
+// Ratios of the shipped artwork (972x192 for the wordmarks), so the
+// browser reserves the right box and the page does not jump on load.
+$ratios = array('icon' => 1, 'horizontal' => 5.0625, 'dark' => 5.0625, 'full' => 5.0625);
 $width_attr = (!empty($custom) && $variant !== 'icon')
     ? ''
     : 'width="'.(int)round($h * ($ratios[$variant] ?? $ratios['horizontal'])).'"';
