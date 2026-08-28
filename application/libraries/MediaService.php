@@ -50,8 +50,35 @@ class MediaService {
     /** What each file may be attached to. */
     const PURPOSES = array('branding', 'blog', 'service', 'avatar', 'ticket', 'marketplace');
 
+    /**
+     * Purposes whose files are NOT public.
+     *
+     * A branding logo or a blog image is meant to be fetched by anyone with
+     * the page. A support attachment is not: it is the screenshot of a failed
+     * payment, a bank statement, a passport photo sent to prove an identity
+     * order. Those used to land in `assets/uploads` like everything else —
+     * directly fetchable by URL, protected only by the filename being random.
+     * That is not authorisation. Anyone who ever saw the link (a forwarded
+     * email, a referer header, a shared screen, a staff member who has since
+     * left) kept the file for ever, and closing the ticket changed nothing.
+     *
+     * Files for these purposes are written OUTSIDE the document root and are
+     * served only by `Attachment::ticket()`, which checks who is asking.
+     */
+    const PRIVATE_PURPOSES = array('ticket');
+
     /** Where uploads land, relative to the document root. */
     const DIR = 'assets/uploads';
+
+    /** Where private uploads land, relative to the storage root. */
+    const PRIVATE_DIR = 'ticket_attachments';
+
+    /**
+     * Marks a `storage_key` that lives under the private storage root instead
+     * of the document root. Prefixed rather than guessed, so `path_for()`
+     * never has to infer which of two bases a row belongs to.
+     */
+    const PRIVATE_PREFIX = 'storage:';
 
     private $ci;
 
@@ -124,7 +151,8 @@ class MediaService {
         $ext  = self::ALLOWED[$mime];
         $name = bin2hex(random_bytes(16)).'.'.$ext;
 
-        $dir = $this->dir();
+        $private = self::is_private($purpose);
+        $dir = $private ? $this->private_dir() : $this->dir();
         if (!is_dir($dir) && !@mkdir($dir, 0755, true)) {
             return $this->err('STORAGE', 'The upload directory could not be created.');
         }
@@ -133,13 +161,26 @@ class MediaService {
         $dest = $dir.'/'.$name;
         $ok = $mover ? call_user_func($mover, $tmp, $dest) : @move_uploaded_file($tmp, $dest);
         if (!$ok) return $this->err('STORAGE', 'The file could not be saved.');
-        @chmod($dest, 0644);
+        // A private file is readable by the web user and nobody else: it is
+        // never served by the web server, only read by PHP.
+        @chmod($dest, $private ? 0600 : 0644);
+
+        $public_id = strtoupper(bin2hex(random_bytes(13)));
 
         $this->ci->db->insert('media', array(
-            'public_id'   => strtoupper(bin2hex(random_bytes(13))),
+            'public_id'   => $public_id,
             'uploader_id' => $uploader_id ? (int)$uploader_id : null,
-            'url'         => base_url(self::DIR.'/'.$name),
-            'storage_key' => self::DIR.'/'.$name,
+            // A private file has no direct URL at all. Its "url" is the
+            // authorising route, so every existing caller — including the
+            // ticket thread view, which renders `file_url` straight into an
+            // <a href> — gets the checked path without knowing anything
+            // changed.
+            'url'         => $private
+                ? rtrim(base_url('support/attachment/'.$public_id), '/')
+                : base_url(self::DIR.'/'.$name),
+            'storage_key' => $private
+                ? self::PRIVATE_PREFIX.self::PRIVATE_DIR.'/'.$name
+                : self::DIR.'/'.$name,
             // Shown in the library, never used to build a path.
             'file_name'   => mb_substr($this->clean_name($file['name'] ?? $name), 0, 255),
             'mime_type'   => $mime,
@@ -170,8 +211,21 @@ class MediaService {
      * removing arbitrary files.
      */
     public function path_for($media) {
-        $key = (string)($media->storage_key ?? '');
+        $key = (string)(isset($media->storage_key) ? $media->storage_key : '');
         if ($key === '') return null;
+
+        if (strpos($key, self::PRIVATE_PREFIX) === 0) {
+            $rel  = substr($key, strlen(self::PRIVATE_PREFIX));
+            $base = realpath($this->private_dir());
+            if ($base === false) return null;
+            // basename() alone: a row that says `../../.env` resolves to
+            // `.env` inside the attachment directory and then fails realpath.
+            $full = realpath($base.'/'.basename(str_replace('\\', '/', $rel)));
+            if ($full === false) return null;
+            if (strpos($full, $base.DIRECTORY_SEPARATOR) !== 0) return null;
+            return $full;
+        }
+
         $base = realpath($this->dir());
         $full = realpath(FCPATH.$key);
         if ($base === false || $full === false) return null;
@@ -179,10 +233,33 @@ class MediaService {
         return $full;
     }
 
+    /** True when files for this purpose must never be web-reachable. */
+    public static function is_private($purpose) {
+        return in_array($purpose, self::PRIVATE_PURPOSES, true);
+    }
+
+    /** True when this media row is stored outside the document root. */
+    public static function is_private_row($media) {
+        $key = (string)(isset($media->storage_key) ? $media->storage_key : '');
+        return strpos($key, self::PRIVATE_PREFIX) === 0;
+    }
+
     /* ------------------------------ helpers ----------------------------- */
 
     private function dir() {
         return rtrim(FCPATH, '/\\').'/'.self::DIR;
+    }
+
+    /**
+     * The private attachment directory, under the same storage root the logs
+     * and cache use — a path the deployment docs already require to be
+     * writable and which `.htaccess` already refuses to serve, and which on a
+     * correctly configured host sits outside the document root entirely.
+     */
+    public function private_dir() {
+        require_once APPPATH.'core/Env.php';
+        $paths = Env::writable_paths();
+        return rtrim(str_replace('\\', '/', $paths['storage']), '/').'/'.self::PRIVATE_DIR;
     }
 
     /**
@@ -194,6 +271,24 @@ class MediaService {
     private function harden($dir) {
         $file = $dir.'/.htaccess';
         if (file_exists($file)) return;
+
+        // The private store gets a blanket deny, not the "data, never code"
+        // guard: nothing in it should ever reach a browser directly. A support
+        // attachment is a bank statement, and the only reader is PHP.
+        if (strpos(str_replace('\\', '/', $dir), '/'.self::PRIVATE_DIR) !== false) {
+            @file_put_contents($file, implode("\n", array(
+                '# Runtime directory — never served over HTTP.',
+                '<IfModule mod_authz_core.c>',
+                '    Require all denied',
+                '</IfModule>',
+                '<IfModule !mod_authz_core.c>',
+                '    Order deny,allow',
+                '    Deny from all',
+                '</IfModule>',
+            ))."\n");
+            return;
+        }
+
         @file_put_contents($file, implode("\n", array(
             '# Uploaded files are data, never code.',
             'php_flag engine off',

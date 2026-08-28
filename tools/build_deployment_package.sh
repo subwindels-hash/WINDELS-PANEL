@@ -214,10 +214,11 @@ fi
 # request anyway, but only where the document root happens to be writable.
 say "creating runtime directories"
 for dir in storage/logs storage/cache storage/cache/sessions storage/cache/ratelimit \
-           application/cache assets/uploads; do
+           storage/ticket_attachments application/cache assets/uploads; do
   mkdir -p "${STAGE}/${dir}"
 done
-for dir in storage/logs storage/cache storage/cache/sessions storage/cache/ratelimit application/cache; do
+for dir in storage/logs storage/cache storage/cache/sessions storage/cache/ratelimit \
+           application/cache; do
   cat > "${STAGE}/${dir}/.htaccess" <<'HT'
 # Runtime directory — never served over HTTP.
 <IfModule mod_authz_core.c>
@@ -230,6 +231,13 @@ for dir in storage/logs storage/cache storage/cache/sessions storage/cache/ratel
 HT
   : > "${STAGE}/${dir}/index.html"
 done
+
+# The attachment store keeps the repository's own guard file verbatim: it holds
+# customers' bank statements and identity documents, and the package and the
+# clone must not disagree about how it is protected.
+cp "${ROOT}/storage/ticket_attachments/.htaccess" "${STAGE}/storage/ticket_attachments/.htaccess"
+cp "${ROOT}/storage/ticket_attachments/index.html" "${STAGE}/storage/ticket_attachments/index.html"
+
 cat > "${STAGE}/assets/uploads/.htaccess" <<'HT'
 # Uploaded files are data, never code.
 php_flag engine off
@@ -342,6 +350,7 @@ FIRST LOGIN
 FOLDER PERMISSIONS (only if something is not writable)
    Directories 755, files 644. These four must be writable by the web server:
        storage/logs/
+       storage/ticket_attachments/
        storage/cache/
        storage/cache/sessions/
        assets/uploads/

@@ -42,6 +42,8 @@ $route['cart/coupon'] = 'cart/coupon';
 $route['checkout'] = 'checkout/index';
 $route['checkout/place'] = 'checkout/place';
 $route['downloads/file'] = 'downloads/file';
+// Support attachments are private files: this route authorises, then streams.
+$route['support/attachment/(:any)'] = 'attachment/ticket/$1';
 $route['dashboard/downloads'] = 'dashboard/downloads/index';
 $route['dashboard/downloads/(:any)/link'] = 'dashboard/downloads/link/$1';
 $route['pricing'] = 'home/pricing';

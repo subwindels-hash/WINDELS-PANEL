@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 28), roles,
+-- foreign keys, migration bookkeeping (version 29), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first-login accounts. No migration,
 -- seed or installer command has to run afterwards.
@@ -2138,6 +2138,10 @@ CREATE INDEX idx_la_scope_ip_created ON login_attempts (scope, ip, created_at);
 
 CREATE INDEX idx_la_scope_email_created ON login_attempts (scope, email, created_at);
 
+-- ---------------------------------------------------------------------
+-- migration 029_private_ticket_attachments
+-- ---------------------------------------------------------------------
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -2152,7 +2156,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (28);
+INSERT INTO migrations (version) VALUES (29);
 
 -- ======================================================================
 -- CORE DATA

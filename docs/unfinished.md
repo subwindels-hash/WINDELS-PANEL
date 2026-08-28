@@ -1,6 +1,11 @@
 # Unfinished work — MarvySocials
 
-*As of 2026-08-28, branch `arena/01a04558-windels-panel`, commit `b21d5b6`.*
+*As of 2026-08-28, branch `arena/01a04558-windels-panel`.*
+
+**Progress:** items 11 and 12 are **closed** by module 17
+([module-private-attachments.md](module-private-attachments.md)). They stay in
+the table below, struck through, so the list reads as a record rather than a
+moving target.
 
 There are **no half-built modules left**. Every module in
 [modules.md](modules.md) is implemented, tested and driven end to end
@@ -33,8 +38,8 @@ open, and things this sandbox cannot prove.
 
 | # | Name | The risk |
 |---|---|---|
-| 11 | **Digital-file URL after revocation** | Downloads are protected by an unguessable URL, not a session. Revoking stops the panel handing out a link, but a URL captured earlier still resolves until the storage key rotates. Fix is deployment-level: move the digital store outside the document root. |
-| 12 | **Ticket-attachment URLs** | Same class of problem as 11, for support attachments. |
+| ~~11~~ | ~~**Digital-file URL after revocation**~~ | **Closed (module 17).** Proved by replaying a link captured *before* a refund: refused, and no fresh link can be minted. The concern was unfounded — `resolve_download()` re-checks revocation on every request — but the check that should have shown that was fetching a file that did not exist. Fixture corrected. |
+| ~~12~~ | ~~**Ticket-attachment URLs**~~ | **Closed (module 17).** Attachments now live outside the document root and are served only by `Attachment::ticket()`, which checks the session, the ticket's owner and the internal-note flag. Migration 029 moves the files that already exist and breaks the old URLs. |
 | 13 | **Per-customer coupon race** | `usage_limit_per_user` is a `COUNT(*)`; two simultaneous checkouts by one customer could both pass. Needs a unique index on `(coupon_id, user_id, marketplace_order_id)` plus duplicate-key handling. |
 | 14 | **Admin dashboard query cost** | Six aggregate widgets plus a chart, ~32 queries, worth about 4 queries of consolidation. Deliberately skipped in module 12. |
 | 15 | **No index review under load** | SQLite's planner is not MySQL's, so no `EXPLAIN` work has been done on the real engine. |
@@ -55,9 +60,7 @@ open, and things this sandbox cannot prove.
 
 ## Suggested order of attack
 
-1. **11 + 12** — move the digital and attachment stores outside the document
-   root. This is the only open item where a customer can still get something
-   they have paid to lose access to.
+1. ~~**11 + 12**~~ — done, module 17.
 2. **17 / 18** — point one gateway and one vendor at their sandboxes and re-run
    `gateway_check` and `smm_provider_check`. Nothing else de-risks a launch as
    much.

@@ -32,4 +32,26 @@ class Ticket_message_model extends MY_Model {
         $this->db->insert($this->table, $data);
         return $this->db->where('id', $this->db->insert_id())->get($this->table)->row();
     }
+
+    /**
+     * Everything needed to decide whether the person asking for an attachment
+     * may have it: which ticket it belongs to, who owns that ticket, and
+     * whether it hangs off an internal staff note.
+     *
+     * Looked up by the stored `file_url` because that is the only link between
+     * `media` and `ticket_attachments` — attachments record the URL the media
+     * library handed them, not the media id. One query, because this runs on
+     * every byte-serving request.
+     */
+    public function attachment_context($file_url) {
+        return $this->db
+            ->select('ta.file_name, ta.mime_type, ta.size, tm.is_internal_note,
+                      t.id AS ticket_id, t.user_id AS ticket_user_id, tm.author_id', false)
+            ->from('ticket_attachments ta')
+            ->join('ticket_messages tm', 'tm.id = ta.ticket_message_id', 'inner')
+            ->join('tickets t', 't.id = tm.ticket_id', 'inner')
+            ->where('ta.file_url', (string)$file_url)
+            ->limit(1)
+            ->get()->row();
+    }
 }

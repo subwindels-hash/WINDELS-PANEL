@@ -25,6 +25,9 @@
 !/storage/cache/sessions/.htaccess
 !/storage/cache/sessions/index.html
 !/storage/cache/ratelimit/
+/storage/ticket_attachments/*
+!/storage/ticket_attachments/.htaccess
+!/storage/ticket_attachments/index.html
 /storage/cache/ratelimit/*
 !/storage/cache/ratelimit/.htaccess
 !/storage/cache/ratelimit/index.html

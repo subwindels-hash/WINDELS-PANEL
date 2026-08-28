@@ -108,7 +108,7 @@ else
   bold "6. End-to-end · providers, staff surfaces and security"
   for check in smm_provider_check admin_check settings_validation_check feature_flags_check \
                notifications_check support_check api_check analytics_check security_check \
-               chrome_check pin_check pin_rotation_check; do
+               chrome_check attachment_check pin_check pin_rotation_check; do
     stage "${check}" node "tools/devserver/${check}.mjs" \
       --admin-password "${ADMIN_PASSWORD}" --password "${ADMIN_PASSWORD}"
   done

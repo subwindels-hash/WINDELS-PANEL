@@ -233,6 +233,40 @@ class TicketService {
         return $out;
     }
 
+    /**
+     * May this person read this support attachment?
+     *
+     * Stated once, as a pure function, because it is the whole security value
+     * of moving attachments out of the document root — an access rule that
+     * lives inline in a controller is a rule no test can interrogate.
+     *
+     * - Support staff (`tickets.view`) read everything. Reading customers'
+     *   evidence is the queue's job.
+     * - A customer reads attachments on their own ticket only.
+     * - Nobody outside staff ever reads an attachment on an **internal note**.
+     *   Staff write those about the customer and the thread view hides them;
+     *   serving the file would leak exactly what the flag protects.
+     * - An orphan upload — accepted, but the message it belonged to was never
+     *   saved — is readable only by whoever uploaded it.
+     *
+     * @param bool        $is_staff Caller holds `tickets.view`.
+     * @param int         $user_id  Caller's user id (0 when signed out).
+     * @param object      $media    The `media` row.
+     * @param object|null $ctx      Ticket_message_model::attachment_context() row.
+     */
+    public static function may_read_attachment($is_staff, $user_id, $media, $ctx) {
+        if ($is_staff) return true;
+
+        $user_id = (int)$user_id;
+        if ($user_id <= 0) return false;
+
+        if (!$ctx) {
+            return (int)(isset($media->uploader_id) ? $media->uploader_id : 0) === $user_id;
+        }
+        if ((int)$ctx->is_internal_note === 1) return false;
+        return (int)$ctx->ticket_user_id === $user_id;
+    }
+
     private function add_message($ticket_id, $author_id, $body, $is_staff, $attachments, $is_internal_note = 0) {
         // Only a staff message can ever be an internal note; a customer reply
         // is forced visible so nothing a customer writes can be hidden.

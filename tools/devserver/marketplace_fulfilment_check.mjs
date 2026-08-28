@@ -70,7 +70,15 @@ const fx = withDb((db) => {
   const listing = db.prepare(`SELECT * FROM marketplace_listings WHERE public_id = ?`).get(listingPublic);
 
   // A file behind the listing, so buying it grants a real download.
-  const key = 'storage/digital/e2e-' + stamp + '.pdf';
+  //
+  // This fixture used to invent a storage key (`storage/digital/…`) that
+  // pointed at nothing and did not even match the prefix
+  // ShopDeliveryService confines lookups to, so every download in this check
+  // failed as MISSING_FILE and no stage ever noticed — the script only looked
+  // at database columns. A real PDF is written to the real private store so
+  // the bytes can actually be fetched, and revocation can be proved against a
+  // link that genuinely worked a moment earlier.
+  const key = 'digital_products/e2e-' + stamp + '.pdf';
   db.prepare(`INSERT INTO digital_products
       (public_id, listing_id, storage_key, original_filename, mime_type, size_bytes,
        download_limit, link_ttl_hours, created_at, updated_at)
@@ -79,6 +87,11 @@ const fx = withDb((db) => {
 
   return { userId: user.id, listing, listingPublic };
 });
+
+// The bytes behind that key, in the private store the service reads from.
+const digitalPath = path.resolve(ROOT, 'storage/digital_products/e2e-' + stamp + '.pdf');
+fs.mkdirSync(path.dirname(digitalPath), { recursive: true });
+fs.writeFileSync(digitalPath, Buffer.from('%PDF-1.4\n% e2e fixture\n%%EOF\n', 'utf8'));
 
 const balance = () => withDb((db) =>
   money(db.prepare(`SELECT balance FROM wallets WHERE user_id = ?`).get(fx.userId).balance));
@@ -125,6 +138,21 @@ check('the download was granted', !!delivery() && Number(delivery().revoked) ===
 const downloads = await cust.get('/dashboard/downloads');
 check('and it appears in My Downloads', downloads.text.includes('ebook.pdf'));
 
+// Capture a live download link the way an attacker (or a customer's browser
+// history, or a forwarded email) would: issue it while the purchase is good,
+// keep the URL, and try it again after the money goes back. Module 11 left
+// this as an open question — "a URL captured before revocation still resolves
+// until the storage key is rotated" — and it has to be answered with a real
+// request, not by reading the code.
+const issued = await cust.postForm(`/dashboard/downloads/${delivery().public_id}/link`,
+  {}, { fromHtml: downloads.text, follow: false });
+const capturedLink = issued.headers.get('location') || '';
+check('a signed download link is issued while the purchase is good',
+  /\/downloads\/file\?token=/.test(capturedLink), `${issued.status} ${capturedLink}`);
+const usedNow = await cust.raw(capturedLink);
+check('and it serves the file', usedNow.status === 200 && usedNow.text.includes('%PDF'),
+  `status=${usedNow.status} ${(/(unavailable|expired|revoked|limit|no longer available|invalid)[^<]*/i.exec(usedNow.text.replace(/<[^>]+>/g,' ')) || ['?'])[0]}`);
+
 /* ==================== 1 · escrow survives the sweep ====================== */
 
 console.log('\n── The stuck-purchase sweep must not raid escrow');
@@ -161,6 +189,20 @@ const afterRevoke = await cust.get('/dashboard/downloads');
 check('My Downloads shows it as revoked rather than offering the file',
   /revoked/i.test(afterRevoke.text) || !/Download/i.test(afterRevoke.text));
 
+// The captured link, replayed after the refund. This is the whole question:
+// a refunded buyer who kept the URL must not still be able to fetch the goods.
+const replayed = await cust.raw(capturedLink);
+check('a link captured BEFORE the refund no longer serves the file',
+  replayed.status !== 200 && !replayed.text.includes('%PDF'),
+  `status=${replayed.status}`);
+check('and the buyer is told why, not given a blank page',
+  /revoked/i.test(replayed.text), replayed.text.slice(0, 120));
+const reissue = await cust.postForm(`/dashboard/downloads/${delivery().public_id}/link`,
+  {}, { fromHtml: afterRevoke.text, follow: false });
+check('nor can a fresh link be minted for it',
+  !/\/downloads\/file\?token=/.test(reissue.headers.get('location') || ''),
+  reissue.headers.get('location') || String(reissue.status));
+
 /* -------------------------------- cleanup -------------------------------- */
 
 withDb((db) => {
@@ -177,6 +219,9 @@ withDb((db) => {
   db.prepare(`DELETE FROM digital_products WHERE listing_id = ?`).run(fx.listing.id);
   db.prepare(`DELETE FROM marketplace_listings WHERE id = ?`).run(fx.listing.id);
 });
+// The fixture PDF goes with the fixture rows: a dev store that fills up with
+// abandoned e2e files is how a checker starts passing for the wrong reason.
+try { fs.unlinkSync(digitalPath); } catch { /* already gone */ }
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

@@ -628,6 +628,9 @@ class CpanelDeploymentTest extends TestCase
         // so only the guards take part in the staleness comparison.
         $runtime_prefix = array(
             'storage/devdb/', 'storage/digital_products/', 'storage/logs/', 'storage/cache/',
+            // Support attachments are customers' documents (module 17): the
+            // package ships the guarded directory, never what is in it.
+            'storage/ticket_attachments/',
             'assets/uploads/',
         );
         $guards = array('.htaccess', 'index.html', 'index.php');
