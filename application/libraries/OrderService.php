@@ -197,32 +197,83 @@ class OrderService {
 
     /* -------------------------------------------------------------- */
 
-    public function cancel($order, $user) {
-        $order = is_object($order) ? $order : $this->ci->Order_model->find_public_for_user($order, $user->id);
+    /**
+     * Cancel an order and return the charge.
+     *
+     * @param object|string $order
+     * @param object|null   $user     the OWNER (the wallet credited is the owner's)
+     * @param array         $options  source: CUSTOMER|ADMIN, force: bool, reason: string
+     *
+     * ## Why a refused provider cancel now stops this
+     *
+     * The provider call used to be fire-and-forget: whatever the panel said,
+     * the order was cancelled locally and the customer's wallet credited back.
+     * When the provider refuses — the usual reason being that delivery has
+     * already started, which is precisely when a customer tries to cancel —
+     * the panel gave the money back AND still paid the provider for a delivery
+     * that continued. Every such cancellation was a straight loss, invisible
+     * in the books because the order looked cleanly cancelled.
+     *
+     * A refusal (or an unreachable provider — silence is not consent) now
+     * fails the cancellation and says why. Staff can override with
+     * `force`, which is a decision someone takes knowingly rather than one the
+     * code takes for them.
+     */
+    public function cancel($order, $user = null, array $options = array()) {
+        $source = strtoupper((string)($options['source'] ?? 'CUSTOMER')) === 'ADMIN' ? 'ADMIN' : 'CUSTOMER';
+        $force  = !empty($options['force']);
+
+        if (!is_object($order)) {
+            $order = $source === 'ADMIN'
+                ? $this->ci->Order_model->admin_find($order)
+                : ($user ? $this->ci->Order_model->find_public_for_user($order, $user->id) : null);
+        }
         if (!$order) return array('ok'=>false,'error'=>'Order not found','code'=>'NO_ORDER');
         if (!OrderStateMachine::can($order->status, 'CANCELED')) {
             return array('ok'=>false,'error'=>'Order cannot be canceled in its current state','code'=>'NOT_CANCELLABLE');
         }
-        if (!(int)$order->service_id || !$this->service_supports($order->service_id, 'cancel_supported')) {
+        // The `cancel_supported` flag is a promise made to customers about a
+        // service. Staff cancelling on someone's behalf are not bound by it —
+        // an order stuck PENDING at a dead provider has to be cancellable.
+        if ($source !== 'ADMIN'
+            && (!(int)$order->service_id || !$this->service_supports($order->service_id, 'cancel_supported'))) {
             return array('ok'=>false,'error'=>'This service does not support cancellation','code'=>'CANCEL_UNSUPPORTED');
         }
-        // Try provider cancel if it has been submitted, then move to CANCELED.
+
+        // Ask the provider first, and believe the answer.
         if ($order->provider_order_id) {
             $provider = $order->provider_id ? $this->ci->Provider_model->find_by_id($order->provider_id) : null;
             if ($provider) {
                 try {
-                    $adapter = $this->ci->providersyncservice->adapter($provider);
-                    $adapter->requestCancel($order->provider_order_id);
+                    $res = $this->ci->providersyncservice->adapter($provider)->requestCancel($order->provider_order_id);
                 } catch (Exception $e) {
-                    log_message('error', 'provider cancel failed: '.$e->getMessage());
+                    $res = array('ok'=>false, 'error'=>$e->getMessage());
+                } catch (Throwable $e) {
+                    $res = array('ok'=>false, 'error'=>$e->getMessage());
+                }
+                if (empty($res['ok'])) {
+                    $why = $res['error'] ?? 'the provider refused the cancellation';
+                    log_message('error', 'provider cancel refused for '.$order->public_id.': '.$why);
+                    if (!$force) {
+                        return array('ok'=>false, 'code'=>'PROVIDER_REFUSED',
+                            'error'=>'The provider would not cancel this order: '.$why,
+                            'provider_error'=>$why);
+                    }
                 }
             }
         }
-        $this->transition($order->id, $order->status, 'CANCELED', 'CUSTOMER', 'Canceled by customer');
+
+        $reason = $options['reason'] ?? ($source === 'ADMIN' ? 'Canceled by staff' : 'Canceled by customer');
+        $this->transition($order->id, $order->status, 'CANCELED', $source, $reason);
         $order = $this->ci->Order_model->find_by_id($order->id);
-        $refunded = $this->refund_charge($order, 'CUSTOMER');
+        $refunded = $this->refund_charge($order, $source);
         $order = $this->ci->Order_model->find_by_id($order->id);
         $this->sync_affiliate($order);
+        // The customer asked for this, but the reseller integration and the
+        // inbox still have to hear about it — apply_status() has always told
+        // them, and a cancellation that skipped this path told nobody.
+        $this->notify_reseller_webhook($order, 'CANCELED');
+        $this->notify_customer($order, 'CANCELED');
         return array('ok'=>true, 'order'=>$order, 'refunded'=>$refunded);
     }
 
@@ -378,23 +429,70 @@ class OrderService {
         return $outstanding;
     }
 
+    /**
+     * Record a partial delivery and give back the undelivered share.
+     *
+     * The arithmetic here is the customer's money, and the old version got
+     * three cases wrong:
+     *
+     *  - `remains >= quantity` (the provider delivered nothing, or reports the
+     *    remainder inclusively) refunded **zero** — the customer paid in full
+     *    for nothing;
+     *  - `quantity <= 0` refunded zero for the same reason;
+     *  - the ledger result was never checked, so a failed credit still wrote
+     *    `refunded_amount` and the order claimed a refund that never happened.
+     *
+     * It also overwrote `refunded_amount` outright, so a second, larger
+     * partial (a drop reported in stages) recorded a bigger refund than the
+     * ledger had actually paid — and the later full refund then subtracted
+     * that phantom amount. Refunds are now cumulative: the target is
+     * `charge x remains / quantity`, only the difference is credited, and the
+     * idempotency key carries the target so re-running the same report credits
+     * nothing twice.
+     */
     private function apply_partial($order, $remains, $source, $reason) {
         if (!OrderStateMachine::can($order->status, 'PARTIAL')) {
             return array('ok'=>false,'error'=>'Cannot mark PARTIAL from '.$order->status);
         }
+        $quantity = (int)$order->quantity;
+        $remains  = max(0, (int)$remains);
+        if ($quantity > 0 && $remains > $quantity) $remains = $quantity;
+
         $this->transition($order->id, $order->status, 'PARTIAL', $source, $reason);
-        $update = array('remains'=>(int)$remains);
+        $update = array('remains' => $remains);
+
         // Refund the undelivered share proportionally, unless the operator has
         // switched automatic partial refunds off (settings `partial_refund_enabled`);
         // in that case the amount stays charged until staff refund it manually.
         if ($this->partial_refund_enabled()) {
-            if ($order->quantity > 0 && $remains > 0 && $remains < (int)$order->quantity) {
-                $refund = bcmul($order->charge, bcdiv((string)$remains, (string)$order->quantity, 8), 8);
-                if (bccomp($refund, '0', 8) > 0) {
-                    $wallet = $this->ci->Wallet_model->for_user($order->user_id);
-                    $this->ci->ledgerservice->refund($wallet->id, $refund, 'ORDER', $order->public_id,
-                        'order:partial:'.$order->public_id);
-                    $update['refunded_amount'] = $refund;
+            $target = ($quantity > 0)
+                ? bcmul((string)$order->charge, bcdiv((string)$remains, (string)$quantity, 8), 8)
+                // No quantity on record means nothing can be shown to have been
+                // delivered; the customer keeps their money, not us.
+                : (string)$order->charge;
+            $already = (string)($order->refunded_amount ?? '0');
+            $delta   = bcsub($target, $already, 8);
+
+            if (bccomp($delta, '0', 8) > 0) {
+                $wallet = $this->ci->Wallet_model->for_user($order->user_id);
+                if (!$wallet) {
+                    log_message('error', 'partial refund skipped: no wallet for user '.$order->user_id);
+                    $update['note'] = 'Partial delivery recorded; refund could not be paid (no wallet)';
+                } else {
+                    $result = $this->ci->ledgerservice->refund(
+                        $wallet->id, $delta, 'ORDER', $order->public_id,
+                        'order:partial:'.$order->public_id.':'.$target
+                    );
+                    if (!empty($result['ok'])) {
+                        $update['refunded_amount'] = $target;
+                    } else {
+                        // Say nothing was refunded rather than claim it was:
+                        // the reconciliation between orders and the ledger is
+                        // the only way this is ever caught.
+                        log_message('error', 'partial refund failed for '.$order->public_id.': '
+                            .($result['error'] ?? 'unknown'));
+                        $update['note'] = 'Partial delivery recorded; refund failed and needs staff attention';
+                    }
                 }
             }
         } else {

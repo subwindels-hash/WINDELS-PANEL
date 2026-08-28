@@ -420,6 +420,8 @@ class Core_seeder extends Seeder {
             array('max_deposit','5000000.00000000','payments',1),
             array('order_auto_submit',TRUE,'orders',0),
             array('partial_refund_enabled',TRUE,'orders',0),
+            array('refill_window_days','30','orders',0),
+            array('refill_abandon_hours','168','orders',0),
             // security
             array('registration_enabled',TRUE,'security',1),
             // First login on a fresh cPanel import must reach /dashboard and

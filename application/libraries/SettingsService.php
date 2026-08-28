@@ -117,6 +117,14 @@ class SettingsService {
                 'Off holds new orders in PENDING for staff to review and submit manually.', true),
             'partial_refund_enabled' => array('bool', 'orders', 'Auto-refund partial deliveries',
                 'On refunds the undelivered share of a partial delivery automatically; off leaves it for staff to refund.', true),
+            'refill_window_days' => array('int', 'orders', 'Refill guarantee window (days)',
+                'How long after completion a customer may ask for a refill. Providers honour their own '
+                .'window and refuse anything older, so asking outside it only produces a refusal the '
+                .'customer has to read. 0 means no limit.', 30),
+            'refill_abandon_hours' => array('int', 'orders', 'Close unanswered refills after (hours)',
+                'A refill the provider never settles is closed as failed after this long and the customer '
+                .'is told. Leaving it open shows them a top-up that is never coming and leaves staff a '
+                .'queue that can never be cleared.', 168),
 
             'referral_commission_percent' => array('percent', 'affiliate', 'Referral commission',
                 'Percentage of a referred customer’s spend paid to the referrer.', '5.0000'),

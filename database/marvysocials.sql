@@ -2787,6 +2787,12 @@ INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
 VALUES ('partial_refund_enabled', '{"value":true}', 'orders', 0);
 
 INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
+VALUES ('refill_window_days', '{"value":"30"}', 'orders', 0);
+
+INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
+VALUES ('refill_abandon_hours', '{"value":"168"}', 'orders', 0);
+
+INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
 VALUES ('registration_enabled', '{"value":true}', 'security', 1);
 
 INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)

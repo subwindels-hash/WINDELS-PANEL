@@ -78,7 +78,24 @@ foreach ($rows as $r) {
           </td>
           <td class="text-xs muted"><?=htmlspecialchars((string)($r->service_name ?? '—'))?></td>
           <td>
+            <?php
+              // metadata carries what the worker knows: how many times the
+              // refill has been sent, and whether it is waiting on a human
+              // rather than on the provider. Without this an operator cannot
+              // tell "the provider is down" from "nobody can ever send this".
+              $meta = array();
+              if (!empty($r->metadata)) {
+                  $decoded = is_array($r->metadata) ? $r->metadata : json_decode((string)$r->metadata, true);
+                  if (is_array($decoded)) $meta = $decoded;
+              }
+              $attempts = (int)($meta['submit_attempts'] ?? 0);
+            ?>
             <span class="<?=DashboardStats::status_badge($r->status)?>"><?=htmlspecialchars((string)$r->status)?></span>
+            <?php if (!empty($meta['manual']) && $r->status === 'PENDING'): ?>
+              <span class="badge badge-warning">Needs staff</span>
+            <?php elseif ($attempts > 1 && $r->status === 'PENDING'): ?>
+              <span class="text-xs muted">sent <?=number_format($attempts)?>×</span>
+            <?php endif; ?>
             <?php if (!empty($r->error)): ?>
               <div class="text-xs muted" title="<?=htmlspecialchars((string)$r->error)?>">
                 <?=htmlspecialchars(mb_strimwidth((string)$r->error, 0, 40, '…'))?>

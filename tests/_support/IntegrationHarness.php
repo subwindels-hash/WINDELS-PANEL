@@ -649,11 +649,16 @@ class HarnessAdapter
                 return array('ok' => true, 'data' => array('status' => 'In progress'));
             case 'getMultipleOrderStatus':
                 return array('ok' => true, 'data' => array());
-            case 'createRefill':
+            // These names are the ProviderAdapterInterface ones. They used to
+            // read createRefill/cancelOrder — methods no adapter has — so the
+            // fallback `array('ok' => true)` answered every refill with no
+            // refill id, which the service correctly reads as a refusal. A
+            // double that disagrees with the interface tests nothing.
+            case 'requestRefill':
                 return array('ok' => true, 'provider_refill_id' => 'R-1');
             case 'getRefillStatus':
                 return array('ok' => true, 'data' => array('status' => 'Completed'));
-            case 'cancelOrder':
+            case 'requestCancel':
                 return array('ok' => true);
             default:
                 return array('ok' => true);

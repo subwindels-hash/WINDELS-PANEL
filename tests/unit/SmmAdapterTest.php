@@ -240,6 +240,46 @@ class SmmAdapterTest extends TestCase
         $this->assertSame('Incorrect order ID', $res['error']);
     }
 
+    /**
+     * Refusal versus silence. RefillService closes a refill the provider
+     * refused and re-sends one that never got an answer, so the two must not
+     * come back looking the same: re-sending a refusal hammers a provider that
+     * has already said no, and closing a timeout throws away a customer's only
+     * remedy because of one bad minute.
+     */
+    public function testARefusalIsFinalWhileATransportFailureIsRetryable()
+    {
+        list($refused) = $this->adapter(array($this->json(array('error' => 'Incorrect order ID'))));
+        $this->assertFalse($refused->requestRefill('1')['retryable'],
+            'the provider answered; asking again changes nothing');
+
+        list($timeout) = $this->adapter(array(array('http_code' => 0, 'error' => 'Operation timed out')));
+        $this->assertTrue($timeout->requestRefill('1')['retryable'], 'no answer is not an answer');
+
+        list($down) = $this->adapter(array(array('http_code' => 502, 'body' => 'bad gateway')));
+        $this->assertTrue($down->requestRefill('1')['retryable']);
+
+        list($throttled) = $this->adapter(array(array('http_code' => 429, 'body' => 'slow down')));
+        $this->assertTrue($throttled->requestRefill('1')['retryable']);
+
+        list($html) = $this->adapter(array(array('http_code' => 200, 'body' => '<html>maintenance</html>')));
+        $this->assertTrue($html->requestRefill('1')['retryable'],
+            'a maintenance page is the panel being down, not a decision about this refill');
+    }
+
+    /** Some panels put the refusal inside the per-order entry. */
+    public function testAPerOrderRefillRefusalInsideAListIsStillARefusal()
+    {
+        list($adapter) = $this->adapter(array($this->json(array(
+            array('order' => 23501, 'refill' => array('error' => 'Refill not available')),
+        ))));
+        $res = $adapter->requestRefill('23501');
+
+        $this->assertFalse($res['ok']);
+        $this->assertSame('Refill not available', $res['error']);
+        $this->assertFalse($res['retryable']);
+    }
+
     public function testRefillStatusIsFlattenedToAStatusString()
     {
         list($flat) = $this->adapter(array($this->json(array('status' => 'Completed'))));

@@ -216,11 +216,18 @@ class AdminOperationsTest extends TestCase
         $order = $this->completed_order($app, $customer);
         $app->refillservice->request($order->public_id, $app->User_model->find_by_id($order->user_id));
 
-        $this->assertSame(1, $app->Refill_model->admin_count(array('status' => 'PENDING')));
+        // PROCESSING, not PENDING: the harness adapter used to answer the
+        // refill call with a method name no adapter implements, so every
+        // refill in these tests fell through to "the provider gave us no
+        // refill id" and sat in PENDING. With the double speaking the real
+        // ProviderAdapterInterface, an accepted refill is PROCESSING — which
+        // is what this filter has to be proved against.
+        $this->assertSame(1, $app->Refill_model->admin_count(array('status' => 'PROCESSING')));
+        $this->assertSame(0, $app->Refill_model->admin_count(array('status' => 'PENDING')));
         $this->assertSame(0, $app->Refill_model->admin_count(array('status' => 'COMPLETED')));
 
         $counts = $app->Refill_model->status_counts();
-        $this->assertSame(1, $counts['PENDING']);
+        $this->assertSame(1, $counts['PROCESSING']);
     }
 
     public function testTheSchedulerQueuesReadAcrossCustomers()

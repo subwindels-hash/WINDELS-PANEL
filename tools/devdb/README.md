@@ -70,7 +70,13 @@ node tools/devserver/page_audit.mjs           --password <pw>   # every dashboar
 node tools/devserver/link_crawl.mjs           --password <pw>   # follow every internal link
 node tools/devserver/image_audit.mjs          --password <pw>   # every <img> resolves
 node tools/devserver/api_check.mjs            --password <pw>   # reseller API: envelope, scopes, idempotency
+node tools/devserver/refunds_check.mjs        --admin-password <pw>   # refills, partial refunds, refused cancellations
 ```
+
+`smm_provider_check.mjs` and `refunds_check.mjs` stand up
+`tools/devserver/fake_smm_panel.mjs` on localhost and need
+`HTTP_ALLOW_PRIVATE_HOSTS=true` in `.env` — `SecureHttpClient` refuses
+non-public hosts by default (SSRF protection). Never set that in production.
 
 ## What this does and does not prove
 

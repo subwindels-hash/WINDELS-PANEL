@@ -81,8 +81,16 @@ class StandardSmmAdapter implements ProviderAdapterInterface {
         $res = $this->http->post($url, $payload);
         $code = (int)($res['http_code'] ?? 0);
 
+        // Transport problems are RETRYABLE, panel refusals are not. The caller
+        // has to know which: a refill the panel refused ("Incorrect order ID")
+        // must be closed and the customer told, while a refill lost to a
+        // timeout or a 502 must be kept and re-sent, or the customer pays for
+        // a top-up that was never requested.
         if ($code === 0) {
-            return $this->fail($res['error'] ?: 'The provider could not be reached.');
+            return $this->fail($res['error'] ?: 'The provider could not be reached.', true);
+        }
+        if ($code === 429 || $code >= 500) {
+            return $this->fail('The provider answered HTTP '.$code.'.', true);
         }
         if ($code !== 200) {
             return $this->fail('The provider answered HTTP '.$code.'.');
@@ -93,8 +101,10 @@ class StandardSmmAdapter implements ProviderAdapterInterface {
         if (!is_array($data)) {
             // An HTML maintenance page or a truncated body is not "no data" —
             // treating it as an empty catalogue would wipe a provider's
-            // services on the next sync.
-            return $this->fail('The provider returned a response that is not JSON.');
+            // services on the next sync. It is also nobody's final answer, so
+            // it is retryable: the panel is having a bad minute, it has not
+            // refused anything.
+            return $this->fail('The provider returned a response that is not JSON.', true);
         }
 
         // The panel-level refusal that arrives with HTTP 200.
@@ -128,9 +138,18 @@ class StandardSmmAdapter implements ProviderAdapterInterface {
         return null;
     }
 
-    private function fail($message) {
+    /**
+     * One failure envelope.
+     *
+     * `retryable` says whether the request may be re-sent later. False means
+     * the provider gave an answer and that answer was no; true means we never
+     * got an answer at all. Callers that spend or return customer money key
+     * off this: RefillService closes a refused refill and re-queues an
+     * unanswered one.
+     */
+    private function fail($message, $retryable = false) {
         log_message('error', 'smm provider '.($this->provider->id ?? '?').': '.$message);
-        return array('ok' => false, 'data' => null, 'error' => $message);
+        return array('ok' => false, 'data' => null, 'error' => $message, 'retryable' => (bool)$retryable);
     }
 
     private function is_list(array $data) {
@@ -222,15 +241,27 @@ class StandardSmmAdapter implements ProviderAdapterInterface {
     /** Ask the provider to refill an order. */
     public function requestRefill($provider_order_id) {
         $res = $this->call(array('action' => 'refill', 'order' => $provider_order_id));
-        if (empty($res['ok'])) return array('ok' => false, 'error' => $res['error']);
+        if (empty($res['ok'])) {
+            return array('ok' => false, 'error' => $res['error'], 'retryable' => !empty($res['retryable']));
+        }
 
-        // Some panels answer {"refill": 123}, others [{"order":1,"refill":123}].
+        // Some panels answer {"refill": 123}, others [{"order":1,"refill":123}],
+        // and a few answer per-order refusals inside the list:
+        // [{"order":1,"refill":{"error":"Incorrect order ID"}}].
         $data = $res['data'];
         $refill = $data['refill'] ?? ($data[0]['refill'] ?? null);
-        if ($refill === null || $refill === '') {
-            return array('ok' => false, 'error' => 'The provider did not return a refill id.');
+        if (is_array($refill)) {
+            $error = $refill['error'] ?? null;
+            if (is_string($error) && $error !== '') {
+                return array('ok' => false, 'error' => $error, 'retryable' => false);
+            }
+            $refill = $refill['refill'] ?? null;
         }
-        return array('ok' => true, 'provider_refill_id' => (string)$refill);
+        if ($refill === null || $refill === '') {
+            return array('ok' => false, 'error' => 'The provider did not return a refill id.',
+                         'retryable' => false);
+        }
+        return array('ok' => true, 'provider_refill_id' => (string)$refill, 'error' => null);
     }
 
     public function getRefillStatus($provider_refill_id) {
@@ -257,7 +288,9 @@ class StandardSmmAdapter implements ProviderAdapterInterface {
     public function requestCancel($provider_order_id) {
         $ids = is_array($provider_order_id) ? $provider_order_id : array($provider_order_id);
         $res = $this->call(array('action' => 'cancel', 'orders' => implode(',', array_map('strval', $ids))));
-        if (empty($res['ok'])) return array('ok' => false, 'error' => $res['error']);
+        if (empty($res['ok'])) {
+            return array('ok' => false, 'error' => $res['error'], 'retryable' => !empty($res['retryable']));
+        }
 
         $data = $res['data'];
         $entries = $this->is_list($data) ? $data : array($data);
@@ -269,7 +302,9 @@ class StandardSmmAdapter implements ProviderAdapterInterface {
             elseif (isset($entry['error'])) $refusals[] = (string)$entry['error'];
         }
         if ($refusals && count($refusals) === count($entries)) {
-            return array('ok' => false, 'error' => $refusals[0], 'data' => $data);
+            // The panel answered, and the answer was no. Re-sending it changes
+            // nothing, so this must never be retried as if it were a timeout.
+            return array('ok' => false, 'error' => $refusals[0], 'data' => $data, 'retryable' => false);
         }
         return array('ok' => true, 'data' => $data, 'error' => null);
     }

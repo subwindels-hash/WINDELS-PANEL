@@ -35,6 +35,11 @@ class NotificationService {
         'order.partial'    => array('Order partially delivered', 'order.partial'),
         'order.canceled'   => array('Order cancelled',        null),
         'order.refunded'   => array('Order refunded',         null),
+        // A refill is the customer's only remedy after a drop, and it costs
+        // them nothing — which is exactly why silence about the outcome is so
+        // damaging. Both endings are announced.
+        'refill.completed' => array('Refill completed',       null),
+        'refill.failed'    => array('Refill could not be completed', null),
         'payment.credited' => array('Wallet credited',        'payment.credited'),
         'ticket.replied'   => array('Support replied',        'ticket.replied'),
     );

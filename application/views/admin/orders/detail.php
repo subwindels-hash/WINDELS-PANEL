@@ -91,6 +91,11 @@ $can_refund = OrderStateMachine::can($order->status, 'REFUNDED');
             data-confirm="Cancel this order and refund the charge?" >
         <?=$csrf()?>
         <input class="input mb-2" name="reason" placeholder="Cancellation reason">
+        <label class="text-xs muted row mb-2" style="gap:.4rem;align-items:flex-start">
+          <input type="checkbox" name="force" value="1">
+          <span>Cancel anyway if the provider refuses. The customer is refunded and the provider
+                charge stands — a real cost, so only tick it deliberately.</span>
+        </label>
         <button class="btn btn-secondary btn-sm" type="submit">Cancel &amp; refund</button>
       </form>
       <?php endif; ?>

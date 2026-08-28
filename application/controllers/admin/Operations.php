@@ -147,7 +147,11 @@ class Operations extends Admin_Controller {
         $this->audit('refill.requested', 'refills',
             isset($res['refill']) ? $res['refill'] : null,
             null, array('order' => $order->public_id));
-        $this->done('refills', 'Refill requested for order '.$order->public_id.'.');
+        // The service reports what the provider actually said — accepted,
+        // queued for a retry, or handed to staff. Reporting "requested" for
+        // all three is how refills used to disappear silently.
+        $this->done('refills', 'Refill for order '.$order->public_id.': '
+            .($res['message'] ?? 'requested.'));
     }
 
     /** POST /admin/cancellations/:order/cancel — cancel and refund. */
@@ -156,10 +160,22 @@ class Operations extends Admin_Controller {
         $order = $this->Order_model->admin_find($order_public_id);
         if (!$order) show_404();
 
+        // Through OrderService::cancel(), not apply_status(): the provider has
+        // to be asked, or we refund the customer while still paying for a
+        // delivery that keeps running. `force` is the deliberate override.
         $before = array('status' => $order->status);
-        $res = $this->orderservice->apply_status($order, 'CANCELED', 'ADMIN',
-            trim((string)$this->input->post('reason', true)) ?: 'Canceled by staff');
-        if (empty($res['ok'])) return $this->fail('cancellations', $res['error']);
+        $res = $this->orderservice->cancel($order, null, array(
+            'source' => 'ADMIN',
+            'force'  => (bool)$this->input->post('force'),
+            'reason' => trim((string)$this->input->post('reason', true)) ?: 'Canceled by staff',
+        ));
+        if (empty($res['ok'])) {
+            $message = $res['error'];
+            if (($res['code'] ?? '') === 'PROVIDER_REFUSED') {
+                $message .= ' Use “cancel anyway” if you accept the provider charge.';
+            }
+            return $this->fail('cancellations', $message);
+        }
 
         $this->audit('order.canceled', 'orders', $order, $before, array('status' => 'CANCELED'));
         $this->done('cancellations', 'Order '.$order->public_id.' canceled and refunded.');

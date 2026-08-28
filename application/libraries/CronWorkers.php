@@ -920,40 +920,175 @@ class CronWorkers {
 
     /* ============================ refill status ============================ */
 
-    /** Poll providers for the status of in-flight refills. */
-    public function refill_status($limit = 100) {
-        $this->need(array('Refill_model', 'Provider_model', 'Refill_status_history_model'), array('ProviderSyncService'));
+    /**
+     * Provider vocabulary for a refill, mapped onto our own statuses.
+     *
+     * A refill is NOT an order and does not speak the order vocabulary, which
+     * is what the previous version used. Panels answer "Rejected", "Refused",
+     * "Not found" or "Error" for a refill the guarantee does not cover — none
+     * of which existed in the order map, so the poller mapped them to null,
+     * skipped the row **without even updating last_checked_at**, and picked
+     * the very same rows again on the next run (they sort oldest-checked
+     * first). One refused refill could therefore starve every other refill in
+     * the queue, for ever.
+     */
+    private static $refill_status_map = array(
+        'completed'   => 'COMPLETED',
+        'complete'    => 'COMPLETED',
+        'success'     => 'COMPLETED',
+        'successful'  => 'COMPLETED',
+        'done'        => 'COMPLETED',
+        'finished'    => 'COMPLETED',
+        'in progress' => 'IN_PROGRESS',
+        'inprogress'  => 'IN_PROGRESS',
+        'in_progress' => 'IN_PROGRESS',
+        'processing'  => 'IN_PROGRESS',
+        'partial'     => 'IN_PROGRESS',
+        'running'     => 'IN_PROGRESS',
+        'pending'     => 'PENDING',
+        'awaiting'    => 'PENDING',
+        'queued'      => 'PENDING',
+        'waiting'     => 'PENDING',
+        'new'         => 'PENDING',
+        'rejected'    => 'FAILED',
+        'refused'     => 'FAILED',
+        'declined'    => 'FAILED',
+        'error'       => 'FAILED',
+        'failed'      => 'FAILED',
+        'fail'        => 'FAILED',
+        'canceled'    => 'FAILED',
+        'cancelled'   => 'FAILED',
+        'expired'     => 'FAILED',
+        'not found'   => 'FAILED',
+    );
 
+    /**
+     * Drive every in-flight refill one step closer to a terminal state.
+     *
+     * Three jobs, in the order a refill meets them:
+     *
+     *  1. **Send** the refills that never reached a provider. Nothing did this
+     *     before, so a refill lost to a timeout stayed PENDING for ever while
+     *     the customer had been told it was requested.
+     *  2. **Poll** the refills the provider accepted, and settle them.
+     *  3. **Close** the ones the provider has stopped answering about, so the
+     *     customer gets a resolution instead of an item that ages silently in
+     *     a staff queue.
+     */
+    public function refill_status($limit = 100) {
+        $this->need(array('Refill_model', 'Provider_model', 'Refill_status_history_model', 'Order_model'),
+                    array('ProviderSyncService', 'RefillService'));
+
+        $submitted = $this->submit_pending_refills(max(1, (int)floor($limit / 2)));
+        $polled    = $this->poll_refills($limit);
+        $closed    = $this->close_stale_refills();
+
+        $processed = $submitted['sent'] + $polled['processed'] + $closed;
+        $failed    = $submitted['failed'] + $polled['failed'];
+
+        return array(
+            'processed' => $processed,
+            'failed'    => $failed,
+            'sent'      => $submitted['sent'],
+            'closed'    => $closed,
+            'message'   => "{$submitted['sent']} sent, {$polled['processed']} updated, "
+                          ."{$closed} closed as unanswered, {$failed} failed",
+        );
+    }
+
+    /** Re-send refills the provider never acknowledged. */
+    private function submit_pending_refills($limit) {
+        $sent = 0; $failed = 0;
+        foreach ($this->ci->Refill_model->pending_submission($limit) as $refill) {
+            try {
+                $status = $this->ci->refillservice->retry($refill);
+                if ($status === 'PROCESSING') $sent++;
+                elseif ($status === 'FAILED') $failed++;
+            } catch (Exception $e) {
+                $failed++;
+                log_message('error', "refill submit {$refill->id}: ".$e->getMessage());
+            }
+        }
+        return array('sent' => $sent, 'failed' => $failed);
+    }
+
+    /** Ask each provider what became of the refills it accepted. */
+    private function poll_refills($limit) {
         $refills = $this->ci->Refill_model->pending_provider_sync($limit);
-        if (!$refills) return array('processed'=>0, 'failed'=>0, 'message'=>'no refills awaiting sync');
+        if (!$refills) return array('processed' => 0, 'failed' => 0);
 
         $processed = 0; $failed = 0;
         foreach ($refills as $refill) {
             try {
                 $provider = $refill->provider_id ? $this->ci->Provider_model->find_by_id($refill->provider_id) : null;
-                if (!$provider) { $failed++; continue; }
+                if (!$provider) {
+                    // Nothing to ask. Still record the look, or this row is
+                    // re-selected first on every single run.
+                    $this->ci->refillservice->touch($refill);
+                    $failed++;
+                    continue;
+                }
 
                 $res = $this->ci->providersyncservice->adapter($provider)
                     ->getRefillStatus($refill->provider_refill_id);
+
+                if (empty($res['ok'])) {
+                    $this->ci->refillservice->touch($refill, array('error' => $res['error'] ?? 'Provider unreachable'));
+                    $failed++;
+                    continue;
+                }
+
                 $raw = strtolower(trim((string)($res['data']['status'] ?? '')));
-                if ($raw === '') { $failed++; continue; }
+                $new = $raw === '' ? null : (self::$refill_status_map[$raw] ?? null);
+                if ($new === null) {
+                    // An unknown word is a provider we do not understand, not a
+                    // reason to re-ask the same row for eternity.
+                    log_message('error', "refill_status: unknown provider status '{$raw}' for refill {$refill->id}");
+                    $this->ci->refillservice->touch($refill);
+                    $failed++;
+                    continue;
+                }
+                if ($new === $refill->status) { $this->ci->refillservice->touch($refill); continue; }
 
-                $new = self::$status_map[$raw] ?? null;
-                if ($new === null || $new === $refill->status) continue;
-
-                $this->ci->Refill_status_history_model->record(
-                    $refill->id, $refill->status, $new, 'PROVIDER'
-                );
-                $this->ci->db->where('id', $refill->id)->update('refills', array(
-                    'status'          => $new,
-                    'last_checked_at' => gmdate('Y-m-d H:i:s'),
-                ));
+                $this->ci->refillservice->apply($refill, $new, 'PROVIDER',
+                    $new === 'FAILED' ? array('error' => 'The provider reported the refill as '.$raw.'.') : array());
                 $processed++;
             } catch (Exception $e) {
                 $failed++;
                 log_message('error', "refill_status {$refill->id}: ".$e->getMessage());
             }
         }
-        return array('processed'=>$processed, 'failed'=>$failed, 'message'=>"{$processed} updated, {$failed} failed");
+        return array('processed' => $processed, 'failed' => $failed);
+    }
+
+    /**
+     * Close refills the provider has never settled.
+     *
+     * `refill_abandon_hours` (default a week) is the point at which "still
+     * waiting" stops being true. Leaving the row open is not neutral: the
+     * customer sees a refill in progress that will never arrive, and staff see
+     * a queue whose oldest entries can never be cleared.
+     */
+    private function close_stale_refills() {
+        $hours  = $this->setting_int('refill_abandon_hours', 168, 1, 8760);
+        $cutoff = gmdate('Y-m-d H:i:s', time() - ($hours * 3600));
+
+        $stale = $this->ci->db->from('refills')
+            ->where_in('status', array('PENDING', 'PROCESSING', 'IN_PROGRESS'))
+            ->where('requested_at <', $cutoff)
+            ->limit(100)->get()->result();
+
+        $closed = 0;
+        foreach ($stale as $refill) {
+            try {
+                $this->ci->refillservice->apply($refill, 'FAILED', 'SYSTEM', array(
+                    'error' => 'The provider never settled this refill within '.$hours.' hours.',
+                ));
+                $closed++;
+            } catch (Exception $e) {
+                log_message('error', "refill close {$refill->id}: ".$e->getMessage());
+            }
+        }
+        return $closed;
     }
 }

@@ -205,9 +205,12 @@ class Orders extends Auth_Controller {
         if ($this->input->method(true) !== 'POST') show_404();
         $res = $this->refillservice->request($public_id, $this->current_user);
         if (empty($res['ok'])) {
+            // Includes the provider's own refusal ("Refill not available for
+            // this order"), which the customer is entitled to see instead of a
+            // green "requested" that meant nothing.
             $this->session->set_flashdata('error', $res['error'] ?? 'Could not request refill');
         } else {
-            $this->session->set_flashdata('success', 'Refill requested.');
+            $this->session->set_flashdata('success', $res['message'] ?? 'Refill requested.');
         }
         redirect('dashboard/orders/'.$public_id);
     }

@@ -26,6 +26,13 @@ const state = {
   mode: 'normal',                  // normal | maintenance
   orders: {},                      // id -> { status, remains }
   calls: [],
+  // Refill behaviour is scriptable because the refill lifecycle is exactly
+  // where the panel used to lie to customers: a refusal has to close the
+  // refill, an unanswered one has to be re-sent, and neither may be reported
+  // as "requested" and then forgotten.
+  refill: 'accept',                // accept | refuse
+  refillStatus: 'Completed',       // whatever the panel reports for refill_status
+  cancel: 'accept',                // accept | refuse
 };
 
 function readBody(req) {
@@ -47,6 +54,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST') {
       const patch = JSON.parse(body || '{}');
       if (patch.mode) state.mode = patch.mode;
+      if (patch.refill) state.refill = patch.refill;
+      if (patch.refillStatus) state.refillStatus = patch.refillStatus;
+      if (patch.cancel) state.cancel = patch.cancel;
       if (patch.orders) Object.assign(state.orders, patch.orders);
       return json({ ok: true });
     }
@@ -107,15 +117,20 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (action === 'refill') {
-    return params.get('order') === 'unknown'
-      ? json({ error: 'Incorrect order ID' })
+    if (params.get('order') === 'unknown') return json({ error: 'Incorrect order ID' });
+    return state.refill === 'refuse'
+      ? json({ error: 'Refill not available for this order' })
       : json({ refill: 555 });
   }
-  if (action === 'refill_status') return json({ status: 'Completed' });
+  if (action === 'refill_status') return json({ status: state.refillStatus });
   if (action === 'cancel') {
-    return params.get('orders') === 'unknown'
-      ? json([{ order: 'unknown', cancel: { error: 'Incorrect order ID' } }])
-      : json([{ order: Number(params.get('orders')), cancel: 1 }]);
+    if (params.get('orders') === 'unknown') {
+      return json([{ order: 'unknown', cancel: { error: 'Incorrect order ID' } }]);
+    }
+    if (state.cancel === 'refuse') {
+      return json([{ order: params.get('orders'), cancel: { error: 'Order already in progress' } }]);
+    }
+    return json([{ order: Number(params.get('orders')), cancel: 1 }]);
   }
 
   return json({ error: 'Incorrect request' });
