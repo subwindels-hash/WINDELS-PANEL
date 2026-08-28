@@ -184,6 +184,95 @@ try {
   console.log('   skip    query stats channel not enabled (start devdb with --stats-port)');
 }
 
+/* ================= 4 · two checkouts at the same moment ================== */
+
+console.log('\n── The same customer checks out twice at once');
+
+// Until module 18 the per-customer limit was a COUNT(*) taken moments before
+// the redemption row was written, so two requests in flight together both
+// passed it: a double-clicked Pay button was enough to use a "one per
+// customer" code twice, at real money. The constraint that stops it now lives
+// in the database, so it has to be proved against the real schema.
+
+const RACECODE = 'E2ERACE' + String(stamp).slice(-5);
+const raceCoupon = withDb((db) => {
+  db.prepare(`INSERT INTO coupons (public_id, code, discount_type, discount_value, currency,
+       min_order_amount, max_discount_amount, usage_limit, usage_limit_per_user, times_used,
+       is_active, is_public, created_at, updated_at)
+     VALUES (?, ?, 'PERCENT', '10.00000000', NULL, NULL, NULL, NULL, 1, 0, 1, 0,
+             datetime('now'), datetime('now'))`)
+    .run(('CPNRACE' + stamp).slice(0, 26).padEnd(26, '0'), RACECODE);
+  return db.prepare(`SELECT * FROM coupons WHERE code = ?`).get(RACECODE);
+});
+
+// The index itself: the schema must refuse a second row in the same slot.
+// Without this the reservation logic is just a slower count.
+const constraintHolds = withDb((db) => {
+  try {
+    db.prepare(`INSERT INTO coupon_redemptions (coupon_id, user_id, marketplace_order_id,
+                discount_amount, redemption_slot, created_at)
+                VALUES (?, ?, NULL, '0.00000000', 1, datetime('now'))`).run(raceCoupon.id, fx.userId);
+    db.prepare(`INSERT INTO coupon_redemptions (coupon_id, user_id, marketplace_order_id,
+                discount_amount, redemption_slot, created_at)
+                VALUES (?, ?, NULL, '0.00000000', 1, datetime('now'))`).run(raceCoupon.id, fx.userId);
+    return false;
+  } catch {
+    return true;
+  } finally {
+    db.prepare(`DELETE FROM coupon_redemptions WHERE coupon_id = ?`).run(raceCoupon.id);
+  }
+});
+check('the live schema refuses a second redemption in the same slot', constraintHolds,
+  'uq_couponredeem_slot is missing — run the migrations');
+
+// Two browser tabs, same customer, same cart, both hitting Pay.
+const tabA = new Client(BASE);
+const tabB = new Client(BASE);
+for (const tab of [tabA, tabB]) {
+  await tab.get('/login');
+  await tab.postForm('/login', { identifier: 'demo@marvy.local', password: CUSTOMER_PASSWORD });
+}
+await tabA.postForm('/cart/add', { listing: fx.listingPublic, quantity: '1' },
+  { fromHtml: (await tabA.get('/dashboard/marketplace/' + fx.listingPublic)).text });
+const raceCart = await tabA.get('/cart');
+await tabA.postForm('/cart/coupon', { code: RACECODE }, { fromHtml: raceCart.text });
+
+const checkoutA = await tabA.get('/checkout');
+const checkoutB = await tabB.get('/checkout');
+check('both tabs reach the checkout page',
+  checkoutA.status === 200 && checkoutB.status === 200,
+  `${checkoutA.status} / ${checkoutB.status}`);
+
+// Fired together, not one after the other: this is the window the old code
+// lost in.
+await Promise.all([
+  tabA.postForm('/checkout/place', {}, { fromHtml: checkoutA.text }),
+  tabB.postForm('/checkout/place', {}, { fromHtml: checkoutB.text }),
+]);
+
+const redeemed = withDb((db) => db.prepare(
+  `SELECT COUNT(*) n FROM coupon_redemptions WHERE coupon_id = ? AND user_id = ?`)
+  .get(raceCoupon.id, fx.userId).n);
+// Exactly one, not "at most one": if both requests had failed for some
+// unrelated reason (an empty cart, a session problem) the invariant would hold
+// vacuously and this stage would be worth nothing.
+check('exactly one of the two checkouts redeemed the coupon', Number(redeemed) === 1,
+  `${redeemed} redemptions`);
+const placed = withDb((db) => db.prepare(
+  `SELECT COUNT(*) n FROM marketplace_orders WHERE listing_id = ?`).get(fx.listing.id).n);
+check('and a real order came out of the winner', Number(placed) >= 1, `${placed} orders`);
+
+const counted = withDb((db) => db.prepare(
+  `SELECT times_used FROM coupons WHERE id = ?`).get(raceCoupon.id).times_used);
+check('and the coupon counter agrees with the rows', Number(counted) === Number(redeemed),
+  `times_used=${counted} rows=${redeemed}`);
+
+const slots = withDb((db) => db.prepare(
+  `SELECT redemption_slot FROM coupon_redemptions WHERE coupon_id = ? AND user_id = ?`)
+  .all(raceCoupon.id, fx.userId).map((r) => Number(r.redemption_slot)));
+check('every redemption carries a distinct slot',
+  new Set(slots).size === slots.length, JSON.stringify(slots));
+
 /* -------------------------------- cleanup -------------------------------- */
 
 withDb((db) => {
@@ -192,8 +281,21 @@ withDb((db) => {
     db.prepare(`DELETE FROM cart_items WHERE cart_id = ?`).run(cart.id);
     db.prepare(`UPDATE shopping_carts SET coupon_code = NULL WHERE id = ?`).run(cart.id);
   }
-  db.prepare(`DELETE FROM coupon_redemptions WHERE coupon_id IN (?, ?)`).run(fx.once.id, fx.min.id);
-  db.prepare(`DELETE FROM coupons WHERE id IN (?, ?)`).run(fx.once.id, fx.min.id);
+  db.prepare(`DELETE FROM coupon_redemptions WHERE coupon_id IN (?, ?, ?)`)
+    .run(fx.once.id, fx.min.id, raceCoupon.id);
+  db.prepare(`DELETE FROM coupons WHERE id IN (?, ?, ?)`).run(fx.once.id, fx.min.id, raceCoupon.id);
+  // The race stage places real orders against this listing, so they have to
+  // go before the listing does — a foreign key will otherwise leave the
+  // fixture behind and the next run inherits it.
+  for (const o of db.prepare(`SELECT id, service_transaction_id FROM marketplace_orders WHERE listing_id = ?`)
+    .all(fx.listing.id)) {
+    db.prepare(`DELETE FROM digital_deliveries WHERE marketplace_order_id = ?`).run(o.id);
+    db.prepare(`DELETE FROM marketplace_order_events WHERE order_id = ?`).run(o.id);
+    db.prepare(`DELETE FROM marketplace_orders WHERE id = ?`).run(o.id);
+    db.prepare(`DELETE FROM service_transaction_status_history WHERE service_transaction_id = ?`)
+      .run(o.service_transaction_id);
+    db.prepare(`DELETE FROM service_transactions WHERE id = ?`).run(o.service_transaction_id);
+  }
   db.prepare(`DELETE FROM marketplace_listings WHERE id = ?`).run(fx.listing.id);
 });
 

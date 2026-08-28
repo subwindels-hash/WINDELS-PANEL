@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 29), roles,
+-- foreign keys, migration bookkeeping (version 30), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first-login accounts. No migration,
 -- seed or installer command has to run afterwards.
@@ -2142,6 +2142,25 @@ CREATE INDEX idx_la_scope_email_created ON login_attempts (scope, email, created
 -- migration 029_private_ticket_attachments
 -- ---------------------------------------------------------------------
 
+-- ---------------------------------------------------------------------
+-- migration 030_coupon_redemption_slots
+-- ---------------------------------------------------------------------
+
+ALTER TABLE coupon_redemptions
+ADD COLUMN redemption_slot INT UNSIGNED NOT NULL DEFAULT 1
+COMMENT 'Which redemption number this is for this customer on this coupon; unique with (coupon_id,user_id)';
+
+UPDATE coupon_redemptions
+SET redemption_slot = 1 + (
+  SELECT COUNT(*) FROM (SELECT id, coupon_id, user_id FROM coupon_redemptions) e
+   WHERE e.coupon_id = coupon_redemptions.coupon_id
+     AND e.user_id = coupon_redemptions.user_id
+     AND e.id < coupon_redemptions.id
+);
+
+CREATE UNIQUE INDEX uq_couponredeem_slot
+ON coupon_redemptions (coupon_id, user_id, redemption_slot);
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -2156,7 +2175,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (29);
+INSERT INTO migrations (version) VALUES (30);
 
 -- ======================================================================
 -- CORE DATA

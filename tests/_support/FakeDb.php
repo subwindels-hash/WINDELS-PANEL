@@ -116,6 +116,22 @@ class FakeDb
             return;
         }
 
+        // CREATE UNIQUE INDEX — a constraint that lives outside CREATE TABLE.
+        //
+        // Ignoring these used to be harmless, because every unique key in this
+        // schema was declared inline. Migration 030 adds one afterwards
+        // (`uq_couponredeem_slot`), and it is the entire mechanism that stops
+        // two simultaneous checkouts redeeming a one-per-customer coupon
+        // twice — a double that does not model it cannot test the race it
+        // exists to close.
+        if (preg_match('/^\s*CREATE\s+UNIQUE\s+INDEX\s+`?\w+`?\s+ON\s+`?(\w+)`?\s*\(([^)]*)\)/is', $sql, $m)) {
+            $table = $m[1];
+            if (!isset($this->schema[$table])) return;
+            $cols = array_map(function ($c) { return trim($c, " `"); }, explode(',', $m[2]));
+            $this->schema[$table]['unique'][] = $cols;
+            return;
+        }
+
         // ALTER TABLE — used by migrations that evolve an existing table.
         // Only column-level ADD/MODIFY change the shape FakeDb cares about;
         // constraint and index additions are intentionally ignored.
@@ -463,9 +479,13 @@ class FakeDb
         // increment form the counters use.
         $increments = array();
         foreach ($this->pending_set as $column => $spec) {
-            if (!$spec['escape'] && preg_match('/^\s*'.preg_quote($column, '/').'\s*\+\s*(\d+)\s*$/i',
+            // `col = col + 1` and `col = col - 1`: counters go both ways.
+            // Releasing a reserved coupon slot decrements times_used, and a
+            // double that only understood increments would have stored the
+            // literal string "times_used - 1" in the column.
+            if (!$spec['escape'] && preg_match('/^\s*'.preg_quote($column, '/').'\s*([+-])\s*(\d+)\s*$/i',
                                                (string)$spec['value'], $m)) {
-                $increments[$column] = (int)$m[1];
+                $increments[$column] = ($m[1] === '-' ? -1 : 1) * (int)$m[2];
             } else {
                 $data[$column] = $spec['value'];
             }

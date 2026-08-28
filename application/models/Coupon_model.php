@@ -82,18 +82,132 @@ class Coupon_model extends MY_Model {
             ->count_all_results('coupon_redemptions');
     }
 
-    public function record_redemption($coupon_id, $user_id, $order_id, $discount_amount) {
-        $this->db->insert('coupon_redemptions', array(
-            'coupon_id' => (int)$coupon_id,
-            'user_id' => (int)$user_id,
+    /**
+     * Take this customer's next redemption slot for this coupon, before any
+     * money moves.
+     *
+     * The per-customer limit used to be a `COUNT(*)` taken moments before the
+     * insert — a check-then-act race that two near-simultaneous checkouts (a
+     * double-clicked Pay button, a retried request, two tabs) both win. Since
+     * migration 030 the slot number is part of a UNIQUE index, so the database
+     * decides: both attempts compute slot 1, one insert succeeds and the other
+     * is refused. The loser is told they have already used the coupon instead
+     * of being charged and reconciled by hand later.
+     *
+     * The row is written with no order and no discount yet; `attach()`
+     * completes it once the charge lands and `release()` removes it if
+     * checkout never completes, so an abandoned attempt does not burn the
+     * customer's only use.
+     *
+     * @return array{ok:bool, id?:int, slot?:int, code?:string, error?:string}
+     */
+    public function reserve_redemption($coupon, $user_id) {
+        $coupon_id = (int)(is_object($coupon) ? $coupon->id : $coupon);
+        $user_id   = (int)$user_id;
+        if ($coupon_id <= 0 || $user_id <= 0) {
+            return array('ok' => false, 'code' => 'BAD_INPUT', 'error' => 'Coupon could not be applied.');
+        }
+
+        $limit = is_object($coupon) && isset($coupon->usage_limit_per_user)
+            ? $coupon->usage_limit_per_user : null;
+        $limit = ($limit === null || (int)$limit <= 0) ? null : (int)$limit;
+
+        // Three attempts: an unlimited coupon has no cap to stop at, so two
+        // customers-worth of concurrency on the SAME customer must be able to
+        // walk up to the next free slot rather than fail outright. Three is
+        // enough for any realistic double-submit and bounded so a pathological
+        // loop cannot hold a checkout open.
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $slot = $this->redemptions_by($coupon_id, $user_id) + 1;
+            if ($limit !== null && $slot > $limit) {
+                return array('ok' => false, 'code' => 'PER_USER_LIMIT',
+                             'error' => 'You have already used this coupon.');
+            }
+
+            // Both failure shapes are handled on purpose: with db_debug off
+            // (production) a duplicate key returns FALSE, and with it on
+            // (development, and some drivers) the same collision throws. This
+            // path decides whether a customer is charged, so it must not
+            // depend on which of the two the host happens to produce.
+            try {
+                $ok = $this->db->insert('coupon_redemptions', array(
+                    'coupon_id'            => $coupon_id,
+                    'user_id'              => $user_id,
+                    'marketplace_order_id' => null,
+                    'discount_amount'      => '0.00000000',
+                    'redemption_slot'      => $slot,
+                    'created_at'           => $this->now_utc(),
+                ));
+            } catch (Throwable $e) {
+                $ok = false;
+            }
+
+            if ($ok) {
+                $id = (int)$this->db->insert_id();
+                // The global counter moves with the reservation, not with the
+                // charge: a coupon capped at 100 uses must not be handed to
+                // 120 people who are all mid-checkout.
+                $this->db->set('times_used', 'times_used + 1', false)
+                    ->where('id', $coupon_id)->update($this->table);
+                return array('ok' => true, 'id' => $id, 'slot' => $slot);
+            }
+            // Someone else took that slot between the count and the insert.
+            // Loop: recount, and either take the next one or hit the cap.
+        }
+
+        return array('ok' => false, 'code' => 'BUSY',
+                     'error' => 'That coupon is being used on another order. Try again.');
+    }
+
+    /** Complete a reserved redemption once the order exists and is charged. */
+    public function attach_redemption($redemption_id, $order_id, $discount_amount) {
+        return $this->db->where('id', (int)$redemption_id)->update('coupon_redemptions', array(
             'marketplace_order_id' => $order_id ? (int)$order_id : null,
-            'discount_amount' => $discount_amount,
-            'created_at' => $this->now_utc(),
+            'discount_amount'      => $discount_amount,
         ));
-        // Atomic increment, not read-modify-write, so concurrent redemptions
-        // near a usage_limit cannot both slip in over the cap.
-        $this->db->set('times_used', 'times_used + 1', false)
-            ->where('id', (int)$coupon_id)->update($this->table);
+    }
+
+    /**
+     * Give a reserved slot back.
+     *
+     * Called when a checkout that reserved one does not complete. Without
+     * this, a customer whose card was declined would have burned their single
+     * use of a launch code on an order that never happened — the most annoying
+     * possible way to lose a sale.
+     */
+    public function release_redemption($redemption_id, $coupon_id = null) {
+        $redemption_id = (int)$redemption_id;
+        if ($redemption_id <= 0) return false;
+
+        if ($coupon_id === null) {
+            $row = $this->db->where('id', $redemption_id)->get('coupon_redemptions')->row();
+            $coupon_id = $row ? (int)$row->coupon_id : 0;
+        }
+        $this->db->where('id', $redemption_id)->delete('coupon_redemptions');
+
+        if ($coupon_id > 0) {
+            // Never below zero: a double release must not make a spent coupon
+            // look fresh.
+            $this->db->set('times_used', 'times_used - 1', false)
+                ->where('id', $coupon_id)->where('times_used >', 0)->update($this->table);
+        }
+        return true;
+    }
+
+    /**
+     * Reserve and complete in one step.
+     *
+     * Kept for callers that have already charged and simply need the
+     * redemption recorded. Returns false when the customer's limit is already
+     * taken, which is the answer the race used to be unable to give.
+     */
+    public function record_redemption($coupon_id, $user_id, $order_id, $discount_amount) {
+        $coupon = is_object($coupon_id) ? $coupon_id : $this->db
+            ->where('id', (int)$coupon_id)->get($this->table)->row();
+        $res = $this->reserve_redemption($coupon ?: $coupon_id, $user_id);
+        if (empty($res['ok'])) return false;
+        $this->attach_redemption($res['id'], $order_id, $discount_amount);
+        return true;
     }
 
     public function create(array $data) {

@@ -222,6 +222,19 @@ namespace {
             $set_no = 0;
             foreach ($rows as $row) {
                 $label = count($rows) > 1 ? $method.' [data set #'.($set_no++).']' : $method;
+                // tearDown() used to run only on the success paths, so ONE
+                // failing test left its fixtures behind and later, unrelated
+                // classes failed for reasons that had nothing to do with them
+                // (a leaked STORAGE_PATH made ProductionReadinessTest report a
+                // missing storage directory). A cascade like that hides the
+                // real failure, so cleanup is now unconditional.
+                $torn_down = false;
+                $tear_down = function () use ($instance, &$torn_down) {
+                    if ($torn_down) return;
+                    $torn_down = true;
+                    try { invoke_protected($instance, 'tearDown'); }
+                    catch (\Throwable $e) { echo "      (tearDown failed: ".$e->getMessage().")\n"; }
+                };
                 try {
                     invoke_protected($instance, 'setUp');
                     call_user_func_array(array($instance, $method), (array)$row);
@@ -230,7 +243,7 @@ namespace {
                         throw new AssertionFailedError(
                             'Expected exception '.$instance->__expected_exception.' was not thrown');
                     }
-                    invoke_protected($instance, 'tearDown');
+                    $tear_down();
                     echo "  ✔ ".$label."\n";
                     $passed++;
                 } catch (SkippedTest $e) {
@@ -244,7 +257,7 @@ namespace {
                     $want = $instance->__expected_exception;
                     if ($want !== null && $e instanceof $want) {
                         TestCase::$assertions++;
-                        invoke_protected($instance, 'tearDown');
+                        $tear_down();
                         echo "  ✔ ".$label."\n";
                         $passed++;
                         continue;
@@ -252,6 +265,8 @@ namespace {
                     echo "  ✘ ".$label." — ".get_class($e).': '.$e->getMessage()."\n";
                     $failed++;
                     $failures[] = $class.'::'.$label.' — '.$e->getMessage();
+                } finally {
+                    $tear_down();
                 }
             }
         }

@@ -369,8 +369,12 @@ class PrivateAttachmentsTest extends TestCase
             'the rendered link in the thread has to be rewritten too, not just media');
         $this->assertStringContainsString('PRIVATE_PREFIX', $src);
 
+        // The panel must be configured to run AT LEAST this migration; later
+        // modules move the version on, and pinning the exact number here would
+        // make an unrelated migration look like an attachment regression.
         $config = $this->source('application/config/migration.php');
-        $this->assertStringContainsString("\$config['migration_version'] = 29;", $config,
+        preg_match("/migration_version'\]\s*=\s*(\d+)/", $config, $m);
+        $this->assertGreaterThanOrEqual(29, (int)($m[1] ?? 0),
             'a migration nobody runs fixes nothing');
     }
 

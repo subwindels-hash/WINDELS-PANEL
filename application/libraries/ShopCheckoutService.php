@@ -82,6 +82,26 @@ class ShopCheckoutService {
         $orders = array();
         $idem_root = $input['idempotency_key'] ?? bin2hex(random_bytes(16));
 
+        // Take the coupon slot BEFORE charging anything.
+        //
+        // It used to be recorded after the first line was charged, which meant
+        // the per-customer limit was decided by a COUNT(*) that two
+        // simultaneous checkouts both passed — a double-clicked Pay button was
+        // enough to use a "one per customer" code twice, and by the time the
+        // second row was written the money had already moved. Reserving first
+        // means the database's UNIQUE index (migration 030) refuses the loser
+        // while nothing has been charged, so the customer gets a clear
+        // message instead of an unexpected discount that has to be clawed
+        // back. The slot is released below if the checkout does not complete.
+        $reservation = null;
+        if (!empty($view['coupon'])) {
+            $reservation = $this->ci->Coupon_model->reserve_redemption($view['coupon'], $user_id);
+            if (empty($reservation['ok'])) {
+                return $this->err($reservation['code'] ?? 'COUPON_UNAVAILABLE',
+                    $reservation['error'] ?? 'That coupon can no longer be applied to this order.');
+            }
+        }
+
         foreach ($view['lines'] as $line) {
             $item = $line['item'];
             // A coupon discount is allocated to each line in proportion to its
@@ -102,6 +122,15 @@ class ShopCheckoutService {
             ));
 
             if (empty($res['ok'])) {
+                // Nothing was charged for THIS line. If no line at all got
+                // through, the coupon was never actually used: give the slot
+                // back rather than burning the customer's only redemption on
+                // an order that does not exist.
+                if ($reservation && !$orders) {
+                    $this->ci->Coupon_model->release_redemption(
+                        $reservation['id'], (int)$view['coupon']->id);
+                    $reservation = null;
+                }
                 // Nothing charges twice: every earlier line in this loop was
                 // its own independent, already-committed TransactionEngine
                 // charge (exactly like buying each one separately), so a later
@@ -133,11 +162,11 @@ class ShopCheckoutService {
                 ));
             }
 
-            // Coupon redemption is recorded once checkout has actually
-            // charged something, against the first order it produced.
-            if (!empty($view['coupon']) && count($orders) === 1) {
-                $this->ci->Coupon_model->record_redemption(
-                    $view['coupon']->id, $user_id, $order->id, $view['discount']
+            // The reservation is completed — not created — once checkout has
+            // actually charged something, against the first order it produced.
+            if ($reservation && count($orders) === 1) {
+                $this->ci->Coupon_model->attach_redemption(
+                    $reservation['id'], $order->id, $view['discount']
                 );
             }
         }

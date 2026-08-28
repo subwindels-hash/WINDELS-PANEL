@@ -3,8 +3,9 @@
 *As of 2026-08-28, branch `arena/01a04558-windels-panel`.*
 
 **Progress:** items 11 and 12 are **closed** by module 17
-([module-private-attachments.md](module-private-attachments.md)). They stay in
-the table below, struck through, so the list reads as a record rather than a
+([module-private-attachments.md](module-private-attachments.md)) and item 13 by
+module 18 ([module-coupon-race.md](module-coupon-race.md)). Closed items stay
+in the table below, struck through, so the list reads as a record rather than a
 moving target.
 
 There are **no half-built modules left**. Every module in
@@ -40,7 +41,7 @@ open, and things this sandbox cannot prove.
 |---|---|---|
 | ~~11~~ | ~~**Digital-file URL after revocation**~~ | **Closed (module 17).** Proved by replaying a link captured *before* a refund: refused, and no fresh link can be minted. The concern was unfounded — `resolve_download()` re-checks revocation on every request — but the check that should have shown that was fetching a file that did not exist. Fixture corrected. |
 | ~~12~~ | ~~**Ticket-attachment URLs**~~ | **Closed (module 17).** Attachments now live outside the document root and are served only by `Attachment::ticket()`, which checks the session, the ticket's owner and the internal-note flag. Migration 029 moves the files that already exist and breaks the old URLs. |
-| 13 | **Per-customer coupon race** | `usage_limit_per_user` is a `COUNT(*)`; two simultaneous checkouts by one customer could both pass. Needs a unique index on `(coupon_id, user_id, marketplace_order_id)` plus duplicate-key handling. |
+| ~~13~~ | ~~**Per-customer coupon race**~~ | **Closed (module 18).** Migration 030 adds `redemption_slot` and a UNIQUE index over `(coupon_id, user_id, redemption_slot)`; the slot is reserved before any charge and released if the checkout does not complete. Proved by two simultaneous `/checkout/place` requests: exactly one redemption. |
 | 14 | **Admin dashboard query cost** | Six aggregate widgets plus a chart, ~32 queries, worth about 4 queries of consolidation. Deliberately skipped in module 12. |
 | 15 | **No index review under load** | SQLite's planner is not MySQL's, so no `EXPLAIN` work has been done on the real engine. |
 | 16 | **`testAJobCannotOverlapItself`** | The suite's single skipped test — `flock` semantics under the PHP-wasm runtime. Predates this work. |
@@ -65,6 +66,6 @@ open, and things this sandbox cannot prove.
    `gateway_check` and `smm_provider_check`. Nothing else de-risks a launch as
    much.
 3. **19** — run `tools/verify_all.sh` once against real MySQL 8.
-4. **13** — the coupon unique index, next time the shop tables are touched.
+4. ~~**13**~~ — done, module 18.
 5. **9** — the operator fills in the legal entity before taking money.
 6. **1 / 2** — product decisions, not repairs. Only if the roadmap wants them.
