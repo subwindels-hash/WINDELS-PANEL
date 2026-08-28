@@ -112,6 +112,109 @@ class Payments extends Admin_Controller {
         redirect('admin/payments/webhooks');
     }
 
+    /**
+     * GET /admin/payments/methods — the deposit methods customers are offered.
+     *
+     * Activating a gateway used to require an UPDATE statement: the panel had
+     * adapters for six providers and no screen to switch any of them on, set
+     * a fee, or see whether its credentials were even present.
+     */
+    public function methods() {
+        $this->require_perm('payments.view');
+
+        $rows = $this->db->order_by('sorting', 'ASC')->get('payment_methods')->result();
+        $state = array();
+        foreach ($rows as $row) {
+            $state[$row->code] = array(
+                'implemented' => in_array(strtolower($row->code), $this->paymentservice->implemented_gateways(), true),
+                'configured'  => $this->paymentservice->method_is_configured($row),
+                // Manual bank transfer is reconciled by a human and needs no
+                // API credentials, so "not configured" would be a lie there.
+                'needs_credentials' => $this->paymentservice->method_needs_credentials($row),
+            );
+        }
+
+        $this->load->view('layouts/app', array(
+            'title'        => 'Deposit methods',
+            'nav_active'   => 'admin/payments',
+            'content_view' => 'admin/payments/methods',
+            'current_user' => $this->current_user,
+            'permissions'  => $this->auth->permissions(),
+            'unread'       => $this->dashboardstats->unread_count($this->current_user->id),
+            'methods'      => $rows,
+            'state'        => $state,
+            'page_description' => 'Which deposit methods customers see, what each charges, and whether its '
+                                  .'credentials are in place. A method with no credentials stays hidden from '
+                                  .'Add funds even when it is switched on.',
+        ));
+    }
+
+    /** POST /admin/payments/methods/:code/save */
+    public function save_method($code) {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm('payments.manage');
+
+        $method = $this->db->where('code', $code)->get('payment_methods')->row();
+        if (!$method) show_404();
+
+        $percent = $this->numeric($this->input->post('fee_percent', true), 0, 100);
+        $bonus   = $this->numeric($this->input->post('bonus_percent', true), 0, 100);
+        $fixed   = $this->numeric($this->input->post('fee_fixed', true), 0, null);
+        $min     = $this->numeric($this->input->post('min_amount', true), 0, null, true);
+        $max     = $this->numeric($this->input->post('max_amount', true), 0, null, true);
+
+        if ($percent === null || $bonus === null || $fixed === null) {
+            $this->session->set_flashdata('error', 'Fees and bonuses must be numbers; percentages between 0 and 100.');
+            return redirect('admin/payments/methods');
+        }
+        if ($min !== null && $max !== null && bccomp((string)$min, (string)$max, 8) > 0) {
+            $this->session->set_flashdata('error', 'The minimum deposit cannot be greater than the maximum.');
+            return redirect('admin/payments/methods');
+        }
+
+        $before = array(
+            'is_active' => (int)$method->is_active, 'fee_percent' => $method->fee_percent,
+            'fee_fixed' => $method->fee_fixed, 'bonus_percent' => $method->bonus_percent,
+            'min_amount' => $method->min_amount, 'max_amount' => $method->max_amount,
+            'sorting' => (int)$method->sorting,
+        );
+        $after = array(
+            'is_active'     => $this->input->post('is_active', true) ? 1 : 0,
+            'fee_percent'   => number_format((float)$percent, 4, '.', ''),
+            'fee_fixed'     => number_format((float)$fixed, 8, '.', ''),
+            'bonus_percent' => number_format((float)$bonus, 4, '.', ''),
+            'min_amount'    => $min === null ? null : number_format((float)$min, 8, '.', ''),
+            'max_amount'    => $max === null ? null : number_format((float)$max, 8, '.', ''),
+            'sorting'       => (int)$this->input->post('sorting', true),
+            'instructions'  => $this->input->post('instructions', true) ?: null,
+            'name'          => trim((string)$this->input->post('name', true)) ?: $method->name,
+            'updated_at'    => gmdate('Y-m-d H:i:s'),
+        );
+        $this->db->where('id', $method->id)->update('payment_methods', $after);
+
+        $this->Audit_log_model->record($this->current_user->id, 'payment_method.updated', 'payment_methods',
+            $method->public_id, $before, $after, $this->input->ip_address(), $this->input->user_agent(), $this->request_id);
+
+        $warning = '';
+        if ($after['is_active'] && !$this->paymentservice->method_is_configured($method)) {
+            $warning = ' It stays hidden from Add funds until its API credentials are set in Settings → '
+                     .'Card and wallet gateways.';
+        }
+        $this->session->set_flashdata('success', $method->name.' updated.'.$warning);
+        redirect('admin/payments/methods');
+    }
+
+    /** A bounded numeric field, or null when it was left blank. */
+    private function numeric($value, $min = null, $max = null, $nullable = false) {
+        $raw = trim((string)$value);
+        if ($raw === '') return $nullable ? null : 0;
+        if (!is_numeric($raw)) return null;
+        $n = (float)$raw;
+        if ($min !== null && $n < $min) return null;
+        if ($max !== null && $n > $max) return null;
+        return $n;
+    }
+
     public function index() {
         // Default to the queue staff actually work: deposits awaiting review.
         $status  = $this->input->get('status', true);

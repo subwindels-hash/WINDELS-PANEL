@@ -156,6 +156,74 @@ class SettingsService {
             'fundsvera_base_url' => array('text', 'fundsvera', 'API base URL',
                 'Change only if Fundsvera give you a different endpoint.', 'https://fundsvera.co/api/v1'),
 
+            // --- Hosted card / wallet gateways ---------------------------
+            // One block per gateway: an enable switch, the credentials, and the
+            // callback secret that decides whether a webhook can move money.
+            // Every value is also readable from the environment (PAYSTACK_
+            // SECRET_KEY, STRIPE_SECRET_KEY, …) so containers can inject them;
+            // the env value wins over anything typed here.
+            'paystack_enabled' => array('bool', 'gateways', 'Accept cards via Paystack',
+                'Shows Paystack on Add funds. The gateway refuses to take a payment it cannot confirm, '
+                .'so this does nothing until the secret key below is set.', false),
+            'paystack_secret_key' => array('secret', 'gateways', 'Paystack secret key',
+                'From dashboard.paystack.com → Settings → API Keys (sk_live_… / sk_test_…). Also verifies '
+                .'the webhook signature — set your webhook URL to /webhook/paystack.', ''),
+            'paystack_public_key' => array('secret', 'gateways', 'Paystack public key',
+                'Optional. Only needed if you later add an inline checkout.', ''),
+
+            'flutterwave_enabled' => array('bool', 'gateways', 'Accept cards via Flutterwave',
+                'Shows Flutterwave on Add funds. Requires the secret key and the webhook hash below.', false),
+            'flutterwave_secret_key' => array('secret', 'gateways', 'Flutterwave secret key',
+                'From the Flutterwave dashboard → Settings → API (FLWSECK-…).', ''),
+            'flutterwave_secret_hash' => array('secret', 'gateways', 'Flutterwave webhook hash',
+                'The "secret hash" you set on the Flutterwave webhook page. Flutterwave sends it back in the '
+                .'verif-hash header; without it configured no Flutterwave callback is ever credited.', ''),
+
+            'stripe_enabled' => array('bool', 'gateways', 'Accept cards via Stripe',
+                'Shows Stripe Checkout on Add funds. Requires the secret key and the endpoint signing secret.', false),
+            'stripe_secret_key' => array('secret', 'gateways', 'Stripe secret key',
+                'From dashboard.stripe.com → Developers → API keys (sk_live_… / sk_test_…).', ''),
+            'stripe_webhook_secret' => array('secret', 'gateways', 'Stripe endpoint signing secret',
+                'The whsec_… value Stripe shows when you add /webhook/stripe as an endpoint. Signatures are '
+                .'checked with a 5-minute tolerance, so a captured callback cannot be replayed later.', ''),
+
+            'paypal_enabled' => array('bool', 'gateways', 'Accept PayPal',
+                'Shows PayPal on Add funds. Requires the REST app credentials below.', false),
+            'paypal_client_id' => array('secret', 'gateways', 'PayPal client ID',
+                'From developer.paypal.com → Apps & Credentials → your REST app.', ''),
+            'paypal_client_secret' => array('secret', 'gateways', 'PayPal client secret',
+                'The secret for the same REST app. Used for OAuth2 and to verify webhooks.', ''),
+            'paypal_webhook_id' => array('secret', 'gateways', 'PayPal webhook ID',
+                'The ID PayPal assigns the webhook you point at /webhook/paypal. PayPal verifies its own '
+                .'callbacks, and without this ID none can be trusted.', ''),
+            'paypal_sandbox' => array('bool', 'gateways', 'Use the PayPal sandbox',
+                'Routes API calls to api-m.sandbox.paypal.com for testing with sandbox credentials.', false),
+
+            'razorpay_enabled' => array('bool', 'gateways', 'Accept cards via Razorpay',
+                'Shows Razorpay on Add funds. Requires the key pair and webhook secret below.', false),
+            'razorpay_key_id' => array('secret', 'gateways', 'Razorpay key ID',
+                'From dashboard.razorpay.com → Settings → API Keys (rzp_live_… / rzp_test_…).', ''),
+            'razorpay_key_secret' => array('secret', 'gateways', 'Razorpay key secret',
+                'The secret half of the same key pair.', ''),
+            'razorpay_webhook_secret' => array('secret', 'gateways', 'Razorpay webhook secret',
+                'Set on the Razorpay webhook page for /webhook/razorpay. This is NOT the key secret.', ''),
+
+            'coinpayments_enabled' => array('bool', 'gateways', 'Accept crypto via CoinPayments',
+                'Shows CoinPayments on Add funds. Deposits credit only after the network confirmations '
+                .'CoinPayments reports as complete.', false),
+            'coinpayments_public_key' => array('secret', 'gateways', 'CoinPayments public key',
+                'From coinpayments.net → Account → API Keys.', ''),
+            'coinpayments_private_key' => array('secret', 'gateways', 'CoinPayments private key',
+                'Signs API calls. Never leaves the server.', ''),
+            'coinpayments_merchant_id' => array('secret', 'gateways', 'CoinPayments merchant ID',
+                'From Account → Account Settings. Checked on every IPN so another merchant\'s callback '
+                .'cannot credit your wallets.', ''),
+            'coinpayments_ipn_secret' => array('secret', 'gateways', 'CoinPayments IPN secret',
+                'The IPN secret set alongside the IPN URL /webhook/coinpayments. Without it no crypto '
+                .'deposit is ever credited.', ''),
+            'coinpayments_accept_coin' => array('text', 'gateways', 'Coin customers pay in',
+                'Ticker CoinPayments should collect, e.g. BTC, LTCT (testnet), USDT.TRC20.', 'BTC'),
+
             // --- Referrals, earnings and payouts -------------------------
             'referral_signup_reward' => array('money', 'referrals', 'Referral reward',
                 'Paid to the referrer when a referred account completes the qualifying event below. '

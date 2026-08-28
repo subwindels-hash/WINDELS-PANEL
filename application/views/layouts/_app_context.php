@@ -59,6 +59,7 @@ $nav_groups = $is_admin ? array(
     )),
     array('Finance', array(
         array('admin/payments',     'Payments',   'payments.view',   'credit-card'),
+        array('admin/payments/methods', 'Deposit methods', 'payments.view', 'wallet'),
         array('admin/payouts',      'Payouts',    'payouts.review',  'wallet'),
         array('admin/currencies',   'Currencies', 'settings.manage', 'wallet'),
     )),

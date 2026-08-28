@@ -38,6 +38,11 @@ class PaymentService {
         if (!interface_exists('GatewayInterface', false)) {
             require_once APPPATH.'libraries/GatewayInterface.php';
         }
+        // Every hosted adapter extends HostedGateway, so the base class has to
+        // be present before any of them is required.
+        if (!class_exists('HostedGateway', false)) {
+            require_once APPPATH.'libraries/HostedGateway.php';
+        }
         if (!class_exists('ManualGateway', false)) {
             require_once APPPATH.'libraries/ManualGateway.php';
         }
@@ -118,6 +123,29 @@ class PaymentService {
             return array('ok'=>false,'error'=>$init['error'] ?? 'Could not initiate payment','code'=>'GATEWAY_ERROR');
         }
         $status = $init['status'] ?? self::STATUS_PENDING;
+        // Hosted gateways echo the reference we gave them on their callback,
+        // so store it now: without it the webhook has nothing to match on and
+        // a paid deposit sits unreconciled.
+        $post_init = array();
+        if (!empty($init['provider_tx_id'])) {
+            $post_init['provider_tx_id'] = substr((string)$init['provider_tx_id'], 0, 128);
+        }
+        // Keep the provider's own checkout payload (link, crypto address, coin
+        // amount, expiry). A customer who closes the tab mid-payment can then
+        // resume from Deposits instead of starting a second deposit — and
+        // support can see exactly what the customer was shown.
+        if (!empty($init['checkout']) || !empty($init['redirect_url'])) {
+            $meta = json_decode((string)$tx->metadata, true);
+            $meta = is_array($meta) ? $meta : array();
+            $meta['checkout'] = array_merge(
+                is_array($init['checkout'] ?? null) ? $init['checkout'] : array(),
+                array('redirect_url' => $init['redirect_url'] ?? null)
+            );
+            $post_init['metadata'] = json_encode($meta, JSON_UNESCAPED_SLASHES);
+        }
+        if ($post_init) {
+            $this->ci->Payment_transaction_model->update_status($tx->id, $post_init);
+        }
         $this->transition($tx->id, self::STATUS_CREATED, $status, 'GATEWAY', 'Initiated');
         $tx = $this->ci->Payment_transaction_model->find_by_id($tx->id);
 
@@ -387,19 +415,72 @@ class PaymentService {
     }
 
     /**
-     * Payment-method codes whose adapter is wired, tested and trusted to
-     * verify its own callbacks.
+     * Payment methods a customer can actually pay with right now.
      *
-     * The remaining adapters in application/libraries/*Gateway.php are
-     * scaffolds — their own file headers say so — and have never been run
-     * against a live sandbox. Listing one here hands it webhook verification
-     * for real money: `verify_webhook()` returns false without configured
-     * credentials, so a genuine callback is thrown away instead of falling
-     * back to the generic, fail-closed HMAC envelope below. They stay out
-     * until each is integrated and verified.
+     * `is_active` is the operator's intent; being *configured* is whether the
+     * adapter has credentials. Offering a method that will fail at the last
+     * step — after the customer has typed an amount and pressed Pay — is worse
+     * than not offering it, so an active-but-unconfigured gateway is hidden
+     * from Add funds and flagged in the admin console instead.
+     */
+    public function payable_methods() {
+        $rows = $this->ci->db->where('is_active', 1)->order_by('sorting', 'ASC')
+            ->get('payment_methods')->result();
+
+        $out = array();
+        foreach ($rows as $row) {
+            if ($this->method_is_configured($row)) $out[] = $row;
+        }
+        return $out;
+    }
+
+    /**
+     * Whether the adapter behind a payment method can take a payment.
+     *
+     * Manual bank transfer needs no credentials — a human reconciles it — so
+     * it is always considered configured.
+     */
+    public function method_is_configured($method) {
+        $code = strtolower((string)$method->code);
+        if (!in_array($code, $this->implemented_gateways(), true)) return true;
+
+        $gateway = $this->gateway_for_code($code, $method);
+        if (!method_exists($gateway, 'is_configured')) return true;
+
+        try {
+            return (bool)$gateway->is_configured();
+        } catch (Throwable $e) {
+            log_message('error', 'could not read '.$code.' configuration: '.$e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Whether this method's adapter needs API credentials at all.
+     *
+     * Manual bank transfer does not: a human reads the bank statement and
+     * approves the deposit. Reporting it as "not configured" would send an
+     * operator hunting for keys that do not exist.
+     */
+    public function method_needs_credentials($method) {
+        $code = strtolower((string)$method->code);
+        if (!in_array($code, $this->implemented_gateways(), true)) return false;
+        return method_exists($this->gateway_for_code($code, $method), 'is_configured');
+    }
+
+    /**
+     * Payment-method codes whose adapter is wired and trusted to verify its
+     * own callbacks.
+     *
+     * Every adapter here calls the provider's real API and verifies the
+     * provider's real signature. An adapter with no credentials configured
+     * answers null from verify_webhook() — "cannot verify" — which stores the
+     * event for the operator without moving money, instead of discarding a
+     * genuine callback or crediting an unverified one.
      */
     public function implemented_gateways() {
-        return array('manual', 'blockonomics', 'fundsvera');
+        return array('manual', 'blockonomics', 'fundsvera',
+                     'paystack', 'flutterwave', 'stripe', 'paypal', 'razorpay', 'coinpayments');
     }
 
     private function persist_transaction(array $data) {

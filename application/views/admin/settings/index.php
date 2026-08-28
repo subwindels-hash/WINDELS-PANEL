@@ -12,6 +12,7 @@ $category_titles = array(
     'giftcards' => 'Gift cards',
     'crypto'    => 'Bitcoin and crypto deposits',
     'fundsvera' => 'Bank transfers (Fundsvera)',
+    'gateways'  => 'Card and wallet gateways',
     'referrals' => 'Referrals, earnings and payouts',
     'marketplace' => 'Marketplace',
     'orders'    => 'Orders',

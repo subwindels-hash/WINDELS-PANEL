@@ -56,6 +56,43 @@
         <?php endif; ?>
       <?php endif; ?>
     </div>
+  <?php elseif ($d->status === 'PENDING' && !empty($gateway_checkout)): ?>
+    <?php $gc = $gateway_checkout; ?>
+    <div class="alert alert-info mt-4 mb-0">
+      <strong>This payment is waiting to be completed</strong>
+      <p class="mt-1 mb-0 text-sm">
+        <?=htmlspecialchars((string)($gc['instructions'] ?? 'Finish the payment with the provider; your wallet is credited automatically once it is confirmed.'))?>
+      </p>
+
+      <?php if (!empty($gc['address'])): ?>
+        <dl class="grid grid-3 mt-3" style="gap:1rem">
+          <div>
+            <dt class="muted text-xs">Send</dt>
+            <dd class="mono font-semibold"><?=htmlspecialchars((string)($gc['coin_amount'] ?? ''))?> <?=htmlspecialchars((string)($gc['coin'] ?? ''))?></dd>
+          </div>
+          <div style="grid-column:span 2">
+            <dt class="muted text-xs">To this address</dt>
+            <dd class="mono font-semibold" style="word-break:break-all"><?=htmlspecialchars((string)$gc['address'])?></dd>
+          </div>
+          <?php if (!empty($gc['confirms_needed'])): ?>
+          <div>
+            <dt class="muted text-xs">Confirmations needed</dt>
+            <dd class="font-semibold"><?=htmlspecialchars((string)$gc['confirms_needed'])?></dd>
+          </div>
+          <?php endif; ?>
+        </dl>
+      <?php endif; ?>
+
+      <p class="mt-3 mb-0 text-sm">
+        Reference <code class="mono"><?=htmlspecialchars((string)($gc['reference'] ?? $d->internal_reference ?: $d->public_id))?></code>
+        <?php if (!empty($gc['expires_in'])): ?> · valid for <?=htmlspecialchars((string)$gc['expires_in'])?><?php endif; ?>
+      </p>
+
+      <?php if (!empty($gc['redirect_url'])): ?>
+        <a class="btn btn-primary btn-sm mt-3" href="<?=htmlspecialchars((string)$gc['redirect_url'])?>"
+           target="_blank" rel="noopener">Resume payment →</a>
+      <?php endif; ?>
+    </div>
   <?php elseif ($d->status === 'PENDING' && $method && $method->code === 'manual' && $method->instructions): ?>
     <div class="alert alert-info mt-4 mb-0">
       <strong>Bank transfer instructions:</strong><br><?=nl2br(htmlspecialchars($method->instructions))?>

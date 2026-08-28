@@ -13,13 +13,17 @@ class PaymentsTest extends TestCase
     {
         self::$root = dirname(dirname(__DIR__));
         if (!defined('BASEPATH')) define('BASEPATH', self::$root.'/system/');
-        if (!class_exists('CI_Model')) eval('class CI_Model {}');
+        // CI models reach the query builder through CI_Model's magic __get;
+        // the double sets ->db directly, so the stub declares the property
+        // rather than creating it dynamically (deprecated in PHP 8.2).
+        if (!class_exists('CI_Model')) eval('#[AllowDynamicProperties] class CI_Model { public $db; }');
         if (!function_exists('get_instance')) {
             eval('function &get_instance(){ return $GLOBALS["__fake_ci"]; }');
         }
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         if (!function_exists('marvy_public_id')) require_once self::$root.'/application/helpers/marvy_helper.php';
         require_once self::$root.'/application/libraries/GatewayInterface.php';
+        require_once self::$root.'/application/libraries/HostedGateway.php';
         require_once self::$root.'/application/libraries/ManualGateway.php';
         require_once self::$root.'/application/libraries/PricingService.php';
         require_once self::$root.'/application/libraries/LedgerService.php';
@@ -146,9 +150,9 @@ class PaymentsTest extends TestCase
         $svc = new PaymentService();
         $body = json_encode(array('id'=>'evt_1','status'=>'success','reference'=>null));
         $sig  = hash_hmac('sha256', $body, 'test-webhook-secret');
-        $first = $svc->record_webhook('stripe', $body, array('x-stripe-signature'=>$sig));
+        $first = $svc->record_webhook('acme', $body, array('x-signature'=>$sig));
         $this->assertTrue($first['ok']);
-        $second = $svc->record_webhook('stripe', $body, array('x-stripe-signature'=>$sig));
+        $second = $svc->record_webhook('acme', $body, array('x-signature'=>$sig));
         $this->assertTrue($second['ok']);
         $this->assertTrue(!empty($second['already_seen']));
         $this->assertSame(1, $ci->inserts['payment_webhooks']);
@@ -159,7 +163,7 @@ class PaymentsTest extends TestCase
         $ci = $this->fresh();
         $ci->webhook_sig = false;
         $svc = new PaymentService();
-        $res = $svc->record_webhook('stripe', '{}', array());
+        $res = $svc->record_webhook('acme', '{}', array());
         $this->assertFalse($res['ok']);
         $this->assertSame('Invalid signature', $res['error']);
     }
@@ -181,7 +185,7 @@ class PaymentsTest extends TestCase
         // processed and the answer must say retryable, so the gateway (and
         // the controller's 503) keeps a failed credit from being lost.
         $ci->ledger_should_fail = true;
-        $first = $svc->record_webhook('stripe', $body, array('x-signature' => $sig));
+        $first = $svc->record_webhook('acme', $body, array('x-signature' => $sig));
         $this->assertFalse($first['ok']);
         $this->assertTrue(!empty($first['retryable']), 'transient failure must be flagged retryable');
         $this->assertSame(0, $ci->ledger_credits, 'a failed credit must not move money');
@@ -189,12 +193,12 @@ class PaymentsTest extends TestCase
         // The gateway retries the SAME event id: it reprocesses rather than
         // returning as a duplicate, and credits exactly once.
         $ci->ledger_should_fail = false;
-        $second = $svc->record_webhook('stripe', $body, array('x-signature' => $sig));
+        $second = $svc->record_webhook('acme', $body, array('x-signature' => $sig));
         $this->assertTrue($second['ok'], json_encode($second));
         $this->assertSame(1, $ci->ledger_credits);
 
         // And a third delivery is now a true duplicate — no double credit.
-        $third = $svc->record_webhook('stripe', $body, array('x-signature' => $sig));
+        $third = $svc->record_webhook('acme', $body, array('x-signature' => $sig));
         $this->assertTrue(!empty($third['already_seen']));
         $this->assertSame(1, $ci->ledger_credits);
 
@@ -203,6 +207,43 @@ class PaymentsTest extends TestCase
         $wh = file_get_contents(self::$root.'/application/controllers/Webhooks.php');
         $this->assertStringContainsString("respond(503", $wh);
         $this->assertStringContainsString("'retryable'", $wh);
+    }
+
+    /**
+     * A refused delivery must never be mistaken for a handled one.
+     *
+     * Gateway event ids are guessable (Paystack's are sequential integers).
+     * If a row stored as "invalid signature" counted as a duplicate, anyone
+     * could POST a junk-signed callback carrying the id the real payment will
+     * use, and the genuine, correctly signed delivery would be dropped as a
+     * duplicate — the customer pays and is never credited.
+     */
+    public function testARefusedWebhookDoesNotBlockTheGenuineOne()
+    {
+        require_once self::$root.'/application/core/MY_Model.php';
+        require_once self::$root.'/application/models/Payment_webhook_model.php';
+
+        $db = new PayWhFakeDb();
+        $model = new Payment_webhook_model();
+        $model->db = $db;
+
+        // 1. A forged delivery: stored, refused, closed.
+        $id = $model->record_once('paystack', 'evt-1', '{}', false, 'charge_success');
+        $this->assertSame(1, $id);
+        $db->rows[1]['processed'] = 1;
+        $db->rows[1]['error'] = 'invalid signature';
+
+        // 2. The genuine delivery of the SAME id, correctly signed.
+        $reopened = $model->record_once('paystack', 'evt-1', '{"real":true}', true, 'charge_success');
+        $this->assertSame(1, $reopened, 'the refused row must be reopened, not treated as a duplicate');
+        $this->assertSame(0, (int)$db->rows[1]['processed'], 'it must be processable again');
+        $this->assertSame(1, (int)$db->rows[1]['signature_valid']);
+        $this->assertNull($db->rows[1]['error']);
+
+        // 3. A genuine duplicate of a VERIFIED, processed event still no-ops.
+        $db->rows[1]['processed'] = 1;
+        $this->assertFalse($model->record_once('paystack', 'evt-1', '{"real":true}', true, 'charge_success'),
+            'a replay of an already-credited event must stay idempotent');
     }
 
     /* ---------------------------- source ---------------------------- */
@@ -370,4 +411,51 @@ class PayFakeLedger {
     }
     function charge($wid,$amt,$rt,$rid,$idem,$meta=null){return array('ok'=>true);}
     function refund($wid,$amt,$rt,$rid,$idem=null){return array('ok'=>true);}
+}
+
+/** Minimal query-builder double for the webhook model's two statements. */
+class PayWhFakeDb {
+    public $rows = array();
+    private $where = array();
+    private $next_id = 1;
+
+    public function where($k, $v = null) {
+        if (is_array($k)) { foreach ($k as $kk => $vv) $this->where[$kk] = $vv; }
+        else $this->where[$k] = $v;
+        return $this;
+    }
+    public function get($table) {
+        $match = null;
+        foreach ($this->rows as $row) {
+            $ok = true;
+            foreach ($this->where as $k => $v) {
+                if (!array_key_exists($k, $row) || (string)$row[$k] !== (string)$v) { $ok = false; break; }
+            }
+            if ($ok) { $match = $row; break; }
+        }
+        $this->where = array();
+        return new PayWhFakeResult($match);
+    }
+    public function insert($table, array $data) {
+        $data['id'] = $this->next_id;
+        $data += array('processed' => 0, 'error' => null);
+        $this->rows[$this->next_id] = $data;
+        $this->next_id++;
+        return true;
+    }
+    public function update($table, array $data) {
+        $id = $this->where['id'] ?? null;
+        $this->where = array();
+        if ($id !== null && isset($this->rows[$id])) {
+            $this->rows[$id] = array_merge($this->rows[$id], $data);
+        }
+        return true;
+    }
+    public function insert_id() { return $this->next_id - 1; }
+}
+
+class PayWhFakeResult {
+    private $row;
+    public function __construct($row) { $this->row = $row; }
+    public function row() { return $this->row === null ? null : (object)$this->row; }
 }
