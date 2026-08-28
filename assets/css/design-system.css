@@ -320,6 +320,13 @@ button { font-family:inherit; cursor:pointer; }
   radial-gradient(900px 280px at 12% -10%,var(--brand-100),transparent 60%),
   radial-gradient(700px 240px at 92% 0,var(--accent-100,#fae8ff),transparent 55%)}
 .ws-page-hero h1{margin-bottom:.4rem}
+/* FAQ intro: kicker, heading, lede and the search box are one centred column.
+   It used to sit in a `.ws-hero-split` grid with nothing in the second cell,
+   so the whole block hugged the left edge with half the page empty beside it
+   (and the grid's wrappers were never closed). */
+.ws-faq-hero{max-width:46rem;margin-inline:auto;text-align:center}
+.ws-faq-hero .ws-lede{margin-inline:auto}
+.ws-faq-hero .ws-searchwrap{position:relative;max-width:28rem;margin-inline:auto}
 .ws-lede{font-size:1.125rem;color:var(--slate-600);max-width:40rem}
 .ws-kicker{display:inline-block;font-size:.75rem;font-weight:700;letter-spacing:.12em;
   text-transform:uppercase;color:var(--brand-700);margin-bottom:.75rem}
