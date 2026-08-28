@@ -1,6 +1,6 @@
 # MarvySocials — module index
 
-Eighteen sessions of repair work, each one module: find the defect, fix it,
+Nineteen sessions of repair work, each one module: find the defect, fix it,
 prove it with a test *and* an end-to-end check, document why it mattered.
 
 Everything below is verifiable with one command:
@@ -32,6 +32,7 @@ bash tools/verify_all.sh --admin-password '…' --with-load
 | 16 | Site chrome, brand and operations screens | Two competing public headers, `/api/docs` with no navigation at all, a logo whose artwork still said WINDELSOCIALS, sign-in copy hidden from screen readers, a hard-coded announcement bar, no cron screen and no contact map. | [module-site-chrome.md](module-site-chrome.md) |
 | 17 | Private support attachments | Ticket attachments — bank statements, ID photographs — were public files protected only by a random filename. Anyone who ever saw the URL kept them for ever. | [module-private-attachments.md](module-private-attachments.md) |
 | 18 | The coupon redemption race | The per-customer coupon cap was a `COUNT(*)` taken moments before the insert: two overlapping checkouts both passed it, and the money had already moved by the time the second row was written. | [module-coupon-race.md](module-coupon-race.md) |
+| 19 | Naming the operator | The Terms said the trader was "the party that deployed this instance" and no field existed anywhere to say who that is — a panel holding prepaid balances that named neither its trader nor its data controller. | [module-legal-identity.md](module-legal-identity.md) |
 
 ## The pattern
 

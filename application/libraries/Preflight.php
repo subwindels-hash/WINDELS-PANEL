@@ -101,8 +101,38 @@ class Preflight {
             array($this->check_environment_consistency()),
             array($this->check_schema_version()),
             array($this->check_demo_mode($is_prod)),
-            array($this->check_mock_providers($is_prod))
+            array($this->check_mock_providers($is_prod)),
+            array($this->check_legal_identity($is_prod))
         );
+    }
+
+    /**
+     * Has the operator said who they are?
+     *
+     * A panel that holds prepaid balances has to name the trader in its terms
+     * and the data controller in its privacy notice. Until it does, both
+     * pages tell the customer, truthfully, that the operator has not
+     * published their details — which is not a good look on the page someone
+     * reads before making their first deposit.
+     *
+     * A WARN, never a FAIL: the software works, and a brand-new install being
+     * blocked from booting because the paperwork is not done yet would help
+     * nobody.
+     */
+    private function check_legal_identity($is_prod) {
+        if (!class_exists('LegalIdentity')) {
+            require_once APPPATH.'libraries/LegalIdentity.php';
+        }
+        LegalIdentity::flush();
+        $missing = LegalIdentity::missing();
+        if ($missing === array()) {
+            return $this->result('legal_identity', self::OK,
+                LegalIdentity::details()['legal_entity_name']);
+        }
+        return $this->result('legal_identity', self::WARN,
+            'not published: '.strtolower(implode(', ', $missing)),
+            'Terms and Privacy tell customers the operator has not been named. '
+            .'Fill it in at Admin → Settings → Legal and company details.');
     }
 
     /** The one that motivated this whole command. */

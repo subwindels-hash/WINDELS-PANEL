@@ -3,6 +3,13 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 if (!class_exists('SiteOperatorKnowledge', false)) {
     require_once APPPATH.'libraries/SiteOperatorKnowledge.php';
 }
+if (!class_exists('LegalIdentity', false)) {
+    require_once APPPATH.'libraries/LegalIdentity.php';
+}
+// The controller of personal data has a name, an address and a regulator —
+// or the page says plainly that the operator has not published them.
+$legal = LegalIdentity::details();
+$legal_published = LegalIdentity::is_published();
 $effective = SiteOperatorKnowledge::EFFECTIVE_DATE;
 $updated = SiteOperatorKnowledge::UPDATED_DATE;
 $inventory = SiteOperatorKnowledge::data_inventory();
@@ -44,7 +51,19 @@ $toc = array(
     </nav>
     <article class="ws-prose">
       <div class="ws-callout">
-        The operator of this deployment is the controller of personal data. Identity, address and a Data Protection Officer (if one is appointed) must be published by that operator. Until then, use the support email in site settings.
+        <?php if ($legal_published): ?>
+          <strong>Data controller.</strong>
+          <?=htmlspecialchars($legal['legal_entity_name'])?>, of <?=htmlspecialchars(LegalIdentity::address_inline())?>,
+          is the controller of the personal data described below.
+          <?php if ($legal['legal_dpo_contact'] !== ''): ?>
+            Data protection contact: <a href="mailto:<?=htmlspecialchars($legal['legal_dpo_contact'])?>"><?=htmlspecialchars($legal['legal_dpo_contact'])?></a>.
+          <?php endif; ?>
+        <?php else: ?>
+          <strong>The controller has not been published yet.</strong>
+          The operator of this deployment is the controller of personal data, and has not yet recorded
+          their identity and registered address in Admin → Settings → Legal. Until they do, use the
+          support email in site settings.
+        <?php endif; ?>
       </div>
 
       <h2 id="collect">1. Information collected</h2>
@@ -110,7 +129,13 @@ $toc = array(
       <p>We will update the date at the top of this page when the policy changes. Material changes that affect how we use personal data will also be announced in the site banner where practical.</p>
 
       <h2 id="contact">13. Contact</h2>
-      <p>Privacy questions: <a href="<?=site_url('contact')?>">contact form</a>. Identity of the controller and any supervisory-authority complaint rights must be completed by the operator for the country in which they are established.</p>
+      <p>Privacy questions: <a href="<?=site_url('contact')?>">contact form</a><?php
+        if ($legal['legal_dpo_contact'] !== ''): ?> or <a href="mailto:<?=htmlspecialchars($legal['legal_dpo_contact'])?>"><?=htmlspecialchars($legal['legal_dpo_contact'])?></a><?php endif; ?>.</p>
+      <?php if ($legal['legal_supervisory_authority'] !== ''): ?>
+        <p>If you believe your data has been handled unlawfully you may complain to <strong><?=htmlspecialchars($legal['legal_supervisory_authority'])?></strong>, in addition to contacting us.</p>
+      <?php elseif (!$legal_published): ?>
+        <p>Identity of the controller and any supervisory-authority complaint rights must be completed by the operator for the country in which they are established.</p>
+      <?php endif; ?>
     </article>
   </div>
 </section>

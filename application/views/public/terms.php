@@ -3,6 +3,14 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 if (!class_exists('SiteOperatorKnowledge', false)) {
     require_once APPPATH.'libraries/SiteOperatorKnowledge.php';
 }
+if (!class_exists('LegalIdentity', false)) {
+    require_once APPPATH.'libraries/LegalIdentity.php';
+}
+// Who the customer is actually contracting with. Blank until the operator
+// fills it in, and the page says so in those words rather than printing an
+// empty line — see LegalIdentity.
+$legal = LegalIdentity::details();
+$legal_published = LegalIdentity::is_published();
 $effective = SiteOperatorKnowledge::EFFECTIVE_DATE;
 $updated = SiteOperatorKnowledge::UPDATED_DATE;
 $toc = array(
@@ -50,7 +58,21 @@ $toc = array(
     </nav>
     <article class="ws-prose">
       <div class="ws-callout">
-        <strong>Operator placeholder.</strong> The legal entity, registered address and governing jurisdiction are those of the party that deployed this instance. Until that party publishes them, notices go to the support email configured in settings.
+        <?php if ($legal_published): ?>
+          <strong>Who you are contracting with.</strong>
+          This service is operated by <strong><?=htmlspecialchars($legal['legal_entity_name'])?></strong><?php
+            if ($legal['legal_registration_number'] !== ''): ?>, registered as <?=htmlspecialchars($legal['legal_registration_number'])?><?php endif; ?>,
+          of <?=htmlspecialchars(LegalIdentity::address_inline())?>.
+          <?php if ($legal['legal_contact_email'] !== ''): ?>
+            Formal notices: <a href="mailto:<?=htmlspecialchars($legal['legal_contact_email'])?>"><?=htmlspecialchars($legal['legal_contact_email'])?></a>.
+          <?php endif; ?>
+        <?php else: ?>
+          <strong>The operator has not published their legal details yet.</strong>
+          The party that deployed this instance is the one you are contracting with, and they have not
+          yet recorded their legal entity, registered address and governing law in
+          Admin → Settings → Legal. Until they do, notices go to the support address published in
+          site settings. <?=htmlspecialchars(implode(', ', LegalIdentity::missing()))?> outstanding.
+        <?php endif; ?>
       </div>
 
       <h2 id="acceptance">1. Acceptance of terms</h2>
@@ -125,10 +147,19 @@ $toc = array(
       <p>Material changes will be indicated by updating the “Last updated” date on this page and, where practical, by an announcement. Continued use after the update is acceptance of the revised terms. If you do not agree, stop using the service and ask for account closure.</p>
 
       <h2 id="law">20. Governing law</h2>
-      <p><strong>Requires review by the operator’s legal counsel.</strong> Until a jurisdiction is designated in writing by the operator, these terms are governed by the laws of the operator’s principal place of business, excluding conflict-of-law rules. Courts of that place have non-exclusive jurisdiction, except where consumer-protection law gives you a non-waivable forum.</p>
+      <?php if ($legal['legal_jurisdiction'] !== ''): ?>
+        <p>These terms are governed by the laws of <strong><?=htmlspecialchars($legal['legal_jurisdiction'])?></strong>, excluding conflict-of-law rules. The courts of <?=htmlspecialchars($legal['legal_courts'])?> have non-exclusive jurisdiction, except where consumer-protection law gives you a non-waivable forum in the country where you live.</p>
+      <?php else: ?>
+        <p><strong>Requires review by the operator’s legal counsel.</strong> Until a jurisdiction is designated in writing by the operator, these terms are governed by the laws of the operator’s principal place of business, excluding conflict-of-law rules. Courts of that place have non-exclusive jurisdiction, except where consumer-protection law gives you a non-waivable forum.</p>
+      <?php endif; ?>
 
       <h2 id="contact">21. Contact</h2>
-      <p>Questions about these terms: use the <a href="<?=site_url('contact')?>">contact form</a> or the support email published in site settings.</p>
+      <p>Questions about these terms: use the <a href="<?=site_url('contact')?>">contact form</a><?php
+        if ($legal['legal_contact_email'] !== ''): ?> or write to <a href="mailto:<?=htmlspecialchars($legal['legal_contact_email'])?>"><?=htmlspecialchars($legal['legal_contact_email'])?></a><?php
+        else: ?> or the support email published in site settings<?php endif; ?>.</p>
+      <?php if ($legal_published): ?>
+        <p class="hint">Registered address for service of notices: <?=htmlspecialchars(LegalIdentity::address_inline())?>.</p>
+      <?php endif; ?>
     </article>
   </div>
 </section>

@@ -82,6 +82,7 @@ node tools/devserver/deployment_check.mjs                       # extract the zi
 node tools/devserver/pricing_check.mjs        --admin-password <pw>   # coupon limits, minimum spend, batched pricing
 node tools/devserver/chrome_check.mjs         --admin-password <pw>   # one menu everywhere, navy chrome, announcement, cron screen, contact map
 node tools/devserver/attachment_check.mjs     --admin-password <pw>   # who may read a support attachment: owner, stranger, staff, internal note
+node tools/devserver/legal_check.mjs          --admin-password <pw>   # the operator's legal identity on Terms, Privacy and the footer
 node tools/devdb/import_sql.cjs --port 3410 --file database/marvysocials.sql  # apply a dump over the wire
 ```
 

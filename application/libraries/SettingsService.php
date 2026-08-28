@@ -322,6 +322,32 @@ class SettingsService {
             'contact_hours' => array('text', 'contact', 'Support hours',
                 'Free text, e.g. “Mon–Fri, 9:00–18:00 WAT”. Leave blank to hide it.', ''),
 
+            // Legal identity. The Terms and the Privacy Policy used to say
+            // "the party that deployed this instance" because there was
+            // nowhere to record who that is — a panel that holds prepaid
+            // balances has to name its trader and its data controller.
+            'legal_entity_name' => array('text', 'legal', 'Legal entity name',
+                'The company or person customers are contracting with, exactly as registered. '
+                .'Shown in the Terms, the Privacy Policy and the footer.', ''),
+            'legal_registration_number' => array('text', 'legal', 'Company registration number',
+                'RC number, company number, VAT id — whatever identifies the entity in its register. '
+                .'Leave blank for a sole trader.', ''),
+            'legal_registered_address' => array('longtext', 'legal', 'Registered address',
+                'Where formal notices are served. One line per line of the address.', ''),
+            'legal_jurisdiction' => array('text', 'legal', 'Governing law',
+                'The country (and state, where it matters) whose law governs the terms, '
+                .'e.g. “the Federal Republic of Nigeria”.', ''),
+            'legal_courts' => array('text', 'legal', 'Courts',
+                'Where disputes are heard, if different from the governing law above. '
+                .'Leave blank to use the same place.', ''),
+            'legal_contact_email' => array('text', 'legal', 'Legal contact email',
+                'Where legal notices go. Leave blank to use the support email.', ''),
+            'legal_dpo_contact' => array('text', 'legal', 'Data protection contact',
+                'The data protection officer or privacy contact. Leave blank to use the legal contact.', ''),
+            'legal_supervisory_authority' => array('text', 'legal', 'Supervisory authority',
+                'The data-protection regulator customers may complain to, e.g. “the Nigeria Data Protection '
+                .'Commission”. Leave blank if none applies.', ''),
+
             'default_theme' => array('choice:system|light|dark', 'branding', 'Default theme',
                 'System follows the visitor\'s OS preference; light and dark force a theme. Visitors can still override it in their browser.', 'system'),
         );

@@ -4,6 +4,7 @@ $csrf = function () { return '<input type="hidden" name="'.htmlspecialchars($thi
 
 $category_titles = array(
     'contact'  => 'Contact page',
+    'legal'    => 'Legal and company details',
     'general'   => 'General',
     'homepage'  => 'Homepage content',
     'security'  => 'Registration and security',

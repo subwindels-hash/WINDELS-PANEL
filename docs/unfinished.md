@@ -4,7 +4,8 @@
 
 **Progress:** items 11 and 12 are **closed** by module 17
 ([module-private-attachments.md](module-private-attachments.md)) and item 13 by
-module 18 ([module-coupon-race.md](module-coupon-race.md)). Closed items stay
+module 18 ([module-coupon-race.md](module-coupon-race.md)), and item 9 by
+module 19 ([module-legal-identity.md](module-legal-identity.md)). Closed items stay
 in the table below, struck through, so the list reads as a record rather than a
 moving target.
 
@@ -32,7 +33,7 @@ open, and things this sandbox cannot prove.
 | 6 | **Announcement bar links** | `announcement_text` is plain text. A clickable banner needs the CMS sanitising path, not a raw-HTML setting. |
 | 7 | **Contact map — first-party render** | The map is a third-party iframe (OpenStreetMap / Google). It leaks the visitor's IP to that origin, which an EU operator must disclose. |
 | 8 | **Brand artwork** | `assets/brand/*` is generated, not designed. Legible at every size the panel uses, but an operator with a real identity should replace the set (and the ratio table in `partials/brand_logo.php`). |
-| 9 | **Legal pages** | `public/terms.php` still carries an *operator placeholder* for the legal entity, registered address and jurisdiction. |
+| ~~9~~ | ~~**Legal pages**~~ | **Closed (module 19).** A `legal` settings group records the entity, registration number, registered address, governing law, courts, notice email, privacy contact and supervisory authority; Terms, Privacy and the footer print them, say plainly when they are absent, and Preflight WARNs until they are filled in. |
 | 10 | **Support assistant** | Deliberately not an LLM — it answers from a local knowledge base. Anything outside that file becomes a ticket. |
 
 ## B. Known defects and races still open
@@ -67,5 +68,5 @@ open, and things this sandbox cannot prove.
    much.
 3. **19** — run `tools/verify_all.sh` once against real MySQL 8.
 4. ~~**13**~~ — done, module 18.
-5. **9** — the operator fills in the legal entity before taking money.
+5. ~~**9**~~ — done, module 19.
 6. **1 / 2** — product decisions, not repairs. Only if the roadmap wants them.
