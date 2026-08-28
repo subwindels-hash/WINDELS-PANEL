@@ -102,13 +102,16 @@ const pages = [
   // Ceilings are set just above what each page costs today, so a regression
   // that reintroduces a per-row query fails here instead of being discovered
   // by an operator whose panel got slower.
-  ['admin dashboard',        admin, '/admin',                      36],
+  // Module 20 consolidated the widgets: 31 queries -> 20. The budget is set
+  // just above the measured cost so a regression that reintroduces a
+  // per-widget query is caught here rather than on a busy panel.
+  ['admin dashboard',        admin, '/admin',                      22],
   ['admin orders (page 1)',  admin, '/admin/orders',               14],
   ['admin orders (page 20)', admin, '/admin/orders?page=20',       14],
   ['admin customers',        admin, '/admin/customers',            18],
   ['admin wallets',          admin, '/admin/wallets',              14],
-  ['admin analytics 30d',    admin, '/admin/analytics?days=30',    24],
-  ['admin analytics 90d',    admin, '/admin/analytics?days=90',    24],
+  ['admin analytics 30d',    admin, '/admin/analytics?days=30',    22],
+  ['admin analytics 90d',    admin, '/admin/analytics?days=90',    22],
   ['admin tickets',          admin, '/admin/tickets',              14],
   ['admin refunds',          admin, '/admin/refunds',              14],
   ['customer dashboard',     cust,  '/dashboard',                  18],

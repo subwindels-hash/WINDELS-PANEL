@@ -1136,11 +1136,33 @@ class FakeDb
      */
     private function parseSumCondition($cond)
     {
+        // `A AND B` — two facts about one row.
+        //
+        // The dashboard's consolidated aggregates ask "how many sales in the
+        // last day", which is a window AND a status in a single pass over the
+        // table. A double that only understood one condition per CASE would
+        // have forced the production code back into a query per widget, which
+        // is exactly the cost module 12 set out to remove.
+        if (preg_match('/\s+AND\s+/i', $cond)) {
+            $parts = array();
+            foreach (preg_split('/\s+AND\s+/i', $cond) as $part) {
+                $one = $this->parseSumCondition(trim($part));
+                if ($one === null) return null;
+                $parts[] = $one;
+            }
+            return array('op' => 'AND', 'parts' => $parts);
+        }
         if (preg_match('/^([\w.`]+)\s+IS\s+NOT\s+NULL$/i', $cond, $m)) {
             return array('column' => $this->bareColumn(trim($m[1], '`')), 'op' => 'NOT NULL');
         }
         if (preg_match('/^([\w.`]+)\s+IS\s+NULL$/i', $cond, $m)) {
             return array('column' => $this->bareColumn(trim($m[1], '`')), 'op' => 'NULL');
+        }
+        if (preg_match('/^([\w.`]+)\s+NOT\s+IN\s*\((.+)\)$/is', $cond, $m)) {
+            $values = array();
+            foreach (explode(',', $m[2]) as $v) $values[] = trim($v, " '\"`");
+            return array('column' => $this->bareColumn(trim($m[1], '`')),
+                         'op' => 'NOT IN', 'values' => $values);
         }
         if (preg_match('/^([\w.`]+)\s+IN\s*\((.+)\)$/is', $cond, $m)) {
             $values = array();
@@ -1169,28 +1191,7 @@ class FakeDb
                 continue;
             }
             // sum_case
-            $c   = $spec['cond'];
-            $lhs = $row[$c['column']] ?? null;
-            $hit = false;
-            if ($c['op'] === 'NOT NULL') {
-                $hit = $lhs !== null && $lhs !== '';
-            } elseif ($c['op'] === 'NULL') {
-                $hit = $lhs === null || $lhs === '';
-            } elseif ($c['op'] === 'IN') {
-                $hit = in_array((string)$lhs, $c['values'], true);
-            } else {
-                $cmp = (is_numeric($lhs) && is_numeric($c['value']))
-                    ? ($lhs <=> $c['value']) : strcmp((string)$lhs, (string)$c['value']);
-                switch ($c['op']) {
-                    case '=':  $hit = $cmp === 0; break;
-                    case '!=':
-                    case '<>': $hit = $cmp !== 0; break;
-                    case '<':  $hit = $cmp < 0;   break;
-                    case '<=': $hit = $cmp <= 0;  break;
-                    case '>':  $hit = $cmp > 0;   break;
-                    case '>=': $hit = $cmp >= 0;  break;
-                }
-            }
+            $hit = $this->conditionHolds($spec['cond'], $row);
             $branch = $hit ? $spec['then'] : $spec['else'];
             // The branch is either a literal (1, 0) or a column name.
             $v = is_numeric($branch) ? $branch
@@ -1201,6 +1202,36 @@ class FakeDb
         // COUNT-shaped CASE sums; money keeps its 8dp string form.
         return (strpos($total, '.') !== false && rtrim(substr($total, strpos($total, '.') + 1), '0') === '')
             ? (string)(int)$total : $total;
+    }
+
+    /** Does one parsed CASE condition hold for this row? */
+    private function conditionHolds(array $c, array $row)
+    {
+        if (isset($c['op']) && $c['op'] === 'AND') {
+            foreach ($c['parts'] as $part) {
+                if (!$this->conditionHolds($part, $row)) return false;
+            }
+            return true;
+        }
+
+        $lhs = array_key_exists($c['column'], $row) ? $row[$c['column']] : null;
+        if ($c['op'] === 'NOT NULL') return $lhs !== null && $lhs !== '';
+        if ($c['op'] === 'NULL')     return $lhs === null || $lhs === '';
+        if ($c['op'] === 'IN')       return in_array((string)$lhs, $c['values'], true);
+        if ($c['op'] === 'NOT IN')   return !in_array((string)$lhs, $c['values'], true);
+
+        $cmp = (is_numeric($lhs) && is_numeric($c['value']))
+            ? ($lhs <=> $c['value']) : strcmp((string)$lhs, (string)$c['value']);
+        switch ($c['op']) {
+            case '=':  return $cmp === 0;
+            case '!=':
+            case '<>': return $cmp !== 0;
+            case '<':  return $cmp < 0;
+            case '<=': return $cmp <= 0;
+            case '>':  return $cmp > 0;
+            case '>=': return $cmp >= 0;
+        }
+        return false;
     }
 
     /** "giftcard_products.price" → "price"; joins merge columns flat. */

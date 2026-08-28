@@ -5,7 +5,8 @@
 **Progress:** items 11 and 12 are **closed** by module 17
 ([module-private-attachments.md](module-private-attachments.md)) and item 13 by
 module 18 ([module-coupon-race.md](module-coupon-race.md)), and item 9 by
-module 19 ([module-legal-identity.md](module-legal-identity.md)). Closed items stay
+module 19 ([module-legal-identity.md](module-legal-identity.md)) and item 14 by
+module 20 ([module-dashboard-cost.md](module-dashboard-cost.md)). Closed items stay
 in the table below, struck through, so the list reads as a record rather than a
 moving target.
 
@@ -43,7 +44,7 @@ open, and things this sandbox cannot prove.
 | ~~11~~ | ~~**Digital-file URL after revocation**~~ | **Closed (module 17).** Proved by replaying a link captured *before* a refund: refused, and no fresh link can be minted. The concern was unfounded — `resolve_download()` re-checks revocation on every request — but the check that should have shown that was fetching a file that did not exist. Fixture corrected. |
 | ~~12~~ | ~~**Ticket-attachment URLs**~~ | **Closed (module 17).** Attachments now live outside the document root and are served only by `Attachment::ticket()`, which checks the session, the ticket's owner and the internal-note flag. Migration 029 moves the files that already exist and breaks the old URLs. |
 | ~~13~~ | ~~**Per-customer coupon race**~~ | **Closed (module 18).** Migration 030 adds `redemption_slot` and a UNIQUE index over `(coupon_id, user_id, redemption_slot)`; the slot is reserved before any charge and released if the checkout does not complete. Proved by two simultaneous `/checkout/place` requests: exactly one redemption. |
-| 14 | **Admin dashboard query cost** | Six aggregate widgets plus a chart, ~32 queries, worth about 4 queries of consolidation. Deliberately skipped in module 12. |
+| ~~14~~ | ~~**Admin dashboard query cost**~~ | **Closed (module 20).** 31 queries → 20: the status GROUP BY is memoised and carries "today" and "stuck", two nested revenue windows cost one pass per table instead of eight queries, `users` and `tickets` are each scanned once. Held at 22 by `perf_check` under the 12,000-order load fixture. |
 | 15 | **No index review under load** | SQLite's planner is not MySQL's, so no `EXPLAIN` work has been done on the real engine. |
 | 16 | **`testAJobCannotOverlapItself`** | The suite's single skipped test — `flock` semantics under the PHP-wasm runtime. Predates this work. |
 

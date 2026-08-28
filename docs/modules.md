@@ -1,6 +1,6 @@
 # MarvySocials — module index
 
-Nineteen sessions of repair work, each one module: find the defect, fix it,
+Twenty sessions of repair work, each one module: find the defect, fix it,
 prove it with a test *and* an end-to-end check, document why it mattered.
 
 Everything below is verifiable with one command:
@@ -33,6 +33,7 @@ bash tools/verify_all.sh --admin-password '…' --with-load
 | 17 | Private support attachments | Ticket attachments — bank statements, ID photographs — were public files protected only by a random filename. Anyone who ever saw the URL kept them for ever. | [module-private-attachments.md](module-private-attachments.md) |
 | 18 | The coupon redemption race | The per-customer coupon cap was a `COUNT(*)` taken moments before the insert: two overlapping checkouts both passed it, and the money had already moved by the time the second row was written. | [module-coupon-race.md](module-coupon-race.md) |
 | 19 | Naming the operator | The Terms said the trader was "the party that deployed this instance" and no field existed anywhere to say who that is — a panel holding prepaid balances that named neither its trader nor its data controller. | [module-legal-identity.md](module-legal-identity.md) |
+| 20 | The admin dashboard's query cost | The first screen every staff member opens cost 31 queries, a third of them the same questions asked twice — the status GROUP BY ran twice per load and two nested revenue windows cost eight queries. | [module-dashboard-cost.md](module-dashboard-cost.md) |
 
 ## The pattern
 

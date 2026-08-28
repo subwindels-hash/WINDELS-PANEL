@@ -721,9 +721,18 @@ class AnalyticsTest extends TestCase
             $this->assertMatchesRegularExpression(
                 '~function '.$method.'\(.*?\n    \}~s', $src, $method.'() must exist');
         }
+        // revenue() delegates to revenue_windows() since module 20 (one pass
+        // per table for every window instead of a query per widget), so the
+        // rule — a revenue total reads BOTH money tables — is asserted over
+        // the pair. Reading only `orders` still reports every service domain
+        // as zero, which is what this has always been here to prevent.
         preg_match('~function revenue\(.*?\n    \}~s', $src, $m);
-        $this->assertStringContainsString("'orders'", $m[0]);
-        $this->assertStringContainsString("'service_transactions'", $m[0],
+        preg_match('~function revenue_windows\(.*?\n    \}~s', $src, $w);
+        $revenue_path = $m[0].$w[0];
+        $this->assertStringContainsString('revenue_windows', $m[0],
+            'revenue() must resolve through the batched path');
+        $this->assertStringContainsString("'orders'", $revenue_path);
+        $this->assertStringContainsString("'service_transactions'", $revenue_path,
             'a revenue total that reads only `orders` reports every service domain as zero');
 
         preg_match('~function revenue_series\(.*?\n    \}~s', $src, $s);
