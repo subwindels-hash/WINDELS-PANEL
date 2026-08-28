@@ -40,6 +40,9 @@ class CurrencyService {
 
     private $ci;
 
+    /** Memo for display_code(); see the method for why. */
+    private $display_code = null;
+
     public function __construct() {
         $this->ci =& get_instance();
         $this->ci->load->model(array('Currency_model', 'Setting_model'));
@@ -68,10 +71,19 @@ class CurrencyService {
      * must never make prices disappear or throw.
      */
     public function display_code() {
+        // Resolved once per request. Every formatted price asks for it, and it
+        // costs a settings read plus a currency read each time — on a
+        // catalogue page that was one pair of queries per row on screen.
+        if ($this->display_code !== null) return $this->display_code;
         $code = strtoupper((string)$this->ci->Setting_model->get('default_display_currency', $this->base_code()));
         $row = $this->ci->Currency_model->find($code);
-        if ($row && (int)$row->is_active === 1) return $code;
-        return $this->base_code();
+        return $this->display_code = ($row && (int)$row->is_active === 1) ? $code : $this->base_code();
+    }
+
+    /** Forget the memo after a change of currency configuration. */
+    public function forget() {
+        $this->display_code = null;
+        if (class_exists('Currency_model')) Currency_model::forget();
     }
 
     /**

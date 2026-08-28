@@ -296,9 +296,15 @@ if (!function_exists('marvy_feature_enabled')) {
         try {
             $ci =& get_instance();
             $ci->load->model('Feature_flag_model');
-            $row = $ci->db->where('flag_key', $key)->get('feature_flags')->row();
-            if (!$row) return (bool)$default;
-            return (bool)$row->enabled;
+            // Through the model's per-request memo rather than a point query:
+            // the navigation alone asks about a flag per module, so this ran
+            // nine times per authenticated page load before the page did any
+            // of its own work. A stubbed CI that does not provide the model
+            // falls back to the caller's default, as it did before.
+            if (!isset($ci->Feature_flag_model)) return (bool)$default;
+            $all = $ci->Feature_flag_model->all_flags();
+            if (!array_key_exists($key, $all)) return (bool)$default;
+            return (bool)$all[$key];
         } catch (Throwable $e) {
             return (bool)$default;
         }

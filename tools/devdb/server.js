@@ -27,7 +27,8 @@ const { translate, NOOP } = require('./translate');
 // CLI
 // ---------------------------------------------------------------------------
 function parseArgs(argv) {
-  const out = { port: 3399, host: '127.0.0.1', db: 'storage/devdb/marvy.sqlite', verbose: false, fresh: false };
+  const out = { port: 3399, host: '127.0.0.1', db: 'storage/devdb/marvy.sqlite', verbose: false,
+                fresh: false, statsPort: 0 };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--port') out.port = parseInt(argv[++i], 10);
@@ -35,6 +36,9 @@ function parseArgs(argv) {
     else if (a === '--db') out.db = argv[++i];
     else if (a === '--verbose') out.verbose = true;
     else if (a === '--fresh') out.fresh = true;
+    // A side-channel that counts queries, so a page's cost can be measured
+    // from outside the application instead of guessed by reading code.
+    else if (a === '--stats-port') out.statsPort = parseInt(argv[++i], 10);
   }
   return out;
 }
@@ -403,6 +407,32 @@ function handleAdminQuery(sql, session) {
 // ---------------------------------------------------------------------------
 // Query execution
 // ---------------------------------------------------------------------------
+/**
+ * Per-connection query accounting for the performance checks.
+ *
+ * `SELECT COUNT(*)` in a loop looks identical to one grouped query from inside
+ * PHP; from here the difference is a number. Reset before a request, read
+ * after, and an N+1 announces itself.
+ */
+const stats = { queries: 0, selects: 0, writes: 0, slowest: null, byTable: {}, samples: {} };
+function recordQuery(sql, ms) {
+  stats.queries++;
+  const isSelect = /^\s*\(?\s*select/i.test(sql);
+  if (isSelect) stats.selects++; else stats.writes++;
+  const table = (/\b(?:from|into|update)\s+[`"]?([a-z_]+)[`"]?/i.exec(sql) || [, '?'])[1];
+  stats.byTable[table] = (stats.byTable[table] || 0) + 1;
+  if (!stats.slowest || ms > stats.slowest.ms) {
+    stats.slowest = { ms: Math.round(ms * 100) / 100, sql: sql.slice(0, 200) };
+  }
+  // Keep a sample of each table's statements so a repeated query can be read
+  // back rather than inferred.
+  if (!stats.samples[table]) stats.samples[table] = sql.slice(0, 220);
+}
+function resetStats() {
+  stats.queries = 0; stats.selects = 0; stats.writes = 0;
+  stats.slowest = null; stats.byTable = {}; stats.samples = {};
+}
+
 function isSelectLike(sql) {
   return /^\s*(SELECT|WITH|PRAGMA|EXPLAIN|VALUES|SHOW)/i.test(sql);
 }
@@ -472,8 +502,10 @@ function execute(sqlText, session) {
       log('SQL>', sql.slice(0, 400));
 
       if (isSelectLike(sql)) {
+        const started = process.hrtime.bigint();
         const prepared = db.prepare(sql);
         const rows = prepared.all();
+        recordQuery(sql, Number(process.hrtime.bigint() - started) / 1e6);
         const names = prepared.columns
           ? prepared.columns().map((c) => c.name ?? c.column ?? '?')
           : rows.length
@@ -744,6 +776,18 @@ function createConnection(socket) {
       }
       session.inTransaction = false;
     }
+  });
+}
+
+// The stats side-channel: plain HTTP, dev only, opt-in with --stats-port.
+if (args.statsPort) {
+  const http = require('node:http');
+  http.createServer((req, res) => {
+    if (req.method === 'POST' && req.url.startsWith('/reset')) resetStats();
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(stats));
+  }).listen(args.statsPort, '127.0.0.1', () => {
+    console.log(`[devdb] query stats on http://127.0.0.1:${args.statsPort}`);
   });
 }
 

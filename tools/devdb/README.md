@@ -76,12 +76,27 @@ node tools/devserver/service_recovery_check.mjs --admin-password <pw> # stuck VT
 node tools/devserver/security_check.mjs       --admin-password <pw>   # IDOR, CSRF, privilege escalation, live RBAC matrix
 node tools/devserver/support_check.mjs        --admin-password <pw>   # assistant limits, ticket attachments
 node tools/devserver/marketplace_fulfilment_check.mjs --admin-password <pw> # escrow, refunds, download revocation
+node tools/devserver/seed_load.mjs                              # a year of trading, for measurement (--clean removes it)
+node tools/devserver/perf_check.mjs           --admin-password <pw>   # query cost of every heavy screen under that load
 ```
 
 `smm_provider_check.mjs` and `refunds_check.mjs` stand up
 `tools/devserver/fake_smm_panel.mjs` on localhost and need
 `HTTP_ALLOW_PRIVATE_HOSTS=true` in `.env` — `SecureHttpClient` refuses
 non-public hosts by default (SSRF protection). Never set that in production.
+
+## Measuring query cost
+
+Start the database with a stats side-channel and the number of statements each
+page issues can be read from outside the application:
+
+```bash
+node tools/devdb/server.js --port 3399 --stats-port 3400 --db storage/devdb/marvy.sqlite
+curl -X POST localhost:3400/reset && curl -s localhost:3400/    # { queries, byTable, slowest, samples }
+```
+
+That is what `perf_check.mjs` uses. An N+1 is invisible in a functional test and
+obvious here.
 
 ## What this does and does not prove
 
