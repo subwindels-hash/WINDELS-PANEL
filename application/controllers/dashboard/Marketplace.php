@@ -65,8 +65,13 @@ class Marketplace extends Auth_Controller {
             // Quantity is the ONLY customer-chosen number; the price is looked
             // up server-side inside purchase().
             'quantity' => (int)$this->input->post('quantity', true),
-            'idempotency_key' => 'marketplace:'.$this->current_user->id.':'
-                .substr(sha1((string)$this->input->post('form_token', true)), 0, 32),
+            // Only a token the client actually sent can deduplicate anything.
+            // Hashing an empty string gave every tokenless purchase by this
+            // customer the SAME key, so their second one resolved to their
+            // first as a "duplicate": they were shown an old order, no charge
+            // was made and no new order existed. A missing token means no
+            // double-click protection, not a permanent one-purchase limit.
+            'idempotency_key' => $this->purchase_key(),
             'source' => 'WEB',
         ));
         if (empty($res['ok'])) {
@@ -75,6 +80,16 @@ class Marketplace extends Auth_Controller {
         }
         $this->session->set_flashdata('success', 'Payment secured. Your order is being fulfilled.');
         redirect('dashboard/marketplace/orders/'.$res['order']->public_id);
+    }
+
+    /**
+     * The double-click key for one purchase attempt, or null when the client
+     * did not supply a token to deduplicate against.
+     */
+    private function purchase_key() {
+        $token = trim((string)$this->input->post('form_token', true));
+        if ($token === '') return null;
+        return 'marketplace:'.$this->current_user->id.':'.substr(sha1($token), 0, 32);
     }
 
     public function orders() {

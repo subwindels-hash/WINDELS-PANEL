@@ -462,6 +462,18 @@ class MarketplaceService {
             return $this->err('Escrow refund could not be completed', 'DB_ERROR');
         }
 
+        // The money is back; the goods must go with it. A digital order that
+        // kept its download after a refund gave the buyer the file for free —
+        // and left it in "My Downloads" for ever, where nobody would look.
+        // After the commit and never fatal: the refund is already final.
+        try {
+            $this->ci->load->library('ShopDeliveryService');
+            $this->ci->shopdeliveryservice->revoke_for_order($order, $actor_id,
+                'Order refunded: '.mb_substr($reason, 0, 180));
+        } catch (Throwable $e) {
+            log_message('error', 'marketplace refund could not revoke downloads: '.$e->getMessage());
+        }
+
         $this->audit($actor_id, 'marketplace.order.refund', 'marketplace_order', $order->public_id,
             array('status' => $from), array('status' => 'REFUNDED', 'amount' => $order->gross_amount));
         return array('ok' => true, 'refunded' => $res['refunded'] ?? $order->gross_amount,

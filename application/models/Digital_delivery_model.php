@@ -10,6 +10,12 @@ class Digital_delivery_model extends MY_Model {
             ->get($this->table)->row();
     }
 
+    /** Every delivery granted for one marketplace order. */
+    public function for_order($order_id) {
+        return $this->db->where('marketplace_order_id', (int)$order_id)
+            ->get($this->table)->result();
+    }
+
     public function create(array $data) {
         $data['public_id'] = $this->new_public_id();
         $data['created_at'] = $this->now_utc();

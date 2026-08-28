@@ -222,8 +222,26 @@ class CronWorkers {
                          'message'=>'no stuck service purchases');
         }
 
-        $processed = 0; $failed = 0; $refunded = 0;
+        $processed = 0; $failed = 0; $refunded = 0; $skipped = 0;
         foreach ($stuck as $tx) {
+            // A domain whose PROCESSING state is a *feature* must not be swept
+            // on the generic window. Marketplace escrow is the case that
+            // matters: a purchase sits PROCESSING for the whole inspection
+            // period (72 hours by default, up to 30 days), so the 24-hour
+            // backstop would have refunded buyers of goods that had already
+            // shipped — and left the order, the stock and the download intact
+            // while doing it.
+            if (!$this->recovery_due($tx)) { $skipped++; continue; }
+
+            // Marketplace refunds are not a bare ledger reversal: the escrow
+            // row has to be claimed, the stock put back and the download
+            // revoked. MarketplaceService owns that sequence, so the sweep
+            // asks it rather than reimplementing half of it.
+            if (strtoupper((string)$tx->service_domain) === 'MARKETPLACE') {
+                if ($this->recover_marketplace($tx)) { $processed++; $refunded++; }
+                else { $failed++; }
+                continue;
+            }
             $reason = $tx->status === 'PENDING'
                 ? 'Abandoned before payment completed'
                 : ($tx->provider_reference
@@ -250,8 +268,53 @@ class CronWorkers {
             'processed' => $processed,
             'failed'    => $failed,
             'refunded'  => $refunded,
-            'message'   => "{$processed} closed, {$refunded} refunded, {$failed} failed",
+            'skipped'   => $skipped,
+            'message'   => "{$processed} closed, {$refunded} refunded, {$failed} failed, "
+                          ."{$skipped} still inside their own window",
         );
+    }
+
+    /**
+     * Whether this purchase is genuinely stuck, or simply living the life its
+     * own domain gives it.
+     *
+     * The generic windows suit a domain that settles in seconds. Marketplace
+     * escrow does not: the buyer's money is deliberately held until the
+     * inspection period ends, and `marketplace_release` is the worker that
+     * ends it. The sweep therefore waits for the escrow window *plus* a day of
+     * grace before treating such an order as abandoned — by which point the
+     * release worker has plainly stopped running, which is a real fault.
+     */
+    private function recovery_due($tx) {
+        if (strtoupper((string)$tx->service_domain) !== 'MARKETPLACE') return true;
+
+        $escrow_hours = $this->setting_int('marketplace_auto_release_hours', 72, 1, 720);
+        $window = max($this->setting_int('service_abandon_hours', 24, 1, 720), $escrow_hours + 24);
+        return strtotime((string)$tx->created_at.' UTC') < time() - ($window * 3600);
+    }
+
+    /**
+     * Close an abandoned marketplace purchase through the service that owns
+     * escrow, so the order, the stock and the buyer's money all move together.
+     */
+    private function recover_marketplace($tx) {
+        try {
+            $this->ci->load->library('MarketplaceService');
+            $this->ci->load->model('Marketplace_order_model');
+            $order = $this->ci->Marketplace_order_model->find_by_transaction($tx->id);
+            if (!$order) {
+                // No escrow row to keep in step: fall back to the plain refund.
+                $res = $this->ci->transactionengine->transition(
+                    $tx->id, 'FAILED', 'SYSTEM', 'The marketplace order behind this purchase is missing');
+                return !empty($res['ok']);
+            }
+            $res = $this->ci->marketplaceservice->refund(
+                $order, null, 'Escrow was never released; the purchase was abandoned');
+            return !empty($res['ok']);
+        } catch (Throwable $e) {
+            log_message('error', "service_recovery marketplace {$tx->id}: ".$e->getMessage());
+            return false;
+        }
     }
 
     /* ======================== identity retention =========================== */

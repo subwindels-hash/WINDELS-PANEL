@@ -75,6 +75,7 @@ node tools/devserver/analytics_check.mjs      --admin-password <pw>   # every re
 node tools/devserver/service_recovery_check.mjs --admin-password <pw> # stuck VTU/number/identity/giftcard purchases
 node tools/devserver/security_check.mjs       --admin-password <pw>   # IDOR, CSRF, privilege escalation, live RBAC matrix
 node tools/devserver/support_check.mjs        --admin-password <pw>   # assistant limits, ticket attachments
+node tools/devserver/marketplace_fulfilment_check.mjs --admin-password <pw> # escrow, refunds, download revocation
 ```
 
 `smm_provider_check.mjs` and `refunds_check.mjs` stand up
