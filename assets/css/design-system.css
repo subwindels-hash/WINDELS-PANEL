@@ -341,9 +341,18 @@ button { font-family:inherit; cursor:pointer; }
 .ws-brand{display:inline-flex;align-items:center;gap:.65rem;color:var(--slate-900);font-weight:700;
   letter-spacing:-.02em;text-decoration:none}
 .ws-brand:hover{text-decoration:none;color:var(--brand-700)}
-.ws-logo{display:block;height:auto;width:auto;max-height:2.25rem}
-.ws-logo-lg{max-height:2.75rem}
-.ws-logo-sm{max-height:1.75rem}
+/* One sizing contract for every brand mark. `partials/brand_logo` passes the
+   height it wants as `--ws-logo-h` (inline), so the rendered height always
+   equals the requested height — a `max-height` cap used to shrink the footer
+   mark from 40px to 36px, and an operator-uploaded wordmark with small
+   intrinsic pixels rendered smaller still. `width:auto` keeps the ratio. */
+.ws-logo,.ws-logo-lg,.ws-logo-sm{display:block;width:auto;max-height:none;
+  height:var(--ws-logo-h,2.25rem)}
+.ws-logo-lg{--ws-logo-h:2.75rem}
+.ws-logo-sm{--ws-logo-h:1.75rem}
+/* The footer wordmark is the sign-off and is the same size on every page. */
+.ws-footer-logo{--ws-logo-h:44px}
+@media(max-width:520px){.ws-footer-logo{height:38px}}
 .ws-brand-mark{width:2rem;height:2rem;border-radius:.7rem;overflow:hidden;flex-shrink:0}
 .ws-brand-mark img{width:100%;height:100%;object-fit:cover}
 .ws-visual{display:block;width:100%;height:auto;border-radius:var(--radius-xl);object-fit:cover;

@@ -113,6 +113,35 @@ credentials. Only the advertising is gone. The on-site assistant still answers
 a direct "where do staff sign in?" question with the link, which is a
 deliberate exception (`SiteOperatorEngineTest::testAdminQuestionPointsAtStaffLogin`).
 
+## 3c. The footer wordmark rendered smaller than it was asked to
+
+`partials/brand_logo` has always taken a `height`, but the stylesheet only
+pinned `.ws-logo{max-height:2.25rem}` with `height:auto`. Two consequences:
+the footer asked for 40px and drew at **36px**, and because nothing set a real
+height, an operator-uploaded wordmark (`brand_logo_url`, which ships without a
+`width` attribute) drew at its own intrinsic pixel size — a 120×24 upload
+rendered a 24px logo, which is the "footer logo is tiny on some pages" report.
+
+The requested height now travels to CSS as a custom property:
+
+```php
+$style = '--ws-logo-h:'.$h.'px';   // partials/brand_logo.php
+```
+```css
+.ws-logo,.ws-logo-lg,.ws-logo-sm{display:block;width:auto;max-height:none;
+  height:var(--ws-logo-h,2.25rem)}
+.ws-footer-logo{--ws-logo-h:44px}
+@media(max-width:520px){.ws-footer-logo{height:38px}}
+```
+
+Declared height = rendered height, for bundled artwork and uploads alike, on
+every page that loads the footer. Only the *variable* is inline, so a media
+query can still shrink a placement — the footer mark steps down to 38px under
+520px. The footer itself now asks for 44px: it is the sign-off, and it is the
+same size on the homepage, the auth pages, the legal pages and the API docs.
+`width:auto` keeps every ratio, and the `width`/`height` attributes stay so the
+browser still reserves the box before the image loads.
+
 ## 4. The announcement bar was hard-coded
 
 `partials/announcement_bar.php` printed a fixed marquee. The operator could

@@ -15,7 +15,9 @@ $legal_line = LegalIdentity::line();
       <div class="ws-footer-brand">
         <a class="ws-brand" href="<?=site_url()?>" aria-label="<?=htmlspecialchars($site_name)?> home">
           <?php // The footer is navy: the light wordmark, not the dark one with a CSS filter over it.
-                $this->load->view('partials/brand_logo', array('variant'=>'dark','height'=>40)); ?>
+                // 44px is the site's largest placement — the footer mark is the sign-off, so it
+                // reads at a normal size instead of the 36px the old max-height cap forced.
+                $this->load->view('partials/brand_logo', array('variant'=>'dark','height'=>44,'class'=>'ws-logo ws-footer-logo')); ?>
           <span class="sr-only"><?=htmlspecialchars($site_name)?></span>
         </a>
         <p class="muted mt-2" style="max-width:22rem">

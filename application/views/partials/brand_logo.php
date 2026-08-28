@@ -36,6 +36,19 @@ $ratios = array('icon' => 1, 'horizontal' => 5.0625, 'dark' => 5.0625, 'full' =>
 $width_attr = (!empty($custom) && $variant !== 'icon')
     ? ''
     : 'width="'.(int)round($h * ($ratios[$variant] ?? $ratios['horizontal'])).'"';
+
+// The mark must render at the height the caller asked for — every time, on
+// every page. It did not: `.ws-logo` carries `max-height:2.25rem`, so a caller
+// asking for 40px silently got 36px, and because only `max-height` was pinned,
+// an operator-uploaded wordmark with small intrinsic pixels (say 120x24) drew
+// at 24px — the same footer looking noticeably smaller on some installs and
+// pages. The requested height now travels as a custom property and the
+// stylesheet turns it into a real `height` (with `width:auto` keeping the
+// ratio), so the declared height is the rendered height for bundled artwork
+// and uploads alike — and because only the variable is inline, a media query
+// can still shrink a placement. The width/height attributes stay for layout
+// reservation.
+$style = '--ws-logo-h:'.$h.'px';
 ?>
 <img class="<?=htmlspecialchars($class)?>" src="<?=htmlspecialchars($src)?>" alt="<?=htmlspecialchars($alt)?>"
-     height="<?=$h?>" <?=$width_attr?> decoding="async">
+     height="<?=$h?>" <?=$width_attr?> style="<?=htmlspecialchars($style)?>" decoding="async">

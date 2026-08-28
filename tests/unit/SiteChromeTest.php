@@ -264,6 +264,37 @@ class SiteChromeTest extends TestCase
         }
     }
 
+    /**
+     * A logo must render at the height its caller asked for. `.ws-logo` used
+     * to pin only `max-height:2.25rem`, so the 40px footer mark drew at 36px
+     * and an uploaded wordmark with small intrinsic pixels drew smaller still
+     * — the same footer looking tiny on some pages.
+     */
+    public function testTheLogoRendersAtTheHeightItWasAskedFor()
+    {
+        $src = $this->view('partials/brand_logo.php');
+        $this->assertMatchesRegularExpression(
+            '/\$style\s*=\s*\'--ws-logo-h:\'\s*\.\s*\$h/', $src,
+            'the requested height must travel to CSS, not just to the attribute');
+        $this->assertStringContainsString('style="<?=htmlspecialchars($style)?>"', $src);
+
+        $css = preg_replace('/\s+/', ' ',
+            file_get_contents(self::$root.'/assets/css/design-system.css'));
+        $this->assertMatchesRegularExpression(
+            '/\.ws-logo[^{]*\{[^}]*height:var\(--ws-logo-h/', $css,
+            'the stylesheet turns the requested height into a real height');
+        $this->assertDoesNotMatchRegularExpression(
+            '/\.ws-logo\{[^}]*max-height:2\.25rem/', $css,
+            'the old cap silently shrank every mark taller than 36px');
+
+        $footer = $this->view('partials/footer.php');
+        $this->assertMatchesRegularExpression("/'height'\s*=>\s*44/", $footer,
+            'the footer sign-off mark is the full-size placement');
+        $this->assertStringContainsString('ws-footer-logo', $footer);
+        $this->assertMatchesRegularExpression('/\.ws-footer-logo\{--ws-logo-h:44px\}/', $css,
+            'and the footer size is stated once, in the stylesheet');
+    }
+
     /** The declared aspect ratio must match the file, or the page jumps. */
     public function testTheLogoRatiosMatchTheShippedArtwork()
     {
