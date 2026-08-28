@@ -528,7 +528,16 @@ class OrderService {
                 return;
             }
             if (in_array($order->status, array('COMPLETED','PARTIAL'), true)) {
-                $this->ci->affiliateservice->record_for_order($order);
+                // resync, not record: record_for_order() is a no-op once a
+                // commission exists, so a refund that lands AFTER the accrual
+                // (a partial delivery reported later, a goodwill refund) used
+                // to leave the referrer holding a commission on money the
+                // platform had given back.
+                if (method_exists($this->ci->affiliateservice, 'resync_for_order')) {
+                    $this->ci->affiliateservice->resync_for_order($order);
+                } else {
+                    $this->ci->affiliateservice->record_for_order($order);
+                }
             } elseif (in_array($order->status, array('CANCELED','CANCELLED','REFUNDED','FAILED'), true)) {
                 $this->ci->affiliateservice->reverse_for_order($order);
             }

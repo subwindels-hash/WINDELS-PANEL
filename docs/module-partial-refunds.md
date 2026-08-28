@@ -107,7 +107,8 @@ spend). That is history-independent and tests the rule that actually exists.
 - **The buyer cannot request a specific amount.** Disputes are still opened as
   free text and resolved by staff. A "I want ₦2,000 back for the two dead
   keys" field would need a negotiation state machine.
-- **Partial refunds do not adjust affiliate commission.** A full refund
-  reverses the commission through `sync_affiliate`; a partial one leaves it,
-  which slightly overpays the referrer. Worth fixing the next time earnings
-  are touched — it is a known, bounded overpayment rather than a silent one.
+- ~~**Partial refunds do not adjust affiliate commission.**~~ **Closed by
+  module 24** ([module-commission-resync.md](module-commission-resync.md)): a
+  pending commission is re-priced to the order's current net charge, and a
+  commission already paid on refunded money is audited as an overpayment
+  rather than absorbed.

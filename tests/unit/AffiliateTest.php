@@ -450,6 +450,129 @@ class AffiliateTest extends TestCase
 
     /* ------------------------------ fakes ------------------------------ */
 
+    /* ============== commission follows the money (module 24) ============ */
+
+    /**
+     * The overpayment this module exists to stop.
+     *
+     * A commission is priced from the order's NET charge at the moment it
+     * accrues, and was never revisited. So a refund that lands afterwards — a
+     * partial delivery the provider reports an hour later, a goodwill refund
+     * next morning — left the referrer holding a commission on money the
+     * platform had given back. Nothing in the panel would ever notice.
+     */
+    public function testARefundAfterAccrualRepricesThePendingCommission()
+    {
+        $ci = $this->fresh();
+        $ci->referral = (object)array('id'=>5,'referrer_id'=>1,'referred_id'=>2,'referral_account_id'=>3);
+        $svc = new AffiliateService();
+
+        $ci->order->charge = '10000.00000000';
+        $accrued = $svc->record_for_order($ci->order);
+        $this->assertSame('500.00000000', $accrued['commission']->amount, '5% of a 10,000 sale');
+
+        // The provider later reports a partial delivery: 4,000 goes back.
+        $ci->order->refunded_amount = '4000.00000000';
+        $res = $svc->resync_for_order($ci->order);
+
+        $this->assertTrue($res['ok']);
+        $this->assertSame('REDUCED', $res['action']);
+        $this->assertSame('300.00000000',
+            $ci->commissions[$accrued['commission']->id]->amount,
+            '5% of the 6,000 the customer actually paid, not of the 10,000 they were charged');
+    }
+
+    /** Accruing again after a refund must not create a second commission. */
+    public function testResyncDoesNotAccrueTwice()
+    {
+        $ci = $this->fresh();
+        $ci->referral = (object)array('id'=>5,'referrer_id'=>1,'referred_id'=>2,'referral_account_id'=>3);
+        $svc = new AffiliateService();
+
+        $svc->record_for_order($ci->order);
+        $before = $ci->inserts['referral_commissions'];
+        $svc->resync_for_order($ci->order);
+
+        $this->assertSame($before, $ci->inserts['referral_commissions']);
+        $this->assertCount(1, $ci->commissions);
+    }
+
+    /** Nothing accrued yet: resync is just the ordinary accrual. */
+    public function testResyncAccruesWhenThereIsNoCommissionYet()
+    {
+        $ci = $this->fresh();
+        $ci->referral = (object)array('id'=>5,'referrer_id'=>1,'referred_id'=>2,'referral_account_id'=>3);
+        $svc = new AffiliateService();
+
+        $res = $svc->resync_for_order($ci->order);
+        $this->assertTrue($res['ok']);
+        $this->assertCount(1, $ci->commissions);
+    }
+
+    /** The whole sale came back: there is nothing to be paid a share of. */
+    public function testAFullRefundAfterAccrualVoidsTheCommission()
+    {
+        $ci = $this->fresh();
+        $ci->referral = (object)array('id'=>5,'referrer_id'=>1,'referred_id'=>2,'referral_account_id'=>3);
+        $svc = new AffiliateService();
+
+        $accrued = $svc->record_for_order($ci->order);
+        $ci->order->refunded_amount = $ci->order->charge;
+        $res = $svc->resync_for_order($ci->order);
+
+        $this->assertSame('REVERSED', $res['action']);
+        $this->assertSame('REVERSED', $ci->commissions[$accrued['commission']->id]->status);
+    }
+
+    /**
+     * A paid commission is history. Clawing money out of a referrer's wallet
+     * without a human deciding to is not this class's call — but the
+     * overpayment must be named rather than absorbed silently.
+     */
+    public function testAPaidCommissionIsReportedRatherThanQuietlyEdited()
+    {
+        $ci = $this->fresh();
+        $ci->referral = (object)array('id'=>5,'referrer_id'=>1,'referred_id'=>2,'referral_account_id'=>3);
+        $svc = new AffiliateService();
+
+        $ci->order->charge = '10000.00000000';
+        $accrued = $svc->record_for_order($ci->order);
+        $ci->commissions[$accrued['commission']->id]->status = 'PAID';
+
+        $ci->order->refunded_amount = '4000.00000000';
+        $res = $svc->resync_for_order($ci->order);
+
+        $this->assertTrue($res['ok']);
+        $this->assertSame('ALREADY_PAID', $res['action']);
+        $this->assertSame('200.00000000', $res['overpaid'],
+            'the operator is told exactly how much was paid on refunded money');
+        $this->assertSame('500.00000000', $ci->commissions[$accrued['commission']->id]->amount,
+            'the record of what was actually paid is left alone');
+    }
+
+    /** No refund, no change — and no pointless write. */
+    public function testAnUnchangedOrderLeavesTheCommissionAlone()
+    {
+        $ci = $this->fresh();
+        $ci->referral = (object)array('id'=>5,'referrer_id'=>1,'referred_id'=>2,'referral_account_id'=>3);
+        $svc = new AffiliateService();
+
+        $accrued = $svc->record_for_order($ci->order);
+        $res = $svc->resync_for_order($ci->order);
+
+        $this->assertSame('UNCHANGED', $res['action']);
+        $this->assertSame($accrued['commission']->amount,
+            $ci->commissions[$accrued['commission']->id]->amount);
+    }
+
+    /** The order lifecycle has to call it, or none of the above happens. */
+    public function testTheOrderLifecycleResyncsRatherThanOnlyAccruing()
+    {
+        $src = file_get_contents(self::$root.'/application/libraries/OrderService.php');
+        $this->assertStringContainsString('resync_for_order', $src,
+            'record_for_order() is a no-op once a commission exists, so a later refund needs resync');
+    }
+
     private function fresh()
     {
         $ci = new AffFakeCI();
@@ -643,6 +766,12 @@ class AffFakeCommissionModel {
     public function reverse($id) {
         if (!isset($this->ci->commissions[$id]) || $this->ci->commissions[$id]->status !== 'PENDING') return false;
         $this->ci->commissions[$id]->status = 'REVERSED';
+        return true;
+    }
+    /** Mirrors the model: PENDING only, so a paid commission cannot be re-priced. */
+    public function reprice($id, $amount) {
+        if (!isset($this->ci->commissions[$id]) || $this->ci->commissions[$id]->status !== 'PENDING') return false;
+        $this->ci->commissions[$id]->amount = $amount;
         return true;
     }
 }

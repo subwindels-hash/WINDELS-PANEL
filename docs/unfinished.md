@@ -9,7 +9,9 @@ module 19 ([module-legal-identity.md](module-legal-identity.md)) and item 14 by
 module 20 ([module-dashboard-cost.md](module-dashboard-cost.md)) and item 6 by
 module 21 ([module-announcement-links.md](module-announcement-links.md)) and item 5
 by module 22 ([module-cron-control.md](module-cron-control.md)) and item 3 by
-module 23 ([module-partial-refunds.md](module-partial-refunds.md)). Closed items stay
+module 23 ([module-partial-refunds.md](module-partial-refunds.md)), and the
+commission overpayment module 23 itself left open by module 24
+([module-commission-resync.md](module-commission-resync.md)). Closed items stay
 in the table below, struck through, so the list reads as a record rather than a
 moving target.
 

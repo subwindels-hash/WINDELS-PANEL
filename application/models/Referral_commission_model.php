@@ -84,6 +84,20 @@ class Referral_commission_model extends MY_Model {
         return $this->db->affected_rows() > 0;
     }
 
+    /**
+     * Re-price an unpaid commission after the order it was earned on changed.
+     *
+     * Only PENDING rows: once the money has left, the amount on the row is a
+     * record of what was paid, and editing it would make the payout and the
+     * commission disagree. Compare-and-set on the status so a re-price and a
+     * payout racing each other cannot both win.
+     */
+    public function reprice($id, $amount) {
+        $this->db->where('id', $id)->where('status', self::STATUS_PENDING)
+            ->update($this->table, array('amount' => $amount));
+        return $this->db->affected_rows() > 0;
+    }
+
     /** Reverse an unpaid commission (order refunded/canceled before payout). */
     public function reverse($id) {
         $this->db->where('id', $id)->where('status', self::STATUS_PENDING)

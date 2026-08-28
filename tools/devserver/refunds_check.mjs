@@ -281,6 +281,91 @@ await admin.postForm(`/admin/orders/${fx.partial}/status`,
 check('re-reporting the same partial refunds nothing twice',
   money(balance()) === afterPartial, `${afterPartial} -> ${balance()}`);
 
+/* ============ 4b · the referrer's commission follows the money =========== */
+
+console.log('\n── Refund · a commission accrued before the refund landed');
+
+// A commission is priced from the order's NET charge when it accrues, and was
+// never revisited (module 24). So a partial delivery reported an hour after
+// the order completed left the referrer holding a commission on money the
+// platform had already given back — on every affected order, invisibly.
+const affiliate = withDb((db) => {
+  const buyer = db.prepare(`SELECT id FROM users WHERE email = 'demo@marvy.local'`).get();
+  const referrer = db.prepare(`SELECT id FROM users WHERE email = 'staff@marvy.local'`).get()
+    || db.prepare(`SELECT id FROM users WHERE role != 'CUSTOMER' LIMIT 1`).get();
+  if (!referrer || !buyer) return null;
+
+  db.prepare(`INSERT OR IGNORE INTO referral_accounts (user_id, code, commission_percent, created_at, updated_at)
+              VALUES (?, ?, '10.0000', datetime('now'), datetime('now'))`)
+    .run(referrer.id, 'E2EREF' + String(stamp).slice(-6));
+  const account = db.prepare(`SELECT * FROM referral_accounts WHERE user_id = ?`).get(referrer.id);
+  db.prepare(`INSERT OR IGNORE INTO referrals (referrer_id, referred_id, referral_account_id, created_at)
+              VALUES (?, ?, ?, datetime('now'))`).run(referrer.id, buyer.id, account.id);
+  const referral = db.prepare(`SELECT * FROM referrals WHERE referred_id = ?`).get(buyer.id);
+
+  // A fresh order for this stage, completed, so the commission accrues on the
+  // full charge exactly as it would in production.
+  const publicId = ('E2EREFCOMM' + stamp).slice(0, 26);
+  const svc = db.prepare(`SELECT id, provider_id FROM services WHERE public_id = ?`).get(fx.svcPublic);
+  db.prepare(`INSERT INTO orders
+      (public_id, user_id, service_id, provider_id, provider_order_id, status, link, quantity,
+       charge, rate_at_order, currency, source, completed_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, '9100', 'IN_PROGRESS', 'https://example.com/handle', 1000,
+             '2000.00000000', '2.00000000', 'NGN', 'WEB', NULL, datetime('now'), datetime('now'))`)
+    .run(publicId, buyer.id, svc.id, svc.provider_id);
+  return { publicId, referralId: referral.id, accountId: account.id, referrerId: referrer.id };
+});
+
+const commissionFor = (referralId) => withDb((db) => db.prepare(
+  `SELECT * FROM referral_commissions WHERE referral_id = ? ORDER BY id DESC LIMIT 1`).get(referralId));
+
+if (affiliate) {
+  // First report: the provider says 200 of 1,000 never landed, so 400 goes
+  // back and the commission accrues on the 1,600 actually paid.
+  await admin.get('/admin/orders/' + affiliate.publicId);
+  await admin.postForm(`/admin/orders/${affiliate.publicId}/status`,
+    { status: 'PARTIAL', remains: '200', reason: 'first report: 200 short' });
+
+  const accrued = commissionFor(affiliate.referralId);
+  check('a commission accrues on what the customer actually paid',
+    !!accrued && money(accrued.amount) === 160,
+    `commission=${accrued ? accrued.amount : 'none'} — 10% of 1,600`);
+
+  // Second report, a while later: it was worse than they thought — 500 short.
+  // This is the window the overpayment lived in: the refund grows AFTER the
+  // commission has already accrued.
+  await admin.get('/admin/orders/' + affiliate.publicId);
+  await admin.postForm(`/admin/orders/${affiliate.publicId}/status`,
+    { status: 'PARTIAL', remains: '500', reason: 'second report: 500 short' });
+
+  const order = orderOf(affiliate.publicId);
+  check('the bigger shortfall refunds more to the customer',
+    money(order.refunded_amount) === 1000, `refunded=${order.refunded_amount}`);
+
+  const after = commissionFor(affiliate.referralId);
+  check('and the referrer’s pending commission follows the money down',
+    !!after && money(after.amount) === 100,
+    `commission=${after ? after.amount : 'none'} — 10% of the 1,000 actually paid, not of 1,600`);
+  check('without creating a second commission for the same order',
+    withDb((db) => db.prepare(
+      `SELECT COUNT(*) n FROM referral_commissions rc
+         JOIN orders o ON o.id = rc.order_id
+        WHERE rc.referral_id = ? AND o.public_id = ?`)
+      .get(affiliate.referralId, affiliate.publicId).n) === 1);
+}
+
+// Cleaned up here, before the shared fixtures below: this stage's order points
+// at the service they delete, and a foreign key would strand both.
+withDb((db) => {
+  if (!affiliate) return;
+  const o = db.prepare(`SELECT id FROM orders WHERE public_id = ?`).get(affiliate.publicId);
+  if (o) db.prepare(`DELETE FROM referral_commissions WHERE order_id = ?`).run(o.id);
+  db.prepare(`DELETE FROM referral_commissions WHERE referral_id = ?`).run(affiliate.referralId);
+  db.prepare(`DELETE FROM orders WHERE public_id = ?`).run(affiliate.publicId);
+  db.prepare(`DELETE FROM referrals WHERE id = ?`).run(affiliate.referralId);
+  db.prepare(`DELETE FROM referral_accounts WHERE id = ?`).run(affiliate.accountId);
+});
+
 /* ========================= 5 · refused cancellation ====================== */
 
 console.log('\n── Cancel · the provider refuses to stop');
