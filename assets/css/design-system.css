@@ -433,7 +433,14 @@ button { font-family:inherit; cursor:pointer; }
 .ws-toc a{display:block;padding:.35rem 0;color:var(--text-secondary);font-size:.9rem}
 .ws-legal-grid{display:grid;grid-template-columns:220px 1fr;gap:2.5rem;align-items:start}
 @media(max-width:800px){.ws-legal-grid{grid-template-columns:1fr}.ws-toc{position:static}}
-.ws-callout{border-left:3px solid var(--brand-500);background:var(--brand-50);padding:1rem 1.15rem;border-radius:0 var(--radius) var(--radius) 0}
+/* The callout panel keeps its fixed pale-indigo background in BOTH themes —
+   the dark theme re-themes the text variables, not --brand-50 — so the text
+   must be pinned black for both: left to inherit, it tracked the theme and
+   turned near-white on the pale panel in dark mode (the security-practices
+   write-up on /services became unreadable). Black is readable on the pale
+   panel in light and dark alike, which is exactly how the section is meant
+   to read. */
+.ws-callout{border-left:3px solid var(--brand-500);background:var(--brand-50);color:#000;padding:1rem 1.15rem;border-radius:0 var(--radius) var(--radius) 0}
 
 /* ------------------------------- Extra form controls -------------------- */
 .switch{position:relative;display:inline-flex;align-items:center;gap:.65rem;cursor:pointer}
