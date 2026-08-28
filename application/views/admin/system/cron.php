@@ -7,18 +7,26 @@
  * refill settlement, deposit reconciliation, escrow release and the mail queue
  * all depend on it, and until now the only way to check was SSH.
  */
+$can_control = !empty($can_control);
+$max_pause_hours = isset($max_pause_hours) ? (int)$max_pause_hours : 24;
+$csrf = function () {
+    return '<input type="hidden" name="'.htmlspecialchars($this->security->get_csrf_token_name())
+        .'" value="'.htmlspecialchars($this->security->get_csrf_hash()).'" readonly>';
+};
 $state_badge = array(
+    'paused'      => array('badge badge-default', 'Paused'),
     'ok'          => array('badge badge-success badge-dot', 'Healthy'),
     'late'        => array('badge badge-warning', 'Overdue'),
     'failing'     => array('badge badge-danger', 'Failing'),
     'never'       => array('badge badge-default', 'Never run'),
     'unscheduled' => array('badge badge-warning', 'Not scheduled'),
 );
-$overdue = 0; $never = 0; $failing = 0;
+$overdue = 0; $never = 0; $failing = 0; $paused = 0;
 foreach ($jobs as $j) {
     if ($j['state'] === 'late') $overdue++;
     if ($j['state'] === 'never') $never++;
     if ($j['state'] === 'failing') $failing++;
+    if (!empty($j['paused'])) $paused++;
 }
 $ago = function ($minutes) {
     if ($minutes === null) return '—';
@@ -37,6 +45,15 @@ $ago = function ($minutes) {
     </p>
   </div>
 </div>
+
+<?php if ($paused): ?>
+  <div class="alert alert-warning mb-4">
+    <strong><?=$paused?> job<?=$paused === 1 ? ' is' : 's are'?> paused.</strong>
+    A pause always expires — each one resumes by itself at the time shown below, so an incident
+    switch cannot be left on by accident. Anything the paused job would have done is not happening
+    until then.
+  </div>
+<?php endif; ?>
 
 <?php if ($never === count($jobs) && count($jobs) > 0): ?>
   <div class="alert alert-danger mb-4">
@@ -60,6 +77,7 @@ $ago = function ($minutes) {
         <tr>
           <th>Job</th><th>Schedule</th><th>State</th><th>Last run</th>
           <th class="text-right">Took</th><th class="text-right">Processed</th><th>Message</th>
+          <?php if ($can_control): ?><th class="text-right">Control</th><?php endif; ?>
         </tr>
       </thead>
       <tbody>
@@ -90,7 +108,51 @@ $ago = function ($minutes) {
           </td>
           <td class="text-xs muted" style="max-width:22rem">
             <?=htmlspecialchars((string)($j['last']->message ?? ''))?>
+            <?php if (!empty($j['paused']) && !empty($j['control'])): ?>
+              <div class="mt-1"><strong>Paused:</strong>
+                <?=htmlspecialchars((string)$j['control']->reason)?></div>
+              <div>Resumes automatically
+                <?=htmlspecialchars((string)($j['control']->resume_at ?: 'shortly'))?> UTC</div>
+            <?php endif; ?>
           </td>
+          <?php if ($can_control): ?>
+            <td class="text-right">
+              <?php if (!empty($j['paused'])): ?>
+                <form method="post" action="<?=site_url('admin/cron/resume')?>" style="display:inline">
+                  <?=$csrf()?>
+                  <input type="hidden" name="job" value="<?=htmlspecialchars($j['job'])?>">
+                  <button class="btn btn-sm" type="submit">Resume now</button>
+                </form>
+              <?php elseif ($j['schedule'] !== ''): ?>
+                <details>
+                  <summary class="btn btn-ghost btn-sm" style="cursor:pointer">Pause…</summary>
+                  <form method="post" action="<?=site_url('admin/cron/pause')?>"
+                        class="mt-2" style="text-align:left;min-width:16rem">
+                    <?=$csrf()?>
+                    <input type="hidden" name="job" value="<?=htmlspecialchars($j['job'])?>">
+                    <?php if (!empty($j['consequence'])): ?>
+                      <p class="alert alert-warning text-xs" style="padding:.5rem">
+                        <strong>This job moves money.</strong>
+                        <?=htmlspecialchars($j['consequence'])?>
+                      </p>
+                    <?php endif; ?>
+                    <label class="text-xs" for="reason-<?=htmlspecialchars($j['job'])?>">
+                      Why? (recorded in the audit log)
+                    </label>
+                    <input class="input input-sm" id="reason-<?=htmlspecialchars($j['job'])?>"
+                           name="reason" required minlength="5"
+                           placeholder="e.g. provider outage, ticket #1234">
+                    <label class="text-xs mt-2" for="hours-<?=htmlspecialchars($j['job'])?>">
+                      For how long? (max <?=$max_pause_hours?>h)
+                    </label>
+                    <input class="input input-sm" id="hours-<?=htmlspecialchars($j['job'])?>"
+                           name="hours" type="number" min="1" max="<?=$max_pause_hours?>" value="1">
+                    <button class="btn btn-sm btn-danger mt-2" type="submit">Pause this job</button>
+                  </form>
+                </details>
+              <?php endif; ?>
+            </td>
+          <?php endif; ?>
         </tr>
       <?php endforeach; ?>
       </tbody>
@@ -99,6 +161,12 @@ $ago = function ($minutes) {
   <p class="hint mt-2">
     “Overdue” means a job has not run for more than three times its own interval. A job that has
     never run is not an error on a brand-new install — it is the crontab waiting to be added.
+    <?php if ($can_control): ?>
+      Pausing stops the work, not the schedule: the tick still happens and is recorded as
+      <code>SKIPPED</code>, so a deliberate pause never looks like a broken crontab. There is no
+      “run now” button — triggering a reconciliation or refund sweep from a web request is how
+      deposits get credited twice; run the command above instead.
+    <?php endif; ?>
   </p>
 </div>
 

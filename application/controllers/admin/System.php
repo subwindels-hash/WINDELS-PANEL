@@ -194,8 +194,10 @@ class System extends Admin_Controller {
     public function cron() {
         $this->require_perm('audit.view');
 
+        $this->load->library('CronControlService');
         $schedules = (array)$this->config->item('cron');
         $runs = $this->db->order_by('started_at', 'DESC')->limit(200)->get('job_runs')->result();
+        $controls = $this->croncontrolservice->all();
 
         // Latest run per job, plus a small health verdict per row.
         $latest = array();
@@ -207,14 +209,23 @@ class System extends Admin_Controller {
         foreach ($schedules as $job => $schedule) {
             $last = $latest[$job] ?? null;
             $age_minutes = $last ? max(0, (int)round((time() - strtotime($last->started_at.' UTC')) / 60)) : null;
+            $control = $controls[$job] ?? null;
+            $paused  = $control && (int)$control->is_paused === 1;
             $jobs[] = array(
                 'job'      => $job,
                 'schedule' => (string)$schedule,
                 'human'    => SystemAdminService::describe_schedule((string)$schedule),
                 'last'     => $last,
                 'age'      => $age_minutes,
-                'state'    => SystemAdminService::job_state((string)$schedule, $last, $age_minutes),
+                // A paused job is not "late": it is idle on purpose, and
+                // showing it in red would train everyone to ignore red.
+                'state'    => $paused ? 'paused'
+                    : SystemAdminService::job_state((string)$schedule, $last, $age_minutes),
                 'command'  => 'php index.php cron '.$job,
+                'control'  => $control,
+                'paused'   => $paused,
+                'consequence' => CronControlService::consequence($job),
+                'money'    => CronControlService::moves_money($job),
             );
         }
 
@@ -232,9 +243,56 @@ class System extends Admin_Controller {
         $this->render('Cron jobs', 'admin/system/cron', 'cron', array(
             'jobs'    => $jobs,
             'runs'    => array_slice($runs, 0, 40),
+            'can_control' => $this->auth->can('settings.manage'),
+            'max_pause_hours' => CronControlService::MAX_HOURS,
             'crontab' => SystemAdminService::crontab_lines($schedules),
             'page_description' => 'What background work is scheduled, when it last ran, and the crontab to install.',
         ));
+    }
+
+    /**
+     * POST /admin/cron/pause — stop a job for a bounded number of hours.
+     *
+     * Gated on `settings.manage`, not on the `audit.view` that opens the
+     * screen: reading which jobs are healthy is an everyday support task,
+     * stopping the sweep that reconciles deposits is not.
+     */
+    public function cron_pause() {
+        $this->require_perm('settings.manage');
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->load->library('CronControlService');
+
+        $res = $this->croncontrolservice->pause(
+            (string)$this->input->post('job', true),
+            (string)$this->input->post('reason', true),
+            $this->current_user->id,
+            (int)$this->input->post('hours', true)
+        );
+
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error']);
+        } else {
+            // The expiry is in the confirmation on purpose: the operator
+            // should leave this screen knowing the job comes back by itself.
+            $this->session->set_flashdata('success',
+                'Paused. It resumes automatically at '.$res['resume_at'].' UTC ('
+                .$res['hours'].'h) unless you resume it sooner.');
+        }
+        redirect('admin/cron');
+    }
+
+    /** POST /admin/cron/resume — put a paused job back on its schedule. */
+    public function cron_resume() {
+        $this->require_perm('settings.manage');
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->load->library('CronControlService');
+
+        $res = $this->croncontrolservice->resume(
+            (string)$this->input->post('job', true), $this->current_user->id);
+
+        $this->session->set_flashdata(empty($res['ok']) ? 'error' : 'success',
+            empty($res['ok']) ? $res['error'] : 'Resumed. The job runs on its next tick.');
+        redirect('admin/cron');
     }
 
     /** GET /admin/api-logs */

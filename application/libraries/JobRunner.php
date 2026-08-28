@@ -126,6 +126,32 @@ class JobRunner {
 
     /* ---------------------------- run records ---------------------------- */
 
+    /**
+     * Record a tick that deliberately did no work.
+     *
+     * A paused job must still leave a trail, for two reasons: the cron screen
+     * can then show "the schedule is alive, the job is intentionally idle"
+     * rather than the silence that means a broken crontab, and the history
+     * afterwards shows exactly which ticks were skipped and why.
+     */
+    public function record_skip($job, $message) {
+        try {
+            $now = gmdate('Y-m-d H:i:s');
+            $this->ci->db->insert('job_runs', array(
+                'job'         => $job,
+                'status'      => 'SKIPPED',
+                'started_at'  => $now,
+                'finished_at' => $now,
+                'duration_ms' => 0,
+                'processed'   => 0,
+                'failed'      => 0,
+                'message'     => mb_substr((string)$message, 0, 1000),
+            ));
+        } catch (Throwable $e) {
+            log_message('error', 'job skip record failed: '.$e->getMessage());
+        }
+    }
+
     private function start_record($job) {
         $this->ci->db->insert('job_runs', array(
             'job'        => $job,

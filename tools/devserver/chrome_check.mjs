@@ -227,9 +227,84 @@ check('it shows a crontab to install', /crontab -e/.test(flat) && /php index\.ph
 check('it reports the last run of a job that has run',
   /Healthy|Overdue|Never run|Failing/.test(flat));
 check('the screen is reachable from the sidebar', /admin\/cron/.test((await admin.get('/admin')).text));
-// The shell itself has POST forms (log out, impersonation exit); what matters
-// is that nothing on this screen posts back to it.
-check('it changes nothing', !/<form[^>]*action="[^"]*admin\/cron/i.test(cron.text));
+// Module 22 gave the screen exactly two write actions — pause and resume —
+// and deliberately no "run now": triggering a reconciliation or refund sweep
+// from a web request is how deposits get credited twice.
+check('there is still no run-now button', !/admin\/cron\/run/i.test(cron.text));
+
+console.log('\n── Pausing a job during an incident');
+
+// This checker runs against live panels, so the operator's own pauses are
+// snapshotted and put back at the end of the section — and the drill uses
+// `analytics`, the one scheduled job with no customer-visible consequence.
+const controlsBefore = withDb((db) => db.prepare(`SELECT * FROM cron_job_controls`).all());
+withDb((db) => db.prepare(`DELETE FROM cron_job_controls`).run());
+const cronFresh = await admin.get('/admin/cron');
+const pauseRes = await admin.postForm('/admin/cron/pause',
+  { job: 'analytics', reason: 'e2e incident drill', hours: '1' }, { fromHtml: cronFresh.text });
+check('the job can be paused', /resumes automatically/i.test(pauseRes.text),
+  (/alert[^>]*>([\s\S]{0,160}?)</.exec(pauseRes.text) || [, ''])[1].replace(/<[^>]+>/g, ' ').trim());
+
+const paused = withDb((db) => db.prepare(
+  `SELECT * FROM cron_job_controls WHERE job = 'analytics'`).get());
+check('with a reason and an expiry recorded',
+  paused && Number(paused.is_paused) === 1 && paused.reason === 'e2e incident drill'
+    && !!paused.resume_at, JSON.stringify(paused));
+check('and an audit entry naming who did it',
+  !!withDb((db) => db.prepare(
+    `SELECT id FROM audit_logs WHERE action = 'cron.paused' AND resource_id = 'analytics'`).get()));
+
+const pausedScreen = await admin.get('/admin/cron');
+check('the screen shows it as paused, not as broken',
+  /Paused/.test(pausedScreen.text) && /Resumes automatically/.test(pausedScreen.text));
+
+// A pause with no reason is refused: the next person to read this screen has
+// nothing else to go on.
+const noReason = await admin.postForm('/admin/cron/pause',
+  { job: 'email_queue', reason: '', hours: '1' }, { fromHtml: pausedScreen.text });
+check('a pause with no reason is refused', /Say why/i.test(noReason.text));
+check('and nothing was paused by it',
+  !withDb((db) => db.prepare(
+    `SELECT id FROM cron_job_controls WHERE job = 'email_queue' AND is_paused = 1`).get()));
+
+// Money-moving jobs can be paused, but the form says what stops happening.
+check('a money-moving job warns before it is stopped',
+  /This job moves money/.test(pausedScreen.text)
+  && /Deposits whose callback never arrived/.test(pausedScreen.text));
+
+const resumeRes = await admin.postForm('/admin/cron/resume',
+  { job: 'analytics' }, { fromHtml: pausedScreen.text });
+check('it can be resumed by hand', /Resumed/i.test(resumeRes.text));
+check('and the row says so',
+  Number(withDb((db) => db.prepare(
+    `SELECT is_paused FROM cron_job_controls WHERE job = 'analytics'`).get().is_paused)) === 0);
+
+// Left behind by an operator who never came back: the pause must lift itself.
+withDb((db) => {
+  db.prepare(`UPDATE cron_job_controls SET is_paused = 1, reason = 'forgotten pause',
+              resume_at = datetime('now', '-1 hour') WHERE job = 'analytics'`).run();
+});
+await admin.get('/admin/cron');
+const lifted = withDb((db) => db.prepare(
+  `SELECT is_paused FROM cron_job_controls WHERE job = 'analytics'`).get());
+check('a pause nobody came back for expires by itself',
+  Number(lifted.is_paused) === 0, JSON.stringify(lifted));
+check('and the expiry is recorded as nobody’s doing',
+  !!withDb((db) => db.prepare(
+    `SELECT id FROM audit_logs WHERE action = 'cron.auto_resumed' AND actor_id IS NULL`).get()));
+
+// Put the operator's own pauses back exactly as they were.
+withDb((db) => {
+  db.prepare(`DELETE FROM cron_job_controls`).run();
+  for (const row of controlsBefore) {
+    db.prepare(`INSERT INTO cron_job_controls
+        (job, is_paused, reason, paused_by_id, paused_at, resume_at, resumed_by_id, resumed_at,
+         created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(row.job, row.is_paused, row.reason, row.paused_by_id, row.paused_at, row.resume_at,
+           row.resumed_by_id, row.resumed_at, row.created_at, row.updated_at);
+  }
+});
 
 /* =========================== 8 · the contact map ========================= */
 

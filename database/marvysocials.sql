@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 30), roles,
+-- foreign keys, migration bookkeeping (version 31), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first-login accounts. No migration,
 -- seed or installer command has to run afterwards.
@@ -2161,6 +2161,27 @@ SET redemption_slot = 1 + (
 CREATE UNIQUE INDEX uq_couponredeem_slot
 ON coupon_redemptions (coupon_id, user_id, redemption_slot);
 
+-- ---------------------------------------------------------------------
+-- migration 031_cron_job_controls
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS cron_job_controls (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  job VARCHAR(64) NOT NULL UNIQUE COMMENT 'cron job name, as passed to php index.php cron <job>',
+  is_paused TINYINT(1) NOT NULL DEFAULT 0,
+  reason VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'why it was paused — required when pausing',
+  paused_by_id BIGINT UNSIGNED NULL,
+  paused_at DATETIME NULL,
+  resume_at DATETIME NULL COMMENT 'the pause expires here; the runner resumes the job itself',
+  resumed_by_id BIGINT UNSIGNED NULL,
+  resumed_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_cronctl_paused (is_paused, resume_at),
+  CONSTRAINT fk_cronctl_pauser FOREIGN KEY (paused_by_id) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_cronctl_resumer FOREIGN KEY (resumed_by_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -2175,7 +2196,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (30);
+INSERT INTO migrations (version) VALUES (31);
 
 -- ======================================================================
 -- CORE DATA

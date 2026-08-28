@@ -23,7 +23,7 @@ class Cron extends Cron_Controller {
 
     public function __construct() {
         parent::__construct();
-        $this->load->library(array('JobRunner', 'CronWorkers'));
+        $this->load->library(array('JobRunner', 'CronWorkers', 'CronControlService'));
     }
 
     public function index() {
@@ -225,6 +225,20 @@ class Cron extends Cron_Controller {
 
     /** Run a job under the lock/record harness and print a one-line summary. */
     private function execute($job, callable $work) {
+        // An operator can pause a job from Admin → Cron jobs during an
+        // incident. The pause is honoured HERE, at the last moment before the
+        // work runs, rather than by editing the crontab: the tick still
+        // happens, so the run is recorded as SKIPPED and the screen can show
+        // that the schedule is alive and the job is deliberately idle. A
+        // crontab line commented out looks identical to a broken cron.
+        if ($this->croncontrolservice->is_paused($job)) {
+            $state = $this->croncontrolservice->state($job);
+            $reason = $state && $state->reason !== '' ? $state->reason : 'paused by an operator';
+            $this->jobrunner->record_skip($job, 'paused: '.$reason);
+            echo "{$job}: skipped (paused by an operator — {$reason})\n";
+            return;
+        }
+
         $result = $this->jobrunner->run($job, $work);
 
         if (!empty($result['skipped'])) {

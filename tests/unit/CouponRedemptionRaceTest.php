@@ -280,8 +280,12 @@ class CouponRedemptionRaceTest extends TestCase
         $this->assertStringContainsString('UPDATE coupon_redemptions', $src,
             'existing rows must be numbered or the index cannot be created');
 
+        // At least 30: later modules add migrations, and an unrelated one
+        // must not read as a coupon regression.
         $config = file_get_contents(self::$root.'/application/config/migration.php');
-        $this->assertStringContainsString("\$config['migration_version'] = 30;", $config);
+        preg_match("/migration_version'\]\s*=\s*(\d+)/", $config, $v);
+        $this->assertGreaterThanOrEqual(30, (int)($v[1] ?? 0),
+            'the constraint has to actually be applied on a real install');
     }
 
     /**

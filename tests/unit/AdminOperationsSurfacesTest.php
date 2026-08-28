@@ -45,11 +45,30 @@ class AdminOperationsSurfacesTest extends TestCase
     }
 
     /** The screen is a report. It must not be able to change anything. */
-    public function testTheCronScreenIsReadOnly()
+    /**
+     * The screen gained exactly two write actions in module 22 — pause and
+     * resume — so the rule this test protects is restated rather than dropped:
+     * the ONLY things it may post to are those two endpoints, and there is
+     * still no way to trigger a job from a browser. Running a reconciliation
+     * or refund sweep from a web request is how deposits get credited twice.
+     */
+    public function testTheCronScreenOnlyPausesAndResumes()
     {
         $view = file_get_contents(self::$root.'/application/views/admin/system/cron.php');
-        $this->assertStringNotContainsString('<form', $view);
-        $this->assertStringNotContainsString('method="post"', $view);
+
+        // The view is PHP: actions are written as site_url('admin/cron/...').
+        preg_match_all("~<form[^>]*action=\"<\?=site_url\('([^']+)'\)\?>\"~i", $view, $m);
+        $targets = array_values(array_unique($m[1]));
+        sort($targets);
+        $this->assertSame(array('admin/cron/pause', 'admin/cron/resume'), $targets,
+            'the cron screen must not post anywhere else');
+
+        $this->assertStringNotContainsString('cron/run', $view, 'there is no run-now button');
+        $this->assertStringNotContainsString('cron/delete', $view);
+
+        // And both writes are POST-only and permission-gated in the controller.
+        $ctrl = file_get_contents(self::$root.'/application/controllers/admin/System.php');
+        $this->assertStringContainsString("require_perm('settings.manage')", $ctrl);
     }
 
     public function testScheduleExpressionsAreExplainedInWords()

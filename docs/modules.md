@@ -1,6 +1,6 @@
 # MarvySocials — module index
 
-Twenty-one sessions of repair work, each one module: find the defect, fix it,
+Twenty-two sessions of repair work, each one module: find the defect, fix it,
 prove it with a test *and* an end-to-end check, document why it mattered.
 
 Everything below is verifiable with one command:
@@ -35,6 +35,7 @@ bash tools/verify_all.sh --admin-password '…' --with-load
 | 19 | Naming the operator | The Terms said the trader was "the party that deployed this instance" and no field existed anywhere to say who that is — a panel holding prepaid balances that named neither its trader nor its data controller. | [module-legal-identity.md](module-legal-identity.md) |
 | 20 | The admin dashboard's query cost | The first screen every staff member opens cost 31 queries, a third of them the same questions asked twice — the status GROUP BY ran twice per load and two nested revenue windows cost eight queries. | [module-dashboard-cost.md](module-dashboard-cost.md) |
 | 21 | A link in the announcement bar | An outage notice that cannot point at the page explaining the outage is half a notice — and the banner's text colour setting had been silently overridden by a hard-coded black since module 16. | [module-announcement-links.md](module-announcement-links.md) |
+| 22 | Pausing a background job | The cron screen could report and not act: stopping a job that was refunding live orders meant SSH-ing in at 2am to comment out a crontab line — which nothing in the panel would ever mention again. | [module-cron-control.md](module-cron-control.md) |
 
 ## The pattern
 
