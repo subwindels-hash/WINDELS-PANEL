@@ -296,6 +296,9 @@ $route['admin/providers/(:any)/sync-balance'] = 'admin/providers/sync_balance/$1
 // Bulk-import the synced catalogue as panel services (writes the catalogue,
 // so services.manage — POST-only like every other write here).
 $route['admin/providers/(:any)/import'] = 'admin/providers/import/$1';
+// Delete a provider and its synced catalogue (providers.manage, POST-only).
+// Must stay above the public-id catch-all on the next lines.
+$route['admin/providers/(:any)/delete'] = 'admin/providers/delete/$1';
 $route['admin/providers/(:any)'] = 'admin/providers/detail/$1';
 $route['admin/customers'] = 'admin/users/customers';
 $route['admin/wallets'] = 'admin/users/wallets';
@@ -307,6 +310,7 @@ $route['admin/customers/(:any)/price-group'] = 'admin/users/price_group/$1';
 $route['admin/customers/(:any)/adjust'] = 'admin/users/adjust/$1';
 // Credential maintenance. All three are resets, never reveals: staff can
 // clear a PIN or send a reset link, and can never read either secret.
+$route['admin/customers/(:any)/pin-reveal'] = 'admin/users/pin_reveal/$1';
 $route['admin/customers/(:any)/pin-reset'] = 'admin/users/pin_reset/$1';
 $route['admin/customers/(:any)/pin-unlock'] = 'admin/users/pin_unlock/$1';
 $route['admin/customers/(:any)/password-reset'] = 'admin/users/password_reset/$1';
@@ -332,6 +336,9 @@ $route['admin/drip-feed/(:any)/(pause|resume|cancel)'] = 'admin/operations/dripf
 $route['admin/subscriptions'] = 'admin/operations/subscriptions';
 $route['admin/subscriptions/(:any)/(pause|resume|cancel)'] = 'admin/operations/subscription_action/$1/$2';
 $route['admin/messages'] = 'admin/tickets/messages';
+// Answer a visitor's contact message from the dashboard (tickets.reply —
+// POST-only; the email itself is queued like every outbound mail).
+$route['admin/messages/reply/(:num)'] = 'admin/tickets/message_reply/$1';
 $route['admin/tickets'] = 'admin/tickets/index';
 $route['admin/tickets/(:any)/reply'] = 'admin/tickets/reply/$1';
 $route['admin/tickets/(:any)/assign'] = 'admin/tickets/assign/$1';
@@ -384,6 +391,9 @@ $route['admin/mail-queue'] = 'admin/content/mail_queue';
 $route['admin/mail-queue/test'] = 'admin/content/test_mail';
 $route['admin/mail-queue/(:num)/retry'] = 'admin/content/retry_mail/$1';
 $route['admin/email-templates'] = 'admin/content/email_templates';
+// Create must precede the numeric edit route; the key is a POST field, not a
+// URL segment, so it needs no segment of its own.
+$route['admin/email-templates/create'] = 'admin/content/create_email_template';
 $route['admin/email-templates/(:num)'] = 'admin/content/save_email_template/$1';
 $route['admin/administrators'] = 'admin/staff/administrators';
 $route['admin/logs'] = 'admin/system/logs';

@@ -136,18 +136,23 @@ $nonce = bin2hex(random_bytes(8));
 </div>
 
 <?php
-// Credentials panel. Everything here is a reset — there is deliberately no
-// control that displays a password or a PIN, because both are stored as
-// one-way hashes and staff must never be able to learn a customer's secret.
+// Credentials panel. Passwords stay one-way hashes with reset-only controls;
+// the transaction PIN is the one credential staff can read back, because the
+// operator asked for exactly that: it also lives in an AES-256-GCM envelope
+// (users.pin_cipher), the reveal is POST-only, gated on users.edit and
+// audited per use. PINs chosen before the envelope existed are hash-only and
+// are reported as unreadable rather than guessed at.
 $pin_set = !empty($user->pin_hash);
 $pin_locked = !empty($user->pin_locked_until) && strtotime($user->pin_locked_until.' UTC') > time();
+$pin_revealable = $pin_set && !empty($user->pin_cipher);
 ?>
 <?php if (!$self && $can_edit): ?>
 <div class="card mb-4">
   <h3 style="font-size:1rem;font-weight:600" class="mb-1">Credentials</h3>
   <p class="muted text-xs mb-3">
-    Passwords and security PINs are stored as one-way hashes. They cannot be displayed here or anywhere
-    else — these controls reset them so the customer can choose a new one.
+    Passwords are stored as one-way hashes and can only be reset — never displayed. The security PIN is
+    stored encrypted as well, so staff can read it back when a customer asks; every reveal is recorded in
+    the audit log with who asked.
   </p>
 
   <div class="row mb-3" style="gap:1.25rem;flex-wrap:wrap">
@@ -165,6 +170,9 @@ $pin_locked = !empty($user->pin_locked_until) && strtotime($user->pin_locked_unt
           <?php endif; ?>
         <?php endif; ?>
       </div>
+      <?php if ($pin_set && !$pin_revealable): ?>
+        <div class="muted text-xs">Set before encrypted PIN history was kept — readable only after the customer sets their next PIN.</div>
+      <?php endif; ?>
     </div>
     <div>
       <div class="muted text-xs">Two-factor</div>
@@ -193,7 +201,11 @@ $pin_locked = !empty($user->pin_locked_until) && strtotime($user->pin_locked_unt
     </form>
 
     <?php if ($pin_set): ?>
-    <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/pin-reset')?>" style="margin:0">
+    <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/pin-reveal')?>" style="margin:0" data-confirm="Reveal this customer's security PIN? The reveal is recorded in the audit log.">
+      <?=$csrf()?>
+      <button class="btn btn-secondary btn-sm" type="submit">Reveal security PIN</button>
+    </form>
+    <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/pin-reset')?>" style="margin:0" data-confirm="Clear this customer's security PIN? They must set a new one before their next PIN-protected action.">
       <?=$csrf()?>
       <input type="hidden" name="reason" value="Reset from the customer file">
       <button class="btn btn-secondary btn-sm" type="submit">Clear security PIN</button>

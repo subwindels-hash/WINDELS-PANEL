@@ -249,15 +249,15 @@ class AdminPanelTest extends TestCase
         $expected = array(
             'Orders.php'   => array('status','cancel','submit','refund'),
             'Payments.php' => array('approve','reject'),
-            'Tickets.php'  => array('reply','assign','status','priority'),
+            'Tickets.php'  => array('reply','assign','status','priority','message_reply'),
             // Catalogue changes a price, which is money by another name.
             'Catalogue.php'=> array('create','update','status'),
             // Users suspends accounts, grants roles, adjusts balances, starts
             // an explicitly guarded read-only support session, and resets
             // credentials (reset only — a PIN or password can never be read).
             'Users.php'    => array('status','role','price_group','adjust','impersonate',
-                                    'pin_reset','pin_unlock','force_logout','revoke_keys',
-                                    'password_reset'),
+                                    'pin_reset','pin_reveal','pin_unlock','force_logout',
+                                    'revoke_keys','password_reset'),
             // Operations refunds through the schedulers' own cancel paths.
             'Operations.php' => array('refill_request','cancel','dripfeed_action','subscription_action'),
         );
@@ -270,8 +270,9 @@ class AdminPanelTest extends TestCase
             // The guard is centralised; assert it exists and is used by each action.
             $this->assertStringContainsString("method(true) !== 'POST') show_404()", $src,
                 "{$file} must reject non-POST mutations");
-            $this->assertSame(count($actions), substr_count($src, '$this->guard('),
-                "{$file}: every mutation must go through guard()");
+            $this->assertSame(count($actions),
+                substr_count($src, '$this->guard(') + substr_count($src, '$this->guard_message('),
+                "{$file}: every mutation must go through a guard()");
         }
     }
 

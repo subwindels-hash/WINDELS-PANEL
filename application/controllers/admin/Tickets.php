@@ -27,18 +27,28 @@ class Tickets extends Admin_Controller {
         ));
     }
 
-    /** GET /admin/messages — visitor contact emails queued from the public form. */
+    /**
+     * GET /admin/messages — the contact inbox.
+     *
+     * Anonymous visitors reach the panel through the public contact form;
+     * their messages land in contact_messages (and the operator's mailbox).
+     * This screen is the dashboard half: read the message, reply from here,
+     * and see what was sent. Reply templates from Admin → Email templates
+     * (keys starting "contact.reply") pre-fill the reply box.
+     */
     public function messages() {
         $rows = array();
-        if ($this->db->table_exists('email_queue')) {
-            $rows = $this->db->group_start()
-                    ->where('template_key', 'contact.message')
-                    ->or_like('subject', '[Contact]')
-                ->group_end()
-                ->order_by('created_at', 'DESC')
-                ->limit(100)
-                ->get('email_queue')->result();
+        if ($this->db->table_exists('contact_messages')) {
+            $rows = $this->db->order_by('created_at', 'DESC')->limit(100)
+                ->get('contact_messages')->result();
         }
+
+        $templates = $this->db
+            ->like('template_key', 'contact.reply', 'after')
+            ->where('is_active', 1)
+            ->order_by('template_key', 'ASC')
+            ->get('email_templates')->result();
+
         $this->load->view('layouts/app', array(
             'title'        => 'Customer messages',
             'nav_active'   => 'admin/tickets',
@@ -47,8 +57,40 @@ class Tickets extends Admin_Controller {
             'permissions'  => $this->auth->permissions(),
             'unread'       => $this->dashboardstats->unread_count($this->current_user->id),
             'rows'         => $rows,
+            'templates'    => $templates,
             'page_description' => 'Messages from the public contact form. Signed-in customers open tickets instead.',
         ));
+    }
+
+    /**
+     * POST /admin/messages/reply/:id — answer a visitor's message.
+     *
+     * The email is queued (never sent inline — same rule as every outbound
+     * mail), the row records both halves of the conversation, and the action
+     * is audited. Re-replying to an already-answered message is allowed: the
+     * new reply replaces the stored one and the flash says which message.
+     */
+    public function message_reply($id) {
+        $row = $this->guard_message($id, 'tickets.reply');
+
+        $res = $this->ticketservice->contact_reply(
+            $row,
+            $this->current_user,
+            (string)$this->input->post('subject', true),
+            (string)$this->input->post('message', true)
+        );
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error'] ?? 'Could not send the reply.');
+            return redirect('admin/messages');
+        }
+
+        $this->audit('contact.replied', $res['row'], null, array(
+            'to'     => $res['row']->email,
+            'status' => 'REPLIED',
+        ), 'contact_messages');
+        $this->session->set_flashdata('success',
+            'Reply queued for '.htmlspecialchars($res['row']->email).'.');
+        redirect('admin/messages');
     }
 
     public function index() {
@@ -186,9 +228,18 @@ class Tickets extends Admin_Controller {
         return $ticket;
     }
 
-    private function audit($action, $ticket, $before, $after) {
+    /** Same contract as guard(), for a contact_messages row. */
+    private function guard_message($id, $perm) {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm($perm);
+        $row = $this->db->where('id', (int)$id)->get('contact_messages')->row();
+        if (!$row) show_404();
+        return $row;
+    }
+
+    private function audit($action, $ticket, $before, $after, $table = 'tickets') {
         $this->Audit_log_model->record(
-            $this->current_user->id, $action, 'tickets', (string)$ticket->id,
+            $this->current_user->id, $action, $table, (string)$ticket->id,
             $before, $after,
             $this->input->ip_address(), $this->input->user_agent(), $this->request_id
         );

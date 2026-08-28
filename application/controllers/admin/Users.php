@@ -20,8 +20,11 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *     LedgerService, so a manual correction is double-entry and idempotent
  *     like every other movement.
  *   - **Read or reset credentials.** No password hash, MFA secret or API key
- *     is loaded here. Explicitly permitted staff may open a short-lived,
- *     audited, read-only dashboard view; that session cannot submit changes.
+ *     is loaded here. The one exception is the transaction PIN: at the
+ *     operator's request it can be *revealed* (`pin_reveal`, `users.edit`,
+ *     POST-only, audited per reveal) from its encrypted copy. Explicitly
+ *     permitted staff may open a short-lived, audited, read-only dashboard
+ *     view; that session cannot submit changes.
  *   - **Delete anyone.** Accounts carry ledger history; they are suspended or
  *     banned, never removed.
  */
@@ -246,6 +249,33 @@ class Users extends Admin_Controller {
         // The audit payload records that a reset happened, never the secret.
         $this->audit('user.pin_reset', $user, array('pin_set' => true), array('pin_set' => false));
         $this->done($user, 'Security PIN cleared. The customer must set a new one before their next PIN-protected action.');
+    }
+
+    /**
+     * POST /admin/customers/:id/pin-reveal — show the customer's security PIN.
+     *
+     * A deliberate change of contract, made at the operator's request: the
+     * PIN now also lives in an AES-256-GCM envelope so support can answer
+     * "what is my PIN?" without forcing a reset every time. The guarantees
+     * that keep that survivable are here — `users.edit` (same permission as
+     * clearing it), POST-only, and a reveal that is audited naming the staff
+     * member while the PIN itself never touches the audit trail. The
+     * plaintext is shown once, in the flash message, and nowhere else.
+     */
+    public function pin_reveal($public_id) {
+        $user = $this->guard($public_id, 'users.edit');
+
+        $this->load->library('PinService');
+        $res = $this->pinservice->reveal($user);
+        if (empty($res['ok'])) {
+            return $this->fail($user, $res['error']);
+        }
+
+        // THAT a PIN was revealed is the audit fact. The PIN is not part of it.
+        $this->audit('user.pin_revealed', $user, null, array('revealed' => true));
+        $this->done($user,
+            'Security PIN: '.$res['pin']
+            .' — shown once; the reveal is recorded in the audit log.');
     }
 
     /**

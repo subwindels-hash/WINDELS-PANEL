@@ -110,6 +110,12 @@ class Providers extends Admin_Controller {
             'page'         => $page,
             'total_pages'  => max(1, (int)ceil($total / $limit)),
             'total'        => $total,
+            // Spelled out on screen before the delete button is pressed: what
+            // goes with the provider and what stays behind.
+            'linked_panel_services' => (int)$this->db
+                ->where('provider_id', $provider->id)->count_all_results('services'),
+            'linked_orders' => (int)$this->db
+                ->where('provider_id', $provider->id)->count_all_results('orders'),
         ));
     }
 
@@ -247,6 +253,54 @@ class Providers extends Admin_Controller {
             $this->session->set_flashdata('warning', implode(' ', $res['warnings']));
         }
         redirect('admin/services?provider='.urlencode($public_id));
+    }
+
+    /**
+     * POST /admin/providers/:id/delete — remove a provider and its synced
+     * catalogue in one action.
+     *
+     * A provider row used to be immortal: the schema's foreign keys were
+     * defined back in migration 004 but no screen ever offered the delete, so
+     * the only way out was SQL. This is that screen, and the actual surgery
+     * lives in ProviderSyncService::delete_provider() so the CLI (and tests)
+     * run exactly what the button runs. The confirmation names what goes and
+     * what stays; the audit row carries the counts.
+     */
+    public function delete($public_id) {
+        $this->guard_post('providers.manage');
+        $provider = $this->Provider_model->find_by_public_id($public_id);
+        if (!$provider) show_404();
+
+        $res = $this->providersyncservice->delete_provider($provider);
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error'] ?? 'The delete failed.');
+            return redirect('admin/providers/'.$public_id);
+        }
+
+        $counts = $res['counts'];
+        $this->load->model('Audit_log_model');
+        $this->Audit_log_model->record(
+            $this->current_user->id, 'provider.deleted', 'providers', (string)$provider->id,
+            array(
+                'name' => $provider->name,
+                'api_type' => $provider->api_type,
+            ),
+            $counts,
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
+
+        $msg = 'Deleted '.$provider->name.' and '.$counts['synced_services']
+            .' synced service'.($counts['synced_services'] === 1 ? '' : 's').'.';
+        if ($counts['panel_services'] > 0) {
+            $msg .= ' '.$counts['panel_services'].' panel service'.($counts['panel_services'] === 1 ? ' was' : 's were')
+                .' kept and unlinked.';
+        }
+        if ($counts['orders'] > 0) {
+            $msg .= ' '.$counts['orders'].' past order'.($counts['orders'] === 1 ? ' keeps' : 's keep')
+                .' its history with the provider link removed.';
+        }
+        $this->session->set_flashdata('success', $msg);
+        redirect('admin/providers');
     }
 
     /**

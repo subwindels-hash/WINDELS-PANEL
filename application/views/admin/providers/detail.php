@@ -59,6 +59,29 @@ $has = function ($permission) use ($permissions) {
       </div>
       <?php endif; ?>
       <?php if ($has('providers.manage')): ?>
+      <div class="row mt-3" style="justify-content:flex-end">
+        <form method="post" action="<?=site_url('admin/providers/'.$p->public_id.'/delete')?>"
+              style="margin:0">
+          <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>"
+                 value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
+          <button class="btn btn-danger btn-sm" type="submit"
+                  data-confirm="<?=htmlspecialchars('Delete '.($p->name).' and its '
+                    .number_format($total).' synced service'.($total === 1 ? '' : 's').'?'
+                    .((int)$linked_panel_services > 0
+                        ? ' '.number_format((int)$linked_panel_services).' panel service'
+                          .((int)$linked_panel_services === 1 ? ' stays' : 's stay')
+                          .' sellable but unlinked.'
+                        : '')
+                    .((int)$linked_orders > 0
+                        ? ' '.number_format((int)$linked_orders).' past order'
+                          .((int)$linked_orders === 1 ? ' keeps' : 's keep')
+                          .' its history with the provider link removed.'
+                        : '')
+                    .' This cannot be undone.')?>">✕ Delete provider and its synced services</button>
+        </form>
+      </div>
+      <?php endif; ?>
+      <?php if ($has('providers.manage')): ?>
       <?php
         $__percent = ProviderSyncService::markup_percent($p);
         $__example_cost = 20;

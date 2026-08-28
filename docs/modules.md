@@ -38,6 +38,7 @@ bash tools/verify_all.sh --admin-password '…' --with-load
 | 22 | Pausing a background job | The cron screen could report and not act: stopping a job that was refunding live orders meant SSH-ing in at 2am to comment out a crontab line — which nothing in the panel would ever mention again. | [module-cron-control.md](module-cron-control.md) |
 | 23 | Partial marketplace refunds | Escrow was all-or-nothing, so a two-dead-keys-in-five dispute was settled with a wallet adjustment — which paid the customer and left the order reading as paid in full, overstating revenue by exactly the amount returned. | [module-partial-refunds.md](module-partial-refunds.md) |
 | 24 | The commission that outlived the sale | A referral commission was priced once and never revisited, so a refund landing after it accrued left the referrer paid a share of money the platform had given back. | [module-commission-resync.md](module-commission-resync.md) |
+| 34 | PINs at sign-up, provider deletion, the contact inbox | Accounts started PIN-less and staff could never read a PIN back; a provider row was immortal once added; a visitor's contact email could be listed but not read or answered from the panel. | [module-pin-contact-inbox.md](module-pin-contact-inbox.md) |
 
 ## The pattern
 

@@ -64,6 +64,9 @@ $healthy = (int)($health['HEALTHY'] ?? 0);
       array('deposits',           'Deposits awaiting review', 'admin/payments?status=PENDING', 'payments.view'),
       array('tickets',            'Open tickets',             'admin/tickets?status=OPEN',     'tickets.view'),
       array('unassigned_tickets', 'Unassigned tickets',       'admin/tickets?unassigned=1',    'tickets.view'),
+      // The anonymous half of support: contact-form messages nobody has
+      // answered yet. Same queue, same screen real estate.
+      array('contact_messages',   'Contact messages to answer', 'admin/messages',              'tickets.view'),
       array('stuck_orders',       'Orders pending >24h',      'admin/orders?status=PENDING',   'orders.view'),
       // A far tighter window than the SMM one, because these domains settle in
       // seconds: a gift card or airtime purchase still processing after half an

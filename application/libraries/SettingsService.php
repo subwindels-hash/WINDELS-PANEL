@@ -89,6 +89,10 @@ class SettingsService {
             'pin_rotation_hours' => array('int', 'security', 'PIN rotation window (hours)',
                 'How long a transaction PIN stays valid before the scheduled worker replaces it. Applies to '
                 .'every account with a PIN, including ones set before this was turned on.', 24),
+            'pin_issue_at_signup' => array('bool', 'security', 'Issue a transaction PIN at sign-up',
+                'On, every new account starts with a random 4-digit transaction PIN, delivered to the '
+                .'customer by notification and email. Off leaves the PIN unset until the customer '
+                .'chooses one from Account → Security.', true),
 
             'min_deposit' => array('money', 'payments', 'Minimum deposit',
                 'The smallest top-up a customer may make.', '500.00000000'),

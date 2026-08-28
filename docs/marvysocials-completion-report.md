@@ -64,11 +64,16 @@ unique index is added. Allocated randomly — a sequential code would leak the
 customer count and allow enumeration. Accepted as a login identifier alongside
 username and email, but only when the input actually looks like a code.
 
-**Four-digit security PIN.** `password_hash` digest, no decrypt path, no screen
-that displays it. Admins can clear it or lift a lockout, never read it. Weak
-PINs refused; failures counted **on the user row** with escalating lockouts,
-because 10,000 possibilities means a per-request limit that resets with a new
-session is not a limit.
+**Four-digit security PIN.** `password_hash` digest for verification, plus —
+since the operator asked for readable PINs — an AES-256-GCM envelope
+(`users.pin_cipher`, `EncryptionService`) so staff with `users.edit` can reveal
+a PIN from the customer file; every reveal is POST-only and audited. PINs set
+before the envelope existed are hash-only and reported unreadable rather than
+guessed at. Weak PINs refused; failures counted **on the user row** with
+escalating lockouts, because 10,000 possibilities means a per-request limit
+that resets with a new session is not a limit. New accounts are issued a
+starting PIN at sign-up (switchable in Admin → Settings) and told it once by
+notification and email.
 
 **Blockonomics BTC.** A real adapter — address generation, live rate quoting,
 callback verification, confirmation threshold, underpayment tolerance — and,
