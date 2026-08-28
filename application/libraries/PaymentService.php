@@ -286,6 +286,49 @@ class PaymentService {
             return array('ok'=>true,'unverified'=>true);
         }
 
+        return $this->process_event($id, $event);
+    }
+
+    /**
+     * Re-run a callback that was stored, verified, but never finished.
+     *
+     * Replaying the raw body through record_webhook() cannot work: webhook
+     * signatures live in HTTP headers we did not keep, so re-verification
+     * would fail and a genuine, already-verified event would be closed as
+     * "invalid signature". This picks up from the point verification had
+     * already reached — which is exactly what a retry needs, and why both the
+     * reconciliation sweep and the admin "reprocess" button use it.
+     *
+     * @param object $row a payment_webhooks row with signature_valid = 1
+     */
+    public function reprocess_stored_webhook($row) {
+        if (!$row || (int)$row->signature_valid !== 1) {
+            return array('ok' => false, 'error' => 'That event never passed signature verification.');
+        }
+
+        $gateway_type = strtolower((string)$row->gateway_type);
+        $gateway = in_array($gateway_type, $this->implemented_gateways(), true)
+            ? $this->gateway_for_code($gateway_type)
+            : null;
+
+        $event = $gateway
+            ? ($gateway instanceof BlockonomicsGateway
+                ? $gateway->parse_event((string)$row->payload, array())
+                : $gateway->parse_event((string)$row->payload))
+            : $this->parse_generic_event((string)$row->payload);
+
+        // Reopen the row so the outcome of this attempt is what gets stored.
+        $this->ci->db->where('id', $row->id)->update('payment_webhooks',
+            array('processed' => 0, 'error' => null));
+
+        return $this->process_event((int)$row->id, $event);
+    }
+
+    /**
+     * Act on a verified, parsed gateway event: match the deposit and credit it
+     * exactly once, recording the outcome on the webhook row.
+     */
+    private function process_event($id, array $event) {
         $terminal = strtolower($event['status'] ?? '');
 
         // A confirmed-but-short payment is a real event that must be visible to
@@ -378,6 +421,17 @@ class PaymentService {
 
     private function gateway_for($method) {
         return $this->gateway_for_code($method->code, $method);
+    }
+
+    /**
+     * The adapter that serves a payment-method row.
+     *
+     * Public because reconciliation has to ask a gateway what happened to a
+     * deposit whose webhook never arrived, and building the adapter itself
+     * would duplicate the routing table.
+     */
+    public function adapter_for($method) {
+        return $this->gateway_for_code($method->code ?? '', $method);
     }
 
     /**

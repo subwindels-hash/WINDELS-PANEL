@@ -22,6 +22,26 @@ $actionable = in_array($tx->status, array('CREATED','PENDING'), true);
   </div>
 </div>
 
+<?php
+  // Reconciliation writes what it found onto the deposit. A short payment in
+  // particular must be impossible to miss: the money arrived, it just does not
+  // cover the deposit, so nothing was credited and a human has to decide.
+  $__meta = json_decode((string)$tx->metadata, true);
+  $__recon = is_array($__meta) && !empty($__meta['reconciliation']) ? $__meta['reconciliation'] : null;
+?>
+<?php if ($__recon && !empty($__recon['underpaid'])): ?>
+  <div class="alert alert-warning mb-4">
+    <strong>The gateway reports a short payment.</strong>
+    <p class="mt-1 mb-0 text-sm">
+      Expected <?=marvy_money($__recon['expected'] ?? $tx->amount, $tx->currency)?>,
+      the provider reports <?=marvy_money($__recon['provider_amount'] ?? '0', $tx->currency)?>
+      (checked <?=htmlspecialchars((string)($__recon['checked_at'] ?? ''))?> UTC).
+      Nothing has been credited and the deposit has not been closed. Credit the amount that actually
+      arrived by approving it, or reject the deposit and refund the customer at the gateway.
+    </p>
+  </div>
+<?php endif; ?>
+
 <div class="grid grid-2" style="gap:1rem;align-items:start">
   <div class="card">
     <h3 class="text-sm font-semibold mb-2">Deposit</h3>

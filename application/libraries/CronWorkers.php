@@ -602,43 +602,234 @@ class CronWorkers {
     /* ======================== payment reconciliation ======================= */
 
     /**
-     * Age out deposits that were started but never paid.
+     * Reconcile deposits the gateway never told us about, then age out the
+     * ones that were genuinely never paid.
      *
-     * Successful payments are credited by the gateway webhook or by an admin
-     * approving a manual transfer — this worker deliberately credits nothing.
-     * It only closes rows that have sat unpaid past the window so the pending
-     * queue reflects reality.
+     * This used to do only the second half: after seven days every PENDING
+     * deposit was marked FAILED without anyone ever asking the provider
+     * whether the money had arrived. A single lost webhook — a deploy during
+     * the callback, a 500, a firewall blip, a signature refused because the
+     * secret was rotated — therefore turned a real payment into a written-off
+     * deposit, and the customer's money simply vanished from their point of
+     * view.
+     *
+     * The order of work matters:
+     *
+     *   1. Replay callbacks we stored but never finished processing. They are
+     *      already signature-verified; something transient stopped them.
+     *   2. Ask each gateway directly about deposits that have been pending
+     *      longer than the grace period. A provider-confirmed payment is
+     *      credited (through PaymentService::confirm, so exactly once); a
+     *      provider-confirmed failure is closed.
+     *   3. Only then expire what is past the window AND could not be verified.
+     *      A deposit whose gateway cannot be reached is never expired — an
+     *      outage on our side must not cost a customer their money.
+     *
+     * @param int $stale_days     age at which an unverifiable deposit is closed
+     * @param int $limit          rows examined per tick
+     * @param int $grace_minutes  how long to let the webhook arrive on its own
      */
-    public function payment_reconciliation($stale_days = 7, $limit = 500) {
-        $this->need(array('Payment_transaction_model'), array('PaymentService'));
+    public function payment_reconciliation($stale_days = null, $limit = 500, $grace_minutes = null) {
+        $this->need(array('Payment_transaction_model', 'Payment_webhook_model', 'Wallet_model', 'Setting_model'),
+                    array('PaymentService'));
 
+        // Operators tune both windows from Admin → Settings → Deposits; the
+        // arguments stay for tests and for a one-off manual run.
+        if ($stale_days === null)    $stale_days    = $this->setting_int('deposit_expiry_days', 7, 1, 365);
+        if ($grace_minutes === null) $grace_minutes = $this->setting_int('deposit_grace_minutes', 20, 1, 1440);
+
+        $replayed = $this->replay_unprocessed_webhooks($limit);
+
+        $grace  = gmdate('Y-m-d H:i:s', time() - ($grace_minutes * 60));
         $cutoff = gmdate('Y-m-d H:i:s', time() - ($stale_days * 86400));
-        $stale = $this->ci->db
+
+        $pending = $this->ci->db
             ->where_in('status', array('CREATED', 'PENDING'))
-            ->where('created_at <', $cutoff)
+            ->where('created_at <', $grace)
+            ->order_by('created_at', 'ASC')
             ->limit($limit)
             ->get('payment_transactions')->result();
-        if (!$stale) return array('processed'=>0, 'failed'=>0, 'message'=>'nothing to reconcile');
 
-        $expired = 0; $failed = 0;
-        foreach ($stale as $tx) {
+        $credited = 0; $closed = 0; $expired = 0; $unknown = 0; $failed = 0;
+
+        foreach ($pending as $tx) {
             try {
-                // PaymentService owns the transition; it refuses to touch a row
-                // that has already reached a terminal state.
-                $this->ci->paymentservice->mark_failed(
-                    $tx->id, "Expired: no payment received within {$stale_days} days"
-                );
-                $expired++;
-            } catch (Exception $e) {
+                $verdict = $this->verify_with_gateway($tx);
+
+                if ($verdict['status'] === 'SUCCESS') {
+                    $res = $this->ci->paymentservice->confirm($tx, 'RECONCILIATION', $verdict['provider_tx_id']);
+                    if (!empty($res['ok'])) {
+                        $credited++;
+                        log_message('error', 'payment_reconciliation: credited '.$tx->public_id
+                            .' from a provider check — its webhook never arrived');
+                    } else {
+                        $failed++;
+                    }
+                    continue;
+                }
+
+                if ($verdict['status'] === 'FAILED') {
+                    $this->ci->paymentservice->mark_failed($tx->id,
+                        'Closed by reconciliation: the gateway reports this payment as '
+                        .strtolower((string)($verdict['detail'] ?: 'failed')).'.');
+                    $closed++;
+                    continue;
+                }
+
+                // Still pending, or nobody to ask. Expire only when it is past
+                // the window and the answer was neither "the provider is down"
+                // nor "they paid, but short" — both of those need a human, and
+                // writing either off would be writing off real money.
+                $never_expire = in_array($verdict['status'], array('UNREACHABLE', 'UNDERPAID'), true);
+                if (!$never_expire && (string)($tx->created_at ?? '') < $cutoff) {
+                    $this->ci->paymentservice->mark_failed($tx->id,
+                        "Expired: no payment received within {$stale_days} days");
+                    $expired++;
+                } else {
+                    $unknown++;
+                }
+            } catch (Throwable $e) {
                 $failed++;
-                log_message('error', "payment_reconciliation {$tx->id}: ".$e->getMessage());
+                log_message('error', 'payment_reconciliation '.$tx->id.': '.$e->getMessage());
             }
         }
-        return array(
-            'processed' => $expired,
-            'failed'    => $failed,
-            'message'   => "{$expired} stale deposits expired",
+
+        $message = sprintf(
+            '%d webhook(s) replayed, %d deposit(s) credited from a provider check, '
+            .'%d closed as failed, %d expired, %d still open',
+            $replayed['processed'], $credited, $closed, $expired, $unknown
         );
+
+        return array(
+            'processed' => $replayed['processed'] + $credited + $closed + $expired,
+            'failed'    => $failed + $replayed['failed'],
+            'credited'  => $credited,
+            'closed'    => $closed,
+            'expired'   => $expired,
+            'pending'   => $unknown,
+            'message'   => $message,
+        );
+    }
+
+    /** A bounded integer setting, with the documented default when unset. */
+    private function setting_int($key, $default, $min, $max) {
+        try {
+            if (!isset($this->ci->Setting_model)) return $default;
+            $value = $this->ci->Setting_model->get($key, $default);
+        } catch (Throwable $e) {
+            return $default;
+        }
+        if (!is_numeric($value)) return $default;
+        return (int)min($max, max($min, (int)$value));
+    }
+
+    /**
+     * Ask the gateway what actually happened to one deposit.
+     *
+     * @return array{status:string, provider_tx_id:?string, detail:?string}
+     *         status is SUCCESS | FAILED | PENDING | UNREACHABLE | NO_VERIFIER
+     */
+    private function verify_with_gateway($tx) {
+        $none = array('status' => 'NO_VERIFIER', 'provider_tx_id' => null, 'detail' => null);
+
+        $method = isset($tx->payment_method_id)
+            ? $this->ci->db->where('id', (int)$tx->payment_method_id)->get('payment_methods')->row()
+            : null;
+        $code = strtolower((string)($method->code ?? ($tx->provider ?? '')));
+        if ($code === '' || $code === 'manual') return $none;
+
+        $gateway = $this->ci->paymentservice->adapter_for($method ?: (object)array('code' => $code));
+        // Only adapters that can ask the provider a question take part; the
+        // rest fall through to the age-out rule below.
+        if (!method_exists($gateway, 'verify')) return $none;
+        if (method_exists($gateway, 'is_configured') && !$gateway->is_configured()) return $none;
+
+        // The reference we gave the provider at initiation. Without one there
+        // is nothing to look up.
+        $reference = $tx->provider_tx_id ?: $tx->internal_reference;
+        if (!$reference) return $none;
+
+        $res = $gateway->verify($reference);
+        if (empty($res['ok'])) {
+            // "Could not reach" must never become "expired": treat every
+            // provider-side error as unknown and try again next tick.
+            return array('status' => 'UNREACHABLE', 'provider_tx_id' => null,
+                         'detail' => $res['error'] ?? null);
+        }
+
+        $status = strtoupper((string)($res['status'] ?? 'PENDING'));
+        if ($status === 'SUCCESS' && !$this->amount_covers_deposit($tx, $res)) {
+            // Paid, but short. Crediting the full figure would hand out money
+            // that never arrived; staff resolve it from the payment screen.
+            $this->ci->Payment_transaction_model->update_status($tx->id, array(
+                'metadata' => $this->merge_metadata($tx, array('reconciliation' => array(
+                    'underpaid'       => true,
+                    'expected'        => (string)$tx->amount,
+                    'provider_amount' => (string)($res['amount'] ?? ''),
+                    'checked_at'      => gmdate('Y-m-d H:i:s'),
+                ))),
+            ));
+            log_message('error', 'payment_reconciliation: '.$tx->public_id.' is short — provider reports '
+                .($res['amount'] ?? '?').' against '.$tx->amount.'; left for staff');
+            // Never expired: the money did arrive, just not all of it.
+            return array('status' => 'UNDERPAID', 'provider_tx_id' => $res['provider_tx_id'] ?? null,
+                         'detail' => 'underpaid');
+        }
+
+        return array(
+            'status'         => in_array($status, array('SUCCESS', 'FAILED'), true) ? $status : 'PENDING',
+            'provider_tx_id' => $res['provider_tx_id'] ?? null,
+            'detail'         => $res['status'] ?? null,
+        );
+    }
+
+    /** Whether what the provider says arrived covers what we expected. */
+    private function amount_covers_deposit($tx, array $res) {
+        if (!isset($res['amount']) || $res['amount'] === null || $res['amount'] === '') {
+            // The gateway did not report an amount; the deposit row is the
+            // only figure we have and the webhook path trusts it too.
+            return true;
+        }
+        return bccomp((string)$res['amount'], (string)$tx->amount, 8) >= 0;
+    }
+
+    /** Merge a key into a transaction's metadata JSON without losing the rest. */
+    private function merge_metadata($tx, array $extra) {
+        $meta = json_decode((string)$tx->metadata, true);
+        $meta = is_array($meta) ? $meta : array();
+        return json_encode(array_merge($meta, $extra), JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * Re-run callbacks that were stored but never finished processing.
+     *
+     * record_webhook() leaves a row unprocessed when the credit itself failed
+     * (a ledger rollback, a database blip). The gateway usually retries, but
+     * not every gateway does and not forever — so the panel retries too. Only
+     * signature-verified rows are replayed: an unverified event is evidence of
+     * a misconfiguration, not a payment.
+     */
+    private function replay_unprocessed_webhooks($limit = 100) {
+        $rows = $this->ci->db
+            ->where('processed', 0)
+            ->where('signature_valid', 1)
+            ->order_by('created_at', 'ASC')
+            ->limit($limit)
+            ->get('payment_webhooks')->result();
+
+        $done = 0; $failed = 0;
+        foreach ($rows as $row) {
+            try {
+                // Not record_webhook(): the signature headers are long gone, so
+                // re-verifying would close a verified event as forged.
+                $res = $this->ci->paymentservice->reprocess_stored_webhook($row);
+                if (!empty($res['ok'])) $done++; else $failed++;
+            } catch (Throwable $e) {
+                $failed++;
+                log_message('error', 'payment_reconciliation replay '.$row->id.': '.$e->getMessage());
+            }
+        }
+        return array('processed' => $done, 'failed' => $failed);
     }
 
     /* ============================= housekeeping ============================ */

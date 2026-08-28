@@ -253,27 +253,145 @@ class CronWorkersTest extends TestCase
 
     /* ====================== payments & housekeeping ======================= */
 
+    /** A deposit row as reconciliation finds it. */
+    private function deposit(array $overrides = array())
+    {
+        return (object)array_merge(array(
+            'id' => 11, 'public_id' => 'PAY1', 'status' => 'PENDING', 'user_id' => 7,
+            'payment_method_id' => 4, 'provider' => 'paystack',
+            'internal_reference' => 'MVS-PAY1', 'provider_tx_id' => 'MVS-PAY1',
+            'amount' => '5000.00000000', 'metadata' => null,
+            'created_at' => gmdate('Y-m-d H:i:s', time() - (30 * 86400)),
+        ), $overrides);
+    }
+
+    private function paystackMethod()
+    {
+        return array((object)array('id' => 4, 'code' => 'paystack', 'type' => 'CARD'));
+    }
+
     public function testUnpaidDepositsAreExpiredAfterTheWindow()
     {
         $ci = $this->fresh();
-        $ci->stale_payments = array((object)array('id'=>11, 'status'=>'PENDING'));
+        $ci->stale_payments = array($this->deposit());
+        $ci->payment_methods = $this->paystackMethod();
+        // The provider is reachable and says the payment never happened.
+        $ci->gateway_verdict = array('ok' => true, 'status' => 'PENDING');
         $w = new CronWorkers();
 
         $res = $w->payment_reconciliation();
-        $this->assertSame(1, $res['processed']);
+        $this->assertSame(1, $res['expired']);
         $this->assertSame(11, $ci->marked_failed[0][0]);
         $this->assertStringContainsString('7 days', $ci->marked_failed[0][1]);
     }
 
-    public function testReconciliationCreditsNothing()
+    /**
+     * The failure this whole worker exists to prevent: a payment that
+     * succeeded but whose webhook never arrived used to be written off as
+     * unpaid after seven days, with the customer's money simply gone.
+     */
+    public function testADepositTheProviderConfirmsIsCreditedNotExpired()
     {
         $ci = $this->fresh();
-        $ci->stale_payments = array((object)array('id'=>11, 'status'=>'PENDING'));
+        $ci->stale_payments = array($this->deposit());
+        $ci->payment_methods = $this->paystackMethod();
+        $ci->gateway_verdict = array('ok' => true, 'status' => 'SUCCESS',
+            'provider_tx_id' => 'MVS-PAY1', 'amount' => '5000.00000000');
         $w = new CronWorkers();
 
-        $w->payment_reconciliation();
-        // Crediting is the webhook's / admin's job; the sweeper only closes rows.
-        $this->assertSame(array(), $ci->inserts);
+        $res = $w->payment_reconciliation();
+        $this->assertSame(1, $res['credited']);
+        $this->assertSame(0, $res['expired']);
+        $this->assertSame(array(array(11, 'RECONCILIATION', 'MVS-PAY1')), $ci->confirmed);
+        $this->assertSame(array(), $ci->marked_failed, 'a paid deposit must never be marked failed');
+    }
+
+    public function testADepositTheProviderRejectsIsClosedImmediately()
+    {
+        $ci = $this->fresh();
+        $ci->stale_payments = array($this->deposit(array(
+            'created_at' => gmdate('Y-m-d H:i:s', time() - 3600), // well inside the window
+        )));
+        $ci->payment_methods = $this->paystackMethod();
+        $ci->gateway_verdict = array('ok' => true, 'status' => 'FAILED');
+        $w = new CronWorkers();
+
+        $res = $w->payment_reconciliation();
+        $this->assertSame(1, $res['closed']);
+        $this->assertSame(array(), $ci->confirmed);
+        $this->assertStringContainsString('gateway reports', $ci->marked_failed[0][1]);
+    }
+
+    /** An outage on our side must not cost a customer their deposit. */
+    public function testAnUnreachableGatewayNeverExpiresADeposit()
+    {
+        $ci = $this->fresh();
+        $ci->stale_payments = array($this->deposit()); // 30 days old
+        $ci->payment_methods = $this->paystackMethod();
+        $ci->gateway_verdict = array('ok' => false, 'error' => 'Could not reach the payment provider.');
+        $w = new CronWorkers();
+
+        $res = $w->payment_reconciliation();
+        $this->assertSame(0, $res['expired']);
+        $this->assertSame(1, $res['pending']);
+        $this->assertSame(array(), $ci->marked_failed,
+            'an unverifiable deposit stays open until the provider can answer');
+    }
+
+    public function testAShortPaymentIsFlaggedRatherThanCredited()
+    {
+        $ci = $this->fresh();
+        $ci->stale_payments = array($this->deposit());
+        $ci->payment_methods = $this->paystackMethod();
+        $ci->gateway_verdict = array('ok' => true, 'status' => 'SUCCESS',
+            'provider_tx_id' => 'MVS-PAY1', 'amount' => '1000.00000000');
+        $w = new CronWorkers();
+
+        $res = $w->payment_reconciliation();
+        $this->assertSame(0, $res['credited'], 'a short payment must not credit the full amount');
+        $this->assertSame(array(), $ci->marked_failed,
+            'money did arrive — writing the deposit off would write off a real payment');
+        $this->assertSame(1, $res['pending'], 'it stays open for staff to resolve');
+        $this->assertNotEmpty($ci->tx_updates, 'the shortfall must be recorded for staff');
+        $this->assertStringContainsString('underpaid', json_encode($ci->tx_updates));
+    }
+
+    public function testDepositsInsideTheGracePeriodAreLeftAlone()
+    {
+        $ci = $this->fresh();
+        // Nothing is returned by the query because of the grace filter; the
+        // worker must still report cleanly rather than touching anything.
+        $ci->stale_payments = array();
+        $w = new CronWorkers();
+
+        $res = $w->payment_reconciliation();
+        $this->assertSame(0, $res['processed']);
+        $this->assertSame(array(), $ci->marked_failed);
+    }
+
+    public function testVerifiedButUnprocessedCallbacksAreReplayed()
+    {
+        $ci = $this->fresh();
+        $ci->stored_webhooks = array((object)array(
+            'id' => 88, 'gateway_type' => 'paystack', 'payload' => '{}', 'signature_valid' => 1,
+        ));
+        $w = new CronWorkers();
+
+        $res = $w->payment_reconciliation();
+        $this->assertSame(array(88), $ci->reprocessed,
+            'a stored, verified event that never finished must be retried');
+        $this->assertGreaterThanOrEqual(1, $res['processed']);
+    }
+
+    public function testReconciliationNeverReplaysAnUnverifiedCallback()
+    {
+        $src = file_get_contents(self::$root.'/application/libraries/CronWorkers.php');
+        $this->assertMatchesRegularExpression("~where\('signature_valid', 1\)~", $src,
+            'only signature-verified events may be replayed');
+        // And it must not re-run verification against headers it no longer has.
+        $this->assertStringNotContainsString('paymentservice->record_webhook(', $src,
+            'replaying through record_webhook() would close a verified event as forged');
+        $this->assertStringContainsString('reprocess_stored_webhook(', $src);
     }
 
     public function testHousekeepingPrunesLogsButNeverTheAuditTrail()
@@ -433,6 +551,10 @@ class CronFakeCI {
     public $mail_fails = false, $mail_sends = 0, $claim_succeeds = true;
     public $deleted = array(), $prune_counts = array(), $stale_payments = array();
     public $marked_failed = array();
+    /** Reconciliation doubles. */
+    public $payment_methods = array(), $gateway_verdict = null, $gateway_configured = true;
+    public $confirmed = array(), $stored_webhooks = array(), $reprocessed = array();
+    public $tx_updates = array();
 
     public function __construct() {
         $GLOBALS['__fake_ci'] = $this;
@@ -463,7 +585,7 @@ class CronFakeCI {
         $this->orderservice           = new CronFakeOrderService($this);
         $this->mailservice            = new CronFakeMailService($this);
         $this->paymentservice         = new CronFakePaymentService($this);
-        $this->Payment_transaction_model = new CronFakeEmptyModel();
+        $this->Payment_transaction_model = new CronFakePaymentTxModel($this);
         $this->Refill_status_history_model = new CronFakeEmptyModel();
         $this->dripfeedservice        = new CronFakeEmptyModel();
         $this->subscriptionservice    = new CronFakeEmptyModel();
@@ -480,6 +602,13 @@ class CronFakeConfig {
     }
 }
 class CronFakeEmptyModel {
+    public function __call($m, $a){ return array(); }
+}
+
+/** Records the writes reconciliation makes against a deposit row. */
+class CronFakePaymentTxModel {
+    private $ci; function __construct($ci){ $this->ci = $ci; }
+    public function update_status($id, array $data){ $this->ci->tx_updates[] = $data; return true; }
     public function __call($m, $a){ return array(); }
 }
 
@@ -530,6 +659,7 @@ class CronFakeDb {
             $this->affected = 1;
         }
         if ($t === 'orders') { foreach ($d as $k => $v) $this->ci->order->$k = $v; $this->affected = 1; }
+        if ($t === 'payment_transactions') { $this->ci->tx_updates[] = $d; $this->affected = 1; }
         return true;
     }
 
@@ -539,6 +669,8 @@ class CronFakeDb {
             return new CronFakeResult($this->ci->mail_row->status === 'QUEUED' ? array($this->ci->mail_row) : array());
         }
         if ($t === 'payment_transactions') return new CronFakeResult($this->ci->stale_payments);
+        if ($t === 'payment_methods') return new CronFakeResult($this->ci->payment_methods);
+        if ($t === 'payment_webhooks') return new CronFakeResult($this->ci->stored_webhooks);
         return new CronFakeResult(array());
     }
 }
@@ -589,6 +721,27 @@ class CronFakeOrderService {
 class CronFakePaymentService {
     private $ci; function __construct($ci){ $this->ci = $ci; }
     function mark_failed($id, $reason = null){ $this->ci->marked_failed[] = array($id, $reason); }
+    function confirm($tx, $source = 'SYSTEM', $provider_tx_id = null){
+        $this->ci->confirmed[] = array($tx->id, $source, $provider_tx_id);
+        return array('ok' => true, 'transaction' => $tx);
+    }
+    function adapter_for($method){ return new CronFakeVerifiableGateway($this->ci); }
+    function reprocess_stored_webhook($row){
+        $this->ci->reprocessed[] = (int)$row->id;
+        return array('ok' => true);
+    }
+    function implemented_gateways(){ return array('manual', 'paystack'); }
+}
+
+/** A gateway that can be asked what happened to a deposit. */
+class CronFakeVerifiableGateway {
+    private $ci; function __construct($ci){ $this->ci = $ci; }
+    function is_configured(){ return $this->ci->gateway_configured; }
+    function verify($reference){
+        return $this->ci->gateway_verdict === null
+            ? array('ok' => false, 'error' => 'no verdict scripted')
+            : $this->ci->gateway_verdict;
+    }
 }
 class CronFakeMailService {
     private $ci; function __construct($ci){ $this->ci = $ci; }

@@ -87,14 +87,10 @@ class Payments extends Admin_Controller {
             return redirect('admin/payments/webhooks');
         }
 
-        // Clear the processed marker so record_webhook re-runs the match, then
-        // replay the stored payload verbatim.
-        $this->db->where('id', $event->id)->update('payment_webhooks',
-            array('processed' => 0, 'error' => null));
-
-        $res = $this->paymentservice->record_webhook(
-            $event->gateway_type, (string)$event->payload, array()
-        );
+        // Re-run the match from the stored, already-verified payload. Passing
+        // it back through record_webhook() would try to verify a signature
+        // whose headers were never kept, and close a genuine event as forged.
+        $res = $this->paymentservice->reprocess_stored_webhook($event);
 
         // audit() expects a transaction; this is a webhook row, so record it
         // directly against the event rather than bending that helper.

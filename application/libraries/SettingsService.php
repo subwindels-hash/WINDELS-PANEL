@@ -94,6 +94,13 @@ class SettingsService {
                 'The smallest top-up a customer may make.', '500.00000000'),
             'max_deposit' => array('money', 'payments', 'Maximum deposit',
                 'The largest single top-up, before manual review.', '5000000.00000000'),
+            'deposit_grace_minutes' => array('int', 'payments', 'Wait for the callback (minutes)',
+                'How long a pending deposit is left alone before reconciliation asks the gateway what '
+                .'happened to it. Too short wastes API calls on customers still typing their card details.', 20),
+            'deposit_expiry_days' => array('int', 'payments', 'Close unpaid deposits after (days)',
+                'A deposit still unpaid after this many days is closed — but only when the gateway could '
+                .'be reached and confirmed no payment. An unreachable gateway, or a short payment, never '
+                .'closes a deposit automatically.', 7),
 
             'order_auto_submit' => array('bool', 'orders', 'Auto-submit orders',
                 'Off holds new orders in PENDING for staff to review and submit manually.', true),
