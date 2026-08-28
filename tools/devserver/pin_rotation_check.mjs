@@ -87,11 +87,24 @@ await c.get('/login');
 const login = await c.postForm('/login', { identifier: user.username, password: user.password });
 check('customer signed in', /dashboard/i.test(login.url), `at ${login.url}`);
 
+// Registration issues a starting PIN; the change below proves it works by
+// using it as the current PIN.
+const issuedPin = withDb((db) => {
+  const row = db.prepare(
+    "SELECT body_text FROM email_queue WHERE to_email = ? AND template_key = 'security.pin_issued' ORDER BY id DESC LIMIT 1"
+  ).get(user.email);
+  const m = row && /Your 4-digit transaction PIN is:\s*(\d{4})/.exec(row.body_text || '');
+  return m ? m[1] : null;
+});
+check('sign-up issued a starting PIN', !!issuedPin, 'no signup PIN email found in the queue');
+
 let page = await c.get('/dashboard/security');
 const OLD_PIN = '8317';
-let r = await c.postForm('/dashboard/security', { action: 'set_pin', new_pin: OLD_PIN, confirm_pin: OLD_PIN },
+let r = await c.postForm('/dashboard/security',
+  { action: 'set_pin', current_pin: issuedPin, new_pin: OLD_PIN, confirm_pin: OLD_PIN },
   { fromHtml: page.text });
-check('PIN set', /PIN is now set/i.test(r.text));
+check('the issued PIN works and can be changed', /PIN was updated/i.test(r.text),
+  issuedPin ? 'change with the issued PIN failed' : 'no issued PIN to change from');
 
 console.log('\n── PIN rotation · admin enables a short window');
 const a = new Client(BASE);

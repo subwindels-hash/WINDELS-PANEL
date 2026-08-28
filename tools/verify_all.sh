@@ -99,7 +99,7 @@ else
   for check in commerce_check gateway_check reconciliation_check refunds_check \
                service_recovery_check marketplace_fulfilment_check physical_order_refund_check \
                physical_product_check shop_check marketplace_bulk_check pricing_check \
-               coupon_discovery_check currency_check earnings_check affiliate_withdrawal_check \
+               coupon_discovery_check coupon_domains_check currency_check currency_wallet_check earnings_check affiliate_withdrawal_check \
                fundsvera_check blockonomics_check; do
     stage "${check}" node "tools/devserver/${check}.mjs" \
       --admin-password "${ADMIN_PASSWORD}" --password "${ADMIN_PASSWORD}"

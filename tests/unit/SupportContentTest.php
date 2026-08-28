@@ -183,10 +183,18 @@ class SupportContentTest extends TestCase
     public function testTicketActionsArePostAndCsrfProtected()
     {
         $src = file_get_contents(self::$root.'/application/controllers/dashboard/Tickets.php');
-        $this->assertSame(3, substr_count($src, "method(true) !== 'POST') show_404()"));
+        // reply and close are mutations and stay POST-only. create() answers
+        // GET with the new-ticket form (the empty state links straight to it
+        // and used to meet a 404) and mutates only on POST — its GET branch
+        // renders, it does not write.
+        $this->assertSame(2, substr_count($src, "method(true) !== 'POST') show_404()"));
+        $this->assertMatchesRegularExpression(
+            '~function create\(\)\s*\{\s*if \(\$this->input->method\(true\) !== \'POST\'\)\s*\{\s*return \$this->render_create~s',
+            $src, 'create() must render the form on GET and never write');
         $views = array(
             self::$root.'/application/views/dashboard/tickets/index.php',
             self::$root.'/application/views/dashboard/tickets/detail.php',
+            self::$root.'/application/views/dashboard/tickets/create.php',
         );
         foreach ($views as $v) {
             $html = file_get_contents($v);
@@ -195,7 +203,9 @@ class SupportContentTest extends TestCase
             // detail.php no longer hand-roll it (a hand-rolled <form> is how
             // one of them ended up mis-nested with its neighbour).
             $this->assertTrue(
-                strpos($html, 'csrf_token_name') !== false || strpos($html, 'form_open(') !== false,
+                strpos($html, 'csrf_token_name') !== false
+                    || strpos($html, 'form_open(') !== false
+                    || strpos($html, 'form_open_multipart(') !== false,
                 basename($v).' posts must carry a CSRF token');
             $this->assertStringNotContainsString('<form method="post"', $html,
                 basename($v).': hand-rolled form tags miss the token form_open() adds');

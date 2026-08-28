@@ -153,6 +153,88 @@ class ImpersonationTest extends TestCase
         $this->assertSame(0, $app->db->count('audit_logs'));
     }
 
+    /**
+     * Full-access mode is an explicit opt-in stored in the signed context and
+     * named in the audit trail — never a default, never upgradeable in place.
+     */
+    public function testFullAccessModeIsExplicitValidatedAndAudited()
+    {
+        list($app, $actor, $target) = $this->app();
+
+        // An unknown mode is refused rather than downgraded: a caller that
+        // cannot name the mode has not made the decision the mode represents.
+        $this->assertSame('INVALID_MODE',
+            $app->impersonationservice->start($actor, $target, 'valid support reason',
+                true, null, null, null, 'SUPER')['code']);
+
+        $started = $app->impersonationservice->start($actor, $target,
+            'Customer asked us to place order T-2091 for them', true,
+            '203.0.113.9', 'Support browser', 'req-full', ImpersonationService::MODE_FULL_ACCESS);
+        $this->assertTrue($started['ok'], $started['error'] ?? '');
+
+        $context = $app->session->userdata(ImpersonationService::SESSION_KEY);
+        $this->assertSame(ImpersonationService::MODE_FULL_ACCESS, $context['mode']);
+        $this->assertSame(ImpersonationService::MODE_READ_ONLY,
+            $app->impersonationservice->context_mode(array('mode' => 'TAMPERED')));
+        $this->assertSame(ImpersonationService::MODE_FULL_ACCESS,
+            $app->impersonationservice->context_mode($context));
+        $this->assertSame(ImpersonationService::MODE_READ_ONLY,
+            $app->impersonationservice->context_mode(null));
+
+        // enforce() accepts the full-access context…
+        $state = $app->impersonationservice->enforce();
+        $this->assertTrue($state['active']);
+        // …and record_access names the mode so an investigator can tell a
+        // support lens apart from a session that could spend money.
+        $this->assertTrue($app->impersonationservice->record_access(
+            $state, 'POST', 'dashboard/new-order', '203.0.113.9', 'Support browser', 'req-write'
+        ));
+        $app->impersonationservice->end('MANUAL');
+
+        $logs = $app->db->order_by('id', 'ASC')->get('audit_logs')->result();
+        $this->assertCount(3, $logs);
+        foreach ($logs as $log) {
+            $payload = json_decode((string)$log->after_json, true);
+            $this->assertSame(ImpersonationService::MODE_FULL_ACCESS, $payload['mode'],
+                'every full-access audit row names the mode');
+        }
+        $view = json_decode($logs[1]->after_json, true);
+        $this->assertSame('POST', $view['method']);
+        $this->assertSame('/dashboard/new-order', $view['path']);
+    }
+
+    /**
+     * The mode travels inside the server-side context and is re-validated on
+     * every request. The session store itself is server-side, so the realistic
+     * threat is corrupted state, not a crafted cookie — and a corrupted mode
+     * must destroy the session rather than resolve to full access.
+     */
+    public function testACorruptedModeDestroysTheSessionInsteadOfUpgradingIt()
+    {
+        list($app, $actor, $target) = $this->app();
+        $app->impersonationservice->start($actor, $target, 'valid support reason', true);
+
+        $context = $app->session->userdata(ImpersonationService::SESSION_KEY);
+        $this->assertSame(ImpersonationService::MODE_READ_ONLY, $context['mode']);
+
+        $context['mode'] = 'WEIRD';
+        $app->session->set_userdata(ImpersonationService::SESSION_KEY, $context);
+        $result = $app->impersonationservice->enforce();
+        $this->assertFalse($result['ok']);
+        $this->assertSame('INVALID_CONTEXT', $result['reason']);
+        $this->assertNull($app->session->userdata('user_id'));
+
+        // An array-shaped mode (classic serialised-payload corruption) is
+        // rejected by the scalar check, and context_mode() resolves anything
+        // unrecognised back to READ_ONLY — the fail-safe direction.
+        list($bad_app, $bad_actor, $bad_target) = $this->app();
+        $bad_app->impersonationservice->start($bad_actor, $bad_target, 'valid support reason', true);
+        $bad_context = $bad_app->session->userdata(ImpersonationService::SESSION_KEY);
+        $bad_context['mode'] = array('FULL_ACCESS');
+        $bad_app->session->set_userdata(ImpersonationService::SESSION_KEY, $bad_context);
+        $this->assertSame('INVALID_CONTEXT', $bad_app->impersonationservice->enforce()['reason']);
+    }
+
     public function testPermissionIsDefendedInsideTheServiceAndNestedSessionsAreRejected()
     {
         list($denied_app, $admin, $customer) = $this->app('ADMIN');
@@ -301,6 +383,7 @@ class ImpersonationTest extends TestCase
         $this->assertStringContainsString("method(true) !== 'POST'", $users);
         $this->assertStringContainsString("guard(\$public_id, 'users.impersonate')", $users);
         $this->assertStringContainsString("\$this->input->post('confirm', true) === '1'", $users);
+        $this->assertStringContainsString("\$this->input->post('mode', true)", $users);
         $this->assertStringContainsString("method(true) !== 'POST'", $stop);
         $this->assertStringContainsString('csrf', strtolower($layout));
         // The banner must name the mode in the operator's own words. Wording is
@@ -313,5 +396,28 @@ class ImpersonationTest extends TestCase
         $this->assertStringContainsString("site_url('impersonation/stop')", $layout);
         $this->assertStringContainsString("\$has('users.impersonate')", $detail);
         $this->assertStringContainsString('name="confirm"', $detail);
+
+        // Full-access mode is pinned the same way: the controller must ask for
+        // it explicitly, the form must offer it as a choice, the banner must
+        // say what it means, and the layouts must not grey out forms for it.
+        $banner = file_get_contents(self::$root.'/application/views/partials/impersonation_banner.php');
+        $this->assertStringContainsString('FULL_ACCESS', $detail);
+        $this->assertStringContainsString('name="mode"', $detail);
+        $this->assertStringContainsString('act on their behalf', $detail);
+        $this->assertStringContainsString('Full access', $banner);
+        $this->assertStringContainsString('recorded against you in the audit trail', $banner);
+        $this->assertStringContainsString('ws-impersonation-full', $banner);
+        $this->assertStringContainsString("impersonation['context']['mode']", $layout);
+        $this->assertStringContainsString('impersonation-full-access', $layout);
+        $this->assertStringContainsString("\$__imp_mode !== 'FULL_ACCESS'", $layout);
+        // The request boundary keeps credential screens unwritable in every
+        // mode — a full-access session must not be able to swap the email,
+        // password, PIN, MFA secret or API keys.
+        $this->assertStringContainsString("'dashboard/profile'", $core);
+        $this->assertStringContainsString("'dashboard/security'", $core);
+        $this->assertStringContainsString("'dashboard/identity'", $core);
+        $this->assertStringContainsString("'dashboard/api'", $core);
+        $this->assertStringContainsString('Credential and identity changes are blocked while impersonating', $core);
+        $this->assertStringContainsString('ImpersonationService::MODE_FULL_ACCESS', $core);
     }
 }

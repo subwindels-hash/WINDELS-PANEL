@@ -122,7 +122,36 @@ class AuthService {
 
         $this->audit($user_id, 'auth.register', 'users', $user->public_id,
             null, array('email' => $email), $data['ip'] ?? null);
+
+        // Every new account leaves registration with a transaction PIN
+        // already working, instead of the customer discovering the PIN screen
+        // only when their first wallet action is refused. Never fatal: a
+        // broken PIN path must not cost anyone their account.
+        $this->issue_signup_pin($user);
+
         return array('ok' => true, 'user' => $user);
+    }
+
+    /**
+     * Give a brand-new account its starting PIN (operator-switchable via
+     * `pin_issue_at_signup`, on by default). Deliberately outside the
+     * registration transaction for the same reason as referral attribution.
+     */
+    private function issue_signup_pin($user) {
+        try {
+            if (!$this->setting('pin_issue_at_signup', true)) return;
+            $this->ci->load->library('PinService');
+            if (!isset($this->ci->pinservice)
+                || !method_exists($this->ci->pinservice, 'issue')) {
+                return;
+            }
+            $res = $this->ci->pinservice->issue($user, 'signup');
+            if (empty($res['ok'])) {
+                log_message('info', 'signup PIN not issued: '.($res['code'] ?? 'UNKNOWN'));
+            }
+        } catch (Exception $e) {
+            log_message('error', 'signup PIN issue failed: '.$e->getMessage());
+        }
     }
 
     /** Link a new signup to its referrer via AffiliateService (never fatal). */

@@ -64,11 +64,74 @@ unique index is added. Allocated randomly — a sequential code would leak the
 customer count and allow enumeration. Accepted as a login identifier alongside
 username and email, but only when the input actually looks like a code.
 
-**Four-digit security PIN.** `password_hash` digest, no decrypt path, no screen
-that displays it. Admins can clear it or lift a lockout, never read it. Weak
-PINs refused; failures counted **on the user row** with escalating lockouts,
-because 10,000 possibilities means a per-request limit that resets with a new
-session is not a limit.
+**Four-digit security PIN.** `password_hash` digest for verification, plus —
+since the operator asked for readable PINs — an AES-256-GCM envelope
+(`users.pin_cipher`, `EncryptionService`) so staff with `users.edit` can reveal
+a PIN from the customer file; every reveal is POST-only and audited. PINs set
+before the envelope existed are hash-only and reported unreadable rather than
+guessed at. Weak PINs refused; failures counted **on the user row** with
+escalating lockouts, because 10,000 possibilities means a per-request limit
+that resets with a new session is not a limit. New accounts are issued a
+starting PIN at sign-up (switchable in Admin → Settings) and told it once by
+notification and email.
+
+**Admin access, three ways.** Admin → Administrators can now *create*
+administrator accounts (not just list them), with the same privilege rule as
+promotion — only a SUPER_ADMIN may mint a SUPER_ADMIN — a complete account
+shape (verified address the operator vouched for, zero-balance wallet, real
+password hash) and an audit row naming the creator and never the password.
+Administrators also get self-service profile editing like customers: the admin
+sidebar links **My profile**, and email changes re-verify, avatars upload
+through MediaService, passwords rotate from Account → Security. And
+impersonation grew a second mode: alongside the original read-only lens,
+staff with `users.impersonate` can start a **full-access** session from the
+customer file and act on the customer's behalf — place orders, open tickets,
+spend their wallet — with every request audited against the staff member,
+the 30-minute hard expiry intact, the admin area still unreachable, and
+credential screens (email, password, PIN, MFA, identity, API keys) writable
+by nobody in either mode, because that would be account takeover, not
+support. See `docs/customer-impersonation.md` and
+`docs/module-admin-account-access.md`.
+
+**Coupons beyond the shop.** A coupon used to be redeemable at exactly one
+till — the marketplace basket — while the SMM order form, the five VTU
+tabs, the number, identity and gift-card screens priced money out of the
+wallet with no discount step and no field to type a code into. A code is
+now site-wide by design: no domain column on `coupons`, one
+`CouponService::quote()` with the cart's exact rules (validity window,
+minimum spend, percent/fixed with cap, per-customer and global limits), and
+migration 034 stamping each redemption with the `domain` it was spent on and
+the order or transaction `public_id` as `reference`. The module-18 slot
+reservation travels with it — reserved before any charge, released on every
+failure path, and the per-customer limit now holds **across** domains: use a
+code on an SMM order and the airtime form refuses it with "already used".
+A 100% coupon is a real purchase that charges nothing and skips the ledger
+line entirely while still counting the redemption. The reseller API
+deliberately cannot redeem coupons — a recorded product decision enforced
+by a source-gate test. See `docs/module-coupon-domains.md`.
+
+**Wallets that hold a foreign currency.** Currency was display-only: a
+customer could browse a USD-converted catalogue while `wallets.currency`
+said NGN on every row, because nothing could set it and nothing that
+charged a wallet knew what to do if it had. A wallet may now hold any
+enabled currency — a one-time choice while it is empty, offered on the
+add-funds page and the admin customer file, frozen after the first
+movement. The conversion lives at the single ledger boundary
+(LedgerService, the only wallet writer): every charge, credit, refund,
+deposit, commission and payout-as-credit still passes a base-currency
+amount and the ledger converts it, pins the rate on the movement
+(`fx_rate` + `base_amount`, migration 035), and writes a four-legged
+double entry through an `fx:CODE` translation account so each currency's
+books balance independently. The refund-rate policy is enforced there too:
+a refund replays the rate pinned at charge time — never the day's rate —
+so FX drift can never make a refund create or destroy money; order and
+dripfeed charges are now stamped with what they paid for, which also made
+"which wallet movement paid for this order?" answerable at all. Staff
+adjustments are typed in the wallet's own currency; a wallet whose rate
+row has vanished is refused rather than moved at an invented rate; admin
+wallet totals are reported per currency and never added together. No
+engine was rewired — a source-gate test fails if any engine reads an
+exchange rate itself. See `docs/module-multi-currency-wallets.md`.
 
 **Blockonomics BTC.** A real adapter — address generation, live rate quoting,
 callback verification, confirmation threshold, underpayment tolerance — and,

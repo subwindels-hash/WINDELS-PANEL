@@ -247,6 +247,55 @@ class Content extends Admin_Controller {
     }
 
     /** POST /admin/email-templates/:id */
+    /**
+     * POST /admin/email-templates/create — add a template.
+     *
+     * The screen used to be edit-only: the operator could change the six
+     * seeded templates but never add one, which left the contact-inbox reply
+     * picker ("start from a template") frozen at whatever shipped. Keys are
+     * operator-chosen so the picker can grow with the business; the reply
+     * picker lists any active key beginning "contact.reply".
+     */
+    public function create_email_template() {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm('settings.manage');
+
+        $key = strtolower(trim((string)$this->input->post('template_key', true)));
+        if (!preg_match('/^[a-z0-9][a-z0-9_.]{2,126}$/', $key)) {
+            $this->session->set_flashdata('error',
+                'The key must be 3–127 characters of lowercase letters, numbers, dots or underscores (e.g. contact.reply_promo).');
+            return redirect('admin/email-templates');
+        }
+        $subject = trim((string)$this->input->post('subject', true));
+        if ($subject === '' || mb_strlen($subject) > 255) {
+            $this->session->set_flashdata('error', 'A subject is required (max 255 characters).');
+            return redirect('admin/email-templates');
+        }
+        if ($this->db->where('template_key', $key)->get('email_templates')->row()) {
+            $this->session->set_flashdata('error', 'A template called '.$key.' already exists.');
+            return redirect('admin/email-templates');
+        }
+
+        $this->db->insert('email_templates', array(
+            'template_key' => $key,
+            'subject'      => $subject,
+            'body_html'    => (string)$this->input->post('body_html', false),
+            'body_text'    => (string)$this->input->post('body_text', true),
+            'is_active'    => $this->input->post('is_active') ? 1 : 0,
+        ));
+
+        $this->Audit_log_model->record(
+            $this->current_user->id, 'email_template.created', 'email_templates',
+            (string)$this->db->insert_id(),
+            null, array('template_key' => $key, 'subject' => $subject),
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
+
+        $this->session->set_flashdata('success',
+            'Template '.$key.' created'.(strpos($key, 'contact.reply') === 0 ? ' — it now appears in the contact reply picker.' : '.'));
+        redirect('admin/email-templates');
+    }
+
     public function save_email_template($id) {
         if ($this->input->method(true) !== 'POST') show_404();
         $this->require_perm('settings.manage');

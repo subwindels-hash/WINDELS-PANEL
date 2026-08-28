@@ -109,6 +109,21 @@ elseif ($svc) $selected = $svc->public_id;
           <textarea class="textarea" name="note" maxlength="500" rows="2"><?=htmlspecialchars($old['note'] ?? '')?></textarea>
         </label>
 
+        <?php
+          // Module 36: one code works on every purchase in the panel — this
+          // order form, VTU, number rentals, identity checks and gift cards.
+          // The server validates it at checkout and charges the discounted
+          // total; the field is never trusted to submit one.
+        ?>
+        <label class="field">
+          <span class="label">Coupon code (optional)</span>
+          <input class="input" type="text" name="coupon_code" maxlength="32" autocomplete="off"
+                 style="text-transform:uppercase"
+                 placeholder="Promo code"
+                 value="<?=htmlspecialchars($old['coupon_code'] ?? '')?>">
+          <span class="hint">Applied when the order is placed — the final charge reflects it.</span>
+        </label>
+
         <div class="row" style="justify-content:space-between;border-top:1px dashed var(--slate-200);padding-top:1rem">
           <div>
             <div class="muted text-sm">Estimated total</div>

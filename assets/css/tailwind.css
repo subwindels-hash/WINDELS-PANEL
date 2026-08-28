@@ -841,6 +841,10 @@ video {
   flex: 1 1 0%;
 }
 
+.shrink {
+  flex-shrink: 1;
+}
+
 .grow {
   flex-grow: 1;
 }
@@ -1204,6 +1208,10 @@ video {
 
 .font-medium {
   font-weight: 500;
+}
+
+.font-normal {
+  font-weight: 400;
 }
 
 .font-semibold {

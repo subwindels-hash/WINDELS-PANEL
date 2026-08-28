@@ -60,6 +60,10 @@ $ago = function ($minutes) {
     <strong>No cron job has ever run on this installation.</strong>
     Orders will not settle, deposits will not reconcile and no email will be sent until the
     crontab below is installed. On cPanel: <em>Advanced → Cron Jobs</em>.
+    <?php if ($can_control): ?>
+      You can also press <em>Run now</em> on any job below to run it once immediately —
+      a quick way to confirm the jobs themselves work while you set the crontab up.
+    <?php endif; ?>
   </div>
 <?php elseif ($failing || $overdue): ?>
   <div class="alert alert-warning mb-4">
@@ -123,7 +127,19 @@ $ago = function ($minutes) {
                   <input type="hidden" name="job" value="<?=htmlspecialchars($j['job'])?>">
                   <button class="btn btn-sm" type="submit">Resume now</button>
                 </form>
-              <?php elseif ($j['schedule'] !== ''): ?>
+              <?php else: ?>
+                <div class="row" style="gap:.35rem;justify-content:flex-end;flex-wrap:wrap">
+                  <form method="post" action="<?=site_url('admin/cron/run')?>" style="display:inline">
+                    <?=$csrf()?>
+                    <input type="hidden" name="job" value="<?=htmlspecialchars($j['job'])?>">
+                    <button class="btn btn-secondary btn-sm" type="submit"
+                      <?php if (!empty($j['money'])): ?>
+                        data-confirm="Run <?=htmlspecialchars($j['job'])?> now? <?=htmlspecialchars($j['consequence'] ?? 'This job moves money.')?> It runs exactly as the scheduled tick would — under the same exclusive lock."
+                      <?php endif; ?>
+                    >▶ Run now</button>
+                  </form>
+                </div>
+                <?php if ($j['schedule'] !== ''): ?>
                 <details>
                   <summary class="btn btn-ghost btn-sm" style="cursor:pointer">Pause…</summary>
                   <form method="post" action="<?=site_url('admin/cron/pause')?>"
@@ -150,6 +166,7 @@ $ago = function ($minutes) {
                     <button class="btn btn-sm btn-danger mt-2" type="submit">Pause this job</button>
                   </form>
                 </details>
+                <?php endif; ?>
               <?php endif; ?>
             </td>
           <?php endif; ?>
@@ -163,9 +180,12 @@ $ago = function ($minutes) {
     never run is not an error on a brand-new install — it is the crontab waiting to be added.
     <?php if ($can_control): ?>
       Pausing stops the work, not the schedule: the tick still happens and is recorded as
-      <code>SKIPPED</code>, so a deliberate pause never looks like a broken crontab. There is no
-      “run now” button — triggering a reconciliation or refund sweep from a web request is how
-      deposits get credited twice; run the command above instead.
+      <code>SKIPPED</code>, so a deliberate pause never looks like a broken crontab.
+      “Run now” executes the same code the crontab would, through the same exclusive lock and
+      run record — it can never overlap a scheduled tick or credit anything twice, which is what
+      made a naive “trigger the sweep from a browser” dangerous. The schedule is still what keeps
+      the panel running: <em>Run now</em> is for testing and catching up, not for replacing the
+      crontab.
     <?php endif; ?>
   </p>
 </div>

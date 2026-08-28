@@ -110,6 +110,12 @@ class Providers extends Admin_Controller {
             'page'         => $page,
             'total_pages'  => max(1, (int)ceil($total / $limit)),
             'total'        => $total,
+            // Spelled out on screen before the delete button is pressed: what
+            // goes with the provider and what stays behind.
+            'linked_panel_services' => (int)$this->db
+                ->where('provider_id', $provider->id)->count_all_results('services'),
+            'linked_orders' => (int)$this->db
+                ->where('provider_id', $provider->id)->count_all_results('orders'),
         ));
     }
 
@@ -190,6 +196,111 @@ class Providers extends Admin_Controller {
             $this->session->set_flashdata('error', 'Balance sync failed: '.($res['error'] ?? 'unknown error'));
         }
         redirect('admin/providers/detail/'.$public_id);
+    }
+
+    /**
+     * POST /admin/providers/:id/import — bring the whole synced catalogue
+     * across as panel services in one action.
+     *
+     * "Add provider → sync → hand-build hundreds of services" was the only
+     * path from a provider to a sellable catalogue, which in practice meant
+     * the provider sat there and customers saw nothing. The import reuses the
+     * single-create mapping (trusted rates, the provider's pricing rule,
+     * capability flags) so there is exactly one definition of a panel service.
+     *
+     * It writes the services catalogue, so the permission is services.manage —
+     * not providers.sync, which only reaches out and reads.
+     */
+    public function import($public_id) {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm('services.manage');
+        $provider = $this->Provider_model->find_by_public_id($public_id);
+        if (!$provider) show_404();
+
+        $this->load->library(array('SmmServiceAdminService'));
+        $res = $this->smmserviceadminservice->import_provider_services(
+            $provider, $this->input->post(null, true));
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error'] ?? 'The import failed.');
+            return redirect('admin/providers/'.$public_id);
+        }
+
+        $this->load->model('Audit_log_model');
+        $this->Audit_log_model->record(
+            $this->current_user->id, 'services.imported', 'providers', (string)$provider->id,
+            null,
+            array(
+                'created' => (int)$res['created'],
+                'skipped_linked' => (int)$res['skipped_linked'],
+                'skipped_category' => (int)$res['skipped_category'],
+                'skipped_rate' => (int)$res['skipped_rate'],
+                'categories_created' => (int)$res['categories_created'],
+                'status' => strtoupper(trim((string)$this->input->post('status', true))) ?: 'INACTIVE',
+            ),
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
+
+        $msg = 'Imported '.$res['created'].' service'.($res['created'] === 1 ? '' : 's')
+            .' from '.$provider->name.'.';
+        if ($res['categories_created'] > 0) {
+            $msg .= ' Created '.$res['categories_created'].' categor'.($res['categories_created'] === 1 ? 'y' : 'ies').'.';
+        }
+        if ($res['skipped_linked'] > 0) {
+            $msg .= ' '.$res['skipped_linked'].' were already imported (left untouched).';
+        }
+        $this->session->set_flashdata('success', $msg);
+        if (!empty($res['warnings'])) {
+            $this->session->set_flashdata('warning', implode(' ', $res['warnings']));
+        }
+        redirect('admin/services?provider='.urlencode($public_id));
+    }
+
+    /**
+     * POST /admin/providers/:id/delete — remove a provider and its synced
+     * catalogue in one action.
+     *
+     * A provider row used to be immortal: the schema's foreign keys were
+     * defined back in migration 004 but no screen ever offered the delete, so
+     * the only way out was SQL. This is that screen, and the actual surgery
+     * lives in ProviderSyncService::delete_provider() so the CLI (and tests)
+     * run exactly what the button runs. The confirmation names what goes and
+     * what stays; the audit row carries the counts.
+     */
+    public function delete($public_id) {
+        $this->guard_post('providers.manage');
+        $provider = $this->Provider_model->find_by_public_id($public_id);
+        if (!$provider) show_404();
+
+        $res = $this->providersyncservice->delete_provider($provider);
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error'] ?? 'The delete failed.');
+            return redirect('admin/providers/'.$public_id);
+        }
+
+        $counts = $res['counts'];
+        $this->load->model('Audit_log_model');
+        $this->Audit_log_model->record(
+            $this->current_user->id, 'provider.deleted', 'providers', (string)$provider->id,
+            array(
+                'name' => $provider->name,
+                'api_type' => $provider->api_type,
+            ),
+            $counts,
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
+
+        $msg = 'Deleted '.$provider->name.' and '.$counts['synced_services']
+            .' synced service'.($counts['synced_services'] === 1 ? '' : 's').'.';
+        if ($counts['panel_services'] > 0) {
+            $msg .= ' '.$counts['panel_services'].' panel service'.($counts['panel_services'] === 1 ? ' was' : 's were')
+                .' kept and unlinked.';
+        }
+        if ($counts['orders'] > 0) {
+            $msg .= ' '.$counts['orders'].' past order'.($counts['orders'] === 1 ? ' keeps' : 's keep')
+                .' its history with the provider link removed.';
+        }
+        $this->session->set_flashdata('success', $msg);
+        redirect('admin/providers');
     }
 
     /**

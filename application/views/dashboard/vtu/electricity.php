@@ -35,6 +35,10 @@
     <input class="input mb-2" id="amount" name="amount" type="number" min="500" step="1" required>
     <p class="muted text-xs mb-4">Prepaid tokens appear on your receipt as soon as the
       purchase completes.</p>
+    <?php // Module 36: one code works on every purchase in the panel. ?>
+    <label class="label" for="coupon_code_<?=$tab?>">Coupon code (optional)</label>
+    <input class="input mb-4" id="coupon_code_<?=$tab?>" name="coupon_code" maxlength="32"
+           autocomplete="off" style="text-transform:uppercase" placeholder="Promo code">
 
     <button class="btn btn-primary" type="submit">Buy units</button>
   </form>

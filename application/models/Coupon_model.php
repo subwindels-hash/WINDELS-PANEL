@@ -159,12 +159,36 @@ class Coupon_model extends MY_Model {
                      'error' => 'That coupon is being used on another order. Try again.');
     }
 
-    /** Complete a reserved redemption once the order exists and is charged. */
-    public function attach_redemption($redemption_id, $order_id, $discount_amount) {
-        return $this->db->where('id', (int)$redemption_id)->update('coupon_redemptions', array(
-            'marketplace_order_id' => $order_id ? (int)$order_id : null,
-            'discount_amount'      => $discount_amount,
-        ));
+    /**
+     * Complete a reserved redemption once the order exists and is charged.
+     *
+     * Shop checkouts keep the marketplace_order_id foreign key (domain SHOP).
+     * Every other purchase domain — an SMM order, a VTU top-up, a number
+     * rental, an identity check, a gift card — names what it discounted by
+     * domain + the public_id reference instead, so the coupon's book of
+     * record works across all of them without five extra foreign keys
+     * (migration 034).
+     */
+    public function attach_redemption($redemption_id, $order_id, $discount_amount,
+                                      $domain = 'SHOP', $reference = null) {
+        $fields = array('discount_amount' => $discount_amount);
+        if ((string)$domain === 'SHOP') {
+            $fields['marketplace_order_id'] = $order_id ? (int)$order_id : null;
+            $fields['domain'] = 'SHOP';
+            $fields['reference'] = null;
+        } else {
+            $fields['marketplace_order_id'] = null;
+            $fields['domain'] = substr(strtoupper(trim((string)$domain)), 0, 16);
+            $fields['reference'] = $reference !== null ? substr((string)$reference, 0, 64) : null;
+        }
+        return $this->db->where('id', (int)$redemption_id)->update('coupon_redemptions', $fields);
+    }
+
+    /** The redemption(s) recorded against one domain purchase, if any. */
+    public function for_reference($domain, $reference) {
+        return $this->db->where('domain', strtoupper(trim((string)$domain)))
+            ->where('reference', (string)$reference)
+            ->get('coupon_redemptions')->result();
     }
 
     /**

@@ -105,6 +105,7 @@ class NumberService {
                                     ? $this->money($product->provider_cost) : null,
             'idempotency_key' => $input['idempotency_key'] ?? null,
             'source'          => $input['source'] ?? 'WEB',
+            'coupon_code'     => $input['coupon_code'] ?? null,
             'metadata'        => array('country' => $country->code, 'service' => $service->code),
 
             // Written before the vendor is called, so a rejected reservation

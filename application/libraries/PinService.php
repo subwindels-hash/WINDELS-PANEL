@@ -2,7 +2,7 @@
 defined('BASEPATH') OR exit('No direct script access allowed');
 
 /**
- * PinService — the optional four-digit transaction PIN.
+ * PinService — the four-digit transaction PIN.
  *
  * A second factor for actions that move money or change security settings,
  * deliberately separate from the account password so that a borrowed or
@@ -10,16 +10,21 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *
  * ## What is guaranteed
  *
- * - **The PIN is never readable.** It is stored as a `password_hash()` digest,
- *   exactly like the password. There is no decrypt path, no "show PIN" in the
- *   admin panel, and no code here that returns it. An administrator can only
- *   *clear* it, which forces the customer to set a new one.
+ * - **The PIN is never stored in the clear.** Two copies are kept: the
+ *   one-way `password_hash()` digest that verification runs against, and an
+ *   AES-256-GCM envelope (`pin_cipher`, EncryptionService) that exists so an
+ *   operator can answer "what is my PIN?" without forcing a reset. Every
+ *   reveal goes through `users.edit`, and every one is written to the audit
+ *   log — the envelope is a staff capability, not a silent copy.
  * - **Brute force is bounded at rest.** Four digits is 10,000 possibilities —
  *   trivially guessable at HTTP speed. Failures are counted on the user row
  *   and the PIN locks for a growing interval, so the limit survives a new
  *   session, a new IP, or a restarted process.
  * - **Verification is constant-time**, and an unset PIN still burns a hash
  *   comparison so "no PIN configured" and "wrong PIN" take the same time.
+ * - **PINs set before `pin_cipher` existed stay private.** Their envelope is
+ *   NULL, `reveal()` says so rather than guessing, and the customer's next
+ *   PIN (set by them, issued at a reset, or rotated) carries an envelope.
  *
  * ## What it deliberately does not do
  *
@@ -49,6 +54,7 @@ class PinService {
     public function __construct() {
         $this->ci =& get_instance();
         $this->ci->load->model('User_model');
+        $this->ci->load->library('EncryptionService');
     }
 
     /** Whether this account has a PIN configured. */
@@ -80,6 +86,7 @@ class PinService {
 
         $this->ci->db->where('id', $user->id)->update('users', array(
             'pin_hash'            => password_hash((string) $new_pin, PASSWORD_DEFAULT),
+            'pin_cipher'          => $this->ci->encryptionservice->encrypt((string) $new_pin),
             'pin_set_at'          => gmdate('Y-m-d H:i:s'),
             'pin_failed_attempts' => 0,
             'pin_locked_until'    => null,
@@ -139,6 +146,7 @@ class PinService {
 
         $this->ci->db->where('id', $user->id)->update('users', array(
             'pin_hash'            => null,
+            'pin_cipher'          => null,
             'pin_set_at'          => null,
             'pin_failed_attempts' => 0,
             'pin_locked_until'    => null,
@@ -219,6 +227,7 @@ class PinService {
 
         $this->ci->db->where('id', $user->id)->update('users', array(
             'pin_hash'            => password_hash($new_pin, PASSWORD_DEFAULT),
+            'pin_cipher'          => $this->ci->encryptionservice->encrypt($new_pin),
             'pin_set_at'          => gmdate('Y-m-d H:i:s'),
             'pin_failed_attempts' => 0,
             'pin_locked_until'    => null,
@@ -255,6 +264,94 @@ class PinService {
         }
 
         return array('ok' => true, 'pin' => $new_pin);
+    }
+
+    /**
+     * Issue a fresh random PIN to an account that has none, and tell the
+     * customer what it is.
+     *
+     * This is the signup half of the PIN flow (and the re-issue path after an
+     * administrator clears a PIN): the account starts protected on day one
+     * instead of the customer having to discover Account → Security after
+     * their first blocked wallet action. The plaintext PIN is delivered once
+     * — notification plus email — and after that exists only as hash + cipher.
+     *
+     * @return array{ok:bool, pin?:string, error?:string}
+     */
+    public function issue($user, $reason = 'signup') {
+        if (!$user) return $this->fail('NO_USER', 'Unknown user.');
+        if ($this->is_set($user)) {
+            return $this->fail('PIN_ALREADY_SET', 'This account already has a PIN.');
+        }
+
+        $pin = $this->generate_pin();
+
+        $this->ci->db->where('id', $user->id)->update('users', array(
+            'pin_hash'            => password_hash($pin, PASSWORD_DEFAULT),
+            'pin_cipher'          => $this->ci->encryptionservice->encrypt($pin),
+            'pin_set_at'          => gmdate('Y-m-d H:i:s'),
+            'pin_failed_attempts' => 0,
+            'pin_locked_until'    => null,
+            'updated_at'          => gmdate('Y-m-d H:i:s'),
+        ));
+
+        $this->audit($user, 'security.pin_issued', null, array('reason' => $reason));
+        $this->notify($user, 'Your security PIN',
+            'Your transaction PIN is '.$pin.'. You will be asked for it when you move money '
+            .'or change security settings. It was sent to your registered email too — '
+            .'you can change it any time from Account → Security.');
+
+        try {
+            $this->ci->load->library('MailService');
+            $this->ci->mailservice->enqueue_raw(
+                $user->email,
+                'Your MarvySocials security PIN',
+                '<p>Hi '.htmlspecialchars($user->username).',</p>'
+                .'<p>Welcome aboard. Every account gets a 4-digit transaction PIN — it is asked for '
+                .'when money moves or security settings change, so a borrowed password alone is not '
+                .'enough.</p>'
+                .'<p>Your PIN is: <strong style="font-size:1.25rem;letter-spacing:.15em">'.$pin.'</strong></p>'
+                .'<p>Change it any time from Account → Security.</p>',
+                'Hi '.$user->username.",\n\nWelcome aboard. Your 4-digit transaction PIN is: "
+                .$pin."\n\nYou will be asked for it when money moves or security settings change. "
+                ."Change it any time from Account -> Security.",
+                $user->username,
+                'security.pin_issued'
+            );
+        } catch (Throwable $e) {
+            log_message('error', 'pin issue email failed for user '.$user->id.': '.$e->getMessage());
+        }
+
+        return array('ok' => true, 'pin' => $pin);
+    }
+
+    /**
+     * Reveal a customer's PIN to an operator.
+     *
+     * Returns the plaintext from the encrypted copy — or an explanation when
+     * there is nothing to reveal: no PIN at all, or a PIN chosen before the
+     * encrypted copy was kept (hash-only, and honestly reported as such
+     * rather than guessed at).
+     *
+     * Callers must gate this on `users.edit` and audit the reveal. The audit
+     * row records THAT a reveal happened, never the PIN itself.
+     *
+     * @return array{ok:bool, pin?:string, code?:string, error?:string}
+     */
+    public function reveal($user) {
+        if (!$user) return $this->fail('NO_USER', 'Unknown user.');
+        if (!$this->is_set($user)) {
+            return $this->fail('NO_PIN', 'No PIN is set on this account.');
+        }
+        $pin = $this->ci->encryptionservice->open($user->pin_cipher ?? null);
+        if ($pin === null || $pin === '') {
+            return $this->fail(
+                'NOT_REVEALABLE',
+                'This PIN was set before encrypted PIN history was kept and cannot be shown. '
+                .'Clear it — the customer chooses their next PIN themselves, and that one is revealable.'
+            );
+        }
+        return array('ok' => true, 'pin' => $pin);
     }
 
     /** A random 4-digit PIN that also passes validate_format()'s weak-PIN checks. */

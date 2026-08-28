@@ -148,6 +148,89 @@ class TicketService {
         );
     }
 
+    /**
+     * Reply to a visitor's contact-form message from the admin dashboard.
+     *
+     * Signed-in customers open tickets; this is the other inbox — the
+     * anonymous visitor whose only channel is the contact form. Their message
+     * lands in contact_messages (and the operator's mailbox); until now the
+     * only way to answer was from a mail client, which is exactly where the
+     * "what did we tell them?" trail went to die. The reply is queued through
+     * MailService like every outbound email, and both halves of the
+     * conversation are kept on the row.
+     *
+     * @param object $row       a contact_messages row
+     * @param object $actor     the staff member answering
+     * @param string $subject   defaults to "Re: <original subject>"
+     * @param string $body      the reply text (plain text; sent as both text and simple HTML)
+     * @return array{ok:bool,error?:string,code?:string,row?:object}
+     */
+    public function contact_reply($row, $actor, $subject, $body) {
+        if (!$row || empty($row->id)) return array('ok'=>false,'error'=>'Message not found','code'=>'NO_MESSAGE');
+
+        $body = trim((string)$body);
+        if ($body === '' || mb_strlen($body) > 20000)
+            return array('ok'=>false,'error'=>'Write a reply first (max 20,000 characters).','code'=>'BAD_BODY');
+        if (!filter_var((string)$row->email, FILTER_VALIDATE_EMAIL))
+            return array('ok'=>false,'error'=>'This visitor left no valid reply address.','code'=>'BAD_EMAIL');
+
+        $subject = trim((string)$subject);
+        if ($subject === '') $subject = 'Re: '.$row->subject;
+        $subject = mb_substr($subject, 0, 255);
+
+        // Same placeholder contract as the templated emails, so a template
+        // picked in the reply box keeps its {{name}}/{{subject}} promises.
+        $vars = array(
+            'name'      => $row->name,
+            'subject'   => $row->subject,
+            'site_name' => marvy_site_name(),
+            'reply'     => $body,
+        );
+        $subject = $this->interpolate($subject, $vars);
+        $body_out = $this->interpolate($body, $vars);
+        $text = $subject."\n\n".$body_out;
+        $html = '<p>'.str_replace(array("\r\n", "\n", "\r"), '</p><p>', htmlspecialchars($body_out)).'</p>';
+
+        $queued = false;
+        try {
+            $this->ci->load->library('MailService');
+            if (isset($this->ci->mailservice)) {
+                $queued = $this->ci->mailservice->enqueue_raw(
+                    $row->email,
+                    $this->interpolate($subject, $vars),
+                    '<p>'.str_replace("\n", '</p><p>', $html).'</p>',
+                    $text,
+                    $row->name,
+                    'contact.reply'
+                );
+            }
+        } catch (Throwable $e) {
+            log_message('error', 'contact reply could not be queued for message '.$row->id.': '.$e->getMessage());
+        }
+        if (!$queued) {
+            return array('ok'=>false,'error'=>'The reply could not be queued — check the mail queue.','code'=>'QUEUE_FAILED');
+        }
+
+        $this->ci->db->where('id', (int)$row->id)->update('contact_messages', array(
+            'status'        => 'REPLIED',
+            'reply_subject' => $subject,
+            'reply_body'    => $body_out,
+            'replied_at'    => gmdate('Y-m-d H:i:s'),
+            'replied_by_id' => $actor ? (int)$actor->id : null,
+        ));
+
+        return array('ok'=>true, 'row' => $this->ci->db->where('id', (int)$row->id)->get('contact_messages')->row());
+    }
+
+    /** {{placeholder}} substitution; unresolved placeholders are stripped. */
+    private function interpolate($text, array $vars) {
+        $out = (string)$text;
+        foreach ($vars as $k => $v) {
+            $out = str_replace('{{'.$k.'}}', (string)$v, $out);
+        }
+        return preg_replace('/\{\{\s*[a-zA-Z0-9_]+\s*\}\}/', '', $out);
+    }
+
     /** Staff-only status change (OPEN|PENDING|ANSWERED|CLOSED). */
     public function set_status($public_id, $status) {
         $allowed = array('OPEN','PENDING','ANSWERED','CLOSED');

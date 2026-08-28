@@ -2161,4 +2161,32 @@ UPDATE marketplace_orders
   SET refunded_amount = gross_amount, refunded_quantity = quantity
 WHERE status = 'REFUNDED' AND refunded_amount = 0;
 
+-- ---------------------------------------------------------------------
+-- migration 033_pin_history_contact_inbox
+-- ---------------------------------------------------------------------
+
+ALTER TABLE users
+ADD COLUMN pin_cipher VARCHAR(255) NULL COMMENT 'AES-256-GCM copy of the PIN (EncryptionService); lets staff reveal it. NULL for PINs set before this column existed';
+
+CREATE TABLE IF NOT EXISTS contact_messages (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  name VARCHAR(100) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  subject VARCHAR(150) NOT NULL,
+  department VARCHAR(32) NOT NULL DEFAULT 'other',
+  message MEDIUMTEXT NOT NULL,
+  ip VARCHAR(64) NULL,
+  email_queue_id BIGINT UNSIGNED NULL COMMENT 'the copy queued to the support mailbox',
+  status VARCHAR(16) NOT NULL DEFAULT 'NEW' COMMENT 'NEW|REPLIED',
+  reply_subject VARCHAR(255) NULL,
+  reply_body MEDIUMTEXT NULL COMMENT 'what staff last sent, kept so the dashboard holds both halves',
+  replied_at DATETIME NULL,
+  replied_by_id BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_cmsg_status_created (status, created_at),
+  INDEX idx_cmsg_email (email, created_at),
+  CONSTRAINT fk_cmsg_replier FOREIGN KEY (replied_by_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;

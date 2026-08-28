@@ -56,6 +56,7 @@ class Giftcards extends Auth_Controller {
         $result = $this->giftcardservice->purchase($this->current_user, array(
             'product'         => $this->input->post('product', true),
             'quantity'        => (int)$this->input->post('quantity', true),
+            'coupon_code'     => $this->input->post('coupon_code', true),
             'recipient_email' => $this->input->post('recipient_email', true),
             'idempotency_key' => 'gc:'.$this->current_user->id.':'
                                  .substr(sha1((string)$this->input->post('form_token', true)), 0, 32),
@@ -73,9 +74,13 @@ class Giftcards extends Auth_Controller {
             return redirect('dashboard/giftcards');
         }
 
+        $savings = !empty($result['coupon_code']) && bccomp((string)$result['discount'], '0', 8) > 0
+            ? ' Coupon '.htmlspecialchars((string)$result['coupon_code']).' applied — you saved '
+              .htmlspecialchars(marvy_money($result['discount'])).'.'
+            : '';
         $this->session->set_flashdata('success', empty($result['cards'])
-            ? 'Payment taken. Your code is being issued and will appear here shortly.'
-            : 'Gift card purchased.');
+            ? 'Payment taken. Your code is being issued and will appear here shortly.'.$savings
+            : 'Gift card purchased.'.$savings);
         redirect('dashboard/giftcards/'.$result['transaction']->public_id);
     }
 

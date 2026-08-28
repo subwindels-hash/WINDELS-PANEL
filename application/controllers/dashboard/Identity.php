@@ -52,6 +52,7 @@ class Identity extends Auth_Controller {
 
         $result = $this->identityservice->verify($this->current_user, array(
             'product'    => $this->input->post('product', true),
+            'coupon_code' => $this->input->post('coupon_code', true),
             // Deliberately not re-read anywhere after this call.
             'identifier' => $this->input->post('identifier', true),
             'consent'    => (bool)$this->input->post('consent', true),

@@ -21,15 +21,33 @@ $qs = function (array $over = array()) use ($filters, $page) {
   <div class="card">
     <div class="muted text-xs">Total held — a liability</div>
     <div class="mono" style="font-size:1.4rem;font-weight:600"><?=marvy_money($totals['held'])?></div>
-    <div class="muted text-xs">across <?=number_format($totals['wallets'])?> wallets</div>
+    <div class="muted text-xs">
+      across <?=number_format($totals['wallets'])?> wallets
+      <?php
+      // A naira figure and a dollar figure must never be added together — each
+      // currency is a liability in its own right, reported as itself.
+      $foreign = array();
+      foreach (($totals['by_currency'] ?? array()) as $cur => $t) {
+          if ($cur !== strtoupper(marvy_base_currency())) $foreign[$cur] = $t;
+      }
+      foreach ($foreign as $cur => $t): ?>
+        · <?=marvy_money($t['held'], $cur)?> in <?=$cur?> (<?=number_format($t['wallets'])?>)
+      <?php endforeach; ?>
+    </div>
   </div>
   <div class="card">
     <div class="muted text-xs">Lifetime deposited</div>
     <div class="mono" style="font-size:1.1rem"><?=marvy_money($totals['deposited'])?></div>
+    <?php foreach ($foreign ?? array() as $cur => $t): ?>
+      <div class="mono muted text-xs"><?=marvy_money($t['deposited'], $cur)?> in <?=$cur?></div>
+    <?php endforeach; ?>
   </div>
   <div class="card">
     <div class="muted text-xs">Lifetime spent</div>
     <div class="mono" style="font-size:1.1rem"><?=marvy_money($totals['spent'])?></div>
+    <?php foreach ($foreign ?? array() as $cur => $t): ?>
+      <div class="mono muted text-xs"><?=marvy_money($t['spent'], $cur)?> in <?=$cur?></div>
+    <?php endforeach; ?>
   </div>
 </div>
 

@@ -288,14 +288,41 @@ class CronControlTest extends TestCase
         $this->assertStringContainsString("\$route['admin/cron/resume'] = 'admin/system/cron_resume';", $routes);
     }
 
-    /** Still no "run now", and the screen says why. */
-    public function testThereIsStillNoRunNowButton()
+    /**
+     * "Run now" exists now (the operator asked for it), so the rule this test
+     * protects is restated rather than dropped: the screen's only write
+     * endpoints are pause, resume and run — and run goes through the same
+     * JobRunner harness the crontab uses, never a bespoke second
+     * implementation, because a weaker copy is how deposits get credited
+     * twice.
+     */
+    public function testRunNowIsSafeOrItIsNotThere()
     {
         $view = $this->source('application/views/admin/system/cron.php');
-        $this->assertStringNotContainsString('cron/run', $view);
-        $this->assertStringContainsString('no', strtolower($view));
-        $this->assertStringContainsString('deposits get credited twice', $view,
-            'the screen has to say why the obvious button is missing');
+        $this->assertStringContainsString('admin/cron/run', $view,
+            'the run-now button must post to the run endpoint');
+
+        $ctrl = $this->source('application/controllers/admin/System.php');
+        $this->assertMatchesRegularExpression(
+            '~function cron_run\(\\)\\s*\\{\\s*if \\(\\$this->input->method\\(true\\) !== \'POST\'~s',
+            $ctrl, 'run now must be POST-only');
+        $this->assertMatchesRegularExpression(
+            '~function cron_run\\(\\).*?require_perm\(\'settings\.manage\'\)~s',
+            $ctrl, 'run now needs the same permission as pausing');
+        // The manual run must reuse the harness: exclusive lock + run record.
+        $this->assertMatchesRegularExpression(
+            '~function cron_run\(\\).*?jobrunner->run\(~s', $ctrl,
+            'run now must execute through JobRunner');
+        $this->assertMatchesRegularExpression(
+            '~function cron_run\(\\).*?cronregistry->worker\(~s', $ctrl,
+            'run now must resolve the job from CronRegistry, like the CLI');
+        // A paused job must not be runnable by hand: that would work around an
+        // incident switch someone deliberately threw.
+        $this->assertMatchesRegularExpression(
+            '~function cron_run\(\\).*?croncontrolservice->is_paused\(~s', $ctrl,
+            'run now must refuse a paused job');
+        // And the screen must still say why a manual run is safe.
+        $this->assertStringContainsString('exclusive lock', $view);
     }
 
     /** The operator is told the pause expires, before and after they commit. */

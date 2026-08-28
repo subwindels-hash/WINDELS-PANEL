@@ -29,6 +29,10 @@
     <label class="label" for="amount">Amount</label>
     <input class="input mb-4" id="amount" name="amount" type="number"
            min="50" step="1" placeholder="1000" required>
+    <?php // Module 36: one code works on every purchase in the panel. ?>
+    <label class="label" for="coupon_code_<?=$tab?>">Coupon code (optional)</label>
+    <input class="input mb-4" id="coupon_code_<?=$tab?>" name="coupon_code" maxlength="32"
+           autocomplete="off" style="text-transform:uppercase" placeholder="Promo code">
 
     <button class="btn btn-primary" type="submit">Buy airtime</button>
   </form>

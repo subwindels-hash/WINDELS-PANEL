@@ -84,6 +84,11 @@ $nav_groups = $is_admin ? array(
         array('admin/categories',   'Categories & logs', 'audit.view',      'globe'),
         array('admin/logs',         'System logs','audit.view',      'list'),
         array('admin/cron',         'Cron jobs',  'audit.view',      'clock'),
+        // Self-service profile lives in the customer shell (/dashboard/*),
+        // which staff can reach too — email, names and the avatar are edited
+        // there exactly like a customer edits their own. The link just makes
+        // the page discoverable from the admin sidebar.
+        array('dashboard/profile',  'My profile', null, 'user'),
         array('dashboard/security', 'Security', null,      'shield'),
     )),
 ) : array(

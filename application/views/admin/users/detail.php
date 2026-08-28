@@ -136,18 +136,23 @@ $nonce = bin2hex(random_bytes(8));
 </div>
 
 <?php
-// Credentials panel. Everything here is a reset — there is deliberately no
-// control that displays a password or a PIN, because both are stored as
-// one-way hashes and staff must never be able to learn a customer's secret.
+// Credentials panel. Passwords stay one-way hashes with reset-only controls;
+// the transaction PIN is the one credential staff can read back, because the
+// operator asked for exactly that: it also lives in an AES-256-GCM envelope
+// (users.pin_cipher), the reveal is POST-only, gated on users.edit and
+// audited per use. PINs chosen before the envelope existed are hash-only and
+// are reported as unreadable rather than guessed at.
 $pin_set = !empty($user->pin_hash);
 $pin_locked = !empty($user->pin_locked_until) && strtotime($user->pin_locked_until.' UTC') > time();
+$pin_revealable = $pin_set && !empty($user->pin_cipher);
 ?>
 <?php if (!$self && $can_edit): ?>
 <div class="card mb-4">
   <h3 style="font-size:1rem;font-weight:600" class="mb-1">Credentials</h3>
   <p class="muted text-xs mb-3">
-    Passwords and security PINs are stored as one-way hashes. They cannot be displayed here or anywhere
-    else — these controls reset them so the customer can choose a new one.
+    Passwords are stored as one-way hashes and can only be reset — never displayed. The security PIN is
+    stored encrypted as well, so staff can read it back when a customer asks; every reveal is recorded in
+    the audit log with who asked.
   </p>
 
   <div class="row mb-3" style="gap:1.25rem;flex-wrap:wrap">
@@ -165,6 +170,9 @@ $pin_locked = !empty($user->pin_locked_until) && strtotime($user->pin_locked_unt
           <?php endif; ?>
         <?php endif; ?>
       </div>
+      <?php if ($pin_set && !$pin_revealable): ?>
+        <div class="muted text-xs">Set before encrypted PIN history was kept — readable only after the customer sets their next PIN.</div>
+      <?php endif; ?>
     </div>
     <div>
       <div class="muted text-xs">Two-factor</div>
@@ -193,7 +201,11 @@ $pin_locked = !empty($user->pin_locked_until) && strtotime($user->pin_locked_unt
     </form>
 
     <?php if ($pin_set): ?>
-    <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/pin-reset')?>" style="margin:0">
+    <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/pin-reveal')?>" style="margin:0" data-confirm="Reveal this customer's security PIN? The reveal is recorded in the audit log.">
+      <?=$csrf()?>
+      <button class="btn btn-secondary btn-sm" type="submit">Reveal security PIN</button>
+    </form>
+    <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/pin-reset')?>" style="margin:0" data-confirm="Clear this customer's security PIN? They must set a new one before their next PIN-protected action.">
       <?=$csrf()?>
       <input type="hidden" name="reason" value="Reset from the customer file">
       <button class="btn btn-secondary btn-sm" type="submit">Clear security PIN</button>
@@ -212,13 +224,26 @@ $pin_locked = !empty($user->pin_locked_until) && strtotime($user->pin_locked_unt
 
 <?php if ($can_impersonate && !$self && $user->status === 'ACTIVE' && $user->role === 'CUSTOMER'): ?>
 <div class="card mb-4" style="border-color:var(--color-warning,#f59e0b)">
-  <h3 style="font-size:1rem;font-weight:600" class="mb-1">Read-only customer impersonation</h3>
+  <h3 style="font-size:1rem;font-weight:600" class="mb-1">Customer impersonation</h3>
   <p class="muted text-xs mb-3">
-    Open this customer's dashboard for support diagnosis. The session is audited, expires after 30 minutes,
-    blocks every write action and never reveals credentials. Use only with customer authorization or an approved support reason.
+    Sign in to this customer's dashboard. The session is audited, expires after 30 minutes, never reveals
+    credentials and never allows credential changes. Use only with customer authorization or an approved
+    support reason.
   </p>
   <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/impersonate')?>">
     <?=$csrf()?>
+    <fieldset class="mb-2" style="border:0;padding:0;margin:0">
+      <legend class="label" style="padding:0">Access level</legend>
+      <label class="row text-xs mb-1" style="gap:.5rem;align-items:flex-start">
+        <input type="radio" name="mode" value="READ_ONLY" checked style="margin-top:.2rem">
+        <span><strong>Read-only</strong> — view their dashboard to diagnose an issue. Every write action is blocked.</span>
+      </label>
+      <label class="row text-xs" style="gap:.5rem;align-items:flex-start">
+        <input type="radio" name="mode" value="FULL_ACCESS" style="margin-top:.2rem">
+        <span><strong>Full access</strong> — act on their behalf: place orders, open tickets, spend their wallet.
+          Every action is recorded against you in the audit trail.</span>
+      </label>
+    </fieldset>
     <label class="field mb-2"><span class="label">Support reason</span>
       <textarea class="input" name="reason" rows="2" minlength="5" maxlength="500" required
                 placeholder="Ticket reference and issue being investigated"></textarea>
@@ -227,16 +252,42 @@ $pin_locked = !empty($user->pin_locked_until) && strtotime($user->pin_locked_unt
       <input type="checkbox" name="confirm" value="1" required style="margin-top:.2rem">
       <span>I understand this switches my effective identity to this customer and I must use the warning banner to return to my staff account.</span>
     </label>
-    <button class="btn btn-warning btn-sm" type="submit">Start read-only impersonation</button>
+    <button class="btn btn-warning btn-sm" type="submit">Start impersonation</button>
   </form>
 </div>
 <?php endif; ?>
 
 <?php if ($can_money): ?>
+<?php if (!empty($can_choose_currency) && !empty($currency_choices)): ?>
+<div class="card mb-4">
+  <h3 style="font-size:1rem;font-weight:600" class="mb-1">Wallet currency</h3>
+  <p class="muted text-xs mb-3">
+    One-time choice, available only while the wallet is empty and has never moved money.
+    Once set, purchases charge in <?=htmlspecialchars(marvy_base_currency())?> converted at the rate pinned on each movement.
+  </p>
+  <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/wallet-currency')?>" class="row" style="gap:.5rem;align-items:flex-end;flex-wrap:wrap">
+    <?=$csrf()?>
+    <label class="field"><span class="label">Hold the wallet in</span>
+      <select class="select" name="currency" required>
+        <?php foreach ($currency_choices as $c): ?>
+          <option value="<?=htmlspecialchars($c->code)?>" <?=strtoupper((string)$c->code)===strtoupper((string)$user->wallet->currency)?'selected':''?>>
+            <?=htmlspecialchars($c->code)?> — <?=htmlspecialchars((string)$c->name)?>
+          </option>
+        <?php endforeach; ?>
+      </select>
+    </label>
+    <button class="btn btn-primary btn-sm" type="submit">Set currency</button>
+  </form>
+</div>
+<?php endif; ?>
 <div class="card mb-4">
   <h3 style="font-size:1rem;font-weight:600" class="mb-1">Adjust wallet</h3>
   <p class="muted text-xs mb-3">
     Recorded in the ledger against your account. A debit cannot take the balance below zero.
+    <?php if (strtoupper((string)$user->wallet->currency) !== strtoupper(marvy_base_currency())): ?>
+    This wallet holds <strong><?=htmlspecialchars($user->wallet->currency)?></strong> —
+    adjustments are entered in the wallet's own currency, not <?=htmlspecialchars(marvy_base_currency())?>.
+    <?php endif; ?>
   </p>
   <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/adjust')?>"
         class="row" style="gap:.5rem;align-items:flex-end;flex-wrap:wrap">
@@ -248,7 +299,7 @@ $pin_locked = !empty($user->pin_locked_until) && strtotime($user->pin_locked_unt
         <option value="DEBIT">Debit — take funds back</option>
       </select>
     </label>
-    <label class="field"><span class="label">Amount (<?=htmlspecialchars(marvy_base_currency())?>)</span>
+    <label class="field"><span class="label">Amount (<?=htmlspecialchars($user->wallet->currency ?? marvy_base_currency())?>)</span>
       <input class="input mono" type="number" name="amount" step="0.01" min="0.01" required
              placeholder="0.00" style="max-width:9rem">
     </label>

@@ -20,8 +20,11 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *     LedgerService, so a manual correction is double-entry and idempotent
  *     like every other movement.
  *   - **Read or reset credentials.** No password hash, MFA secret or API key
- *     is loaded here. Explicitly permitted staff may open a short-lived,
- *     audited, read-only dashboard view; that session cannot submit changes.
+ *     is loaded here. The one exception is the transaction PIN: at the
+ *     operator's request it can be *revealed* (`pin_reveal`, `users.edit`,
+ *     POST-only, audited per reveal) from its encrypted copy. Explicitly
+ *     permitted staff may open a short-lived, audited, read-only dashboard
+ *     view; that session cannot submit changes.
  *   - **Delete anyone.** Accounts carry ledger history; they are suspended or
  *     banned, never removed.
  */
@@ -134,6 +137,12 @@ class Users extends Admin_Controller {
             'earnings_summary'  => $earnings_summary,
             'earning_rows'      => $earning_rows,
             'payout_rows'       => $payout_rows,
+            // Wallet-currency choice: offered only on a wallet that has never
+            // moved money (Wallet_model::is_virgin), from the currencies the
+            // admin currencies screen has enabled.
+            'can_choose_currency' => $this->Wallet_model->is_virgin($user->wallet),
+            'currency_choices'    => $this->db->where('is_active', 1)
+                ->order_by('is_base', 'DESC')->order_by('code', 'ASC')->get('currencies')->result(),
         ));
     }
 
@@ -200,15 +209,42 @@ class Users extends Admin_Controller {
     }
 
     /**
-     * POST /admin/customers/:id/impersonate — enter a read-only support lens.
+     * POST /admin/customers/:id/wallet-currency — set what an empty,
+     * never-used wallet holds. The virgin-only rule lives in Wallet_model and
+     * is shared with the customer's own picker: once money has moved, no one
+     * — staff or customer — may re-label the wallet, because that would
+     * re-denominate its entire history.
+     */
+    public function wallet_currency($public_id) {
+        $user = $this->guard($public_id, 'wallets.adjust');
+        $res = $this->Wallet_model->choose_currency(
+            $user->id, $this->input->post('currency', true), $this->current_user->id);
+        if (empty($res['ok'])) return $this->fail($user, $res['error']);
+        if (empty($res['unchanged'])) {
+            $this->done($user, 'Wallet currency set. The wallet now holds '
+                .htmlspecialchars($res['wallet']->currency)
+                .'; purchases still charge in '.marvy_base_currency()
+                .' converted at the current rate.');
+        }
+        $this->done($user, 'The wallet already holds '.htmlspecialchars($res['wallet']->currency).'.');
+    }
+
+    /**
+     * POST /admin/customers/:id/impersonate — enter the customer's dashboard.
      *
-     * The service independently repeats the role, permission, target, reason
-     * and session checks. This controller gate keeps the route conventional;
-     * it is not the only thing protecting the identity switch.
+     * Read-only (diagnostic lens) or full-access (act on their behalf) is
+     * chosen on the form; anything other than the full-access constant falls
+     * back to read-only, so a mangled or absent field can never widen the
+     * session. The service independently repeats the role, permission, target,
+     * reason and session checks. This controller gate keeps the route
+     * conventional; it is not the only thing protecting the identity switch.
      */
     public function impersonate($public_id) {
         if ($this->input->method(true) !== 'POST') show_404();
         $user = $this->guard($public_id, 'users.impersonate');
+        $mode = $this->input->post('mode', true) === ImpersonationService::MODE_FULL_ACCESS
+            ? ImpersonationService::MODE_FULL_ACCESS
+            : ImpersonationService::MODE_READ_ONLY;
         $res = $this->impersonationservice->start(
             $this->current_user,
             $user,
@@ -216,12 +252,15 @@ class Users extends Admin_Controller {
             $this->input->post('confirm', true) === '1',
             $this->input->ip_address(),
             $this->input->user_agent(),
-            $this->request_id
+            $this->request_id,
+            $mode
         );
         if (empty($res['ok'])) return $this->fail($user, $res['error']);
 
-        $this->session->set_flashdata('success',
-            'Read-only customer impersonation started. End it from the persistent banner when finished.');
+        $this->session->set_flashdata('success', $mode === ImpersonationService::MODE_FULL_ACCESS
+            ? 'Full-access impersonation started. You are acting as this customer and every action is '
+              .'recorded against you. Use the banner to return to your staff account.'
+            : 'Read-only customer impersonation started. End it from the persistent banner when finished.');
         redirect('dashboard');
     }
 
@@ -246,6 +285,33 @@ class Users extends Admin_Controller {
         // The audit payload records that a reset happened, never the secret.
         $this->audit('user.pin_reset', $user, array('pin_set' => true), array('pin_set' => false));
         $this->done($user, 'Security PIN cleared. The customer must set a new one before their next PIN-protected action.');
+    }
+
+    /**
+     * POST /admin/customers/:id/pin-reveal — show the customer's security PIN.
+     *
+     * A deliberate change of contract, made at the operator's request: the
+     * PIN now also lives in an AES-256-GCM envelope so support can answer
+     * "what is my PIN?" without forcing a reset every time. The guarantees
+     * that keep that survivable are here — `users.edit` (same permission as
+     * clearing it), POST-only, and a reveal that is audited naming the staff
+     * member while the PIN itself never touches the audit trail. The
+     * plaintext is shown once, in the flash message, and nowhere else.
+     */
+    public function pin_reveal($public_id) {
+        $user = $this->guard($public_id, 'users.edit');
+
+        $this->load->library('PinService');
+        $res = $this->pinservice->reveal($user);
+        if (empty($res['ok'])) {
+            return $this->fail($user, $res['error']);
+        }
+
+        // THAT a PIN was revealed is the audit fact. The PIN is not part of it.
+        $this->audit('user.pin_revealed', $user, null, array('revealed' => true));
+        $this->done($user,
+            'Security PIN: '.$res['pin']
+            .' — shown once; the reveal is recorded in the audit log.');
     }
 
     /**

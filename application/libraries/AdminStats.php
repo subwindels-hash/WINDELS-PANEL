@@ -511,12 +511,26 @@ class AdminStats {
             // they come from one scan rather than two.
             'tickets'  => $tickets['open'],
             'unassigned_tickets' => $tickets['unassigned'],
+            // The contact inbox is a support queue like the tickets: a visitor
+            // asked something and nobody has answered yet.
+            'contact_messages' => $this->contact_inbox(),
             'stuck_orders' => $this->order_counts()['stuck'],
             'stuck_services' => (int)$this->ci->db
                 ->where_in('status', array('PENDING', 'PROCESSING'))
                 ->where('created_at <', gmdate('Y-m-d H:i:s', strtotime('-30 minutes')))
                 ->count_all_results('service_transactions'),
         );
+    }
+
+    /** Contact-form messages still waiting for their first reply. */
+    private function contact_inbox() {
+        if (isset($this->memo['contact_inbox'])) return $this->memo['contact_inbox'];
+        $n = 0;
+        if ($this->ci->db->table_exists('contact_messages')) {
+            $n = (int)$this->ci->db->where("status <> 'REPLIED'", null, false)
+                ->count_all_results('contact_messages');
+        }
+        return $this->memo['contact_inbox'] = $n;
     }
 
     /** Open tickets, and how many of them nobody owns, in one query. */

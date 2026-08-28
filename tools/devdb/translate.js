@@ -406,14 +406,27 @@ function translateExpressions(sql) {
     s = s.replace(/\bGROUP_CONCAT\s*\(([^()]*?)\s+SEPARATOR\s+('(?:[^'\\]|\\.)*')\s*\)/gi, 'GROUP_CONCAT($1, $2)');
     s = s.replace(/\bLOCATE\s*\(/gi, 'INSTR(');
 
-    // DATE_SUB / DATE_ADD → SQLite datetime modifiers.
+    // DATE_SUB / DATE_ADD → SQLite datetime modifiers. The base may contain
+    // one level of parentheses (UTC_TIMESTAMP() has already become
+    // STRFTIME('…','now'), which has commas of its own), and the interval is
+    // either a literal (`INTERVAL 60 MINUTE`) or a column reference
+    // (`INTERVAL sync_interval_minutes MINUTE`, as in
+    // Provider_model::due_for_sync) — the latter becomes SQLite's string
+    // concatenation form of the same modifier.
+    const dtBase = '((?:[^(),]|\\([^()]*\\))+?)';
+    const dtUnit = '(SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR)S?';
+    const dtInterval = '(\\d+|[A-Za-z_][A-Za-z0-9_]*)';
     s = s.replace(
-      /\bDATE_SUB\s*\(\s*([^,]+?)\s*,\s*INTERVAL\s+(\d+)\s+(SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR)S?\s*\)/gi,
-      (_all, base, n, unit) => `DATETIME(${base.trim()}, '-${n} ${unit.toLowerCase()}')`
+      new RegExp(`\\bDATE_SUB\\s*\\(\\s*${dtBase}\\s*,\\s*INTERVAL\\s+${dtInterval}\\s+${dtUnit}\\s*\\)`, 'gi'),
+      (_all, base, n, unit) => (/\d/.test(n)
+        ? `DATETIME(${base.trim()}, '-${n} ${unit.toLowerCase()}')`
+        : `DATETIME(${base.trim()}, '-' || ${n} || ' ${unit.toLowerCase()}')`)
     );
     s = s.replace(
-      /\bDATE_ADD\s*\(\s*([^,]+?)\s*,\s*INTERVAL\s+(\d+)\s+(SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR)S?\s*\)/gi,
-      (_all, base, n, unit) => `DATETIME(${base.trim()}, '+${n} ${unit.toLowerCase()}')`
+      new RegExp(`\\bDATE_ADD\\s*\\(\\s*${dtBase}\\s*,\\s*INTERVAL\\s+${dtInterval}\\s+${dtUnit}\\s*\\)`, 'gi'),
+      (_all, base, n, unit) => (/\d/.test(n)
+        ? `DATETIME(${base.trim()}, '+${n} ${unit.toLowerCase()}')`
+        : `DATETIME(${base.trim()}, '+' || ${n} || ' ${unit.toLowerCase()}')`)
     );
 
     // DATE_FORMAT with the handful of patterns this codebase uses.

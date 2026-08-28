@@ -435,6 +435,9 @@ class Core_seeder extends Seeder {
             // fresh random one after this many hours (CronWorkers::pin_rotation).
             array('pin_auto_rotation_enabled',TRUE,'security',0),
             array('pin_rotation_hours',24,'security',0),
+            // New accounts start with a working PIN instead of meeting the
+            // PIN screen only when their first wallet action is refused.
+            array('pin_issue_at_signup',TRUE,'security',0),
             array('api_enabled',TRUE,'security',1),
             // affiliate
             array('referral_commission_percent','5.0000','affiliate',1),
@@ -560,6 +563,18 @@ class Core_seeder extends Seeder {
             array('ticket.replied', 'Support ticket {{ticket_id}} updated',
                 '<p>Our team replied to your ticket <strong>{{subject}}</strong>.</p><p><a href="{{ticket_url}}">View ticket</a></p>',
                 array('ticket_id','subject','ticket_url')),
+            // Reply starters for the contact inbox (Admin → Messages). The
+            // operator edits them here and picks them when answering a
+            // visitor; {{reply}} is where the typed answer lands.
+            array('contact.reply_general', 'Re: {{subject}}',
+                '<p>Hi {{name}},</p><p>Thanks for contacting {{site_name}} — here is where that stands.</p><p>{{reply}}</p><p>If anything above is unclear, just answer this email.</p>',
+                array('name','subject','site_name','reply')),
+            array('contact.reply_order', 'Re: {{subject}} — your order',
+                '<p>Hi {{name}},</p><p>Thanks for the details about your order.</p><p>{{reply}}</p><p>You can follow the order from Dashboard → Orders; include the order ID (the short code starting with a hash) if you write back.</p>',
+                array('name','subject','site_name','reply')),
+            array('contact.reply_billing', 'Re: {{subject}} — your payment',
+                '<p>Hi {{name}},</p><p>Thanks for reaching out about your payment.</p><p>{{reply}}</p><p>Payments are credited to your wallet balance as soon as they are verified — you can watch the balance from Dashboard → Wallet.</p>',
+                array('name','subject','site_name','reply')),
         );
         foreach ($templates as $t) {
             $this->insert_once('email_templates', array('template_key'=>$t[0]), array(

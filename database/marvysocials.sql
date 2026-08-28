@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 32), roles,
+-- foreign keys, migration bookkeeping (version 35), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first-login accounts. No migration,
 -- seed or installer command has to run afterwards.
@@ -2198,6 +2198,54 @@ UPDATE marketplace_orders
   SET refunded_amount = gross_amount, refunded_quantity = quantity
 WHERE status = 'REFUNDED' AND refunded_amount = 0;
 
+-- ---------------------------------------------------------------------
+-- migration 033_pin_history_contact_inbox
+-- ---------------------------------------------------------------------
+
+ALTER TABLE users
+ADD COLUMN pin_cipher VARCHAR(255) NULL COMMENT 'AES-256-GCM copy of the PIN (EncryptionService); lets staff reveal it. NULL for PINs set before this column existed';
+
+CREATE TABLE IF NOT EXISTS contact_messages (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  name VARCHAR(100) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  subject VARCHAR(150) NOT NULL,
+  department VARCHAR(32) NOT NULL DEFAULT 'other',
+  message MEDIUMTEXT NOT NULL,
+  ip VARCHAR(64) NULL,
+  email_queue_id BIGINT UNSIGNED NULL COMMENT 'the copy queued to the support mailbox',
+  status VARCHAR(16) NOT NULL DEFAULT 'NEW' COMMENT 'NEW|REPLIED',
+  reply_subject VARCHAR(255) NULL,
+  reply_body MEDIUMTEXT NULL COMMENT 'what staff last sent, kept so the dashboard holds both halves',
+  replied_at DATETIME NULL,
+  replied_by_id BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_cmsg_status_created (status, created_at),
+  INDEX idx_cmsg_email (email, created_at),
+  CONSTRAINT fk_cmsg_replier FOREIGN KEY (replied_by_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- migration 034_coupon_redemption_domains
+-- ---------------------------------------------------------------------
+
+ALTER TABLE coupon_redemptions
+ADD COLUMN domain VARCHAR(16) NULL COMMENT 'Which checkout redeemed it: SHOP|SMM|VTU|NUMBER|IDENTITY|GIFTCARD. Rows from before this column existed are all SHOP',
+ADD COLUMN reference VARCHAR(64) NULL COMMENT 'Public id of the discounted order / service transaction';
+
+UPDATE coupon_redemptions SET domain = 'SHOP' WHERE domain IS NULL;
+
+CREATE INDEX idx_couponredeem_reference ON coupon_redemptions (domain, reference);
+
+-- ---------------------------------------------------------------------
+-- migration 035_foreign_wallets
+-- ---------------------------------------------------------------------
+
+ALTER TABLE wallet_transactions
+ADD COLUMN fx_rate DECIMAL(20,8) NULL COMMENT 'Pinned rate for a converted movement: units of the wallet currency per 1 unit of base. NULL when no conversion happened',
+ADD COLUMN base_amount DECIMAL(20,8) NULL COMMENT 'The base-currency value this movement represented at fx_rate. NULL when no conversion happened';
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -2212,7 +2260,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (32);
+INSERT INTO migrations (version) VALUES (35);
 
 -- ======================================================================
 -- CORE DATA
@@ -2907,6 +2955,9 @@ INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
 VALUES ('pin_rotation_hours', '{"value":24}', 'security', 0);
 
 INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
+VALUES ('pin_issue_at_signup', '{"value":true}', 'security', 0);
+
+INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
 VALUES ('api_enabled', '{"value":true}', 'security', 1);
 
 INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
@@ -3004,6 +3055,15 @@ VALUES (5, 'payment.credited', 'Wallet credited: {{amount}}', '<p>We received yo
 
 INSERT INTO `email_templates` (`id`, `template_key`, `subject`, `body_html`, `body_text`, `variables`, `is_active`)
 VALUES (6, 'ticket.replied', 'Support ticket {{ticket_id}} updated', '<p>Our team replied to your ticket <strong>{{subject}}</strong>.</p><p><a href="{{ticket_url}}">View ticket</a></p>', 'Our team replied to your ticket {{subject}}.\nView ticket', '["ticket_id","subject","ticket_url"]', 1);
+
+INSERT INTO `email_templates` (`id`, `template_key`, `subject`, `body_html`, `body_text`, `variables`, `is_active`)
+VALUES (7, 'contact.reply_general', 'Re: {{subject}}', '<p>Hi {{name}},</p><p>Thanks for contacting {{site_name}} — here is where that stands.</p><p>{{reply}}</p><p>If anything above is unclear, just answer this email.</p>', 'Hi {{name}},\nThanks for contacting {{site_name}} — here is where that stands.\n{{reply}}\nIf anything above is unclear, just answer this email.', '["name","subject","site_name","reply"]', 1);
+
+INSERT INTO `email_templates` (`id`, `template_key`, `subject`, `body_html`, `body_text`, `variables`, `is_active`)
+VALUES (8, 'contact.reply_order', 'Re: {{subject}} — your order', '<p>Hi {{name}},</p><p>Thanks for the details about your order.</p><p>{{reply}}</p><p>You can follow the order from Dashboard → Orders; include the order ID (the short code starting with a hash) if you write back.</p>', 'Hi {{name}},\nThanks for the details about your order.\n{{reply}}\nYou can follow the order from Dashboard → Orders; include the order ID (the short code starting with a hash) if you write back.', '["name","subject","site_name","reply"]', 1);
+
+INSERT INTO `email_templates` (`id`, `template_key`, `subject`, `body_html`, `body_text`, `variables`, `is_active`)
+VALUES (9, 'contact.reply_billing', 'Re: {{subject}} — your payment', '<p>Hi {{name}},</p><p>Thanks for reaching out about your payment.</p><p>{{reply}}</p><p>Payments are credited to your wallet balance as soon as they are verified — you can watch the balance from Dashboard → Wallet.</p>', 'Hi {{name}},\nThanks for reaching out about your payment.\n{{reply}}\nPayments are credited to your wallet balance as soon as they are verified — you can watch the balance from Dashboard → Wallet.', '["name","subject","site_name","reply"]', 1);
 
 -- faqs
 INSERT INTO `faqs` (`id`, `question`, `answer`, `category`, `sorting`, `is_active`)

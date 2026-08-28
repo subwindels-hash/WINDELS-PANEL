@@ -262,6 +262,30 @@ class Home extends Public_Controller {
             'contact.message'
         );
 
+        // The dashboard half of the same message. The email reaches the
+        // operator's mailbox; this row is what Admin → Messages reads — and
+        // replies from, so the conversation stays answerable without leaving
+        // the panel. Kept side-by-side deliberately: the mailbox copy works
+        // when the panel cannot, and the row works when the mailbox cannot.
+        if ($queued && $this->db->table_exists('contact_messages')) {
+            try {
+                $this->db->insert('contact_messages', array(
+                    'public_id'       => marvy_public_id(),
+                    'name'            => mb_substr($form['name'], 0, 100),
+                    'email'           => $form['email'],
+                    'subject'         => mb_substr($form['subject'], 0, 150),
+                    'department'      => mb_substr($form['department'] !== '' ? $form['department'] : 'other', 0, 32),
+                    'message'         => $form['message'],
+                    'ip'              => $ip,
+                    'email_queue_id'  => (int)$this->db->insert_id() ?: null,
+                    'status'          => 'NEW',
+                    'created_at'      => gmdate('Y-m-d H:i:s'),
+                ));
+            } catch (Throwable $e) {
+                log_message('error', 'contact message could not be recorded: '.$e->getMessage());
+            }
+        }
+
         if (!$queued) {
             $this->ratelimiter->record($bucket, $ip, false, 'CONTACT_QUEUE_FAILED', $this->input->user_agent());
             $this->contact(array(

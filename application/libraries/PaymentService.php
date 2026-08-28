@@ -211,7 +211,10 @@ class PaymentService {
                     array('reference' => $tx->public_id, 'url' => 'dashboard/wallet/deposits/'.$tx->public_id),
                     array(
                         'amount'  => marvy_money($credited, $tx->currency),
-                        'balance' => marvy_money($wallet_now->balance ?? '0', $tx->currency),
+                        // The wallet may hold a different currency than the
+                        // deposit; show the balance in what it actually holds.
+                        'balance' => marvy_money($wallet_now->balance ?? '0',
+                            $wallet_now->currency ?? $tx->currency),
                     )
                 );
             }

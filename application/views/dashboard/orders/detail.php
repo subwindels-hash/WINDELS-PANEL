@@ -12,7 +12,11 @@
 
       <dl class="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4">
         <div><dt class="muted text-xs">Quantity</dt><dd class="font-semibold"><?=number_format($order->quantity)?></dd></div>
-        <div><dt class="muted text-xs">Charge</dt><dd class="font-semibold"><?=marvy_money($order->charge, $order->currency)?></dd></div>
+        <div><dt class="muted text-xs">Charge</dt><dd class="font-semibold"><?=marvy_money($order->charge, $order->currency)?><?php
+            if (!empty($coupon) && isset($coupon_discount) && bccomp((string)$coupon_discount, '0', 8) > 0):
+              ?> <span class="badge badge-success" title="Coupon <?=htmlspecialchars((string)$coupon->code)?> applied">−<?=marvy_money($coupon_discount)?> coupon</span><?php
+            endif;
+        ?></dd></div>
         <div><dt class="muted text-xs">Rate / 1k</dt><dd class="font-semibold"><?=marvy_money($order->rate_at_order, $order->currency)?></dd></div>
         <div><dt class="muted text-xs">Source</dt><dd class="font-semibold"><?=htmlspecialchars($order->source)?></dd></div>
         <div><dt class="muted text-xs">Start count</dt><dd class="font-semibold"><?=$order->start_count!==null ? number_format($order->start_count) : '—'?></dd></div>

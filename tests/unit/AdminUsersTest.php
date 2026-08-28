@@ -380,4 +380,115 @@ class AdminUsersTest extends TestCase
         $this->assertStringContainsString("'staff.manage'", $src);
         $this->assertStringContainsString("'users.edit'", $src);
     }
+
+    /* ===================== administrator creation ======================== */
+
+    /**
+     * Admin → Administrators → Add: minting a colleague. The account must be
+     * complete (usable password, wallet row, verified address vouched for by
+     * the operator) and the audit row must name the creator and the role —
+     * but never the password.
+     */
+    public function testAnAdminCreatesAnotherAdministrator()
+    {
+        list($app, $owner, , ) = $this->app();
+
+        $res = $app->useradminservice->create_admin($owner, array(
+            'username' => 'ops1', 'email' => 'OPS1@x.test',
+            'password' => 'Hand-Over-Privately-9', 'role' => 'admin',
+        ));
+
+        $this->assertTrue($res['ok'], $res['error'] ?? '');
+        $row = $app->User_model->find_by_username('ops1');
+        $this->assertNotNull($row);
+        $this->assertSame('ADMIN', $row->role, 'the role is upper-cased, not trusted');
+        $this->assertSame('ACTIVE', $row->status);
+        $this->assertSame('ops1@x.test', $row->email, 'the address is stored lower-case');
+        $this->assertNotNull($row->email_verified_at, 'the creating operator vouched for the address');
+        $this->assertTrue(password_verify('Hand-Over-Privately-9', $row->password_hash),
+            'the password verifies with the panel\'s normal hasher');
+
+        // Same shape as every other account: the user file and ledger queries
+        // never have to special-case an administrator without a wallet.
+        $wallet = $app->Wallet_model->for_user($row->id);
+        $this->assertNotNull($wallet);
+        $this->assertSame('0.00000000', (string)$wallet->balance);
+
+        $audit = $app->db->where('action', 'staff.admin_created')
+            ->where('resource_id', $row->public_id)->get('audit_logs')->row();
+        $this->assertNotNull($audit, 'creation is audited');
+        $this->assertSame((int)$owner->id, (int)$audit->actor_id);
+        $this->assertStringContainsString('"role":"ADMIN"', (string)$audit->after_json);
+        $this->assertStringNotContainsString('Hand-Over-Privately-9', (string)$audit->after_json,
+            'the audit row must never carry the password');
+    }
+
+    /** Every way the mint can go wrong, and none of them half-create a row. */
+    public function testAdminCreationRejectsBadInputAndDuplicates()
+    {
+        list($app, $owner, $admin, ) = $this->app();
+
+        $cases = array(
+            'duplicate username' => array(
+                'username' => 'owner', 'email' => 'new@x.test',
+                'password' => 'Str0ng!pass2', 'role' => 'ADMIN'),
+            'duplicate email' => array(
+                'username' => 'newuser', 'email' => 'owner@x.test',
+                'password' => 'Str0ng!pass2', 'role' => 'ADMIN'),
+            'short password' => array(
+                'username' => 'newuser', 'email' => 'new@x.test',
+                'password' => 'short', 'role' => 'ADMIN'),
+            'bad username' => array(
+                'username' => 'not allowed!', 'email' => 'new@x.test',
+                'password' => 'Str0ng!pass2', 'role' => 'ADMIN'),
+            'bad email' => array(
+                'username' => 'newuser', 'email' => 'not-an-email',
+                'password' => 'Str0ng!pass2', 'role' => 'ADMIN'),
+            'customer role is not mintable here' => array(
+                'username' => 'newuser', 'email' => 'new@x.test',
+                'password' => 'Str0ng!pass2', 'role' => 'CUSTOMER'),
+        );
+        foreach ($cases as $label => $input) {
+            $res = $app->useradminservice->create_admin($owner, $input);
+            $this->assertFalse($res['ok'], $label.' must be refused');
+            $this->assertNotNull($res['code'], $label.' must carry a code');
+        }
+
+        // An ADMIN cannot mint a SUPER_ADMIN — the same rule as set_role().
+        $escalation = $app->useradminservice->create_admin($admin, array(
+            'username' => 'owner2', 'email' => 'owner2@x.test',
+            'password' => 'Str0ng!pass2', 'role' => 'SUPER_ADMIN'));
+        $this->assertFalse($escalation['ok']);
+        $this->assertSame('FORBIDDEN', $escalation['code']);
+        $this->assertNull($app->User_model->find_by_username('owner2'));
+
+        // Only staff may create administrators at all.
+        $customer = $app->register('cust2', 'cust2@x.test');
+        $this->assertSame('FORBIDDEN',
+            $app->useradminservice->create_admin($customer, array(
+                'username' => 'hacker', 'email' => 'hacker@x.test',
+                'password' => 'Str0ng!pass2', 'role' => 'ADMIN'))['code']);
+
+        $this->assertSame(0, $app->db->count('audit_logs'),
+            'a refused creation writes no audit row');
+    }
+
+    /** The screen and route exist, and the form's role menu matches the guard. */
+    public function testAdministratorCreationIsWiredIntoTheScreen()
+    {
+        $controller = file_get_contents(self::$root.'/application/controllers/admin/Staff.php');
+        $view = file_get_contents(self::$root.'/application/views/admin/staff/administrators.php');
+        $routes = file_get_contents(self::$root.'/application/config/routes.php');
+
+        $this->assertStringContainsString('function create()', $controller);
+        $this->assertStringContainsString('create_admin(', $controller);
+        $this->assertStringContainsString("admin/administrators/create'] = 'admin/staff/create'", $routes);
+        $this->assertStringContainsString('admin/administrators/create', $view);
+        // The SUPER_ADMIN option is rendered only for a SUPER_ADMIN, matching
+        // the service-side guard.
+        $this->assertStringContainsString("current_user->role === 'SUPER_ADMIN'", $view);
+        $this->assertStringContainsString('value="SUPER_ADMIN"', $view);
+        $this->assertStringContainsString('value="ADMIN"', $view);
+        $this->assertStringContainsString('minlength="8"', $view);
+    }
 }

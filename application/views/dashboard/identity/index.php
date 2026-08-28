@@ -14,7 +14,7 @@ foreach ($products as $p) $by_type[$p->id_type][] = $p;
   <?php $this->load->view('dashboard/identity/_flash'); ?>
 
   <p class="muted text-sm mb-4">Wallet balance:
-    <strong><?=marvy_money($wallet->balance)?></strong></p>
+    <strong><?=marvy_money($wallet->balance, $wallet->currency ?? marvy_base_currency())?></strong></p>
 
   <?php if (empty($products)): ?>
     <p class="muted">Identity checks are not on sale yet. Check back shortly.</p>
@@ -61,6 +61,11 @@ foreach ($products as $p) $by_type[$p->id_type][] = $p;
       You are charged when the check runs. If the number is not found in the
       national database, the charge is refunded automatically.
     </p>
+
+    <?php // Module 36: one code works on every purchase in the panel. ?>
+    <label class="label" for="coupon_code">Coupon code (optional)</label>
+    <input class="input mb-4" id="coupon_code" name="coupon_code" maxlength="32"
+           autocomplete="off" style="text-transform:uppercase" placeholder="Promo code">
 
     <button class="btn btn-primary" type="submit">Run check</button>
   </form>

@@ -105,8 +105,18 @@ class DripfeedService {
         }
         $this->ci->db->trans_complete();
         if ($this->ci->db->trans_status() === false) {
-            $this->ci->ledgerservice->refund($wallet->id, $charge, 'DRIPFEED', null, 'dripfeed:rollback:'.$idem);
+            $this->ci->ledgerservice->refund($wallet->id, $charge, 'DRIPFEED', null,
+                'dripfeed:rollback:'.$idem, $charged['fx_rate'] ?? null);
             return array('ok'=>false,'error'=>'Could not create schedule','code'=>'PERSIST_FAILED');
+        }
+
+        // The charge was taken before the schedule row existed, so stamp it
+        // with the schedule it paid for — the same "which movement paid for
+        // this?" traceability OrderService stamps, and the reference a cancel
+        // refund matches to replay a foreign wallet's pinned rate.
+        if (!empty($charged['public_id'])) {
+            $this->ci->db->where('idempotency_key', $idem)
+                ->update('wallet_transactions', array('reference_id' => $public_id));
         }
 
         $drip = $this->ci->Dripfeed_order_model->find_by_id($drip_id);

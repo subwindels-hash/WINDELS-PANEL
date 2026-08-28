@@ -889,6 +889,80 @@ class ProviderSyncService {
     }
 
     /**
+     * Delete a provider and everything that only exists because of it.
+     *
+     * Until now a provider row was immortal: once added, the only way out was
+     * SQL, because the schema (deliberately) has no ON DELETE path wired to a
+     * screen. This is the screen half.
+     *
+     * What goes, what stays — spelled out because both halves are surprising:
+     *
+     *   - **Gone:** the provider row, its synced catalogue (provider_services),
+     *     its sync/health logs, its provider_orders mapping rows and its
+     *     provider_transactions ledger. These are mirrors of the upstream
+     *     account and mean nothing without it.
+     *   - **Kept, unlinked:** panel services sourced from the provider (they
+     *     keep selling at their current rate, with auto-price-sync off since
+     *     there is nothing to sync from), and past orders (history is history;
+     *     they lose their provider link, exactly what the schema's
+     *     ON DELETE SET NULL always said would happen).
+     *
+     * The explicit child deletes and NULL-outs below match the schema's FK
+     * actions one-for-one. On MySQL they are redundant with the cascades that
+     * fire on the final DELETE; doing them explicitly means the same routine
+     * is also correct on engines without enforced foreign keys (the dev
+     * harness), and the counts it reports are counts of rows it actually
+     * handled.
+     *
+     * @return array{ok:bool, error?:string, counts?:array}
+     */
+    public function delete_provider($provider) {
+        if (!$provider || empty($provider->id)) {
+            return array('ok' => false, 'error' => 'Unknown provider.');
+        }
+        $id = (int)$provider->id;
+
+        $counts = array(
+            'synced_services' => (int)$this->ci->db->where('provider_id', $id)->count_all_results('provider_services'),
+            'panel_services'  => (int)$this->ci->db->where('provider_id', $id)->count_all_results('services'),
+            'orders'          => (int)$this->ci->db->where('provider_id', $id)->count_all_results('orders'),
+        );
+
+        $this->ci->db->trans_start();
+
+        // Mirrors of the upstream account — deleted, like the cascades say.
+        foreach (array('provider_services', 'provider_sync_logs', 'provider_health_logs',
+                       'provider_orders', 'provider_transactions') as $table) {
+            if (!$this->ci->db->table_exists($table)) continue;
+            $this->ci->db->where('provider_id', $id)->delete($table);
+        }
+
+        // History and sellable catalogue — kept, link removed. A panel service
+        // that followed the provider's pricing stops following (there is
+        // nothing left to follow); its rate is untouched.
+        $unlink = array('orders', 'refills', 'cancellation_requests',
+                        'subscriptions', 'service_transactions', 'vtu_products',
+                        'number_products', 'identity_products', 'giftcard_products');
+        foreach ($unlink as $table) {
+            if (!$this->ci->db->table_exists($table)) continue;
+            $this->ci->db->where('provider_id', $id)->update($table, array('provider_id' => null));
+        }
+        $this->ci->db->where('provider_id', $id)->update('services', array(
+            'provider_id'     => null,
+            'auto_price_sync' => 0,
+        ));
+
+        $this->ci->db->where('id', $id)->delete('providers');
+
+        $this->ci->db->trans_complete();
+        if ($this->ci->db->trans_status() === false) {
+            return array('ok' => false, 'error' => 'The delete failed and was rolled back.');
+        }
+
+        return array('ok' => true, 'counts' => $counts, 'error' => null);
+    }
+
+    /**
      * What actually gets encrypted into providers.api_key_encrypted.
      *
      * Most vendors issue one key. VTpass issues three, split by method

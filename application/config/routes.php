@@ -270,6 +270,8 @@ $route['admin/catalogue/(:any)'] = 'admin/catalogue/domain/$1';
 // public-id catch-all or "create" would be treated as a service ID.
 $route['admin/services'] = 'admin/services/index';
 $route['admin/services/create'] = 'admin/services/create';
+// Synced-catalogue picker for the create form (JSON, services.view).
+$route['admin/services/provider-services'] = 'admin/services/provider_services';
 $route['admin/services/(:any)/update'] = 'admin/services/update/$1';
 $route['admin/services/(:any)/archive'] = 'admin/services/archive/$1';
 $route['admin/services/(:any)/pricing/group/(:num)'] = 'admin/services/group_rate/$1/$2';
@@ -291,6 +293,12 @@ $route['admin/providers/(:any)/pricing'] = 'admin/providers/pricing/$1';
 $route['admin/providers/(:any)/test'] = 'admin/providers/test/$1';
 $route['admin/providers/(:any)/sync'] = 'admin/providers/sync/$1';
 $route['admin/providers/(:any)/sync-balance'] = 'admin/providers/sync_balance/$1';
+// Bulk-import the synced catalogue as panel services (writes the catalogue,
+// so services.manage — POST-only like every other write here).
+$route['admin/providers/(:any)/import'] = 'admin/providers/import/$1';
+// Delete a provider and its synced catalogue (providers.manage, POST-only).
+// Must stay above the public-id catch-all on the next lines.
+$route['admin/providers/(:any)/delete'] = 'admin/providers/delete/$1';
 $route['admin/providers/(:any)'] = 'admin/providers/detail/$1';
 $route['admin/customers'] = 'admin/users/customers';
 $route['admin/wallets'] = 'admin/users/wallets';
@@ -300,8 +308,10 @@ $route['admin/customers/(:any)/status'] = 'admin/users/status/$1';
 $route['admin/customers/(:any)/role'] = 'admin/users/role/$1';
 $route['admin/customers/(:any)/price-group'] = 'admin/users/price_group/$1';
 $route['admin/customers/(:any)/adjust'] = 'admin/users/adjust/$1';
+$route['admin/customers/(:any)/wallet-currency'] = 'admin/users/wallet_currency/$1';
 // Credential maintenance. All three are resets, never reveals: staff can
 // clear a PIN or send a reset link, and can never read either secret.
+$route['admin/customers/(:any)/pin-reveal'] = 'admin/users/pin_reveal/$1';
 $route['admin/customers/(:any)/pin-reset'] = 'admin/users/pin_reset/$1';
 $route['admin/customers/(:any)/pin-unlock'] = 'admin/users/pin_unlock/$1';
 $route['admin/customers/(:any)/password-reset'] = 'admin/users/password_reset/$1';
@@ -327,6 +337,9 @@ $route['admin/drip-feed/(:any)/(pause|resume|cancel)'] = 'admin/operations/dripf
 $route['admin/subscriptions'] = 'admin/operations/subscriptions';
 $route['admin/subscriptions/(:any)/(pause|resume|cancel)'] = 'admin/operations/subscription_action/$1/$2';
 $route['admin/messages'] = 'admin/tickets/messages';
+// Answer a visitor's contact message from the dashboard (tickets.reply —
+// POST-only; the email itself is queued like every outbound mail).
+$route['admin/messages/reply/(:num)'] = 'admin/tickets/message_reply/$1';
 $route['admin/tickets'] = 'admin/tickets/index';
 $route['admin/tickets/(:any)/reply'] = 'admin/tickets/reply/$1';
 $route['admin/tickets/(:any)/assign'] = 'admin/tickets/assign/$1';
@@ -379,13 +392,20 @@ $route['admin/mail-queue'] = 'admin/content/mail_queue';
 $route['admin/mail-queue/test'] = 'admin/content/test_mail';
 $route['admin/mail-queue/(:num)/retry'] = 'admin/content/retry_mail/$1';
 $route['admin/email-templates'] = 'admin/content/email_templates';
+// Create must precede the numeric edit route; the key is a POST field, not a
+// URL segment, so it needs no segment of its own.
+$route['admin/email-templates/create'] = 'admin/content/create_email_template';
 $route['admin/email-templates/(:num)'] = 'admin/content/save_email_template/$1';
 $route['admin/administrators'] = 'admin/staff/administrators';
+$route['admin/administrators/create'] = 'admin/staff/create';
 $route['admin/logs'] = 'admin/system/logs';
 $route['admin/cron'] = 'admin/system/cron';
 // Pausing a background job is a write: POST-only, gated on settings.manage.
 $route['admin/cron/pause'] = 'admin/system/cron_pause';
 $route['admin/cron/resume'] = 'admin/system/cron_resume';
+// Run one job now: same harness, same lock as the crontab tick (POST-only,
+// settings.manage) — the browser-side answer to "did the cron even install?".
+$route['admin/cron/run'] = 'admin/system/cron_run';
 $route['admin/api-logs'] = 'admin/system/api_logs';
 $route['admin/refunds'] = 'admin/orders/refunds';
 $route['admin/blacklist'] = 'admin/system/blacklist';

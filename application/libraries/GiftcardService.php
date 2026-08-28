@@ -123,6 +123,7 @@ class GiftcardService {
                                     : null,
             'idempotency_key' => $input['idempotency_key'] ?? null,
             'source'          => $input['source'] ?? 'WEB',
+            'coupon_code'     => $input['coupon_code'] ?? null,
             // Metadata is readable by anyone who can see the transaction, so
             // it carries what was bought and never a card number.
             'metadata'        => array('product' => $product->code, 'quantity' => $quantity),

@@ -7,20 +7,34 @@
  * failure — the operator must always be able to see whose account they are in
  * and get back out — so the markup lives in one partial instead of being
  * copied per theme.
+ *
+ * The banner names the active mode in plain words because that is the only
+ * thing separating "I am looking at a customer's screen" from "I am spending
+ * their wallet": read-only sessions cannot write anything, full-access
+ * sessions can, and both are audited against the staff member.
  */
 $impersonation = $impersonation ?? array();
 if (empty($impersonation['active'])) return;
 $__imp_actor   = $impersonation['actor'] ?? null;
 $__imp_ctx     = $impersonation['context'] ?? array();
+$__imp_full    = (string)($__imp_ctx['mode'] ?? 'READ_ONLY') === 'FULL_ACCESS';
 $__imp_minutes = max(0, (int)ceil(((int)($__imp_ctx['expires_at'] ?? time()) - time()) / 60));
 ?>
-<div role="alert" aria-live="assertive" class="ws-impersonation-banner">
+<div role="alert" aria-live="assertive" class="ws-impersonation-banner<?=$__imp_full ? ' ws-impersonation-full' : ''?>">
   <div class="row justify-between" style="align-items:center;gap:1rem;flex-wrap:wrap;max-width:90rem;margin:0 auto">
     <div>
       <strong style="display:block;letter-spacing:.03em">
+        <?php if ($__imp_full): ?>
+        Administrator Mode — Full access. You are signed in as this customer and can act on their behalf.
+        <?php else: ?>
         Administrator Mode — You are currently viewing this account as an administrator.
+        <?php endif; ?>
       </strong>
       <span class="text-sm">
+        <?php if ($__imp_full): ?>
+          Every action — orders, tickets, wallet spends — is recorded against you in the audit trail.
+          Credential changes stay blocked. ·
+        <?php endif; ?>
         Staff: <?=htmlspecialchars((string)($__imp_actor->username ?? 'staff'))?> ·
         Customer: <?=htmlspecialchars((string)($current_user->username ?? 'customer'))?> ·
         hard expiry in approximately <?=$__imp_minutes?> minute<?=$__imp_minutes === 1 ? '' : 's'?>.

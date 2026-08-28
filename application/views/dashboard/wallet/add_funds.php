@@ -8,10 +8,38 @@ $suggested = min($max, max($min, 5000));
 ?>
 <div class="grid gap-6 lg:grid-cols-3">
   <div class="lg:col-span-2 space-y-6">
+<?php if (!empty($can_choose_currency) && !empty($currency_choices)): ?>
+    <div class="card">
+      <h2 class="card-title">Wallet currency</h2>
+      <p class="muted text-sm mb-3">
+        Choose the currency this wallet holds. It can only be set while the wallet is empty and unused —
+        after the first deposit the currency is fixed, because changing it would re-price every balance
+        and movement already on the account. Purchases are always priced in
+        <?=html_escape($cur)?> and charged at the current exchange rate.
+      </p>
+      <?=form_open('dashboard/wallet/currency', array('class'=>'row'))?>
+        <label class="field" style="flex:1">
+          <span class="label">Hold my wallet in</span>
+          <select class="select" name="currency" required>
+            <?php foreach ($currency_choices as $c): ?>
+              <option value="<?=htmlspecialchars($c->code)?>" <?=strtoupper((string)$c->code)===strtoupper((string)($wallet->currency ?? $cur))?'selected':''?>>
+                <?=htmlspecialchars($c->code)?> — <?=htmlspecialchars($c->name)?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+        <button class="btn btn-primary" type="submit">Set currency</button>
+      <?=form_close()?>
+    </div>
+<?php endif; ?>
     <div class="card">
       <h2 class="card-title">Add funds to your wallet</h2>
-      <p class="muted">Wallet balance is held in <strong><?=html_escape($cur)?></strong> and used to pay for orders. Deposits between <?=marvy_money($min, $cur)?> and <?=marvy_money($max, $cur)?>.</p>
-      <p class="muted text-sm mt-2">Your MARVYSOCIALS wallet is a platform spending balance: it pays for services, orders and other supported purchases inside MarvySocials. Wallet funds are for spending within the platform and stay inside it.</p>
+      <p class="muted">Wallet balance is held in <strong><?=html_escape($wallet->currency ?? $cur)?></strong> and used to pay for orders. Deposits are charged in <?=html_escape($cur)?>, between <?=marvy_money($min, $cur)?> and <?=marvy_money($max, $cur)?>.</p>
+      <?php if (strtoupper((string)($wallet->currency ?? $cur)) !== strtoupper((string)$cur)): ?>
+        <p class="muted text-sm mt-2">Your <?=html_escape($wallet->currency)?> wallet is credited with the <?=html_escape($cur)?> value of the deposit at the current exchange rate, and every purchase is charged in <?=html_escape($cur)?> converted at the rate pinned at that moment.</p>
+      <?php else: ?>
+        <p class="muted text-sm mt-2">Your MARVYSOCIALS wallet is a platform spending balance: it pays for services, orders and other supported purchases inside MarvySocials. Wallet funds are for spending within the platform and stay inside it.</p>
+      <?php endif; ?>
 
       <?=form_open('dashboard/wallet/deposit', array('class'=>'mt-4 stack'))?>
         <label class="field">

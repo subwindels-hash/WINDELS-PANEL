@@ -63,6 +63,7 @@ class Vtu extends Auth_Controller {
             // hash was the same for every tokenless purchase, so a client
             // without the hidden field could buy exactly once and every later
             // attempt silently resolved to that first purchase.
+            'coupon_code' => $this->input->post('coupon_code', true),
             'idempotency_key' => $this->purchase_key(),
             'source'     => 'WEB',
         );
@@ -78,7 +79,11 @@ class Vtu extends Auth_Controller {
 
         $tx = $result['transaction'];
         $this->session->set_flashdata('success',
-            self::$tabs[$tab][2].' purchase '.strtolower($tx->status).'.');
+            self::$tabs[$tab][2].' purchase '.strtolower($tx->status).'.'
+            .(!empty($result['coupon_code']) && bccomp((string)$result['discount'], '0', 8) > 0
+                ? ' Coupon '.htmlspecialchars((string)$result['coupon_code']).' applied — you saved '
+                  .htmlspecialchars(marvy_money($result['discount'])).'.'
+                : ''));
         redirect('dashboard/vtu/receipt/'.$tx->public_id);
     }
 
