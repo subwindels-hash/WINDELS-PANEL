@@ -42,28 +42,32 @@ $auth_site = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySoci
   <main id="main" class="flex-1" tabindex="-1">
     <div class="ws-auth-shell">
       <?php
-        // The panel is real content, not decoration: it carries the brand mark
-        // and the one-line pitch. It used to be aria-hidden, which meant a
-        // screen reader skipped the words and — because the logo's alt text
-        // sat inside it — read the brand name straight into the sentence, so
-        // the whole block announced as one run-on line. The copy is also
-        // overridable, so the staff door does not greet an administrator with
-        // a customer sales pitch.
+        // The panel is real content, not decoration: it carries the pitch for
+        // the form beside it. It used to be aria-hidden, which meant a screen
+        // reader skipped the words entirely. The copy is overridable per
+        // door, so the staff entrance does not greet an administrator with a
+        // customer sales pitch — and since the mark left the panel, the
+        // header above is the only place the logo appears.
         $visual_title = $auth_visual_title ?? 'A wallet you can audit. Orders you can follow.';
         $visual_text  = $auth_visual_text
             ?? 'Prepaid SMM, VTU and digital goods — same ledger, same staff tools.';
+        $visual_points = $auth_visual_points ?? array(
+            'Every price is shown before you confirm — the wallet is only charged when an order is accepted.',
+            'One ledger for top-ups, orders and refunds: the balance you see is a balance you can prove.',
+            'Follow each delivery from pending to completed, with real people on the support desk.',
+        );
       ?>
       <aside class="ws-auth-visual">
         <img src="<?=base_url('assets/images/home/hero.jpg')?>" alt="" width="960" height="1200" aria-hidden="true">
         <div class="ws-auth-visual-inner">
-          <?php // The mark is its own block above a rule: a logo pressed against a
-                // heading reads as the first word of that heading. ?>
-          <div class="ws-auth-visual-brand">
-            <?php $this->load->view('partials/brand_logo', array('variant'=>'dark','height'=>40,'class'=>'ws-logo')); ?>
-          </div>
           <div class="ws-auth-visual-copy">
             <h2><?=htmlspecialchars($visual_title)?></h2>
             <p><?=htmlspecialchars($visual_text)?></p>
+            <ul class="ws-auth-visual-points">
+              <?php foreach ($visual_points as $visual_point): ?>
+                <li><?=htmlspecialchars($visual_point)?></li>
+              <?php endforeach; ?>
+            </ul>
           </div>
         </div>
       </aside>
