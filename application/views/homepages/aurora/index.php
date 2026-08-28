@@ -62,6 +62,15 @@ if (empty($faqs)) {
 .ws-aurora .ws-landing-hero.ms-hero h1.gradient-text{
   background:none;-webkit-background-clip:border-box;background-clip:border-box;
   color:#000;-webkit-text-fill-color:#000;}
+/* "View services" is a white-on-gradient button in marketing.css — on this
+   light hero that left white type on a near-white wash. Solid black label on a
+   white face, with a visible border instead of a white one. */
+.ws-aurora .ws-landing-hero.ms-hero .btn-secondary{
+  background:#fff;border:1px solid rgba(15,23,42,.22);
+  color:#000;-webkit-text-fill-color:#000;}
+.ws-aurora .ws-landing-hero.ms-hero .btn-secondary:hover{
+  background:var(--surface-muted,#f1f5f9);border-color:rgba(15,23,42,.35);
+  color:#000;-webkit-text-fill-color:#000;}
 /* The snapshot strip used to be pulled up 1rem so it grazed the hero. It now
    clears the hero and sits as its own band. */
 .ws-aurora .ws-landing-stats{margin-top:0;padding:3.25rem 0 3rem;}
