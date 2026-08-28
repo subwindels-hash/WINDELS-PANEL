@@ -85,6 +85,34 @@ staff-specific wording on both the GET and the validation-failure path — a
 customer who lands on the staff door should be told it is the staff door, not
 sold a wallet.
 
+### 3a. The mark now stands apart from the write-up
+
+The logo still sat immediately above the heading with a single `.9rem` gap, so
+on `/login`, `/register` and `/admin/login` the wordmark read as the opening
+words of "A wallet you can audit…". The mark is now its own block,
+`.ws-auth-visual-brand`, separated from `.ws-auth-visual-copy` (heading +
+line) by `1.6rem` of space and a hairline `rgba(226,232,240,.30)` rule; below
+880px the same two blocks tighten to `.85rem` instead of collapsing together.
+Markup, not just spacing — a screen reader announces mark, then sentence.
+
+## 3b. The staff door is no longer advertised to customers
+
+`/admin/login` is a separate door on purpose, but three customer-facing
+surfaces pointed straight at it:
+
+* the customer sign-in form ("Staff can also use the dedicated *admin
+  sign-in*"), now just *"Enter the email or username you registered with."*;
+* the default announcement ticker line "Staff sign in at Admin login…",
+  removed from the fallback list in `partials/announcement_bar.php`;
+* the footer's **Staff login** link, now rendered only when
+  `$current_user->role` is `SUPER_ADMIN`, `ADMIN` or `STAFF`.
+
+No route, redirect or permission check changed — `/admin/login` still works
+for anyone who types it, and `Auth::admin_login()` still refuses customer
+credentials. Only the advertising is gone. The on-site assistant still answers
+a direct "where do staff sign in?" question with the link, which is a
+deliberate exception (`SiteOperatorEngineTest::testAdminQuestionPointsAtStaffLogin`).
+
 ## 4. The announcement bar was hard-coded
 
 `partials/announcement_bar.php` printed a fixed marquee. The operator could

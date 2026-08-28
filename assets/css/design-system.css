@@ -921,10 +921,23 @@ button { font-family:inherit; cursor:pointer; }
   display:flex;
   flex-direction:column;
   align-items:flex-start;
-  gap:.9rem;
+  gap:1.6rem;
   max-width:30rem;
 }
 .ws-auth-visual-inner .ws-logo{ margin:0; }
+/* The brand mark is fenced off from the sentence beneath it by space and a
+   hairline rule, so the wordmark is never read as the first word of the
+   heading. */
+.ws-auth-visual-brand{
+  align-self:stretch;
+  padding-bottom:1.4rem;
+  border-bottom:1px solid rgba(226,232,240,.30);
+}
+.ws-auth-visual-copy{
+  display:flex;
+  flex-direction:column;
+  gap:.7rem;
+}
 .ws-auth-visual h2{
   margin:0;
   font-size:clamp(1.35rem,2.2vw,1.9rem);
@@ -942,7 +955,9 @@ button { font-family:inherit; cursor:pointer; }
   }
   .ws-auth-visual img{ display:none; }
   .ws-auth-visual::after{ background:none; }
-  .ws-auth-visual-inner{ gap:.5rem; max-width:none; }
+  .ws-auth-visual-inner{ gap:.85rem; max-width:none; }
+  .ws-auth-visual-brand{ padding-bottom:.7rem; }
+  .ws-auth-visual-copy{ gap:.35rem; }
   .ws-auth-visual h2{ font-size:1.15rem; }
   .ws-auth-visual p{ font-size:.9rem; max-width:none; }
 }

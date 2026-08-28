@@ -1,6 +1,6 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed'); ?>
 <h1 class="text-2xl font-bold tracking-tight">Log in to your account</h1>
-<p class="mt-1 text-sm text-slate-500">Customers and staff use this form. Staff can also use the dedicated <a href="<?=site_url('admin/login')?>">admin sign-in</a>.</p>
+<p class="mt-1 text-sm text-slate-500">Enter the email or username you registered with.</p>
 
 <?=form_open('login', array('class' => 'mt-6 space-y-4', 'autocomplete' => 'on'))?>
   <div>

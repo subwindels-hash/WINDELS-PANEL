@@ -74,7 +74,15 @@ $legal_line = LegalIdentity::line();
       </div>
       <div class="ws-footer-links">
         <a href="<?=site_url('login')?>">Customer login</a>
-        <a href="<?=site_url('admin/login')?>">Staff login</a>
+        <?php
+        // The staff door is not advertised to customers. It is only linked for
+        // someone already signed in with a back-office role; everyone else
+        // reaches /admin/login by typing it, which is the point of a separate
+        // door. Removing the link changes no route and no permission check.
+        $footer_role = isset($current_user->role) ? (string)$current_user->role : '';
+        if (in_array($footer_role, array('SUPER_ADMIN','ADMIN','STAFF'), true)): ?>
+          <a href="<?=site_url('admin/login')?>">Staff login</a>
+        <?php endif; ?>
       </div>
     </div>
   </div>

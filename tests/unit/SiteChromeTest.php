@@ -169,6 +169,49 @@ class SiteChromeTest extends TestCase
             'below 880px the photo is dropped rather than squeezed behind the words');
     }
 
+    public function testTheBrandMarkIsASeparateBlockFromTheSignInCopy()
+    {
+        $src = $this->view('layouts/auth.php');
+        $this->assertStringContainsString('ws-auth-visual-brand', $src,
+            'the logo sits in its own block, not loose above the heading');
+        $this->assertStringContainsString('ws-auth-visual-copy', $src,
+            'the heading and the line are wrapped as one write-up block');
+        $brand = strpos($src, 'ws-auth-visual-brand');
+        $copy  = strpos($src, 'ws-auth-visual-copy');
+        $this->assertNotFalse($brand);
+        $this->assertNotFalse($copy);
+        $this->assertLessThan($copy, $brand, 'the mark comes before the write-up');
+
+        $css = preg_replace('/\s+/', ' ',
+            file_get_contents(self::$root.'/assets/css/design-system.css'));
+        $this->assertMatchesRegularExpression('/\.ws-auth-visual-brand\{[^}]*border-bottom/', $css,
+            'a rule separates the mark from the sentence beneath it');
+        $this->assertMatchesRegularExpression('/\.ws-auth-visual-copy\{[^}]*flex-direction:column/', $css,
+            'the heading and the line stack as their own group');
+    }
+
+    /* ================= the staff door is not advertised ================== */
+
+    public function testCustomersAreNotShownTheAdminSignInDoor()
+    {
+        $login = $this->view('auth/login.php');
+        $this->assertStringNotContainsString('admin/login', $login,
+            'the customer sign-in form must not link the back-office door');
+        $this->assertStringNotContainsString('admin sign-in', $login);
+
+        $announce = $this->view('partials/announcement_bar.php');
+        $this->assertStringNotContainsString('Staff sign in at Admin login', $announce,
+            'the default ticker no longer points visitors at the staff door');
+
+        // The footer keeps the route (staff still need it once signed in) but
+        // only renders it for a back-office role.
+        $footer = $this->view('partials/footer.php');
+        $this->assertStringContainsString('admin/login', $footer);
+        $this->assertMatchesRegularExpression(
+            "/SUPER_ADMIN[^)]*ADMIN[^)]*STAFF.*?admin\/login/s", $footer,
+            'the staff login link is gated behind a staff role');
+    }
+
     public function testTheStaffDoorHasItsOwnWords()
     {
         $src = file_get_contents(self::$root.'/application/controllers/Auth.php');
