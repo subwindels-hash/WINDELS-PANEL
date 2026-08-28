@@ -156,10 +156,8 @@ class Orders extends Auth_Controller {
         $old = $this->session->flashdata('mass_old');
         $wallet = $this->Wallet_model->for_user($this->current_user->id);
         $services = $this->Service_model->active_for_picker();
-        $rates = array();
-        foreach ($services as $service) {
-            $rates[(int)$service->id] = $this->pricingservice->price_for($service, $this->current_user);
-        }
+        // Two queries for the whole picker rather than two per service.
+        $rates = $this->pricingservice->rates_for($services, $this->current_user);
 
         $this->load->view('layouts/app', array(
             'title'        => 'Mass Order',

@@ -5,7 +5,20 @@ class Coupon_model extends MY_Model {
     protected $table = 'coupons';
 
     /** A coupon that is active, within its date window, and not exhausted globally. */
-    public function find_valid($code) {
+    /**
+     * A coupon that may be used right now — optionally, by this customer.
+     *
+     * `usage_limit_per_user` has existed on this table since the shop shipped,
+     * the admin form sets it, it defaults to 1 … and **nothing enforced it**.
+     * A "one per customer" code could be redeemed by the same customer on
+     * every order they ever placed, for ever. That is the failure mode a
+     * public discount code has within hours of being posted anywhere.
+     *
+     * Passing `$user_id` applies the per-customer cap; omitting it answers the
+     * older question ("is this code live at all?") for surfaces such as the
+     * public coupon list, which has no customer in hand.
+     */
+    public function find_valid($code, $user_id = null) {
         $code = strtoupper(trim((string)$code));
         if ($code === '') return null;
         // Escaped inline at the point of interpolation so the fragment can be
@@ -17,7 +30,25 @@ class Coupon_model extends MY_Model {
             ->get($this->table)->row();
         if (!$row) return null;
         if ($row->usage_limit !== null && (int)$row->times_used >= (int)$row->usage_limit) return null;
+        if ($user_id && !$this->within_user_limit($row, $user_id)) return null;
         return $row;
+    }
+
+    /** How many times this customer has already redeemed this coupon. */
+    public function redemptions_by($coupon_id, $user_id) {
+        return (int)$this->db->where('coupon_id', (int)$coupon_id)
+            ->where('user_id', (int)$user_id)
+            ->count_all_results('coupon_redemptions');
+    }
+
+    /** Whether one more redemption by this customer is allowed. */
+    public function within_user_limit($coupon, $user_id) {
+        $limit = $coupon->usage_limit_per_user ?? null;
+        // NULL means unlimited per customer; 0 means the same, because the
+        // admin form stores an empty box as NULL and a deliberate zero would
+        // otherwise make a live coupon unusable by everyone.
+        if ($limit === null || (int)$limit <= 0) return true;
+        return $this->redemptions_by($coupon->id, $user_id) < (int)$limit;
     }
 
     public function find_public($public_id) {

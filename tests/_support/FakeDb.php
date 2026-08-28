@@ -58,6 +58,9 @@ class FakeDb
     private $pending_aggregates = array();
     /** Computed SELECT columns (currently SUBSTR), alias => spec. */
     private $pending_expressions = array();
+
+    /** Values staged with set() before an update(). */
+    private $pending_set = array();
     private $pending_group = array();
     private $affected = 0;
     private $pending_order = array();
@@ -228,6 +231,38 @@ class FakeDb
     public function distinct($flag = true)
     {
         $this->pending_distinct = (bool)$flag;
+        return $this;
+    }
+
+    /**
+     * SQL-escape a value, as CI's driver does.
+     *
+     * Models interpolate escaped values into hand-written WHERE fragments
+     * (`(starts_at IS NULL OR starts_at <= '2026-01-01')`), and without this
+     * the double threw where production works.
+     */
+    public function escape($value)
+    {
+        if ($value === null) return 'NULL';
+        if (is_bool($value)) return $value ? '1' : '0';
+        if (is_int($value) || is_float($value)) return (string)$value;
+        return "'".str_replace("'", "''", (string)$value)."'";
+    }
+
+    /**
+     * set('col', 'col + 1', false) — the atomic-increment form.
+     *
+     * Coupon redemption counts and other counters are incremented this way on
+     * purpose (read-modify-write races over a usage limit), so a double that
+     * cannot express it cannot test them.
+     */
+    public function set($key, $value = null, $escape = true)
+    {
+        if (is_array($key)) {
+            foreach ($key as $k => $v) $this->pending_set[$k] = array('value' => $v, 'escape' => true);
+            return $this;
+        }
+        $this->pending_set[$key] = array('value' => $value, 'escape' => $escape);
         return $this;
     }
 
@@ -419,11 +454,23 @@ class FakeDb
         return true;
     }
 
-    public function update($table, array $data)
+    public function update($table, array $data = array())
     {
         $this->assertTable($table, 'update');
         $where = $this->takeWhere();
         $groups = $this->takeGroups();
+        // Values staged with set(), including the unescaped `col = col + 1`
+        // increment form the counters use.
+        $increments = array();
+        foreach ($this->pending_set as $column => $spec) {
+            if (!$spec['escape'] && preg_match('/^\s*'.preg_quote($column, '/').'\s*\+\s*(\d+)\s*$/i',
+                                               (string)$spec['value'], $m)) {
+                $increments[$column] = (int)$m[1];
+            } else {
+                $data[$column] = $spec['value'];
+            }
+        }
+        $this->pending_set = array();
         foreach ($data as $column => $_) {
             if (!isset($this->schema[$table]['columns'][$column])) {
                 throw new RuntimeException("FakeDb: unknown column {$table}.{$column} in update");
@@ -436,7 +483,11 @@ class FakeDb
         $this->affected = 0;
         foreach ($this->rows[$table] as $i => $row) {
             if ($this->matches($row, $where, array(), array(), $groups)) {
-                $this->rows[$table][$i] = array_merge($row, $data);
+                $merged = array_merge($row, $data);
+                foreach ($increments as $column => $by) {
+                    $merged[$column] = (int)($row[$column] ?? 0) + $by;
+                }
+                $this->rows[$table][$i] = $merged;
                 $this->affected++;
             }
         }

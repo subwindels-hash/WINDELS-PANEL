@@ -104,9 +104,13 @@ class Api_v1 extends MY_Controller {
         $total = $this->db->count_all_results('services', false);
         $rows = $this->db->order_by('sorting','ASC')->limit($limit, $offset)->get()->result();
 
+        // One pricing round trip for the whole page, not two per service: this
+        // endpoint is built to be polled, and a 500-service catalogue used to
+        // cost over a thousand queries per call.
+        $rates = $this->pricingservice->rates_for($rows, $this->user);
         $data = array();
         foreach ($rows as $s) {
-            $data[] = $this->service_payload($s, $this->pricingservice->price_for($s, $this->user));
+            $data[] = $this->service_payload($s, $rates[(int)$s->id] ?? $s->rate);
         }
         $this->ok($data, $this->meta($total, $limit));
     }

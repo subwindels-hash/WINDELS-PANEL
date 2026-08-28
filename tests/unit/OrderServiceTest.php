@@ -398,17 +398,26 @@ class OrderFakeDb {
         if ($t==='orders') return new OrderFakeResult($this->ci->order);
         if ($t==='blacklisted_links') return new OrderFakeResult(array());
         if ($t==='user_service_prices') {
+            // Batched pricing asks for rows keyed by service_id (one query for
+            // a whole catalogue); the double answers in that shape.
             return $this->ci->price_override
-                ? new OrderFakeResult((object)array('rate'=>$this->ci->price_override))
-                : new OrderFakeResult(null);
+                ? new OrderFakeResult(array((object)array(
+                    'service_id' => $this->ci->service->id, 'rate' => $this->ci->price_override)))
+                : new OrderFakeResult(array());
         }
+        if ($t==='service_prices') return new OrderFakeResult(array());
         if ($t==='wallet_transactions') return new OrderFakeResult(null);
         return new OrderFakeResult(null);
     }
 }
 class OrderFakeResult {
     private $row; public $rows;
-    public function __construct($row){ $this->row=$row; $this->rows=$row?array($row):array(); }
+    public function __construct($row){
+        // Accepts either one row or a list, because some queries in the code
+        // under test read row() and others (batched pricing) read result().
+        if (is_array($row)) { $this->rows = $row; $this->row = $row ? $row[0] : null; }
+        else { $this->row = $row; $this->rows = $row ? array($row) : array(); }
+    }
     public function row(){ return $this->row; }
     public function result(){ return $this->rows; }
 }

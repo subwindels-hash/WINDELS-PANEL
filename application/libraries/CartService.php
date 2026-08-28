@@ -61,8 +61,18 @@ class CartService {
         $coupon = null;
         $discount = '0.00000000';
         if (!empty($cart->coupon_code)) {
-            $res = $this->ci->Coupon_model->find_valid($cart->coupon_code);
-            if ($res) {
+            // Re-validated against THIS customer and THIS subtotal every time
+            // the cart is rendered or charged — not just when the code was
+            // typed. Two rules were only ever checked at apply time:
+            //
+            //   · the per-customer usage cap, which nothing enforced at all;
+            //   · the minimum spend, so a customer could apply a coupon that
+            //     needed a ₦100 basket, remove everything down to ₦5 and still
+            //     be charged the discounted total.
+            $res = $this->ci->Coupon_model->find_valid($cart->coupon_code, $cart->user_id);
+            $meets_minimum = $res && ($res->min_order_amount === null
+                || bccomp($subtotal, (string)$res->min_order_amount, 8) >= 0);
+            if ($res && $meets_minimum) {
                 $coupon = $res;
                 $discount = $this->compute_discount($res, $subtotal);
             }
@@ -146,6 +156,9 @@ class CartService {
         if ($code === '') return $this->err('NO_CODE', 'Enter a coupon code.');
         $coupon = $this->ci->Coupon_model->find_valid($code);
         if (!$coupon) return $this->err('INVALID_COUPON', 'That coupon is not valid or has expired.');
+        if (!$this->ci->Coupon_model->within_user_limit($coupon, $user_id)) {
+            return $this->err('ALREADY_USED', 'You have already used this coupon.');
+        }
 
         $view = $this->view($user_id);
         if ($coupon->min_order_amount !== null && bccomp($view['subtotal'], $coupon->min_order_amount, 8) < 0) {
