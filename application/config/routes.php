@@ -396,6 +396,7 @@ $route['admin/email-templates'] = 'admin/content/email_templates';
 $route['admin/email-templates/create'] = 'admin/content/create_email_template';
 $route['admin/email-templates/(:num)'] = 'admin/content/save_email_template/$1';
 $route['admin/administrators'] = 'admin/staff/administrators';
+$route['admin/administrators/create'] = 'admin/staff/create';
 $route['admin/logs'] = 'admin/system/logs';
 $route['admin/cron'] = 'admin/system/cron';
 // Pausing a background job is a write: POST-only, gated on settings.manage.

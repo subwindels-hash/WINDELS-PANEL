@@ -69,6 +69,34 @@ class Staff extends Admin_Controller {
         ));
     }
 
+    /**
+     * POST /admin/administrators/create — mint another administrator.
+     *
+     * Creating is additive, so the last-super-admin lockout guards do not
+     * apply; the privilege rule does: only a SUPER_ADMIN may create another
+     * SUPER_ADMIN, and that check lives in UserAdminService where the
+     * set_role() copy already lives, so the two cannot drift apart.
+     */
+    public function create() {
+        $this->guard();
+        $res = $this->useradminservice->create_admin($this->current_user, array(
+            'username' => $this->input->post('username', true),
+            'email'    => $this->input->post('email', true),
+            'password' => (string)$this->input->post('password'),
+            'role'     => $this->input->post('role', true),
+        ));
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error']);
+            return redirect('admin/administrators');
+        }
+
+        $this->session->set_flashdata('success', sprintf(
+            '%s account created for %s. Hand the password over privately — they should change it from Account → Security after signing in.',
+            $res['user']->role, $res['user']->username
+        ));
+        redirect('admin/administrators');
+    }
+
     /** GET /admin/staff — the staff directory. */
     public function index() {
         $filters = array(

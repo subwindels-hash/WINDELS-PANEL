@@ -203,15 +203,21 @@ class Users extends Admin_Controller {
     }
 
     /**
-     * POST /admin/customers/:id/impersonate — enter a read-only support lens.
+     * POST /admin/customers/:id/impersonate — enter the customer's dashboard.
      *
-     * The service independently repeats the role, permission, target, reason
-     * and session checks. This controller gate keeps the route conventional;
-     * it is not the only thing protecting the identity switch.
+     * Read-only (diagnostic lens) or full-access (act on their behalf) is
+     * chosen on the form; anything other than the full-access constant falls
+     * back to read-only, so a mangled or absent field can never widen the
+     * session. The service independently repeats the role, permission, target,
+     * reason and session checks. This controller gate keeps the route
+     * conventional; it is not the only thing protecting the identity switch.
      */
     public function impersonate($public_id) {
         if ($this->input->method(true) !== 'POST') show_404();
         $user = $this->guard($public_id, 'users.impersonate');
+        $mode = $this->input->post('mode', true) === ImpersonationService::MODE_FULL_ACCESS
+            ? ImpersonationService::MODE_FULL_ACCESS
+            : ImpersonationService::MODE_READ_ONLY;
         $res = $this->impersonationservice->start(
             $this->current_user,
             $user,
@@ -219,12 +225,15 @@ class Users extends Admin_Controller {
             $this->input->post('confirm', true) === '1',
             $this->input->ip_address(),
             $this->input->user_agent(),
-            $this->request_id
+            $this->request_id,
+            $mode
         );
         if (empty($res['ok'])) return $this->fail($user, $res['error']);
 
-        $this->session->set_flashdata('success',
-            'Read-only customer impersonation started. End it from the persistent banner when finished.');
+        $this->session->set_flashdata('success', $mode === ImpersonationService::MODE_FULL_ACCESS
+            ? 'Full-access impersonation started. You are acting as this customer and every action is '
+              .'recorded against you. Use the banner to return to your staff account.'
+            : 'Read-only customer impersonation started. End it from the persistent banner when finished.');
         redirect('dashboard');
     }
 

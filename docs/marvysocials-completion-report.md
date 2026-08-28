@@ -75,6 +75,24 @@ that resets with a new session is not a limit. New accounts are issued a
 starting PIN at sign-up (switchable in Admin → Settings) and told it once by
 notification and email.
 
+**Admin access, three ways.** Admin → Administrators can now *create*
+administrator accounts (not just list them), with the same privilege rule as
+promotion — only a SUPER_ADMIN may mint a SUPER_ADMIN — a complete account
+shape (verified address the operator vouched for, zero-balance wallet, real
+password hash) and an audit row naming the creator and never the password.
+Administrators also get self-service profile editing like customers: the admin
+sidebar links **My profile**, and email changes re-verify, avatars upload
+through MediaService, passwords rotate from Account → Security. And
+impersonation grew a second mode: alongside the original read-only lens,
+staff with `users.impersonate` can start a **full-access** session from the
+customer file and act on the customer's behalf — place orders, open tickets,
+spend their wallet — with every request audited against the staff member,
+the 30-minute hard expiry intact, the admin area still unreachable, and
+credential screens (email, password, PIN, MFA, identity, API keys) writable
+by nobody in either mode, because that would be account takeover, not
+support. See `docs/customer-impersonation.md` and
+`docs/module-admin-account-access.md`.
+
 **Blockonomics BTC.** A real adapter — address generation, live rate quoting,
 callback verification, confirmation threshold, underpayment tolerance — and,
 unlike the six pre-existing gateway scaffolds, actually routed by

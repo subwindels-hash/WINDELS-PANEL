@@ -45,9 +45,10 @@ class MY_Controller extends CI_Controller {
             $this->auth = null;
         }
 
-        // A customer impersonation is a read-only support lens, not a second
-        // customer login. Keep its request boundary in the common base so an
-        // operator cannot bypass it by posting to a public/auth controller
+        // A customer impersonation is an audited support session — read-only
+        // by default, full-access only when the operator explicitly chose
+        // that mode at start. Keep its request boundary in the common base so
+        // an operator cannot bypass it by posting to a public/auth controller
         // instead of a dashboard controller. The one exception is the
         // dedicated POST endpoint that restores the original staff identity.
         $this->enforce_impersonation_request_boundary();
@@ -229,9 +230,40 @@ class MY_Controller extends CI_Controller {
         }
         $method = isset($this->input) ? strtoupper((string)$this->input->method(true)) : '';
         if ($path === 'impersonation/stop' && $method === 'POST') return;
-        $dashboard_read = ($method === 'GET' || $method === 'HEAD')
-            && ($path === 'dashboard' || strpos($path, 'dashboard/') === 0);
-        if (!$dashboard_read) {
+
+        // ImpersonationService may not be loaded yet on the very first
+        // request of a session that was started in an earlier request.
+        $full_access = false;
+        if (is_array($context)) {
+            $this->load->library('ImpersonationService');
+            $full_access = $this->impersonationservice->context_mode($context)
+                === ImpersonationService::MODE_FULL_ACCESS;
+        }
+
+        // Credential- and identity-bearing screens can be READ but never
+        // WRITTEN from an impersonated session, in either mode. Writing the
+        // email, password, PIN, MFA secret, identity documents or API keys
+        // would transfer the account to the staff member permanently — that
+        // is account takeover, not acting on the customer's behalf.
+        $credential_paths = array(
+            'dashboard/profile',   // email change → account takeover
+            'dashboard/security',  // password, PIN, MFA
+            'dashboard/identity',  // KYC identity documents
+            'dashboard/api',       // minting/rescinding customer API keys
+        );
+        $is_read = ($method === 'GET' || $method === 'HEAD');
+        if (!$is_read && in_array($path, $credential_paths, true)) {
+            show_error('Credential and identity changes are blocked while impersonating. '
+                .'End the session and ask the customer to make the change themselves.', 403);
+        }
+
+        $dashboard_request = ($path === 'dashboard' || strpos($path, 'dashboard/') === 0);
+        if (!$dashboard_request) {
+            show_error($full_access
+                ? 'Impersonation is limited to the customer dashboard. End the session to return to the admin area.'
+                : 'Customer impersonation is read-only. End it before making changes.', 403);
+        }
+        if (!$full_access && !$is_read) {
             show_error('Customer impersonation is read-only. End it before making changes.', 403);
         }
     }

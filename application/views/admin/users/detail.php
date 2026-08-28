@@ -224,13 +224,26 @@ $pin_revealable = $pin_set && !empty($user->pin_cipher);
 
 <?php if ($can_impersonate && !$self && $user->status === 'ACTIVE' && $user->role === 'CUSTOMER'): ?>
 <div class="card mb-4" style="border-color:var(--color-warning,#f59e0b)">
-  <h3 style="font-size:1rem;font-weight:600" class="mb-1">Read-only customer impersonation</h3>
+  <h3 style="font-size:1rem;font-weight:600" class="mb-1">Customer impersonation</h3>
   <p class="muted text-xs mb-3">
-    Open this customer's dashboard for support diagnosis. The session is audited, expires after 30 minutes,
-    blocks every write action and never reveals credentials. Use only with customer authorization or an approved support reason.
+    Sign in to this customer's dashboard. The session is audited, expires after 30 minutes, never reveals
+    credentials and never allows credential changes. Use only with customer authorization or an approved
+    support reason.
   </p>
   <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/impersonate')?>">
     <?=$csrf()?>
+    <fieldset class="mb-2" style="border:0;padding:0;margin:0">
+      <legend class="label" style="padding:0">Access level</legend>
+      <label class="row text-xs mb-1" style="gap:.5rem;align-items:flex-start">
+        <input type="radio" name="mode" value="READ_ONLY" checked style="margin-top:.2rem">
+        <span><strong>Read-only</strong> — view their dashboard to diagnose an issue. Every write action is blocked.</span>
+      </label>
+      <label class="row text-xs" style="gap:.5rem;align-items:flex-start">
+        <input type="radio" name="mode" value="FULL_ACCESS" style="margin-top:.2rem">
+        <span><strong>Full access</strong> — act on their behalf: place orders, open tickets, spend their wallet.
+          Every action is recorded against you in the audit trail.</span>
+      </label>
+    </fieldset>
     <label class="field mb-2"><span class="label">Support reason</span>
       <textarea class="input" name="reason" rows="2" minlength="5" maxlength="500" required
                 placeholder="Ticket reference and issue being investigated"></textarea>
@@ -239,7 +252,7 @@ $pin_revealable = $pin_set && !empty($user->pin_cipher);
       <input type="checkbox" name="confirm" value="1" required style="margin-top:.2rem">
       <span>I understand this switches my effective identity to this customer and I must use the warning banner to return to my staff account.</span>
     </label>
-    <button class="btn btn-warning btn-sm" type="submit">Start read-only impersonation</button>
+    <button class="btn btn-warning btn-sm" type="submit">Start impersonation</button>
   </form>
 </div>
 <?php endif; ?>

@@ -22,13 +22,19 @@ require __DIR__.'/_app_context.php';
 <?php if (!empty($brand['brand_primary_color'])): ?>
 <style><?=':root{--ws-primary:'.htmlspecialchars($brand['brand_primary_color']).'}'?></style>
 <?php endif; ?>
-<?php if (!empty($impersonation['active'])): ?>
+<?php
+// Full-access impersonation must NOT grey out forms — the operator chose a
+// session that can write. Read-only sessions keep the visual lock below so
+// the disabled forms match the boundary enforced server-side.
+$__imp_mode = !empty($impersonation['context']['mode'])
+    ? (string)$impersonation['context']['mode'] : 'READ_ONLY';
+if (!empty($impersonation['active']) && $__imp_mode !== 'FULL_ACCESS'): ?>
 <style>
 .impersonation-read-only main form[method="post" i] { opacity:.48; pointer-events:none; filter:grayscale(.35); }
 </style>
 <?php endif; ?>
 </head>
-<body class="min-h-screen bg-slate-50 text-slate-900 antialiased ws-app-shell<?=!empty($impersonation['active']) ? ' impersonation-read-only' : ''?>">
+<body class="min-h-screen bg-slate-50 text-slate-900 antialiased ws-app-shell<?=!empty($impersonation['active']) ? ($__imp_mode === 'FULL_ACCESS' ? ' impersonation-full-access' : ' impersonation-read-only') : ''?>">
 <?php $this->load->view('partials/announcement'); ?>
 <?php $this->load->view('partials/impersonation_banner', array(
   'impersonation' => $impersonation ?? array(),

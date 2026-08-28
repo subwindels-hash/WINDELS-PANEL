@@ -2,13 +2,27 @@
 defined('BASEPATH') OR exit('No direct script access allowed');
 
 /**
- * A short-lived, read-only support session inside a customer's dashboard.
+ * A short-lived, audited support session inside a customer's dashboard.
  *
  * Impersonation is intentionally not a second login mechanism. The original
- * staff identity stays in server-side session state, every page view is
- * attributed to that staff member, and all non-dashboard / non-read requests
- * are rejected by MY_Controller. This lets support reproduce what a customer
- * sees without gaining a path that can spend their wallet or alter their data.
+ * staff identity stays in server-side session state and every page view is
+ * attributed to that staff member in the audit trail. Two modes exist:
+ *
+ *   - MODE_READ_ONLY (default): a diagnostic lens. MY_Controller rejects
+ *     every non-GET request and every non-dashboard path, so support can see
+ *     exactly what the customer sees without a path that can spend their
+ *     wallet or alter their data.
+ *   - MODE_FULL_ACCESS: act on the customer's behalf — place orders, open
+ *     tickets, spend their wallet. Every request (including writes) is still
+ *     recorded against the staff member by record_access(), the hard 30-minute
+ *     expiry still applies, and credential-bearing screens (email, password,
+ *     PIN, MFA, identity documents, API keys) stay blocked in every mode:
+ *     writing those would hand the account over permanently, which is account
+ *     takeover, not support.
+ *
+ * The mode is stored in the signed session context and re-validated by
+ * context_shape_is_valid() on every request, so a read-only session cannot be
+ * upgraded in place by editing the cookie.
  */
 class ImpersonationService {
 
@@ -16,6 +30,8 @@ class ImpersonationService {
     const TTL = 1800; // 30 minutes, hard expiry (not sliding).
     const MIN_REASON_LENGTH = 5;
     const MAX_REASON_LENGTH = 500;
+    const MODE_READ_ONLY = 'READ_ONLY';
+    const MODE_FULL_ACCESS = 'FULL_ACCESS';
 
     private $ci;
 
@@ -27,14 +43,27 @@ class ImpersonationService {
     /**
      * Start a support session. The service repeats the controller's permission
      * check so a future caller cannot turn this into an unguarded login switch.
+     *
+     * $mode selects the request boundary (see the class comment). Anything
+     * outside the two known constants is rejected rather than silently
+     * downgraded — a caller that cannot name the mode it wants has not made
+     * the decision the mode represents.
      */
     public function start($actor, $target, $reason, $confirmed = false,
-                          $ip = null, $user_agent = null, $request_id = null) {
+                          $ip = null, $user_agent = null, $request_id = null,
+                          $mode = self::MODE_READ_ONLY) {
         if ($this->has_context()) {
             return $this->fail('NESTED', 'End the current impersonation session first.');
         }
+        $mode = (string)$mode;
+        if ($mode !== self::MODE_READ_ONLY && $mode !== self::MODE_FULL_ACCESS) {
+            return $this->fail('INVALID_MODE', 'Choose read-only or full-access impersonation.');
+        }
         if (!$confirmed) {
-            return $this->fail('CONFIRMATION_REQUIRED', 'Confirm that this read-only access is required.');
+            return $this->fail('CONFIRMATION_REQUIRED',
+                $mode === self::MODE_FULL_ACCESS
+                    ? 'Confirm that acting on this customer\'s behalf is required.'
+                    : 'Confirm that this read-only access is required.');
         }
 
         $actor_id = is_object($actor) && isset($actor->id) ? (int)$actor->id : 0;
@@ -83,6 +112,7 @@ class ImpersonationService {
             'started_at'       => $started,
             'expires_at'       => $started + self::TTL,
             'original_login_at'=> $original_login_at,
+            'mode'             => $mode,
         );
 
         // Starting without evidence would recreate the exact accountability
@@ -94,7 +124,7 @@ class ImpersonationService {
                 'users',
                 (string)$target->public_id,
                 null,
-                $this->audit_context($context, array('mode' => 'READ_ONLY')),
+                $this->audit_context($context, array('mode' => $mode)),
                 $ip,
                 $user_agent,
                 $request_id
@@ -227,7 +257,12 @@ class ImpersonationService {
         return array('ok' => true, 'actor_restored' => false, 'target' => $target);
     }
 
-    /** Append one immutable row for each customer-dashboard page viewed. */
+    /**
+     * Append one immutable row for each customer-dashboard request served
+     * under impersonation — reads and, in full-access mode, writes too. Every
+     * row carries the mode so an investigator can tell a support lens apart
+     * from a session that could spend the customer's wallet.
+     */
     public function record_access(array $state, $method, $path,
                                   $ip = null, $user_agent = null, $request_id = null) {
         if (empty($state['active']) || empty($state['context'])
@@ -268,10 +303,34 @@ class ImpersonationService {
         return is_array($context) ? $context : null;
     }
 
+    /**
+     * Effective mode of a raw context. Anything absent or unrecognised is
+     * READ_ONLY — the fail-safe direction: an ambiguous context must never
+     * be treated as one that can spend money.
+     */
+    public function context_mode($context) {
+        if (!is_array($context)) return self::MODE_READ_ONLY;
+        return in_array((string)($context['mode'] ?? ''),
+            array(self::MODE_READ_ONLY, self::MODE_FULL_ACCESS), true)
+            ? (string)$context['mode'] : self::MODE_READ_ONLY;
+    }
+
     private function context_shape_is_valid(array $context) {
         foreach (array('version', 'id', 'actor_id', 'target_id', 'target_public_id',
                        'reason', 'started_at', 'expires_at', 'original_login_at') as $key) {
             if (!array_key_exists($key, $context) || is_array($context[$key]) || is_object($context[$key])) {
+                return false;
+            }
+        }
+        // `mode` was added after the first release, so it is optional here —
+        // a session started before the upgrade is read-only by definition —
+        // but a present value must be one of the two known constants. This is
+        // the re-validation that stops a read-only context from being upgraded
+        // to FULL_ACCESS by editing the session payload.
+        if (array_key_exists('mode', $context)) {
+            if (is_array($context['mode']) || is_object($context['mode'])
+                || !in_array((string)$context['mode'],
+                    array(self::MODE_READ_ONLY, self::MODE_FULL_ACCESS), true)) {
                 return false;
             }
         }
@@ -344,6 +403,9 @@ class ImpersonationService {
             'impersonation_id' => (string)$context['id'],
             'target_user_id'   => (int)$context['target_id'],
             'reason'           => (string)($context['reason'] ?? ''),
+            'mode'             => in_array((string)($context['mode'] ?? ''),
+                                  array(self::MODE_READ_ONLY, self::MODE_FULL_ACCESS), true)
+                                  ? (string)$context['mode'] : self::MODE_READ_ONLY,
             'started_at'       => gmdate('Y-m-d H:i:s', (int)$context['started_at']),
             'expires_at'       => gmdate('Y-m-d H:i:s', (int)$context['expires_at']),
         ), $extra);
