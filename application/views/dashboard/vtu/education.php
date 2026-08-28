@@ -35,6 +35,10 @@
     <label class="label" for="quantity">Quantity</label>
     <input class="input mb-4" id="quantity" name="quantity" type="number"
            min="1" max="10" value="1" required>
+    <?php // Module 36: one code works on every purchase in the panel. ?>
+    <label class="label" for="coupon_code_<?=$tab?>">Coupon code (optional)</label>
+    <input class="input mb-4" id="coupon_code_<?=$tab?>" name="coupon_code" maxlength="32"
+           autocomplete="off" style="text-transform:uppercase" placeholder="Promo code">
 
     <button class="btn btn-primary" type="submit">Buy PIN</button>
   </form>

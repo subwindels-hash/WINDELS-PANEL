@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 33), roles,
+-- foreign keys, migration bookkeeping (version 34), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first-login accounts. No migration,
 -- seed or installer command has to run afterwards.
@@ -2226,6 +2226,18 @@ CREATE TABLE IF NOT EXISTS contact_messages (
   CONSTRAINT fk_cmsg_replier FOREIGN KEY (replied_by_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ---------------------------------------------------------------------
+-- migration 034_coupon_redemption_domains
+-- ---------------------------------------------------------------------
+
+ALTER TABLE coupon_redemptions
+ADD COLUMN domain VARCHAR(16) NULL COMMENT 'Which checkout redeemed it: SHOP|SMM|VTU|NUMBER|IDENTITY|GIFTCARD. Rows from before this column existed are all SHOP',
+ADD COLUMN reference VARCHAR(64) NULL COMMENT 'Public id of the discounted order / service transaction';
+
+UPDATE coupon_redemptions SET domain = 'SHOP' WHERE domain IS NULL;
+
+CREATE INDEX idx_couponredeem_reference ON coupon_redemptions (domain, reference);
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -2240,7 +2252,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (33);
+INSERT INTO migrations (version) VALUES (34);
 
 -- ======================================================================
 -- CORE DATA

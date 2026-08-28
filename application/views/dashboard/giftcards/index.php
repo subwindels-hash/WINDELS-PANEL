@@ -67,6 +67,11 @@ ksort($by_brand);
       minute; if the card is never issued, the charge is refunded automatically.
     </p>
 
+    <?php // Module 36: one code works on every purchase in the panel. ?>
+    <label class="label" for="coupon_code">Coupon code (optional)</label>
+    <input class="input mb-4" id="coupon_code" name="coupon_code" maxlength="32"
+           autocomplete="off" style="text-transform:uppercase" placeholder="Promo code">
+
     <button class="btn btn-primary" type="submit" data-loading-text="Placing order…">Buy card</button>
   </form>
   <?php endif; ?>

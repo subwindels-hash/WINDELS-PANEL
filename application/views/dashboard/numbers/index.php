@@ -53,6 +53,11 @@
       expires, the charge is refunded automatically.
     </p>
 
+    <?php // Module 36: one code works on every purchase in the panel. ?>
+    <label class="label" for="coupon_code">Coupon code (optional)</label>
+    <input class="input mb-4" id="coupon_code" name="coupon_code" maxlength="32"
+           autocomplete="off" style="text-transform:uppercase" placeholder="Promo code">
+
     <button class="btn btn-primary" type="submit">Rent a number</button>
   </form>
   <?php endif; ?>

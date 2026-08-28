@@ -176,18 +176,19 @@ class CartService {
         return array('ok' => true);
     }
 
-    /** Compute the discount a coupon applies to a given subtotal. Shared with checkout. */
+    /**
+     * Compute the discount a coupon applies to a given subtotal.
+     *
+     * Thin delegate: since module 36 the single implementation lives in
+     * CouponService::compute_discount() so the shop cart, SMM orders, VTU,
+     * number rentals, identity checks and gift cards all share one set of
+     * maths (PERCENT, the absolute cap, FIXED) and cannot drift apart.
+     * Kept public because cartservice->view() and the checkout both call it
+     * through this class.
+     */
     public function compute_discount($coupon, $subtotal) {
-        if ($coupon->discount_type === 'FIXED') {
-            $discount = (string)$coupon->discount_value;
-        } else {
-            $discount = bcdiv(bcmul($subtotal, (string)$coupon->discount_value, 8), '100', 8);
-        }
-        if ($coupon->max_discount_amount !== null && bccomp($discount, $coupon->max_discount_amount, 8) > 0) {
-            $discount = (string)$coupon->max_discount_amount;
-        }
-        if (bccomp($discount, $subtotal, 8) > 0) $discount = $subtotal;
-        return $discount;
+        $this->ci->load->library('CouponService');
+        return $this->ci->couponservice->compute_discount($coupon, $subtotal);
     }
 
     /** The shelf price right now: a valid promotion wins over the list price. */

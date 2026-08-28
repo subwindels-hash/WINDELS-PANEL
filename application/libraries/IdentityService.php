@@ -112,6 +112,7 @@ class IdentityService {
                                     ? $this->money($product->provider_cost) : null,
             'idempotency_key' => $input['idempotency_key'] ?? null,
             'source'          => $input['source'] ?? 'WEB',
+            'coupon_code'     => $input['coupon_code'] ?? null,
             // Metadata is readable by anyone who can see the transaction, so it
             // carries the *kind* of check and nothing that identifies a person.
             'metadata'        => array('product' => $product->code, 'id_type' => $product->id_type),

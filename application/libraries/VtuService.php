@@ -273,6 +273,9 @@ class VtuService {
             'provider_cost'   => $provider_cost,
             'idempotency_key' => $s['input']['idempotency_key'] ?? null,
             'source'          => $s['input']['source'] ?? 'WEB',
+            // A coupon, when the customer presented one on the purchase form.
+            // TransactionEngine owns the whole quote/reserve/attach sequence.
+            'coupon_code'     => $s['input']['coupon_code'] ?? null,
             'metadata'        => array('network' => $network->code, 'product' => $product->code),
 
             // Domain detail row, written before the provider is called so a

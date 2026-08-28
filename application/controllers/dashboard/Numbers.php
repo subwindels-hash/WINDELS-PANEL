@@ -58,6 +58,7 @@ class Numbers extends Auth_Controller {
         $result = $this->numberservice->reserve($this->current_user, array(
             'country' => $this->input->post('country', true),
             'service' => $this->input->post('service', true),
+            'coupon_code' => $this->input->post('coupon_code', true),
             // Scoped to the user so one customer's retry key cannot collide
             // with another's, and a double-click cannot double-charge.
             'idempotency_key' => 'num:'.$this->current_user->id.':'

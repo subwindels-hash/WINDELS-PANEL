@@ -53,6 +53,15 @@ class Orders extends Auth_Controller {
         $service = $this->Service_model->find_by_id($order->service_id);
         $history = $this->Order_status_history_model->for_order($order->id);
 
+        // Module 36: if a coupon discounted this order, the detail page says
+        // so — a lower charge with no explanation reads like a pricing bug.
+        $this->load->model('Coupon_model');
+        $redemption = $this->Coupon_model->for_reference('SMM', $order->public_id);
+        $coupon = null;
+        if ($redemption) {
+            $coupon = $this->db->where('id', (int)$redemption[0]->coupon_id)->get('coupons')->row();
+        }
+
         $this->load->view('layouts/app', array(
             'title'        => 'Order #'.$public_id,
             'nav_active'   => 'dashboard/orders',
@@ -63,6 +72,8 @@ class Orders extends Auth_Controller {
             'order'        => $order,
             'service'      => $service,
             'history'      => $history,
+            'coupon'       => $coupon,
+            'coupon_discount' => $coupon ? $redemption[0]->discount_amount : null,
         ));
     }
 
@@ -119,6 +130,7 @@ class Orders extends Auth_Controller {
             'link'            => $this->input->post('link', true),
             'quantity'        => (int)$this->input->post('quantity'),
             'note'            => $this->input->post('note', true),
+            'coupon_code'     => $this->input->post('coupon_code', true),
             'idempotency_key' => $this->input->post('idempotency_key') ?: $this->generate_idem(),
             'source'          => 'WEB',
         );
@@ -132,7 +144,12 @@ class Orders extends Auth_Controller {
         }
 
         $this->session->set_flashdata('success',
-            !empty($result['duplicate']) ? 'Order already exists.' : 'Order placed successfully.');
+            !empty($result['duplicate']) ? 'Order already exists.'
+            : 'Order placed successfully.'
+              .(!empty($result['coupon_code']) && bccomp((string)$result['discount'], '0', 8) > 0
+                  ? ' Coupon '.htmlspecialchars((string)$result['coupon_code']).' applied — you saved '
+                    .htmlspecialchars(marvy_money($result['discount'])).'.'
+                  : ''));
         redirect('dashboard/orders/'.$result['order']->public_id);
     }
 

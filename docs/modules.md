@@ -40,6 +40,7 @@ bash tools/verify_all.sh --admin-password '…' --with-load
 | 24 | The commission that outlived the sale | A referral commission was priced once and never revisited, so a refund landing after it accrued left the referrer paid a share of money the platform had given back. | [module-commission-resync.md](module-commission-resync.md) |
 | 34 | PINs at sign-up, provider deletion, the contact inbox | Accounts started PIN-less and staff could never read a PIN back; a provider row was immortal once added; a visitor's contact email could be listed but not read or answered from the panel. | [module-pin-contact-inbox.md](module-pin-contact-inbox.md) |
 | 35 | Administrators you can add, admin self-service, full-access impersonation | The administrators screen could only list; admins had no visible route to their own profile/email/avatar; impersonation was read-only by design, so staff could never act on a customer's behalf. | [module-admin-account-access.md](module-admin-account-access.md) |
+| 36 | Coupons on every purchase surface | A code minted for a launch gave 10% off a marketplace basket and nothing at all on the four things the panel exists to sell — the SMM order form, the five VTU tabs, numbers, identity and gift cards had no coupon field, so the operator's promise and the customer's experience were two different things. | [module-coupon-domains.md](module-coupon-domains.md) |
 
 ## The pattern
 

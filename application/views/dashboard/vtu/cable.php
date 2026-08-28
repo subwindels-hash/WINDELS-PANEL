@@ -35,6 +35,10 @@
     <label class="label" for="smartcard">Smartcard / IUC number</label>
     <input class="input mb-2" id="smartcard" name="smartcard" inputmode="numeric" required>
     <p class="muted text-xs mb-4">We check the name on the account before charging you.</p>
+    <?php // Module 36: one code works on every purchase in the panel. ?>
+    <label class="label" for="coupon_code_<?=$tab?>">Coupon code (optional)</label>
+    <input class="input mb-4" id="coupon_code_<?=$tab?>" name="coupon_code" maxlength="32"
+           autocomplete="off" style="text-transform:uppercase" placeholder="Promo code">
 
     <button class="btn btn-primary" type="submit">Pay subscription</button>
   </form>

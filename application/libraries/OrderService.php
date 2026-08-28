@@ -127,6 +127,35 @@ class OrderService {
             ? $this->ci->pricingservice->charge_for_quantity($service->provider_rate, $q)
             : null;
 
+        // 4b. Coupon (module 36). Same contract as every other checkout: the
+        // slot is reserved BEFORE the charge, the wallet is charged the
+        // discounted amount only, and a failure anywhere below releases the
+        // slot so a one-per-customer code cannot be burned by an order that
+        // never happened. An invalid code refuses the order — silently
+        // ignoring it would charge more than the submitted form promised.
+        // Prepaid children (drip-feed/subscription runs) never take a coupon:
+        // the parent schedule already paid for them.
+        $coupon = null;
+        $coupon_reservation = null;
+        $coupon_discount = '0.00000000';
+        $coupon_code = strtoupper(trim((string)($input['coupon_code'] ?? '')));
+        if ($coupon_code !== '' && !$prepaid) {
+            $this->ci->load->library('CouponService');
+            $this->ci->load->model('Coupon_model');
+            $quote = $this->ci->couponservice->quote($user, $coupon_code, $charge, 'SMM');
+            if (empty($quote['ok'])) {
+                return array('ok' => false, 'error' => $quote['error'], 'code' => $quote['code']);
+            }
+            $coupon_reservation = $this->ci->Coupon_model->reserve_redemption($quote['coupon'], $user->id);
+            if (empty($coupon_reservation['ok'])) {
+                return array('ok' => false, 'error' => $coupon_reservation['error'],
+                    'code' => $coupon_reservation['code'] ?? 'COUPON_UNAVAILABLE');
+            }
+            $coupon = $quote['coupon'];
+            $coupon_discount = $quote['discount'];
+            $charge = $quote['total'];
+        }
+
         // 5. Charge the wallet (idempotent). The ledger is the only writer.
         // A prepaid child order (drip-feed / subscription run) skips this: its
         // parent already reserved the full charge.
@@ -137,6 +166,7 @@ class OrderService {
                 $wallet->id, $charge, 'ORDER', null, $charge_idem
             );
             if (empty($charged['ok'])) {
+                if ($coupon_reservation) $this->release_coupon($coupon_reservation);
                 $code = ($charged['error'] ?? '') === 'INSUFFICIENT_BALANCE' ? 'INSUFFICIENT_BALANCE' : 'CHARGE_FAILED';
                 return array('ok' => false, 'error' => $charged['error'] ?? 'Could not charge wallet', 'code' => $code);
             }
@@ -151,6 +181,7 @@ class OrderService {
             if (!$prepaid) {
                 $this->ci->ledgerservice->refund($wallet->id, $charge, 'ORDER', null, 'order:rollback:'.$charge_idem);
             }
+            if ($coupon_reservation) $this->release_coupon($coupon_reservation);
             return array('ok' => false, 'error' => 'Could not create order', 'code' => 'PERSIST_FAILED');
         }
 
@@ -165,8 +196,11 @@ class OrderService {
                 'updated_at' => gmdate('Y-m-d H:i:s'),
             ));
             $order = $this->ci->Order_model->find_by_id($order->id);
+            $this->attach_coupon($coupon_reservation, $coupon_discount, $order);
             $this->notify($user, $order);
-            return array('ok' => true, 'order' => $order, 'held' => true);
+            return array('ok' => true, 'order' => $order, 'held' => true,
+                'coupon_code' => $coupon ? (string)$coupon->code : null,
+                'discount'    => $coupon_discount);
         }
         $submit = $this->submit_to_provider($order, $service, $link, $q, $input);
         if (!empty($submit['ok']) && !empty($submit['submitted'])) {
@@ -184,6 +218,9 @@ class OrderService {
             if (!$prepaid) {
                 $this->ci->ledgerservice->refund($wallet->id, $charge, 'ORDER', $order->public_id, 'order:refund:'.$order->public_id);
             }
+            // Refunded in full, so the discount was never enjoyed: the coupon
+            // slot goes back with the money.
+            if ($coupon_reservation) $this->release_coupon($coupon_reservation);
             $this->ci->db->where('id', $order->id)->update('orders', array(
                 'note' => $submit['error'] ?? 'Provider submission failed',
             ));
@@ -191,8 +228,25 @@ class OrderService {
             return array('ok' => false, 'order' => $order, 'error' => $submit['error'] ?? 'Submission failed', 'code' => 'SUBMIT_FAILED');
         }
 
+        $this->attach_coupon($coupon_reservation, $coupon_discount, $order);
         $this->notify($user, $order);
-        return array('ok' => true, 'order' => $order);
+        return array('ok' => true, 'order' => $order,
+            'coupon_code' => $coupon ? (string)$coupon->code : null,
+            'discount'    => $coupon_discount);
+    }
+
+    /** Complete a coupon reservation against the order that redeemed it. */
+    private function attach_coupon($reservation, $discount, $order) {
+        if (!$reservation || !$order) return;
+        $this->ci->load->model('Coupon_model');
+        $this->ci->Coupon_model->attach_redemption(
+            (int)$reservation['id'], null, $discount, 'SMM', (string)$order->public_id);
+    }
+
+    /** Give a coupon reservation back — see the contract in place(), step 4b. */
+    private function release_coupon($reservation) {
+        $this->ci->load->model('Coupon_model');
+        return $this->ci->Coupon_model->release_redemption((int)$reservation['id']);
     }
 
     /* -------------------------------------------------------------- */

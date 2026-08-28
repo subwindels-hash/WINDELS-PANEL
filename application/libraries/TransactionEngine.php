@@ -52,6 +52,41 @@ class TransactionEngine {
     }
 
     /**
+     * Resolve a coupon against a purchase amount for this engine's domain.
+     *
+     * One helper because the sequence is the contract (module 36, copied from
+     * the shop checkout that has carried it since module 18): quote → reserve
+     * the slot BEFORE anything charges → charge the discounted amount →
+     * attach on success / release when the customer's money came back. A
+     * coupon whose redemption slot cannot be taken refuses the purchase while
+     * nothing has moved, which is the only safe order.
+     *
+     * @return array{ok:bool, discount?:string, amount?:string, coupon?:object,
+     *               reservation?:array, code?:string, error?:string}
+     */
+    private function resolve_coupon($user_id, $domain, $code, $amount) {
+        $this->ci->load->library('CouponService');
+        $this->ci->load->model('Coupon_model');
+        $quote = $this->ci->couponservice->quote($user_id, $code, $amount, $domain);
+        if (empty($quote['ok'])) {
+            return array('ok' => false, 'code' => $quote['code'] ?? 'INVALID_COUPON',
+                'error' => $quote['error'] ?? 'That coupon could not be applied.');
+        }
+        $reservation = $this->ci->Coupon_model->reserve_redemption($quote['coupon'], $user_id);
+        if (empty($reservation['ok'])) {
+            return array('ok' => false, 'code' => $reservation['code'] ?? 'COUPON_UNAVAILABLE',
+                'error' => $reservation['error'] ?? 'That coupon can no longer be applied.');
+        }
+        return array(
+            'ok'          => true,
+            'discount'    => $quote['discount'],
+            'amount'      => $quote['total'],
+            'coupon'      => $quote['coupon'],
+            'reservation' => $reservation,
+        );
+    }
+
+    /**
      * Run one service purchase end to end.
      *
      * @param object|int $user
@@ -107,19 +142,58 @@ class TransactionEngine {
             }
         }
 
+        // 0b. Coupon (module 36). A code quoted here reduces what the customer
+        // pays before anything is charged, and its redemption slot is taken
+        // before the charge — the same order the shop checkout has used since
+        // the coupon-race fix, so a double-clicked Pay button can never spend
+        // a one-per-customer code twice. An invalid code refuses the purchase
+        // outright: silently ignoring it would charge the customer more than
+        // the form they submitted promised.
+        $coupon = null;
+        $coupon_reservation = null;
+        $coupon_discount = '0.00000000';
+        $coupon_code = isset($spec['coupon_code']) ? strtoupper(trim((string)$spec['coupon_code'])) : '';
+        if ($coupon_code !== '') {
+            $applied = $this->resolve_coupon($user_id, $spec['service_domain'], $coupon_code, $amount);
+            if (empty($applied['ok'])) {
+                return $this->fail_result($applied['error'], $applied['code']);
+            }
+            $coupon = $applied['coupon'];
+            $coupon_reservation = $applied['reservation'];
+            $coupon_discount = $applied['discount'];
+            $amount = $applied['amount'];
+            if (bccomp($amount, '0', 8) <= 0) {
+                // A 100% coupon. Still a real transaction at 0.00 — the
+                // provider is still owed their cost and the purchase still
+                // needs its receipt — but no wallet row is written, because a
+                // zero-value ledger entry is noise, not accounting.
+                $amount = '0.00000000';
+            }
+        }
+
         $wallet = $this->ci->Wallet_model->for_user($user_id);
         if (!$wallet) {
+            if ($coupon_reservation) $this->release_coupon($coupon_reservation);
             return $this->fail_result('Wallet not found', 'NO_WALLET');
         }
         // Cheap pre-check for a clear error message; LedgerService re-checks
         // under FOR UPDATE, which is the authoritative one.
-        if (bccomp($this->money($wallet->balance), $amount, 8) < 0) {
+        if (bccomp($amount, '0', 8) > 0
+            && bccomp($this->money($wallet->balance), $amount, 8) < 0) {
+            if ($coupon_reservation) $this->release_coupon($coupon_reservation);
             return $this->fail_result('Insufficient wallet balance', 'INSUFFICIENT_BALANCE');
         }
 
         // 1. Create the record first, so a provider call can never happen
         //    without something durable to attribute it to.
         $now = gmdate('Y-m-d H:i:s');
+        $metadata = isset($spec['metadata']) && is_array($spec['metadata']) ? $spec['metadata'] : array();
+        if ($coupon) {
+            // Readable by anyone who can see the transaction: what was saved,
+            // never more than the receipt already shows.
+            $metadata['coupon_code'] = (string)$coupon->code;
+            $metadata['coupon_discount'] = $coupon_discount;
+        }
         $tx_id = $this->ci->Service_transaction_model->create(array(
             'public_id'       => marvy_public_id(),
             'user_id'         => $user_id,
@@ -134,10 +208,11 @@ class TransactionEngine {
             'currency'        => isset($wallet->currency) ? $wallet->currency : marvy_base_currency(),
             'idempotency_key' => $idem,
             'source'          => isset($spec['source']) ? $spec['source'] : 'WEB',
-            'metadata'        => isset($spec['metadata']) ? json_encode($spec['metadata']) : null,
+            'metadata'        => $metadata ? json_encode($metadata) : null,
             'created_at'      => $now,
         ));
         if (!$tx_id) {
+            if ($coupon_reservation) $this->release_coupon($coupon_reservation);
             return $this->fail_result('Could not create transaction', 'CREATE_FAILED');
         }
         $this->record_status($tx_id, null, 'PENDING', 'SYSTEM');
@@ -148,25 +223,30 @@ class TransactionEngine {
         }
 
         // 3. Charge. LedgerService is idempotent and holds the row lock.
-        $charge = $this->ci->ledgerservice->charge(
-            $wallet->id, $amount, self::REFERENCE_TYPE, $tx_id,
-            $idem ? $idem.':charge' : null,
-            array('domain' => $spec['service_domain'], 'type' => $spec['service_type'])
-        );
-        if (empty($charge['ok'])) {
-            $reason = isset($charge['error']) ? $charge['error'] : 'Charge failed';
-            $this->transition($tx_id, 'FAILED', 'SYSTEM', $reason, array('refund' => false));
-            return $this->fail_result($reason,
-                $reason === 'INSUFFICIENT_BALANCE' ? 'INSUFFICIENT_BALANCE' : 'CHARGE_FAILED');
-        }
-        // LedgerService returns the wallet transaction's public_id on a fresh
-        // charge, and the row itself when it recognises a duplicate. Resolve
-        // either into the id, so the debit is always traceable from here.
-        $wallet_tx_id = $this->resolve_wallet_tx_id($charge);
-        if ($wallet_tx_id) {
-            $this->ci->Service_transaction_model->update_fields($tx_id, array(
-                'wallet_transaction_id' => $wallet_tx_id,
-            ));
+        //    A 100%-off coupon skips the ledger entry entirely: a zero-value
+        //    wallet row is noise, not accounting.
+        if (bccomp($amount, '0', 8) > 0) {
+            $charge = $this->ci->ledgerservice->charge(
+                $wallet->id, $amount, self::REFERENCE_TYPE, $tx_id,
+                $idem ? $idem.':charge' : null,
+                array('domain' => $spec['service_domain'], 'type' => $spec['service_type'])
+            );
+            if (empty($charge['ok'])) {
+                $reason = isset($charge['error']) ? $charge['error'] : 'Charge failed';
+                $this->transition($tx_id, 'FAILED', 'SYSTEM', $reason, array('refund' => false));
+                if ($coupon_reservation) $this->release_coupon($coupon_reservation);
+                return $this->fail_result($reason,
+                    $reason === 'INSUFFICIENT_BALANCE' ? 'INSUFFICIENT_BALANCE' : 'CHARGE_FAILED');
+            }
+            // LedgerService returns the wallet transaction's public_id on a fresh
+            // charge, and the row itself when it recognises a duplicate. Resolve
+            // either into the id, so the debit is always traceable from here.
+            $wallet_tx_id = $this->resolve_wallet_tx_id($charge);
+            if ($wallet_tx_id) {
+                $this->ci->Service_transaction_model->update_fields($tx_id, array(
+                    'wallet_transaction_id' => $wallet_tx_id,
+                ));
+            }
         }
         $this->transition($tx_id, 'PROCESSING', 'SYSTEM', null, array('refund' => false));
 
@@ -185,10 +265,15 @@ class TransactionEngine {
             // stack trace, and both are now handled.
             log_message('error', 'TransactionEngine dispatch threw: '.$e->getMessage());
             $this->transition($tx_id, 'FAILED', 'PROVIDER', 'Provider error');
+            // The customer was refunded above, so the discount was never
+            // enjoyed: give the coupon slot back rather than burning the
+            // customer's single use of it on a purchase that did not happen.
+            if ($coupon_reservation) $this->release_coupon($coupon_reservation);
             return $this->fail_result('The provider could not be reached', 'PROVIDER_ERROR');
         }
         if (!is_array($result)) {
             $this->transition($tx_id, 'FAILED', 'PROVIDER', 'Malformed provider response');
+            if ($coupon_reservation) $this->release_coupon($coupon_reservation);
             return $this->fail_result('The provider returned an unusable response', 'PROVIDER_ERROR');
         }
 
@@ -202,6 +287,7 @@ class TransactionEngine {
         if (empty($result['ok'])) {
             $reason = isset($result['error']) ? $result['error'] : 'Provider rejected the request';
             $this->transition($tx_id, 'FAILED', 'PROVIDER', $reason);
+            if ($coupon_reservation) $this->release_coupon($coupon_reservation);
             return $this->fail_result($reason, 'PROVIDER_REJECTED');
         }
 
@@ -214,7 +300,32 @@ class TransactionEngine {
             $this->transition($tx_id, 'SUCCESSFUL', 'PROVIDER');
         }
 
-        return array('ok' => true, 'transaction' => $this->ci->Service_transaction_model->find_by_id($tx_id));
+        // The coupon slot only becomes a redemption once the purchase has
+        // actually landed — the same moment the shop checkout attaches its
+        // own reservation. The reference is the transaction's public_id, the
+        // one identifier the customer can see on their receipt.
+        if ($coupon_reservation) {
+            $this->ci->load->model('Coupon_model');
+            $this->ci->Coupon_model->attach_redemption(
+                $coupon_reservation['id'], null, $coupon_discount,
+                (string)$spec['service_domain'],
+                $this->ci->Service_transaction_model->find_by_id($tx_id)->public_id
+            );
+        }
+
+        return array(
+            'ok'          => true,
+            'transaction' => $this->ci->Service_transaction_model->find_by_id($tx_id),
+            'coupon_code' => $coupon ? (string)$coupon->code : null,
+            'discount'    => $coupon_discount,
+        );
+    }
+
+    /** Give a coupon reservation back — see resolve_coupon() for the contract. */
+    private function release_coupon($reservation) {
+        $this->ci->load->model('Coupon_model');
+        return $this->ci->Coupon_model->release_redemption(
+            (int)$reservation['id'], isset($reservation['coupon_id']) ? $reservation['coupon_id'] : null);
     }
 
     /**

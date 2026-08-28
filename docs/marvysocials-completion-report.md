@@ -93,6 +93,23 @@ by nobody in either mode, because that would be account takeover, not
 support. See `docs/customer-impersonation.md` and
 `docs/module-admin-account-access.md`.
 
+**Coupons beyond the shop.** A coupon used to be redeemable at exactly one
+till — the marketplace basket — while the SMM order form, the five VTU
+tabs, the number, identity and gift-card screens priced money out of the
+wallet with no discount step and no field to type a code into. A code is
+now site-wide by design: no domain column on `coupons`, one
+`CouponService::quote()` with the cart's exact rules (validity window,
+minimum spend, percent/fixed with cap, per-customer and global limits), and
+migration 034 stamping each redemption with the `domain` it was spent on and
+the order or transaction `public_id` as `reference`. The module-18 slot
+reservation travels with it — reserved before any charge, released on every
+failure path, and the per-customer limit now holds **across** domains: use a
+code on an SMM order and the airtime form refuses it with "already used".
+A 100% coupon is a real purchase that charges nothing and skips the ledger
+line entirely while still counting the redemption. The reseller API
+deliberately cannot redeem coupons — a recorded product decision enforced
+by a source-gate test. See `docs/module-coupon-domains.md`.
+
 **Blockonomics BTC.** A real adapter — address generation, live rate quoting,
 callback verification, confirmation threshold, underpayment tolerance — and,
 unlike the six pre-existing gateway scaffolds, actually routed by

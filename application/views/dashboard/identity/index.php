@@ -62,6 +62,11 @@ foreach ($products as $p) $by_type[$p->id_type][] = $p;
       national database, the charge is refunded automatically.
     </p>
 
+    <?php // Module 36: one code works on every purchase in the panel. ?>
+    <label class="label" for="coupon_code">Coupon code (optional)</label>
+    <input class="input mb-4" id="coupon_code" name="coupon_code" maxlength="32"
+           autocomplete="off" style="text-transform:uppercase" placeholder="Promo code">
+
     <button class="btn btn-primary" type="submit">Run check</button>
   </form>
   <?php endif; ?>
