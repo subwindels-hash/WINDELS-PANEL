@@ -78,6 +78,8 @@ node tools/devserver/support_check.mjs        --admin-password <pw>   # assistan
 node tools/devserver/marketplace_fulfilment_check.mjs --admin-password <pw> # escrow, refunds, download revocation
 node tools/devserver/seed_load.mjs                              # a year of trading, for measurement (--clean removes it)
 node tools/devserver/perf_check.mjs           --admin-password <pw>   # query cost of every heavy screen under that load
+node tools/devserver/deployment_check.mjs                       # extract the zip, import the SQL, boot it, sign in
+node tools/devdb/import_sql.cjs --port 3410 --file database/marvysocials.sql  # apply a dump over the wire
 ```
 
 `smm_provider_check.mjs` and `refunds_check.mjs` stand up

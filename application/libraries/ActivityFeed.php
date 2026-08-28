@@ -39,10 +39,20 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  */
 class ActivityFeed {
 
-    /** Where each domain's detail page lives, for the customer's own rows. */
+    /**
+     * Where each domain's detail page lives, for the customer's own rows.
+     *
+     * These are URLs, and a URL that does not resolve is a dead link on the
+     * customer's own history page. VTU pointed at `dashboard/vtu/<id>`, which
+     * has no route — its receipt lives under `dashboard/vtu/receipt/<id>` —
+     * so every VTU purchase in the unified history was a 404. It went
+     * unnoticed because the demo data carried no VTU rows for the feed to
+     * render. `ActivityFeedRoutesTest` now resolves every prefix here against
+     * config/routes.php, so a new domain cannot ship with the same fault.
+     */
     private static $customer_routes = array(
         'SMM'      => 'dashboard/orders/',
-        'VTU'      => 'dashboard/vtu/',
+        'VTU'      => 'dashboard/vtu/receipt/',
         'NUMBER'   => 'dashboard/numbers/',
         'IDENTITY' => 'dashboard/identity/',
         'GIFTCARD' => 'dashboard/giftcards/',
