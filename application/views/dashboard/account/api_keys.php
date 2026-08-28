@@ -58,6 +58,32 @@
           <span class="label">IP whitelist (optional, comma-separated)</span>
           <input class="input" name="ip_whitelist" placeholder="203.0.113.10, 203.0.113.11">
         </label>
+
+        <fieldset class="field" style="border:1px solid var(--color-border);border-radius:.6rem;padding:.85rem">
+          <legend class="label" style="padding:0 .35rem">What this key may do</legend>
+          <label class="row" style="gap:.5rem;align-items:flex-start">
+            <input type="radio" name="access_mode" value="full" checked>
+            <span class="text-sm"><strong>Full access</strong> — everything your account can do through the API,
+              including placing orders that spend your wallet.</span>
+          </label>
+          <label class="row mt-2" style="gap:.5rem;align-items:flex-start">
+            <input type="radio" name="access_mode" value="scoped">
+            <span class="text-sm"><strong>Only the scopes I choose</strong> — a key that can read prices but not
+              spend, for a price scraper or a dashboard.</span>
+          </label>
+          <div class="stack mt-3" style="gap:.35rem;padding-left:1.6rem">
+            <?php foreach (($scope_catalogue ?? array()) as $scope => $description): ?>
+              <label class="row" style="gap:.5rem;align-items:flex-start">
+                <input type="checkbox" name="scopes[]" value="<?=htmlspecialchars($scope)?>"
+                       <?=$scope === 'services.read' ? 'checked' : ''?>>
+                <span class="text-sm"><code class="mono"><?=htmlspecialchars($scope)?></code>
+                  — <?=htmlspecialchars($description)?></span>
+              </label>
+            <?php endforeach; ?>
+            <span class="hint">Scopes only apply when "Only the scopes I choose" is selected.</span>
+          </div>
+        </fieldset>
+
         <div><button class="btn btn-primary" type="submit">Generate key</button></div>
       <?=form_close()?>
     </div>

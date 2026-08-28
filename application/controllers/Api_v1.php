@@ -52,9 +52,17 @@ class Api_v1 extends MY_Controller {
         ));
         $this->load->library(array('PricingService','OrderService','RefillService'));
 
+        // Rate limiting used to start only AFTER a key authenticated, which
+        // left the authentication itself unlimited: a client could try API
+        // keys as fast as the server would answer. Failed attempts are counted
+        // per IP first, so guessing is bounded even though the guesser has no
+        // valid key.
+        $this->guard_auth_attempts();
+
         $this->key = $this->apiauthenticator->authenticate();
         if (!$this->key) {
             $err = $this->apiauthenticator->last_error();
+            $this->record_auth_failure();
             // Preserve only the matched key identity for denied-request usage
             // evidence; raw credentials are never returned by the authenticator.
             $this->key = $this->apiauthenticator->resolved_key();
@@ -89,8 +97,12 @@ class Api_v1 extends MY_Controller {
                 $this->db->like('name', $q);
             }
         }
+        // count_all_results($table, false) keeps the builder AND registers the
+        // FROM clause, so naming the table again in get() produced
+        // `FROM services, services` — a cross join that made the flagship
+        // endpoint of the reseller API a 500 on every call.
         $total = $this->db->count_all_results('services', false);
-        $rows = $this->db->order_by('sorting','ASC')->limit($limit, $offset)->get('services')->result();
+        $rows = $this->db->order_by('sorting','ASC')->limit($limit, $offset)->get()->result();
 
         $data = array();
         foreach ($rows as $s) {
@@ -128,6 +140,7 @@ class Api_v1 extends MY_Controller {
     public function create_order() {
         $this->require_post();
         $this->require_scope('orders.write', '/api/v1/orders');
+        $this->enforce_order_rate_limit();
         $body = $this->json_body();
         $payload = array(
             'service'         => $body['service'] ?? null,
@@ -156,6 +169,7 @@ class Api_v1 extends MY_Controller {
     public function create_mass_order() {
         $this->require_post();
         $this->require_scope('orders.write', '/api/v1/orders/mass');
+        $this->enforce_order_rate_limit();
         $this->load->model('Feature_flag_model');
         if (!$this->Feature_flag_model->enabled('mass_order')) {
             $this->fail(404, 'FEATURE_DISABLED', 'Mass orders are not available.');
@@ -338,6 +352,56 @@ class Api_v1 extends MY_Controller {
 
     /* ------------------------------ helpers ------------------------------ */
 
+    /**
+     * Refuse a client that has already burned through its allowance of failed
+     * authentications.
+     *
+     * `peek()` rather than `check()`: the refusal must not itself count, or a
+     * client hammering a locked window would extend the lockout indefinitely
+     * and never recover.
+     */
+    private function guard_auth_attempts() {
+        $limits = $this->config->item('rate_limits');
+        $limit  = max(1, (int)($limits['api_auth']['limit'] ?? 20));
+        $window = max(1, (int)($limits['api_auth']['window'] ?? 300));
+
+        $r = $this->apiratelimiter->peek('api-auth-fail:'.$this->input->ip_address(), $limit, $window);
+        if (!$r['allowed']) {
+            header('Retry-After: '.$r['retry_after']);
+            $this->fail(429, 'TOO_MANY_ATTEMPTS',
+                'Too many failed authentication attempts. Retry after '.$r['retry_after'].'s.');
+        }
+    }
+
+    /** Count one failed authentication against this IP. */
+    private function record_auth_failure() {
+        $limits = $this->config->item('rate_limits');
+        $limit  = max(1, (int)($limits['api_auth']['limit'] ?? 20));
+        $window = max(1, (int)($limits['api_auth']['window'] ?? 300));
+        $this->apiratelimiter->check('api-auth-fail:'.$this->input->ip_address(), $limit, $window);
+    }
+
+    /**
+     * The per-endpoint allowance for write endpoints.
+     *
+     * `rate_limits.api_orders` was declared in config and read by nothing, so
+     * placing orders was bounded only by the global per-key limit. Order
+     * creation costs a provider call and money, so it gets its own, tighter
+     * window on top of the global one.
+     */
+    private function enforce_order_rate_limit() {
+        $limits = $this->config->item('rate_limits');
+        $limit  = max(1, (int)($limits['api_orders']['limit'] ?? 30));
+        $window = max(1, (int)($limits['api_orders']['window'] ?? 60));
+
+        $r = $this->apiratelimiter->check('key-orders:'.$this->key->id, $limit, $window);
+        if (!$r['allowed']) {
+            header('Retry-After: '.$r['retry_after']);
+            $this->fail(429, 'RATE_LIMITED',
+                'Order rate limit exceeded. Retry after '.$r['retry_after'].'s.');
+        }
+    }
+
     private function enforce_rate_limit() {
         $per_min = (int)($this->key->rate_limit_per_minute ?? 0);
         if ($per_min <= 0) {
@@ -375,9 +439,18 @@ class Api_v1 extends MY_Controller {
     }
 
     private function order_payload($o, $with_history = false) {
+        // A freshly created order row has no joined service_public_id, and the
+        // documented `service` field must never come back null for an order
+        // the caller has just placed with a service id.
+        $service_public_id = isset($o->service_public_id) ? $o->service_public_id : null;
+        if ($service_public_id === null && !empty($o->service_id)) {
+            $row = $this->db->select('public_id')->where('id', (int)$o->service_id)->get('services')->row();
+            $service_public_id = $row ? $row->public_id : null;
+        }
+
         $data = array(
             'order' => $o->public_id,
-            'service' => isset($o->service_public_id) ? $o->service_public_id : null,
+            'service' => $service_public_id,
             'status' => $o->status,
             'quantity' => (int)$o->quantity,
             'charge' => (string)$o->charge,
@@ -494,17 +567,34 @@ class Api_v1 extends MY_Controller {
         $out = array('success'=>true,'data'=>$data,'requestId'=>marvy_request_id());
         if ($meta !== null) $out['meta'] = $meta;
         $this->log_usage($code);
-        $this->output->set_status_header($code)->set_output(json_encode($out));
-        exit;
+        $this->respond_json($code, $out);
     }
 
     private function fail($http, $code, $message) {
         $this->log_usage($http);
-        $this->output->set_status_header($http)->set_output(json_encode(array(
+        $this->respond_json($http, array(
             'success'=>false,
             'error'=>array('code'=>$code,'message'=>$message),
             'requestId'=>marvy_request_id(),
-        )));
+        ));
+    }
+
+    /**
+     * Send the JSON envelope and stop.
+     *
+     * `_display()` is not optional here. CodeIgniter only writes the output
+     * buffer during its own teardown, which `exit` skips — so every reseller
+     * API response (including every error raised from the constructor: missing
+     * key, invalid key, IP denied, rate limited) was going out as a bare
+     * status code with an EMPTY body and a text/html content type. A client
+     * had nothing to parse and no error code to act on.
+     */
+    private function respond_json($http, array $payload) {
+        $this->output
+            ->set_content_type('application/json')
+            ->set_status_header($http)
+            ->set_output(json_encode($payload, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE))
+            ->_display();
         exit;
     }
 }

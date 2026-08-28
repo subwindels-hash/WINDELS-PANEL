@@ -69,6 +69,7 @@ node tools/devserver/smm_provider_check.mjs                     # real SMM adapt
 node tools/devserver/page_audit.mjs           --password <pw>   # every dashboard/admin page
 node tools/devserver/link_crawl.mjs           --password <pw>   # follow every internal link
 node tools/devserver/image_audit.mjs          --password <pw>   # every <img> resolves
+node tools/devserver/api_check.mjs            --password <pw>   # reseller API: envelope, scopes, idempotency
 ```
 
 ## What this does and does not prove

@@ -28,6 +28,9 @@ $config['marvy'] = array(
 $config['rate_limits'] = array(
     'api_global' => array('limit' => 60, 'window' => 60),
     'api_orders' => array('limit' => 30, 'window' => 60),
+    // Failed API authentications per IP. Low on purpose: a legitimate reseller
+    // fails auth once (a typo), a key guesser fails continuously.
+    'api_auth'   => array('limit' => 20, 'window' => 300),
     'login' => array('limit' => 5, 'window' => 300),
     'register' => array('limit' => 3, 'window' => 600),
 );

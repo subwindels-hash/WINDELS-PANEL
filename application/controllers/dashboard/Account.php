@@ -285,6 +285,7 @@ class Account extends Auth_Controller {
         $keys = $this->Api_key_model->for_user_safe($this->current_user->id);
 
         $this->render('API Keys', 'dashboard/account/api_keys', 'dashboard/api', array(
+            'scope_catalogue' => ApiKeyPolicy::scopes(),
             'keys'    => $keys,
             'new_key' => $new_key,
         ));
@@ -302,6 +303,25 @@ class Account extends Auth_Controller {
             return null;
         }
         $opts = $parsed['value'] ? array('ip_whitelist'=>$parsed['value']) : array();
+
+        // Scoped keys existed in the policy and were enforced by the API, but
+        // the only screen that could set them was the admin's — a customer
+        // creating their own key always got full access. A read-only key for a
+        // dashboard or a price scraper is the common case, so the choice
+        // belongs here.
+        if ($this->input->post('access_mode', true) === 'scoped') {
+            $catalogue = ApiKeyPolicy::scopes();
+            $chosen = array_values(array_intersect(
+                array_map('strval', (array)$this->input->post('scopes', true)),
+                array_keys($catalogue)
+            ));
+            if (!$chosen) {
+                $this->session->set_flashdata('error', 'Choose at least one scope, or select full access.');
+                return null;
+            }
+            $opts['scopes'] = $chosen;
+        }
+
         $result = $this->auth->create_api_key(
             $this->current_user->id,
             $this->input->post('name', true),
