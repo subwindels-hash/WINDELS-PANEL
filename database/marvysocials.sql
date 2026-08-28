@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 31), roles,
+-- foreign keys, migration bookkeeping (version 32), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first-login accounts. No migration,
 -- seed or installer command has to run afterwards.
@@ -2182,6 +2182,22 @@ CREATE TABLE IF NOT EXISTS cron_job_controls (
   CONSTRAINT fk_cronctl_resumer FOREIGN KEY (resumed_by_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ---------------------------------------------------------------------
+-- migration 032_marketplace_partial_refunds
+-- ---------------------------------------------------------------------
+
+ALTER TABLE marketplace_orders
+ADD COLUMN refunded_amount DECIMAL(20,8) NOT NULL DEFAULT 0
+COMMENT 'Total returned to the buyer so far; never exceeds gross_amount';
+
+ALTER TABLE marketplace_orders
+ADD COLUMN refunded_quantity INT UNSIGNED NOT NULL DEFAULT 0
+COMMENT 'Units returned to stock so far; a goodwill discount returns none';
+
+UPDATE marketplace_orders
+  SET refunded_amount = gross_amount, refunded_quantity = quantity
+WHERE status = 'REFUNDED' AND refunded_amount = 0;
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -2196,7 +2212,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (31);
+INSERT INTO migrations (version) VALUES (32);
 
 -- ======================================================================
 -- CORE DATA

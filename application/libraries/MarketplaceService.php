@@ -408,10 +408,149 @@ class MarketplaceService {
         return array('ok' => true, 'order' => $this->ci->Marketplace_order_model->find_id($order->id));
     }
 
-    /** Admin dispute resolution in the buyer's favour. */
-    public function refund($order, $actor_id, $reason) {
+    /**
+     * Return part of a marketplace order's money to the buyer.
+     *
+     * Escrow shipped all-or-nothing (module 11), which is the right first
+     * shape and the wrong one for a real dispute: two dead keys in a
+     * five-licence bundle, a damaged-but-usable delivery, an agreed discount
+     * after a late shipment. Staff had to choose between refunding everything
+     * — giving away the three licences that worked — and settling it with a
+     * wallet adjustment, which pays the customer while leaving the order
+     * claiming it was paid in full, so every revenue figure overstates by the
+     * amount actually returned.
+     *
+     * The rules, in the order they matter:
+     *
+     *  1. **Never refund more than is left.** The ceiling is
+     *     `gross_amount - refunded_amount`, and a request over it is refused
+     *     rather than clamped: the difference between "refund ₦5,000" and
+     *     "refund what is left, ₦2,000" is a decision for a human.
+     *  2. **Released escrow stays out of reach.** Once the money is the
+     *     platform's, returning it is a wallet adjustment with its own audit
+     *     trail — not a rewrite of a settled order.
+     *  3. **Stock only moves for units actually returned.** A goodwill
+     *     discount returns nothing to the shelf; `$restock` is explicit and
+     *     defaults to none.
+     *  4. **A partial refund does not revoke the goods.** The buyer keeps
+     *     what they part-paid for; a partial refund is compensation, not a
+     *     reversal. Only refunding the last of the money revokes downloads
+     *     and returns the remaining stock, exactly as before.
+     *  5. **The service transaction is updated too**, because that is the row
+     *     every revenue and margin figure reads.
+     *
+     * @param object $order   Marketplace order row.
+     * @param string $amount  Decimal amount to return, in the base currency.
+     * @param int    $restock Units to put back on the shelf (0 = none).
+     */
+    public function refund_partial($order, $amount, $actor_id, $reason, $restock = 0) {
         if (!$order) return $this->err('Order not found', 'NOT_FOUND');
-        if (!in_array($order->status, array('PAID', 'DELIVERED', 'DISPUTED'), true)) {
+        // Released first: a settled order is COMPLETED, and "this order cannot
+        // be refunded" would send staff looking for a bug instead of telling
+        // them the money is already the platform's and the tool they want is a
+        // wallet adjustment.
+        if ($order->released_at) {
+            return $this->err('Released escrow cannot be refunded — use a wallet adjustment',
+                'ALREADY_RELEASED');
+        }
+        if (!in_array($order->status, array('PAID', 'DELIVERED', 'DISPUTED', 'PARTIALLY_REFUNDED'), true)) {
+            return $this->err('This order cannot be refunded', 'BAD_STATE');
+        }
+
+        $amount = $this->money($amount);
+        if (bccomp($amount, '0', 8) <= 0) {
+            return $this->err('Enter an amount greater than zero', 'BAD_AMOUNT');
+        }
+        $already   = $this->money(isset($order->refunded_amount) ? $order->refunded_amount : '0');
+        $remaining = bcsub($this->money($order->gross_amount), $already, 8);
+        if (bccomp($remaining, '0', 8) <= 0) {
+            return $this->err('This order has already been refunded in full', 'ALREADY_REFUNDED');
+        }
+        if (bccomp($amount, $remaining, 8) > 0) {
+            return $this->err('That is more than the '.$remaining.' still refundable on this order',
+                'OVER_REFUND');
+        }
+
+        $restock = max(0, (int)$restock);
+        $units_left = max(0, (int)$order->quantity - (int)(isset($order->refunded_quantity) ? $order->refunded_quantity : 0));
+        if ($restock > $units_left) {
+            return $this->err('That is more units than remain on this order', 'OVER_RESTOCK');
+        }
+
+        // Refunding the last of the money IS a full refund: same closure, same
+        // revocation, same restock of whatever is left. Routing it through
+        // refund() keeps one implementation of "this order is over".
+        $final = bccomp($amount, $remaining, 8) === 0;
+        if ($final) {
+            return $this->refund($order, $actor_id, $reason, $restock === 0 ? null : $restock);
+        }
+
+        $reason = trim((string)$reason);
+        if ($reason === '') $reason = 'Partial refund issued by administrator';
+
+        $tx = $this->ci->Service_transaction_model->find_by_id($order->service_transaction_id);
+        if (!$tx) return $this->err('Transaction not found', 'NOT_FOUND');
+        $wallet = $this->ci->Wallet_model->for_user($order->buyer_id);
+        if (!$wallet) return $this->err('The buyer has no wallet to refund into', 'NO_WALLET');
+
+        $target = bcadd($already, $amount, 8);
+        // The idempotency key carries the cumulative total, so a retried
+        // request pays once while a genuine second partial refund of the same
+        // size still goes through.
+        $res = $this->ci->ledgerservice->refund(
+            $wallet->id, $amount, 'MARKETPLACE_ORDER', $order->public_id,
+            'mp:partial:'.$order->public_id.':'.$target
+        );
+        if (empty($res['ok'])) {
+            return $this->err($res['error'] ?? 'The refund could not be paid', 'REFUND_FAILED');
+        }
+        if (!empty($res['duplicate'])) {
+            return $this->err('That refund has already been paid', 'DUPLICATE');
+        }
+
+        $from = $order->status;
+        $this->ci->Marketplace_order_model->transition($order->id, $from, 'PARTIALLY_REFUNDED', array(
+            'refunded_amount'   => $target,
+            'refunded_quantity' => (int)(isset($order->refunded_quantity) ? $order->refunded_quantity : 0) + $restock,
+        ));
+
+        // Analytics read service_transactions, not marketplace_orders: a
+        // partial refund invisible here would leave net revenue overstated.
+        $this->ci->db->where('id', $tx->id)->update('service_transactions', array(
+            'refunded_amount' => bcadd($this->money(isset($tx->refunded_amount) ? $tx->refunded_amount : '0'), $amount, 8),
+            'updated_at'      => gmdate('Y-m-d H:i:s'),
+        ));
+
+        if ($restock > 0) {
+            $this->ci->Marketplace_listing_model->restore_stock($order->listing_id, $restock);
+        }
+
+        $this->ci->Marketplace_order_model->record_event(
+            $order->id, $actor_id, 'PARTIAL_REFUND', $from, 'PARTIALLY_REFUNDED',
+            mb_substr($amount.' refunded: '.$reason, 0, 500)
+        );
+        $this->audit($actor_id, 'marketplace.order.partial_refund', 'marketplace_order', $order->public_id,
+            array('status' => $from, 'refunded' => $already),
+            array('status' => 'PARTIALLY_REFUNDED', 'refunded' => $target,
+                  'amount' => $amount, 'restocked' => $restock, 'reason' => $reason));
+
+        return array('ok' => true, 'refunded' => $amount, 'refunded_total' => $target,
+                     'remaining' => bcsub($remaining, $amount, 8),
+                     'order' => $this->ci->Marketplace_order_model->find_id($order->id));
+    }
+
+    /** How much of this order could still be returned to the buyer. */
+    public function refundable($order) {
+        if (!$order) return '0.00000000';
+        $already = $this->money(isset($order->refunded_amount) ? $order->refunded_amount : '0');
+        $left = bcsub($this->money($order->gross_amount), $already, 8);
+        return bccomp($left, '0', 8) > 0 ? $left : '0.00000000';
+    }
+
+    /** Admin dispute resolution in the buyer's favour. */
+    public function refund($order, $actor_id, $reason, $restock = null) {
+        if (!$order) return $this->err('Order not found', 'NOT_FOUND');
+        if (!in_array($order->status, array('PAID', 'DELIVERED', 'DISPUTED', 'PARTIALLY_REFUNDED'), true)) {
             return $this->err('This order cannot be refunded', 'BAD_STATE');
         }
         if ($order->released_at) {
@@ -426,10 +565,20 @@ class MarketplaceService {
         try {
             // Claim the same escrow row release uses before refunding. A
             // release and refund can therefore never both commit for one order.
+            // Whatever has already gone back plus whatever is left: a full
+            // refund after a partial one must total the gross, not the gross
+            // twice.
+            $already_returned = $this->money(isset($order->refunded_amount) ? $order->refunded_amount : '0');
+            $units_returned   = (int)(isset($order->refunded_quantity) ? $order->refunded_quantity : 0);
+            $units_left       = max(0, (int)$order->quantity - $units_returned);
+            $restock_units    = $restock === null ? $units_left : min($units_left, max(0, (int)$restock));
+
             if (!$this->ci->Marketplace_order_model->transition($order->id, $from, 'REFUNDED', array(
                 'release_due_at' => null,
                 'resolved_at' => $now,
                 'resolved_by' => $actor_id,
+                'refunded_amount'   => $this->money($order->gross_amount),
+                'refunded_quantity' => $units_returned + $restock_units,
             ))) {
                 $this->ci->db->trans_rollback();
                 return $this->err('Order state changed before the refund', 'CONFLICT');
@@ -445,7 +594,8 @@ class MarketplaceService {
                 $this->ci->db->trans_rollback();
                 return $this->err($res['error'] ?? 'Refund failed', $res['code'] ?? 'REFUND_FAILED');
             }
-            if (!$this->ci->Marketplace_listing_model->restore_stock($order->listing_id, $order->quantity)) {
+            if ($restock_units > 0
+                && !$this->ci->Marketplace_listing_model->restore_stock($order->listing_id, $restock_units)) {
                 $this->ci->db->trans_rollback();
                 return $this->err('Listing stock changed before it could be restored', 'CONFLICT');
             }

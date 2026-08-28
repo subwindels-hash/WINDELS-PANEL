@@ -8,7 +8,8 @@ module 18 ([module-coupon-race.md](module-coupon-race.md)), and item 9 by
 module 19 ([module-legal-identity.md](module-legal-identity.md)) and item 14 by
 module 20 ([module-dashboard-cost.md](module-dashboard-cost.md)) and item 6 by
 module 21 ([module-announcement-links.md](module-announcement-links.md)) and item 5
-by module 22 ([module-cron-control.md](module-cron-control.md)). Closed items stay
+by module 22 ([module-cron-control.md](module-cron-control.md)) and item 3 by
+module 23 ([module-partial-refunds.md](module-partial-refunds.md)). Closed items stay
 in the table below, struck through, so the list reads as a record rather than a
 moving target.
 
@@ -30,7 +31,7 @@ open, and things this sandbox cannot prove.
 |---|---|---|
 | 1 | **Coupons — non-shop domains** | Coupons apply to the marketplace/shop only. SMM orders, VTU, numbers, identity and gift cards have no coupon path at all. An operator expecting a site-wide promo code will not find one. |
 | 2 | **Multi-currency wallets** | `wallets`, `orders` and `service_transactions` carry a `currency` column and every row is the base currency. Currency is display-only; charging in a second currency needs conversion at the ledger boundary and a refund-rate policy. |
-| 3 | **Marketplace partial refunds** | Escrow is all-or-nothing. Multi-item orders would need per-line release/refund. |
+| ~~3~~ | ~~**Marketplace partial refunds**~~ | **Closed (module 23).** `refund_partial()` returns part of an order's money with a cumulative ceiling, optional restock, the goods left in place, and the figure written to both `marketplace_orders` and `service_transactions` so revenue stops overstating. Per-line refunds across a multi-order basket are still per order. |
 | 4 | **Physical shipping flow** | Exists and passes `shop_check` / `physical_product_check`, but was never re-audited against the escrow rules in module 11. |
 | ~~5~~ | ~~**Cron scheduling (write side)**~~ | **Partly closed (module 22).** A job can be paused and resumed from the panel, with a required reason, a named consequence, an audited trail and a 24-hour expiry that resumes it automatically. Installing and editing schedules is still a crontab paste, and there is still deliberately no "run now". |
 | ~~6~~ | ~~**Announcement bar links**~~ | **Closed (module 21).** A line may carry `[label](target)`; the anchor is built, never pasted through, and only site paths, http(s) and mailto are accepted. Raw HTML renders as visible text. |

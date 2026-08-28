@@ -356,6 +356,16 @@ class Marketplace extends Admin_Controller {
         } elseif ($resolution === 'REFUND') {
             $res = $this->marketplaceservice->refund($order, $this->current_user->id, $reason);
             $success = 'Buyer refunded from escrow.';
+        } elseif ($resolution === 'PARTIAL_REFUND') {
+            // A part refund needs an amount, and the amount is the whole
+            // decision: two dead keys out of five is not the same as a
+            // goodwill discount, and only a human knows which this is.
+            $res = $this->marketplaceservice->refund_partial(
+                $order, (string)$this->input->post('amount', true), $this->current_user->id,
+                $reason, (int)$this->input->post('restock', true)
+            );
+            $success = empty($res['ok']) ? '' :
+                'Refunded '.$res['refunded'].' to the buyer; '.$res['remaining'].' still in escrow.';
         } else {
             $res = array('ok' => false, 'error' => 'Choose a valid resolution.');
             $success = '';
@@ -409,6 +419,10 @@ class Marketplace extends Admin_Controller {
             'order' => $order,
             'events' => $this->Marketplace_order_model->events($order->id),
             'plain' => $plain,
+            // What is still returnable, computed once by the service that
+            // enforces the ceiling — the screen must never show a figure the
+            // refund would refuse.
+            'refundable' => $this->marketplaceservice->refundable($order),
             'can_manage' => $this->auth->can('marketplace.manage'),
         ));
     }

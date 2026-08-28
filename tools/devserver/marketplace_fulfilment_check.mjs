@@ -203,6 +203,108 @@ check('nor can a fresh link be minted for it',
   !/\/downloads\/file\?token=/.test(reissue.headers.get('location') || ''),
   reissue.headers.get('location') || String(reissue.status));
 
+/* ==================== 3 · refunding part of an order ===================== */
+
+console.log('\n── A dispute that is not all-or-nothing');
+
+// Escrow was all-or-nothing until module 23: two dead keys in a five-licence
+// bundle meant refunding the whole thing or settling by hand with a wallet
+// adjustment, which pays the customer and leaves the order claiming it was
+// paid in full.
+const partialStamp = Date.now();
+const px = withDb((db) => {
+  const publicId = ('MLSPART' + partialStamp).slice(0, 26).padEnd(26, '0');
+  db.prepare(`INSERT INTO marketplace_listings
+      (public_id, category, title, description, product_type, price, currency,
+       stock, delivery_days, status, is_featured, created_at, updated_at)
+     VALUES (?, 'DIGITAL_GOODS', ?, 'A five-licence bundle.', 'DIGITAL', '1000.00000000',
+             'NGN', 5, 1, 'ACTIVE', 0, datetime('now'), datetime('now'))`)
+    .run(publicId, 'E2E bundle ' + partialStamp);
+  return { publicId, listing: db.prepare(
+    `SELECT * FROM marketplace_listings WHERE public_id = ?`).get(publicId) };
+});
+
+const beforePartial = balance();
+const listingPage2 = await cust.get('/dashboard/marketplace/' + px.publicId);
+await cust.postForm('/dashboard/marketplace/' + px.publicId + '/buy',
+  { quantity: '5', form_token: 'e2e-part-' + partialStamp }, { fromHtml: listingPage2.text });
+
+const partOrder = () => withDb((db) => db.prepare(
+  `SELECT * FROM marketplace_orders WHERE listing_id = ? ORDER BY id DESC LIMIT 1`)
+  .get(px.listing.id));
+check('the bundle was bought', !!partOrder() && beforePartial - balance() === 5000,
+  `${beforePartial} -> ${balance()}`);
+
+// Staff resolve escrow; this check has only had a customer session so far.
+const admin = new Client(BASE);
+await admin.get('/admin/login');
+const adminLogin = await admin.postForm('/admin/login',
+  { identifier: 'admin', password: ADMIN_PASSWORD });
+check('staff signed in to resolve the dispute', /\/admin/.test(adminLogin.url), adminLogin.url);
+
+if (partOrder()) {
+  const orderPage = await admin.get('/admin/marketplace/orders/' + partOrder().public_id);
+  check('the admin screen offers a part refund with the ceiling on it',
+    /PARTIAL_REFUND/.test(orderPage.text) && /Refundable now/.test(orderPage.text));
+
+  // More than is left is refused — and nothing moves.
+  const heldBalance = balance();
+  const tooMuch = await admin.postForm(
+    '/admin/marketplace/orders/' + partOrder().public_id + '/resolve',
+    { resolution: 'PARTIAL_REFUND', amount: '9000', restock: '0', reason: 'fat finger' },
+    { fromHtml: orderPage.text });
+  check('refunding more than is left is refused',
+    /more than the/i.test(tooMuch.text), (/alert[^>]*>([\s\S]{0,140}?)</.exec(tooMuch.text) || [, ''])[1]
+      .replace(/<[^>]+>/g, ' ').trim());
+  check('and no money moved on the refusal', balance() === heldBalance);
+
+  const partPage = await admin.get('/admin/marketplace/orders/' + partOrder().public_id);
+  await admin.postForm('/admin/marketplace/orders/' + partOrder().public_id + '/resolve',
+    { resolution: 'PARTIAL_REFUND', amount: '2000', restock: '2', reason: 'Two keys were dead' },
+    { fromHtml: partPage.text });
+
+  const afterPart = partOrder();
+  check('two fifths came back', balance() - heldBalance === 2000, `${heldBalance} -> ${balance()}`);
+  check('the order says so rather than reading as paid in full',
+    afterPart.status === 'PARTIALLY_REFUNDED' && Number(afterPart.refunded_amount) === 2000,
+    JSON.stringify({ status: afterPart.status, refunded: afterPart.refunded_amount }));
+  check('the two returned units are back on the shelf',
+    Number(withDb((db) => db.prepare(`SELECT stock FROM marketplace_listings WHERE id = ?`)
+      .get(px.listing.id).stock)) === 2,
+    'five in stock, five sold, two returned');
+  check('and the revenue tables see the refund',
+    Number(withDb((db) => db.prepare(`SELECT refunded_amount FROM service_transactions WHERE id = ?`)
+      .get(afterPart.service_transaction_id).refunded_amount)) === 2000);
+  check('the buyer-visible timeline says why',
+    !!withDb((db) => db.prepare(
+      `SELECT id FROM marketplace_order_events WHERE order_id = ? AND note LIKE '%Two keys were dead%'`)
+      .get(afterPart.id)));
+
+  // The rest of it: a full refund after a partial must total the order, not
+  // twice the order.
+  const restPage = await admin.get('/admin/marketplace/orders/' + afterPart.public_id);
+  await admin.postForm('/admin/marketplace/orders/' + afterPart.public_id + '/resolve',
+    { resolution: 'REFUND', reason: 'The rest were dead too' }, { fromHtml: restPage.text });
+  check('refunding the remainder returns exactly what was left',
+    balance() === beforePartial, `${beforePartial} -> ${balance()}`);
+  check('and the order is closed as refunded in full',
+    partOrder().status === 'REFUNDED' && Number(partOrder().refunded_amount) === 5000,
+    JSON.stringify({ status: partOrder().status, refunded: partOrder().refunded_amount }));
+}
+
+withDb((db) => {
+  for (const o of db.prepare(`SELECT id, service_transaction_id FROM marketplace_orders WHERE listing_id = ?`)
+    .all(px.listing.id)) {
+    db.prepare(`DELETE FROM digital_deliveries WHERE marketplace_order_id = ?`).run(o.id);
+    db.prepare(`DELETE FROM marketplace_order_events WHERE order_id = ?`).run(o.id);
+    db.prepare(`DELETE FROM marketplace_orders WHERE id = ?`).run(o.id);
+    db.prepare(`DELETE FROM service_transaction_status_history WHERE service_transaction_id = ?`)
+      .run(o.service_transaction_id);
+    db.prepare(`DELETE FROM service_transactions WHERE id = ?`).run(o.service_transaction_id);
+  }
+  db.prepare(`DELETE FROM marketplace_listings WHERE id = ?`).run(px.listing.id);
+});
+
 /* -------------------------------- cleanup -------------------------------- */
 
 withDb((db) => {

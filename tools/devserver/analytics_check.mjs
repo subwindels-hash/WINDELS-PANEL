@@ -204,18 +204,49 @@ const counters = withDb((db) => db.prepare(
 check('total_deposited matches the deposits actually recorded',
   Math.abs(Number(counters.deposited) - Number(counters.deposits)) < 0.01,
   JSON.stringify(counters));
-// total_spent is a running counter the ledger maintains, floored at zero on
-// each refund — not a figure recomputed from history. Where refunds have
-// exceeded debits (this sandbox's fixtures write wallet rows directly, and
-// e2e refunds outnumber their charges), the counter legitimately sits above
-// the naive difference: each individual decrement stopped at zero. So the
-// contract is "never negative, and exact whenever refunds have not overtaken
-// debits" — which is what migration 027 recomputes to.
-const netSpend = Number(counters.debits) - Number(counters.refunds);
+// total_spent is a RUNNING counter the ledger maintains as money moves — not
+// a figure recomputed from history. Two consequences make an absolute
+// reconstruction the wrong assertion here:
+//
+//   * it is floored at zero on every refund, so once a decrement has stopped
+//     at zero the information is gone and the counter sits permanently above
+//     `debits - refunds`;
+//   * this dev database contains wallet_transactions written DIRECTLY by
+//     `seed_load.mjs`, which never went through the ledger at all.
+//
+// Reconstructing from those rows measures the fixtures, not the code. What
+// actually needs proving is that the counter moves correctly when the
+// application moves money — so this drives a real wallet adjustment through
+// the admin form and asserts the counter tracked it exactly.
 check('total_spent is never negative', Number(counters.spent) >= 0, JSON.stringify(counters));
-check('and matches debits minus refunds whenever that is meaningful',
-  netSpend < 0 || Math.abs(Number(counters.spent) - netSpend) < 0.01,
-  JSON.stringify(counters));
+
+const customerPublicId = withDb((db) => db.prepare(
+  `SELECT public_id FROM users WHERE id = ?`).get(fx.userId).public_id);
+const adjustPage = await admin.get('/admin/customers/' + customerPublicId);
+const spentBefore = Number(withDb((db) => db.prepare(
+  `SELECT total_spent AS s FROM wallets WHERE user_id = ?`).get(fx.userId).s));
+
+await admin.postForm('/admin/customers/' + customerPublicId + '/adjust',
+  { amount: '250', direction: 'DEBIT', reason: 'analytics counter probe',
+    nonce: 'probe-' + Date.now() },
+  { fromHtml: adjustPage.text });
+
+const spentAfterDebit = Number(withDb((db) => db.prepare(
+  `SELECT total_spent AS s FROM wallets WHERE user_id = ?`).get(fx.userId).s));
+check('a debit moves total_spent by exactly the amount charged',
+  Math.abs((spentAfterDebit - spentBefore) - 250) < 0.01,
+  `${spentBefore} -> ${spentAfterDebit}`);
+
+await admin.postForm('/admin/customers/' + customerPublicId + '/adjust',
+  { amount: '250', direction: 'CREDIT', reason: 'analytics counter probe reversal',
+    nonce: 'probe-back-' + Date.now() },
+  { fromHtml: (await admin.get('/admin/customers/' + customerPublicId)).text });
+
+const spentAfterCredit = Number(withDb((db) => db.prepare(
+  `SELECT total_spent AS s FROM wallets WHERE user_id = ?`).get(fx.userId).s));
+check('and a goodwill credit is not counted as spending',
+  Math.abs(spentAfterCredit - spentAfterDebit) < 0.01,
+  `${spentAfterDebit} -> ${spentAfterCredit} — only refunds reduce lifetime spend`);
 
 const wallets = await admin.get('/admin/wallets');
 check('the wallets screen loads', wallets.status === 200);

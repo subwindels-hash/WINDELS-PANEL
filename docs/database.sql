@@ -2145,4 +2145,20 @@ CREATE TABLE IF NOT EXISTS cron_job_controls (
   CONSTRAINT fk_cronctl_resumer FOREIGN KEY (resumed_by_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ---------------------------------------------------------------------
+-- migration 032_marketplace_partial_refunds
+-- ---------------------------------------------------------------------
+
+ALTER TABLE marketplace_orders
+ADD COLUMN refunded_amount DECIMAL(20,8) NOT NULL DEFAULT 0
+COMMENT 'Total returned to the buyer so far; never exceeds gross_amount';
+
+ALTER TABLE marketplace_orders
+ADD COLUMN refunded_quantity INT UNSIGNED NOT NULL DEFAULT 0
+COMMENT 'Units returned to stock so far; a goodwill discount returns none';
+
+UPDATE marketplace_orders
+  SET refunded_amount = gross_amount, refunded_quantity = quantity
+WHERE status = 'REFUNDED' AND refunded_amount = 0;
+
 SET FOREIGN_KEY_CHECKS = 1;
