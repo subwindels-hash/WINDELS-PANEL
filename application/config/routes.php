@@ -308,6 +308,7 @@ $route['admin/customers/(:any)/status'] = 'admin/users/status/$1';
 $route['admin/customers/(:any)/role'] = 'admin/users/role/$1';
 $route['admin/customers/(:any)/price-group'] = 'admin/users/price_group/$1';
 $route['admin/customers/(:any)/adjust'] = 'admin/users/adjust/$1';
+$route['admin/customers/(:any)/wallet-currency'] = 'admin/users/wallet_currency/$1';
 // Credential maintenance. All three are resets, never reveals: staff can
 // clear a PIN or send a reset link, and can never read either secret.
 $route['admin/customers/(:any)/pin-reveal'] = 'admin/users/pin_reveal/$1';

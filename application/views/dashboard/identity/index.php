@@ -14,7 +14,7 @@ foreach ($products as $p) $by_type[$p->id_type][] = $p;
   <?php $this->load->view('dashboard/identity/_flash'); ?>
 
   <p class="muted text-sm mb-4">Wallet balance:
-    <strong><?=marvy_money($wallet->balance)?></strong></p>
+    <strong><?=marvy_money($wallet->balance, $wallet->currency ?? marvy_base_currency())?></strong></p>
 
   <?php if (empty($products)): ?>
     <p class="muted">Identity checks are not on sale yet. Check back shortly.</p>

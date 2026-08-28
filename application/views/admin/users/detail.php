@@ -258,10 +258,36 @@ $pin_revealable = $pin_set && !empty($user->pin_cipher);
 <?php endif; ?>
 
 <?php if ($can_money): ?>
+<?php if (!empty($can_choose_currency) && !empty($currency_choices)): ?>
+<div class="card mb-4">
+  <h3 style="font-size:1rem;font-weight:600" class="mb-1">Wallet currency</h3>
+  <p class="muted text-xs mb-3">
+    One-time choice, available only while the wallet is empty and has never moved money.
+    Once set, purchases charge in <?=htmlspecialchars(marvy_base_currency())?> converted at the rate pinned on each movement.
+  </p>
+  <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/wallet-currency')?>" class="row" style="gap:.5rem;align-items:flex-end;flex-wrap:wrap">
+    <?=$csrf()?>
+    <label class="field"><span class="label">Hold the wallet in</span>
+      <select class="select" name="currency" required>
+        <?php foreach ($currency_choices as $c): ?>
+          <option value="<?=htmlspecialchars($c->code)?>" <?=strtoupper((string)$c->code)===strtoupper((string)$user->wallet->currency)?'selected':''?>>
+            <?=htmlspecialchars($c->code)?> — <?=htmlspecialchars((string)$c->name)?>
+          </option>
+        <?php endforeach; ?>
+      </select>
+    </label>
+    <button class="btn btn-primary btn-sm" type="submit">Set currency</button>
+  </form>
+</div>
+<?php endif; ?>
 <div class="card mb-4">
   <h3 style="font-size:1rem;font-weight:600" class="mb-1">Adjust wallet</h3>
   <p class="muted text-xs mb-3">
     Recorded in the ledger against your account. A debit cannot take the balance below zero.
+    <?php if (strtoupper((string)$user->wallet->currency) !== strtoupper(marvy_base_currency())): ?>
+    This wallet holds <strong><?=htmlspecialchars($user->wallet->currency)?></strong> —
+    adjustments are entered in the wallet's own currency, not <?=htmlspecialchars(marvy_base_currency())?>.
+    <?php endif; ?>
   </p>
   <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/adjust')?>"
         class="row" style="gap:.5rem;align-items:flex-end;flex-wrap:wrap">
@@ -273,7 +299,7 @@ $pin_revealable = $pin_set && !empty($user->pin_cipher);
         <option value="DEBIT">Debit — take funds back</option>
       </select>
     </label>
-    <label class="field"><span class="label">Amount (<?=htmlspecialchars(marvy_base_currency())?>)</span>
+    <label class="field"><span class="label">Amount (<?=htmlspecialchars($user->wallet->currency ?? marvy_base_currency())?>)</span>
       <input class="input mono" type="number" name="amount" step="0.01" min="0.01" required
              placeholder="0.00" style="max-width:9rem">
     </label>

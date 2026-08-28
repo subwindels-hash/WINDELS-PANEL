@@ -137,6 +137,12 @@ class Users extends Admin_Controller {
             'earnings_summary'  => $earnings_summary,
             'earning_rows'      => $earning_rows,
             'payout_rows'       => $payout_rows,
+            // Wallet-currency choice: offered only on a wallet that has never
+            // moved money (Wallet_model::is_virgin), from the currencies the
+            // admin currencies screen has enabled.
+            'can_choose_currency' => $this->Wallet_model->is_virgin($user->wallet),
+            'currency_choices'    => $this->db->where('is_active', 1)
+                ->order_by('is_base', 'DESC')->order_by('code', 'ASC')->get('currencies')->result(),
         ));
     }
 
@@ -200,6 +206,27 @@ class Users extends Admin_Controller {
         $this->audit('wallet.adjusted', $user, $res['before'], $res['after']);
         $this->done($user, 'Wallet adjusted. New balance '
             .marvy_money($res['wallet']->balance, $res['wallet']->currency).'.');
+    }
+
+    /**
+     * POST /admin/customers/:id/wallet-currency — set what an empty,
+     * never-used wallet holds. The virgin-only rule lives in Wallet_model and
+     * is shared with the customer's own picker: once money has moved, no one
+     * — staff or customer — may re-label the wallet, because that would
+     * re-denominate its entire history.
+     */
+    public function wallet_currency($public_id) {
+        $user = $this->guard($public_id, 'wallets.adjust');
+        $res = $this->Wallet_model->choose_currency(
+            $user->id, $this->input->post('currency', true), $this->current_user->id);
+        if (empty($res['ok'])) return $this->fail($user, $res['error']);
+        if (empty($res['unchanged'])) {
+            $this->done($user, 'Wallet currency set. The wallet now holds '
+                .htmlspecialchars($res['wallet']->currency)
+                .'; purchases still charge in '.marvy_base_currency()
+                .' converted at the current rate.');
+        }
+        $this->done($user, 'The wallet already holds '.htmlspecialchars($res['wallet']->currency).'.');
     }
 
     /**

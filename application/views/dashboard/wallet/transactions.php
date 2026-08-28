@@ -31,6 +31,9 @@
             <td><span class="badge badge-default"><?=htmlspecialchars(str_replace('_',' ', $tx->type))?></span></td>
             <td class="text-right mono font-semibold" style="color: $tx->direction==='CREDIT' ? 'var(--success-700)' : 'var(--slate-800)'">
               <?=$tx->direction==='CREDIT'?'+':'−'?><?=marvy_money($tx->amount, $tx->currency)?>
+              <?php if ($tx->base_amount !== null): ?>
+                <div class="text-xs muted font-normal">≈ <?=marvy_money($tx->base_amount, marvy_base_currency())?></div>
+              <?php endif; ?>
             </td>
             <td class="text-right mono muted"><?=marvy_money($tx->balance_after, $tx->currency)?></td>
           </tr>

@@ -255,7 +255,8 @@ class AdminPanelTest extends TestCase
             // Users suspends accounts, grants roles, adjusts balances, starts
             // an explicitly guarded read-only support session, and resets
             // credentials (reset only — a PIN or password can never be read).
-            'Users.php'    => array('status','role','price_group','adjust','impersonate',
+            // wallet_currency sets what an empty wallet may hold (module 37).
+            'Users.php'    => array('status','role','price_group','adjust','wallet_currency','impersonate',
                                     'pin_reset','pin_reveal','pin_unlock','force_logout',
                                     'revoke_keys','password_reset'),
             // Operations refunds through the schedulers' own cancel paths.

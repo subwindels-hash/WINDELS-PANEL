@@ -177,9 +177,11 @@ class TransactionEngine {
             return $this->fail_result('Wallet not found', 'NO_WALLET');
         }
         // Cheap pre-check for a clear error message; LedgerService re-checks
-        // under FOR UPDATE, which is the authoritative one.
+        // under FOR UPDATE, which is the authoritative one. covers() values a
+        // foreign-currency wallet at the current rate so a dollar wallet is
+        // judged by what it can pay for, not by its raw dollar figure.
         if (bccomp($amount, '0', 8) > 0
-            && bccomp($this->money($wallet->balance), $amount, 8) < 0) {
+            && !$this->ci->ledgerservice->covers($wallet, $amount)) {
             if ($coupon_reservation) $this->release_coupon($coupon_reservation);
             return $this->fail_result('Insufficient wallet balance', 'INSUFFICIENT_BALANCE');
         }

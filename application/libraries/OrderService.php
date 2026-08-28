@@ -179,10 +179,20 @@ class OrderService {
             // prepaid order never charged here, so there is nothing to undo —
             // the parent schedule owns that money.
             if (!$prepaid) {
-                $this->ci->ledgerservice->refund($wallet->id, $charge, 'ORDER', null, 'order:rollback:'.$charge_idem);
+                $this->ci->ledgerservice->refund($wallet->id, $charge, 'ORDER', null,
+                    'order:rollback:'.$charge_idem, $charged['fx_rate'] ?? null);
             }
             if ($coupon_reservation) $this->release_coupon($coupon_reservation);
             return array('ok' => false, 'error' => 'Could not create order', 'code' => 'PERSIST_FAILED');
+        }
+        // The charge was taken before the order existed, so it carries no
+        // reference yet. Stamp it now: it makes "which wallet movement paid
+        // for order X?" answerable from the ledger at all, and it is how a
+        // foreign-currency wallet's refund finds the pinned rate to replay
+        // (LedgerService::refund matches the original charge by reference).
+        if (!$prepaid && !empty($charged['public_id'])) {
+            $this->ci->db->where('idempotency_key', $charge_idem)
+                ->update('wallet_transactions', array('reference_id' => $order->public_id));
         }
 
         // 7. Submit to the provider (inline; a queue/worker can take over later).
@@ -216,7 +226,8 @@ class OrderService {
             // Submission failed: mark FAILED and refund the charge immediately.
             $this->transition($order->id, 'PENDING', 'FAILED', 'SYSTEM', $submit['error'] ?? 'Provider submission failed');
             if (!$prepaid) {
-                $this->ci->ledgerservice->refund($wallet->id, $charge, 'ORDER', $order->public_id, 'order:refund:'.$order->public_id);
+                $this->ci->ledgerservice->refund($wallet->id, $charge, 'ORDER', $order->public_id,
+                    'order:refund:'.$order->public_id, $charged['fx_rate'] ?? null);
             }
             // Refunded in full, so the discount was never enjoyed: the coupon
             // slot goes back with the money.

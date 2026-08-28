@@ -8,7 +8,7 @@
   <?php $this->load->view('dashboard/numbers/_flash'); ?>
 
   <p class="muted text-sm mb-4">Wallet balance:
-    <strong><?=marvy_money($wallet->balance)?></strong></p>
+    <strong><?=marvy_money($wallet->balance, $wallet->currency ?? marvy_base_currency())?></strong></p>
 
   <?php if (empty($countries) || empty($products)): ?>
     <?php $this->load->view('partials/empty_state', array(

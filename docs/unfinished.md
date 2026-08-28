@@ -12,9 +12,10 @@ by module 22 ([module-cron-control.md](module-cron-control.md)) and item 3 by
 module 23 ([module-partial-refunds.md](module-partial-refunds.md)), and the
 commission overpayment module 23 itself left open by module 24
 ([module-commission-resync.md](module-commission-resync.md)), and item 1 by
-module 36 ([module-coupon-domains.md](module-coupon-domains.md)). Closed items
-stay in the table below, struck through, so the list reads as a record rather
-than a moving target.
+module 36 ([module-coupon-domains.md](module-coupon-domains.md)), and item 2
+by module 37 ([module-multi-currency-wallets.md](module-multi-currency-wallets.md)).
+Closed items stay in the table below, struck through, so the list reads as a
+record rather than a moving target.
 
 There are **no half-built modules left**. Every module in
 [modules.md](modules.md) is implemented, tested and driven end to end
@@ -33,7 +34,7 @@ open, and things this sandbox cannot prove.
 | # | Name | What is not built |
 |---|---|---|
 | ~~1~~ | ~~**Coupons — non-shop domains**~~ | **Closed (module 36).** One code now works on every purchase surface — SMM orders, the five VTU tabs, numbers, identity, gift cards and the shop — through the same `CouponService::quote()` rules and the module-18 slot reservation, with the per-customer limit enforced **across** domains. Migration 034 stamps each redemption with a `domain` and the order/transaction `public_id` as `reference`. The reseller API deliberately still cannot redeem coupons (a recorded product decision). |
-| 2 | **Multi-currency wallets** | `wallets`, `orders` and `service_transactions` carry a `currency` column and every row is the base currency. Currency is display-only; charging in a second currency needs conversion at the ledger boundary and a refund-rate policy. |
+| ~~2~~ | ~~**Multi-currency wallets**~~ | **Closed (module 37).** A wallet may hold any enabled foreign currency — chosen once, while empty, by the customer or staff, frozen forever after the first movement. Conversion happens at the single ledger boundary (LedgerService, the only wallet writer), so every purchase domain supports a foreign wallet with **no engine changes**; each conversion writes its own four-legged double entry through an `fx:CODE` translation account so each currency's books balance independently. The refund-rate policy is enforced in the ledger: a refund replays the rate **pinned on the charge**, so FX drift can never make a refund create or destroy money. Gateway deposits *denominated* in a foreign currency remain C-category work. |
 | ~~3~~ | ~~**Marketplace partial refunds**~~ | **Closed (module 23).** `refund_partial()` returns part of an order's money with a cumulative ceiling, optional restock, the goods left in place, and the figure written to both `marketplace_orders` and `service_transactions` so revenue stops overstating. Per-line refunds across a multi-order basket are still per order. |
 | 4 | **Physical shipping flow** | Exists and passes `shop_check` / `physical_product_check`, but was never re-audited against the escrow rules in module 11. |
 | ~~5~~ | ~~**Cron scheduling (write side)**~~ | **Partly closed (module 22).** A job can be paused and resumed from the panel, with a required reason, a named consequence, an audited trail and a 24-hour expiry that resumes it automatically. A "Run now" button runs any job once from the screen through the same `CronRegistry` worker and `JobRunner` exclusive lock as the crontab tick (POST-only, `settings.manage`, paused jobs refused, every run recorded and audited). Installing and editing schedules is still a crontab paste. |
@@ -76,4 +77,4 @@ open, and things this sandbox cannot prove.
 3. **19** — run `tools/verify_all.sh` once against real MySQL 8.
 4. ~~**13**~~ — done, module 18.
 5. ~~**9**~~ — done, module 19.
-6. ~~**1**~~ — done, module 36. **2** remains a product decision, not a repair.
+6. ~~**1 / 2**~~ — done, modules 36 and 37.

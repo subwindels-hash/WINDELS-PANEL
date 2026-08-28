@@ -497,9 +497,23 @@ class MarketplaceService {
         // The idempotency key carries the cumulative total, so a retried
         // request pays once while a genuine second partial refund of the same
         // size still goes through.
+        //
+        // The refund reference is the marketplace order, but the charge was
+        // booked against its service transaction (TransactionEngine) — so the
+        // pinned rate a foreign wallet must replay is looked up from THAT row
+        // and passed explicitly. A refund at today's rate instead of the
+        // charge-day rate would quietly create or destroy money.
+        $charge_row = $this->ci->db
+            ->where('wallet_id', $wallet->id)
+            ->where('reference_type', 'ServiceTransaction')
+            ->where('reference_id', (string)$tx->id)
+            ->where('direction', 'DEBIT')
+            ->order_by('id', 'DESC')->limit(1)
+            ->get('wallet_transactions')->row();
+        $fx_rate = ($charge_row && $charge_row->fx_rate !== null) ? (string)$charge_row->fx_rate : null;
         $res = $this->ci->ledgerservice->refund(
             $wallet->id, $amount, 'MARKETPLACE_ORDER', $order->public_id,
-            'mp:partial:'.$order->public_id.':'.$target
+            'mp:partial:'.$order->public_id.':'.$target, $fx_rate
         );
         if (empty($res['ok'])) {
             return $this->err($res['error'] ?? 'The refund could not be paid', 'REFUND_FAILED');

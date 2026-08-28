@@ -48,6 +48,20 @@ class Wallet extends Auth_Controller {
         // table and made no sense at all once the base currency became naira.
         $this->load->model('Setting_model');
 
+        // The currency the wallet itself holds is a one-time choice, offered
+        // only while it is empty and has never moved money (Wallet_model's
+        // rule, shared with the admin customer file). A wallet that already
+        // holds a foreign currency keeps showing what it holds instead.
+        $this->load->library('CurrencyService');
+        $currency_choices = array();
+        $can_choose_currency = false;
+        try {
+            $can_choose_currency = $this->Wallet_model->is_virgin($wallet);
+            if ($can_choose_currency) $currency_choices = $this->currencyservice->active();
+        } catch (Throwable $e) {
+            log_message('error', 'wallet currency choice unavailable: '.$e->getMessage());
+        }
+
         $this->load->view('layouts/app', array(
             'title' => 'Add Funds',
             'nav_active' => 'dashboard/add-funds',
@@ -57,10 +71,36 @@ class Wallet extends Auth_Controller {
             'permissions' => $this->auth->permissions(),
             'wallet' => $wallet,
             'methods' => $methods,
+            'can_choose_currency' => $can_choose_currency,
+            'currency_choices' => $currency_choices,
             'min_deposit' => $this->Setting_model->get('min_deposit', '500.00000000'),
             'max_deposit' => $this->Setting_model->get('max_deposit', '5000000.00000000'),
             'base_currency' => marvy_base_currency(),
         ));
+    }
+
+    /**
+     * POST /dashboard/wallet/currency — the one-time choice of what the
+     * wallet holds. Wallet_model enforces the only rule that matters: an
+     * empty, never-used wallet may choose; anything with history may not,
+     * because re-labelling a funded wallet re-denominates its whole ledger.
+     */
+    public function currency() {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $res = $this->Wallet_model->choose_currency(
+            $this->current_user->id,
+            $this->input->post('currency', true),
+            $this->current_user->id
+        );
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error'] ?? 'Could not set the wallet currency.');
+        } elseif (empty($res['unchanged'])) {
+            $this->session->set_flashdata('success',
+                'Your wallet now holds '.htmlspecialchars($this->input->post('currency', true)).'. '
+                .'Purchases are still priced in '.marvy_base_currency()
+                .' and charged at the current exchange rate.');
+        }
+        redirect('dashboard/add-funds');
     }
 
     /** POST /dashboard/wallet/deposit — initialise a payment. */

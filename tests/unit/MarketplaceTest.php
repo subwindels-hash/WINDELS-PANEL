@@ -204,7 +204,6 @@ class MarketplaceTest extends TestCase
         $app->ledgerservice = new class {
             public function refund() { return array('ok' => false, 'error' => 'simulated outage'); }
         };
-
         $failed = $app->marketplaceservice->refund($order, $admin->id, 'Confirmed issue');
         $this->assertFalse($failed['ok']);
         $this->assertSame('REFUND_FAILED', $failed['code']);
@@ -285,6 +284,7 @@ class MarketplaceTest extends TestCase
     {
         list($app, $buyer) = $this->app();
         $app->ledgerservice = new class {
+            public function covers() { return true; } // pre-check passes; the charge below is what fails
             public function charge() { return array('ok' => false, 'error' => 'simulated charge failure'); }
         };
 

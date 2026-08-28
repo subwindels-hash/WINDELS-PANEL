@@ -110,6 +110,29 @@ line entirely while still counting the redemption. The reseller API
 deliberately cannot redeem coupons — a recorded product decision enforced
 by a source-gate test. See `docs/module-coupon-domains.md`.
 
+**Wallets that hold a foreign currency.** Currency was display-only: a
+customer could browse a USD-converted catalogue while `wallets.currency`
+said NGN on every row, because nothing could set it and nothing that
+charged a wallet knew what to do if it had. A wallet may now hold any
+enabled currency — a one-time choice while it is empty, offered on the
+add-funds page and the admin customer file, frozen after the first
+movement. The conversion lives at the single ledger boundary
+(LedgerService, the only wallet writer): every charge, credit, refund,
+deposit, commission and payout-as-credit still passes a base-currency
+amount and the ledger converts it, pins the rate on the movement
+(`fx_rate` + `base_amount`, migration 035), and writes a four-legged
+double entry through an `fx:CODE` translation account so each currency's
+books balance independently. The refund-rate policy is enforced there too:
+a refund replays the rate pinned at charge time — never the day's rate —
+so FX drift can never make a refund create or destroy money; order and
+dripfeed charges are now stamped with what they paid for, which also made
+"which wallet movement paid for this order?" answerable at all. Staff
+adjustments are typed in the wallet's own currency; a wallet whose rate
+row has vanished is refused rather than moved at an invented rate; admin
+wallet totals are reported per currency and never added together. No
+engine was rewired — a source-gate test fails if any engine reads an
+exchange rate itself. See `docs/module-multi-currency-wallets.md`.
+
 **Blockonomics BTC.** A real adapter — address generation, live rate quoting,
 callback verification, confirmation threshold, underpayment tolerance — and,
 unlike the six pre-existing gateway scaffolds, actually routed by

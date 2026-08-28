@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 34), roles,
+-- foreign keys, migration bookkeeping (version 35), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first-login accounts. No migration,
 -- seed or installer command has to run afterwards.
@@ -2238,6 +2238,14 @@ UPDATE coupon_redemptions SET domain = 'SHOP' WHERE domain IS NULL;
 
 CREATE INDEX idx_couponredeem_reference ON coupon_redemptions (domain, reference);
 
+-- ---------------------------------------------------------------------
+-- migration 035_foreign_wallets
+-- ---------------------------------------------------------------------
+
+ALTER TABLE wallet_transactions
+ADD COLUMN fx_rate DECIMAL(20,8) NULL COMMENT 'Pinned rate for a converted movement: units of the wallet currency per 1 unit of base. NULL when no conversion happened',
+ADD COLUMN base_amount DECIMAL(20,8) NULL COMMENT 'The base-currency value this movement represented at fx_rate. NULL when no conversion happened';
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -2252,7 +2260,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (34);
+INSERT INTO migrations (version) VALUES (35);
 
 -- ======================================================================
 -- CORE DATA
