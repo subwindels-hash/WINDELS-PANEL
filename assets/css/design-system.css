@@ -914,17 +914,21 @@ button { font-family:inherit; cursor:pointer; }
 /* ===================== Sign-in / register split panel ====================
  *
  * The copy in the photo panel used to be top-aligned inside a very tall
- * column, so on a laptop the brand mark, the headline and the sub-line drifted
- * apart with the paragraph stranded halfway up the image; below 880px the
- * panel collapsed to a 220px strip and the same three elements overlapped the
- * photograph. It is now a flex column anchored to the bottom, over a gradient
- * that guarantees contrast, and on small screens the photo is dropped
- * altogether in favour of a compact banner above the form.
+ * column, with a brand mark pressed against the heading; the three elements
+ * drifted apart and, below 880px, overlapped the photograph. The panel is now
+ * a flex column that centres the write-up — vertically in the panel and
+ * horizontally on the page — over a gradient that guarantees contrast, and on
+ * small screens the photo is dropped altogether in favour of a compact banner
+ * above the form. The logo no longer lives in the panel at all: the navy
+ * header above already carries the mark, so the photograph belongs to the
+ * words alone.
  */
 .ws-auth-visual{
   display:flex;
   flex-direction:column;
-  justify-content:flex-end;
+  justify-content:center;
+  align-items:center;
+  text-align:center;
   min-height:32rem;
 }
 .ws-auth-visual::after{
@@ -936,22 +940,14 @@ button { font-family:inherit; cursor:pointer; }
 .ws-auth-visual-inner{
   display:flex;
   flex-direction:column;
-  align-items:flex-start;
-  gap:1.6rem;
-  max-width:30rem;
-}
-.ws-auth-visual-inner .ws-logo{ margin:0; }
-/* The brand mark is fenced off from the sentence beneath it by space and a
-   hairline rule, so the wordmark is never read as the first word of the
-   heading. */
-.ws-auth-visual-brand{
-  align-self:stretch;
-  padding-bottom:1.4rem;
-  border-bottom:1px solid rgba(226,232,240,.30);
+  align-items:center;
+  gap:1.1rem;
+  max-width:32rem;
 }
 .ws-auth-visual-copy{
   display:flex;
   flex-direction:column;
+  align-items:center;
   gap:.7rem;
 }
 .ws-auth-visual h2{
@@ -960,22 +956,41 @@ button { font-family:inherit; cursor:pointer; }
   line-height:1.25;
   text-wrap:balance;
 }
-.ws-auth-visual p{ margin:0; max-width:34ch; line-height:1.6; }
+.ws-auth-visual p{ margin:0 auto; max-width:40ch; line-height:1.6; }
+/* The longer write-up: three short promises under the pitch, separated by
+   hairline rules so the centred paragraphs stay distinct blocks for the eye
+   as they already are for a screen reader. */
+.ws-auth-visual-points{
+  list-style:none;
+  margin:.35rem auto 0;
+  padding:0;
+  max-width:36ch;
+  display:flex;
+  flex-direction:column;
+}
+.ws-auth-visual-points li{
+  padding:.75rem 0;
+  font-size:.92rem;
+  line-height:1.55;
+  color:rgba(255,255,255,.88);
+}
+.ws-auth-visual-points li + li{ border-top:1px solid rgba(226,232,240,.22); }
 @media(max-width:880px){
-  /* Squeezing a photo, a logo and two paragraphs into a 220px strip is what
-     made this read as one run-on sentence. Show the words, drop the picture. */
+  /* Squeezing a photo and four paragraphs into a 220px strip is what made
+     this read as one run-on sentence. Show the words, drop the picture. */
   .ws-auth-visual{
     min-height:0;
-    padding:1.25rem 1.25rem 1.4rem;
-    justify-content:flex-start;
+    padding:1.5rem 1.25rem 1.6rem;
+    justify-content:center;
   }
   .ws-auth-visual img{ display:none; }
   .ws-auth-visual::after{ background:none; }
   .ws-auth-visual-inner{ gap:.85rem; max-width:none; }
-  .ws-auth-visual-brand{ padding-bottom:.7rem; }
   .ws-auth-visual-copy{ gap:.35rem; }
   .ws-auth-visual h2{ font-size:1.15rem; }
   .ws-auth-visual p{ font-size:.9rem; max-width:none; }
+  .ws-auth-visual-points{ margin-top:.25rem; max-width:none; }
+  .ws-auth-visual-points li{ font-size:.85rem; padding:.55rem 0; }
 }
 
 /* The announcement strip takes its colours from Admin → Settings (inline

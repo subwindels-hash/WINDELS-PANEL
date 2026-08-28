@@ -85,15 +85,31 @@ staff-specific wording on both the GET and the validation-failure path — a
 customer who lands on the staff door should be told it is the staff door, not
 sold a wallet.
 
-### 3a. The mark now stands apart from the write-up
+### 3a. The mark has left the panel; the write-up owns it, centred
 
-The logo still sat immediately above the heading with a single `.9rem` gap, so
-on `/login`, `/register` and `/admin/login` the wordmark read as the opening
-words of "A wallet you can audit…". The mark is now its own block,
-`.ws-auth-visual-brand`, separated from `.ws-auth-visual-copy` (heading +
-line) by `1.6rem` of space and a hairline `rgba(226,232,240,.30)` rule; below
-880px the same two blocks tighten to `.85rem` instead of collapsing together.
-Markup, not just spacing — a screen reader announces mark, then sentence.
+The logo used to sit immediately above the heading with a small gap, so on
+`/login`, `/register` and `/admin/login` the wordmark read as the opening
+words of "A wallet you can audit…". It was first fenced off as its own block,
+`.ws-auth-visual-brand`, separated from `.ws-auth-visual-copy` by space and a
+hairline rule — but the navy header above the panel already carries the same
+mark, so the panel now belongs to the words alone: `ws-auth-visual-brand` is
+gone from the markup and the stylesheet, and `brand_logo` is no longer loaded
+inside the aside.
+
+The write-up itself was also bottom-anchored, hugging the lower edge of a very
+tall photograph. The panel is now a flex column justified and aligned to the
+centre (`justify-content:center`, `align-items:center`, `text-align:center`),
+so the heading, the line and the highlight list sit in the optical middle of
+the panel with their text centred. The pitch grew, too: under
+"Prepaid SMM, VTU and digital goods — same ledger, same staff tools." the
+panel now carries a short list of promises (`.ws-auth-visual-points`) — prices
+confirmed before the wallet is charged, one provable ledger, live order
+tracking with a real support desk. The list is overridable per door via
+`$auth_visual_points`, and `Auth::admin_login()` passes staff bullets on both
+the GET and the validation-failure path so the staff panel never inherits the
+customer highlights; below 880px the same blocks tighten rather than
+collapsing together. Markup, not just spacing — a screen reader announces
+heading, then line, then each highlight as its own list item.
 
 ## 3b. The staff door is no longer advertised to customers
 

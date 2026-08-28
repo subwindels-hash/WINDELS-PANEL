@@ -163,31 +163,38 @@ class SiteChromeTest extends TestCase
 
         $css = file_get_contents(self::$root.'/assets/css/design-system.css');
         $this->assertMatchesRegularExpression('/\.ws-auth-visual\{[^}]*flex-direction:column/', $css,
-            'the panel stacks its logo, heading and line as blocks');
+            'the panel stacks the heading and line as blocks');
         $this->assertMatchesRegularExpression('/\.ws-auth-visual img\{\s*display:none/',
             preg_replace('/\s+/', ' ', substr($css, strpos($css, '@media(max-width:880px)'))) ?: '',
             'below 880px the photo is dropped rather than squeezed behind the words');
     }
 
-    public function testTheBrandMarkIsASeparateBlockFromTheSignInCopy()
+    public function testThePanelCarriesTheWriteUpAloneAndCentred()
     {
         $src = $this->view('layouts/auth.php');
-        $this->assertStringContainsString('ws-auth-visual-brand', $src,
-            'the logo sits in its own block, not loose above the heading');
+        $this->assertStringNotContainsString('ws-auth-visual-brand', $src,
+            'the logo was removed from the write-up panel; the header above carries the mark');
+        $aside = substr($src, (int)strpos($src, '<aside class="ws-auth-visual">'));
+        $aside = substr($aside, 0, (int)strpos($aside, '</aside>'));
+        $this->assertStringNotContainsString('brand_logo', $aside,
+            'no brand mark may be loaded inside the write-up panel');
         $this->assertStringContainsString('ws-auth-visual-copy', $src,
-            'the heading and the line are wrapped as one write-up block');
-        $brand = strpos($src, 'ws-auth-visual-brand');
-        $copy  = strpos($src, 'ws-auth-visual-copy');
-        $this->assertNotFalse($brand);
-        $this->assertNotFalse($copy);
-        $this->assertLessThan($copy, $brand, 'the mark comes before the write-up');
+            'the heading, the line and the highlights are wrapped as one write-up block');
+        $this->assertStringContainsString('ws-auth-visual-points', $src,
+            'the panel carries more than one line — the pitch is followed by the highlights');
+        $this->assertStringContainsString('auth_visual_points', $src,
+            'the highlights are overridable so the staff door never reads as a sales pitch');
 
         $css = preg_replace('/\s+/', ' ',
             file_get_contents(self::$root.'/assets/css/design-system.css'));
-        $this->assertMatchesRegularExpression('/\.ws-auth-visual-brand\{[^}]*border-bottom/', $css,
-            'a rule separates the mark from the sentence beneath it');
-        $this->assertMatchesRegularExpression('/\.ws-auth-visual-copy\{[^}]*flex-direction:column/', $css,
-            'the heading and the line stack as their own group');
+        $this->assertMatchesRegularExpression('/\.ws-auth-visual\{[^}]*justify-content:center/', $css,
+            'the write-up sits in the vertical middle of the panel, not pinned to an edge');
+        $this->assertMatchesRegularExpression('/\.ws-auth-visual\{[^}]*text-align:center/', $css,
+            'the write-up is centred on the page');
+        $this->assertMatchesRegularExpression('/\.ws-auth-visual-copy\{[^}]*align-items:center/', $css,
+            'heading, line and highlights stack as one centred group');
+        $this->assertMatchesRegularExpression('/\.ws-auth-visual-points\{[^}]*list-style:none/', $css,
+            'the highlights are styled paragraphs, not raw bullets');
     }
 
     /* ================= the staff door is not advertised ================== */
@@ -216,6 +223,10 @@ class SiteChromeTest extends TestCase
     {
         $src = file_get_contents(self::$root.'/application/controllers/Auth.php');
         $this->assertStringContainsString("'auth_visual_title' => 'Staff sign-in.'", $src);
+        // Both render paths (GET and validation failure) must override the
+        // highlights, or the staff panel inherits the customer bullet list.
+        $this->assertSame(2, substr_count($src, "'auth_visual_points' => array("),
+            'the staff door overrides the highlight list on every path that renders it');
     }
 
     /* ============================= the artwork =========================== */

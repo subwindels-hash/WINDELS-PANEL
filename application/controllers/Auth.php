@@ -82,10 +82,17 @@ class Auth extends MY_Controller {
             'title' => 'Staff sign-in',
             // The staff door gets staff words. The customer pitch on this page
             // was the same sales line the public login shows, which reads as a
-            // mistake to the person it is shown to.
+            // mistake to the person it is shown to. The bullet list is
+            // overridden too, so the staff panel never inherits the customer
+            // highlights.
             'auth_visual_title' => 'Staff sign-in.',
-            'auth_visual_text'  => 'Orders, payments, refunds and the audit trail. '
-                                  .'Customer passwords cannot open the back office.',
+            'auth_visual_text'   => 'Orders, payments, refunds and the audit trail. '
+                                    .'Customer passwords cannot open the back office.',
+            'auth_visual_points' => array(
+                'Every order, top-up and refund lands in one auditable ledger.',
+                'Refund, adjust and reply to tickets with a full staff trail.',
+                'Rate limiting and IP blacklists stand guard at this door.',
+            ),
         ));
     }
 
@@ -95,12 +102,17 @@ class Auth extends MY_Controller {
         if (!$this->form_validation->run()) {
             return $this->render_auth('auth/admin_login', array(
             'title' => 'Staff sign-in',
-            // The staff door gets staff words. The customer pitch on this page
-            // was the same sales line the public login shows, which reads as a
-            // mistake to the person it is shown to.
+            // The staff door gets staff words — see admin_login() above. The
+            // bullet list is overridden too, so the staff panel never
+            // inherits the customer highlights.
             'auth_visual_title' => 'Staff sign-in.',
-            'auth_visual_text'  => 'Orders, payments, refunds and the audit trail. '
-                                  .'Customer passwords cannot open the back office.',
+            'auth_visual_text'   => 'Orders, payments, refunds and the audit trail. '
+                                    .'Customer passwords cannot open the back office.',
+            'auth_visual_points' => array(
+                'Every order, top-up and refund lands in one auditable ledger.',
+                'Refund, adjust and reply to tickets with a full staff trail.',
+                'Rate limiting and IP blacklists stand guard at this door.',
+            ),
             ));
         }
 
