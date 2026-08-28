@@ -73,6 +73,7 @@ node tools/devserver/api_check.mjs            --password <pw>   # reseller API: 
 node tools/devserver/refunds_check.mjs        --admin-password <pw>   # refills, partial refunds, refused cancellations
 node tools/devserver/analytics_check.mjs      --admin-password <pw>   # every reported figure vs the database
 node tools/devserver/service_recovery_check.mjs --admin-password <pw> # stuck VTU/number/identity/giftcard purchases
+node tools/devserver/security_check.mjs       --admin-password <pw>   # IDOR, CSRF, privilege escalation, live RBAC matrix
 ```
 
 `smm_provider_check.mjs` and `refunds_check.mjs` stand up
