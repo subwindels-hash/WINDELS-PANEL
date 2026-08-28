@@ -289,12 +289,17 @@ button { font-family:inherit; cursor:pointer; }
 }
 .ws-announce:hover .ws-announce-track,
 .ws-announce:focus-within .ws-announce-track{animation-play-state:paused}
+/* `color:inherit`, not a fixed colour: the strip's text colour is an operator
+   setting applied inline on .ws-announce, and a hard-coded #000 here meant a
+   white-on-navy banner rendered its scrolling messages in black — the setting
+   appeared to do nothing. The separator dot follows the same colour at reduced
+   opacity so it stays visible on any background. */
 .ws-announce-item{
   display:inline-flex;align-items:center;white-space:nowrap;
-  padding:0 2.75rem;font-size:.875rem;font-weight:500;color:#000;line-height:1;
+  padding:0 2.75rem;font-size:.875rem;font-weight:500;color:inherit;line-height:1;
 }
 .ws-announce-item::after{
-  content:"•";margin-left:2.75rem;color:#9ca3af;font-weight:700;
+  content:"•";margin-left:2.75rem;color:currentColor;opacity:.45;font-weight:700;
 }
 @keyframes ws-marquee{
   from{transform:translateX(0)}
@@ -950,6 +955,16 @@ button { font-family:inherit; cursor:pointer; }
   padding:0 1rem; font-size:.85rem; font-weight:500;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;
 }
+/* A link inside the banner inherits the operator's chosen text colour — the
+   background is theirs too, so a fixed link colour could land unreadable. It
+   is underlined instead, which reads as a link on any background, and the
+   marquee pauses on hover/focus so a moving link can actually be clicked. */
+.ws-announce-link{
+  color:inherit; text-decoration:underline; text-underline-offset:2px;
+  font-weight:600;
+}
+.ws-announce-link:hover,.ws-announce-link:focus-visible{ text-decoration-thickness:2px; }
+.ws-announce-link:focus-visible{ outline:2px solid currentColor; outline-offset:2px; border-radius:2px; }
 
 /* Contact-page map. Fixed aspect so the card does not jump while the iframe
    loads, and a placeholder tint so an embed blocked by a corporate proxy

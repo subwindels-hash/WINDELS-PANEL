@@ -6,7 +6,8 @@
 ([module-private-attachments.md](module-private-attachments.md)) and item 13 by
 module 18 ([module-coupon-race.md](module-coupon-race.md)), and item 9 by
 module 19 ([module-legal-identity.md](module-legal-identity.md)) and item 14 by
-module 20 ([module-dashboard-cost.md](module-dashboard-cost.md)). Closed items stay
+module 20 ([module-dashboard-cost.md](module-dashboard-cost.md)) and item 6 by
+module 21 ([module-announcement-links.md](module-announcement-links.md)). Closed items stay
 in the table below, struck through, so the list reads as a record rather than a
 moving target.
 
@@ -31,7 +32,7 @@ open, and things this sandbox cannot prove.
 | 3 | **Marketplace partial refunds** | Escrow is all-or-nothing. Multi-item orders would need per-line release/refund. |
 | 4 | **Physical shipping flow** | Exists and passes `shop_check` / `physical_product_check`, but was never re-audited against the escrow rules in module 11. |
 | 5 | **Cron scheduling (write side)** | `/admin/cron` reports only. Nothing in the panel can install, pause, trigger or edit a job; on cPanel the crontab is still a manual paste of the generated block. |
-| 6 | **Announcement bar links** | `announcement_text` is plain text. A clickable banner needs the CMS sanitising path, not a raw-HTML setting. |
+| ~~6~~ | ~~**Announcement bar links**~~ | **Closed (module 21).** A line may carry `[label](target)`; the anchor is built, never pasted through, and only site paths, http(s) and mailto are accepted. Raw HTML renders as visible text. |
 | 7 | **Contact map — first-party render** | The map is a third-party iframe (OpenStreetMap / Google). It leaks the visitor's IP to that origin, which an EU operator must disclose. |
 | 8 | **Brand artwork** | `assets/brand/*` is generated, not designed. Legible at every size the panel uses, but an operator with a real identity should replace the set (and the ratio table in `partials/brand_logo.php`). |
 | ~~9~~ | ~~**Legal pages**~~ | **Closed (module 19).** A `legal` settings group records the entity, registration number, registered address, governing law, courts, notice email, privacy contact and supervisory authority; Terms, Privacy and the footer print them, say plainly when they are absent, and Preflight WARNs until they are filled in. |

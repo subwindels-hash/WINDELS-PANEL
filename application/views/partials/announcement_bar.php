@@ -14,8 +14,17 @@
  *   2. published announcements from Content → Announcements;
  *   3. a short built-in explanation of how the panel works, so a brand-new
  *      install is never blank.
+ *
+ * A line may carry a link, written `[Read more](/blog/outage)`. The anchor is
+ * built by AnnouncementText, never pasted through: an outage notice that
+ * cannot point at the page explaining the outage is half a notice, and letting
+ * an operator type raw HTML into the one strip on every page of a site holding
+ * wallet balances is how a banner becomes stored XSS.
  */
 $site_name = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials';
+if (!class_exists('AnnouncementText', false)) {
+    require_once APPPATH.'libraries/AnnouncementText.php';
+}
 
 $setting = function ($key, $default) {
     try {
@@ -93,9 +102,12 @@ $style = 'background:'.htmlspecialchars($bg, ENT_QUOTES).';'
        . 'border-bottom-color:rgba(255,255,255,.16);'
        . ($seconds ? '--ws-announce-duration:'.$seconds.'s;' : '');
 
+// AnnouncementText escapes every character it did not write itself, so the
+// output is placed unescaped on purpose — escaping it again would print the
+// anchor as text.
 $render_items = function () use ($items) {
     foreach ($items as $text): ?>
-      <span class="ws-announce-item"><?=htmlspecialchars($text)?></span>
+      <span class="ws-announce-item"><?=AnnouncementText::render($text)?></span>
     <?php endforeach;
 };
 ?>
@@ -103,7 +115,7 @@ $render_items = function () use ($items) {
      data-announce style="<?=$style?>">
   <div class="ws-announce-viewport">
     <?php if ($static): ?>
-      <div class="ws-announce-static"><?=htmlspecialchars($items[0])?></div>
+      <div class="ws-announce-static"><?=AnnouncementText::render($items[0])?></div>
     <?php else: ?>
       <div class="ws-announce-track">
         <?php $render_items(); ?>

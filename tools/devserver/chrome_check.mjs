@@ -166,6 +166,32 @@ check('so do the operator’s colours',
   (/<div class="ws-announce[^>]*/.exec(shown.text) || [''])[0].slice(0, 120));
 check('a single message is centred rather than scrolled', /ws-announce is-static/.test(shown.text));
 
+// A banner that cannot point at the page it is talking about is half a
+// notice, so a line may carry [label](target) — and only a target the panel is
+// willing to write into an href.
+const linkPage = await admin.get('/admin/settings');
+await admin.postForm('/admin/settings/save', {
+  __rendered_announcement_enabled: '1', announcement_enabled: '1',
+  announcement_text: 'Funding is down. [Read more](/faq)\n'
+    + 'Ask us: [email](mailto:help@marvy.example)\n'
+    + 'Never: [pwn](javascript:alert(1))\n'
+    + 'Nor raw HTML: <img src=x onerror=alert(1)>',
+  announcement_bg_color: '#123456', announcement_text_color: '#fedcba',
+  announcement_speed_seconds: '30',
+}, { fromHtml: linkPage.text });
+
+const linked = await new Client(BASE).get('/');
+const banner = (/<div class="ws-announce[\s\S]*?<\/div>\s*<\/div>/.exec(linked.text) || [''])[0];
+check('an operator link becomes a real anchor',
+  /<a class="ws-announce-link" href="\/faq">Read more<\/a>/.test(banner), banner.slice(0, 200));
+check('a mailto link opens safely',
+  /href="mailto:help@marvy\.example"/.test(banner) && /rel="noopener noreferrer"/.test(banner));
+check('a javascript: target is refused but its words survive',
+  !/javascript:/i.test(banner) && /pwn/.test(banner));
+check('raw HTML in the banner is text, never markup',
+  !/<img/i.test(banner) && /&lt;img/.test(banner),
+  'the banner is on every page of a site holding wallet balances');
+
 const bad = await admin.postForm('/admin/settings/save',
   { announcement_bg_color: 'javascript:alert(1)' }, { fromHtml: settingsPage.text });
 check('a colour that is not a colour is refused', /must be a colour/i.test(bad.text),

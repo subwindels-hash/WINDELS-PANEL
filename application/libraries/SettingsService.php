@@ -295,7 +295,9 @@ class SettingsService {
             'announcement_enabled' => array('bool', 'branding', 'Show the announcement bar',
                 'The scrolling strip at the very top of every page. Off removes it everywhere.', true),
             'announcement_text' => array('longtext', 'branding', 'Announcement text',
-                'One message per line. Each line scrolls in turn. Leave empty to show your published '
+                'One message per line. Each line scrolls in turn. Add a link with '
+                .'[Read more](/blog/outage) — a site path, an https:// address or a mailto: only; '
+                .'HTML is not accepted. Leave empty to show your published '
                 .'announcements from Content → Announcements instead.', ''),
             'announcement_bg_color' => array('color', 'branding', 'Announcement background',
                 'Background colour of the announcement bar.', '#0b1b3a'),
