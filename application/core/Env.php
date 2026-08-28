@@ -359,8 +359,11 @@ class Env
         // https:// VP_BASE_URL to http:// for the duration of that request so that
         // generated form actions, redirect targets, and CSRF cookies stay on the
         // same transport as the visitor's browser (preventing cross-scheme cookie drops).
+        // Request context, not SAPI, decides: cron has no HTTP_HOST and must
+        // leave .env alone, while a CLI-SAPI request (php-cgi, the test
+        // suite) still has to emit links on the visitor's transport.
         $configured = (string)self::get('APP_URL');
-        if ($configured !== '' && !self::is_cli()) {
+        if ($configured !== '' && !empty($_SERVER['HTTP_HOST'])) {
             if (stripos($configured, 'http://') === 0 && self::request_is_https()) {
                 $upgraded = 'https://' . substr($configured, 7);
                 self::put('APP_URL', $upgraded, true);
@@ -416,11 +419,14 @@ class Env
      *
      * Honours `HTTPS`, `X-Forwarded-Proto` (cPanel / Cloudflare / LiteSpeed
      * proxies) and port 443. CLI with no request context is never HTTPS, so a
-     * mis-set `VP_BASE_URL=http://…` is not rewritten by cron jobs.
+     * mis-set `VP_BASE_URL=http://…` is not rewritten by cron jobs — but a CLI
+     * SAPI that *does* carry request context (php-cli-server, the test suite,
+     * some shared hosts running php-cgi) is judged on that context, otherwise
+     * an HTTPS request would silently emit http:// links.
      */
     public static function request_is_https()
     {
-        if (self::is_cli()) {
+        if (self::is_cli() && empty($_SERVER['HTTP_HOST'])) {
             return false;
         }
         if (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off') {

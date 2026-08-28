@@ -94,11 +94,44 @@ class SettingsService {
                 'The smallest top-up a customer may make.', '500.00000000'),
             'max_deposit' => array('money', 'payments', 'Maximum deposit',
                 'The largest single top-up, before manual review.', '5000000.00000000'),
+            'mail_transport' => array('choice:mail|smtp|log', 'email', 'How email is sent',
+                'mail = PHP mail() (what a cPanel account has working out of the box), smtp = the server '
+                .'configured in .env, log = write the message to the log and send nothing (development). '
+                .'Use Send test on the Mail queue screen to prove it before relying on it.', 'mail'),
+            'mail_from_email' => array('text', 'email', 'From address',
+                'The address customers see. Use one on your own domain or providers will reject the mail.', ''),
+            'mail_from_name' => array('text', 'email', 'From name',
+                'The sender name shown in the inbox. Defaults to the site name.', ''),
+            'notification_emails_enabled' => array('bool', 'general', 'Send notification emails',
+                'Off keeps the in-app inbox working but stops outbound email for order, deposit and '
+                .'support events. Account email (verification, password reset) is never affected.', true),
+            'deposit_grace_minutes' => array('int', 'payments', 'Wait for the callback (minutes)',
+                'How long a pending deposit is left alone before reconciliation asks the gateway what '
+                .'happened to it. Too short wastes API calls on customers still typing their card details.', 20),
+            'deposit_expiry_days' => array('int', 'payments', 'Close unpaid deposits after (days)',
+                'A deposit still unpaid after this many days is closed — but only when the gateway could '
+                .'be reached and confirmed no payment. An unreachable gateway, or a short payment, never '
+                .'closes a deposit automatically.', 7),
 
             'order_auto_submit' => array('bool', 'orders', 'Auto-submit orders',
                 'Off holds new orders in PENDING for staff to review and submit manually.', true),
             'partial_refund_enabled' => array('bool', 'orders', 'Auto-refund partial deliveries',
                 'On refunds the undelivered share of a partial delivery automatically; off leaves it for staff to refund.', true),
+            'service_stuck_minutes' => array('int', 'orders', 'Give up on an unpollable purchase after (minutes)',
+                'A VTU, number, identity or gift card purchase the vendor accepted without giving us a '
+                .'reference cannot be checked by anything. After this long it is failed and the customer '
+                .'refunded, because nobody will ever look at it again.', 60),
+            'service_abandon_hours' => array('int', 'orders', 'Give up on any in-flight purchase after (hours)',
+                'The backstop for purchases that DO have a vendor reference but whose vendor has stopped '
+                .'settling them. Refunds the customer rather than leaving them charged indefinitely.', 24),
+            'refill_window_days' => array('int', 'orders', 'Refill guarantee window (days)',
+                'How long after completion a customer may ask for a refill. Providers honour their own '
+                .'window and refuse anything older, so asking outside it only produces a refusal the '
+                .'customer has to read. 0 means no limit.', 30),
+            'refill_abandon_hours' => array('int', 'orders', 'Close unanswered refills after (hours)',
+                'A refill the provider never settles is closed as failed after this long and the customer '
+                .'is told. Leaving it open shows them a top-up that is never coming and leaves staff a '
+                .'queue that can never be cleared.', 168),
 
             'referral_commission_percent' => array('percent', 'affiliate', 'Referral commission',
                 'Percentage of a referred customer’s spend paid to the referrer.', '5.0000'),
@@ -156,6 +189,74 @@ class SettingsService {
             'fundsvera_base_url' => array('text', 'fundsvera', 'API base URL',
                 'Change only if Fundsvera give you a different endpoint.', 'https://fundsvera.co/api/v1'),
 
+            // --- Hosted card / wallet gateways ---------------------------
+            // One block per gateway: an enable switch, the credentials, and the
+            // callback secret that decides whether a webhook can move money.
+            // Every value is also readable from the environment (PAYSTACK_
+            // SECRET_KEY, STRIPE_SECRET_KEY, …) so containers can inject them;
+            // the env value wins over anything typed here.
+            'paystack_enabled' => array('bool', 'gateways', 'Accept cards via Paystack',
+                'Shows Paystack on Add funds. The gateway refuses to take a payment it cannot confirm, '
+                .'so this does nothing until the secret key below is set.', false),
+            'paystack_secret_key' => array('secret', 'gateways', 'Paystack secret key',
+                'From dashboard.paystack.com → Settings → API Keys (sk_live_… / sk_test_…). Also verifies '
+                .'the webhook signature — set your webhook URL to /webhook/paystack.', ''),
+            'paystack_public_key' => array('secret', 'gateways', 'Paystack public key',
+                'Optional. Only needed if you later add an inline checkout.', ''),
+
+            'flutterwave_enabled' => array('bool', 'gateways', 'Accept cards via Flutterwave',
+                'Shows Flutterwave on Add funds. Requires the secret key and the webhook hash below.', false),
+            'flutterwave_secret_key' => array('secret', 'gateways', 'Flutterwave secret key',
+                'From the Flutterwave dashboard → Settings → API (FLWSECK-…).', ''),
+            'flutterwave_secret_hash' => array('secret', 'gateways', 'Flutterwave webhook hash',
+                'The "secret hash" you set on the Flutterwave webhook page. Flutterwave sends it back in the '
+                .'verif-hash header; without it configured no Flutterwave callback is ever credited.', ''),
+
+            'stripe_enabled' => array('bool', 'gateways', 'Accept cards via Stripe',
+                'Shows Stripe Checkout on Add funds. Requires the secret key and the endpoint signing secret.', false),
+            'stripe_secret_key' => array('secret', 'gateways', 'Stripe secret key',
+                'From dashboard.stripe.com → Developers → API keys (sk_live_… / sk_test_…).', ''),
+            'stripe_webhook_secret' => array('secret', 'gateways', 'Stripe endpoint signing secret',
+                'The whsec_… value Stripe shows when you add /webhook/stripe as an endpoint. Signatures are '
+                .'checked with a 5-minute tolerance, so a captured callback cannot be replayed later.', ''),
+
+            'paypal_enabled' => array('bool', 'gateways', 'Accept PayPal',
+                'Shows PayPal on Add funds. Requires the REST app credentials below.', false),
+            'paypal_client_id' => array('secret', 'gateways', 'PayPal client ID',
+                'From developer.paypal.com → Apps & Credentials → your REST app.', ''),
+            'paypal_client_secret' => array('secret', 'gateways', 'PayPal client secret',
+                'The secret for the same REST app. Used for OAuth2 and to verify webhooks.', ''),
+            'paypal_webhook_id' => array('secret', 'gateways', 'PayPal webhook ID',
+                'The ID PayPal assigns the webhook you point at /webhook/paypal. PayPal verifies its own '
+                .'callbacks, and without this ID none can be trusted.', ''),
+            'paypal_sandbox' => array('bool', 'gateways', 'Use the PayPal sandbox',
+                'Routes API calls to api-m.sandbox.paypal.com for testing with sandbox credentials.', false),
+
+            'razorpay_enabled' => array('bool', 'gateways', 'Accept cards via Razorpay',
+                'Shows Razorpay on Add funds. Requires the key pair and webhook secret below.', false),
+            'razorpay_key_id' => array('secret', 'gateways', 'Razorpay key ID',
+                'From dashboard.razorpay.com → Settings → API Keys (rzp_live_… / rzp_test_…).', ''),
+            'razorpay_key_secret' => array('secret', 'gateways', 'Razorpay key secret',
+                'The secret half of the same key pair.', ''),
+            'razorpay_webhook_secret' => array('secret', 'gateways', 'Razorpay webhook secret',
+                'Set on the Razorpay webhook page for /webhook/razorpay. This is NOT the key secret.', ''),
+
+            'coinpayments_enabled' => array('bool', 'gateways', 'Accept crypto via CoinPayments',
+                'Shows CoinPayments on Add funds. Deposits credit only after the network confirmations '
+                .'CoinPayments reports as complete.', false),
+            'coinpayments_public_key' => array('secret', 'gateways', 'CoinPayments public key',
+                'From coinpayments.net → Account → API Keys.', ''),
+            'coinpayments_private_key' => array('secret', 'gateways', 'CoinPayments private key',
+                'Signs API calls. Never leaves the server.', ''),
+            'coinpayments_merchant_id' => array('secret', 'gateways', 'CoinPayments merchant ID',
+                'From Account → Account Settings. Checked on every IPN so another merchant\'s callback '
+                .'cannot credit your wallets.', ''),
+            'coinpayments_ipn_secret' => array('secret', 'gateways', 'CoinPayments IPN secret',
+                'The IPN secret set alongside the IPN URL /webhook/coinpayments. Without it no crypto '
+                .'deposit is ever credited.', ''),
+            'coinpayments_accept_coin' => array('text', 'gateways', 'Coin customers pay in',
+                'Ticker CoinPayments should collect, e.g. BTC, LTCT (testnet), USDT.TRC20.', 'BTC'),
+
             // --- Referrals, earnings and payouts -------------------------
             'referral_signup_reward' => array('money', 'referrals', 'Referral reward',
                 'Paid to the referrer when a referred account completes the qualifying event below. '
@@ -174,7 +275,7 @@ class SettingsService {
                 'The smallest cash payout the platform will process.', '1000.00000000'),
             'earnings_payouts_enabled' => array('bool', 'referrals', 'Allow cash payouts',
                 'Off still lets users convert earnings into wallet credit. Confirm your licensing, KYC '
-                .'and tax obligations before turning cash payouts on.', true),
+                .'and tax obligations before turning cash payouts on.', false),
 
             'api_enabled' => array('bool', 'api', 'Enable the reseller API',
                 'Off returns a 503 for every /api/v1 call without revoking any keys.', true),
@@ -183,13 +284,71 @@ class SettingsService {
             'reseller_webhook_secret' => array('secret', 'api', 'Reseller webhook secret',
                 'HMAC-SHA256 of the raw JSON, sent as X-Marvy-Signature.', ''),
 
-            'base_currency' => array('choice:NGN|USD|EUR|GBP', 'currency', 'Base (accounting) currency',
-                'The currency every wallet, order and ledger entry is denominated in. Changing it reinterprets '
-                .'all stored amounts, so only do this on a fresh or migrated database. The platform can still '
-                .'show customers prices in other currencies via Admin → Currencies.', 'NGN'),
-
             'currency_display' => array('choice:symbol|code', 'currency', 'Currency display',
                 'Whether prices render as a symbol (₦1,234.56) or a code (NGN 1,234.56).', 'symbol'),
+
+            // ---- the announcement bar (Admin → Settings → Branding) -------
+            // The ticker used to be built from published announcements with a
+            // hard-coded fallback and hard-coded colours: an operator could
+            // not change the words without creating a CMS entry, and could not
+            // change the colours at all.
+            'announcement_enabled' => array('bool', 'branding', 'Show the announcement bar',
+                'The scrolling strip at the very top of every page. Off removes it everywhere.', true),
+            'announcement_text' => array('longtext', 'branding', 'Announcement text',
+                'One message per line. Each line scrolls in turn. Add a link with '
+                .'[Read more](/blog/outage) — a site path, an https:// address or a mailto: only; '
+                .'HTML is not accepted. Leave empty to show your published '
+                .'announcements from Content → Announcements instead.', ''),
+            'announcement_bg_color' => array('color', 'branding', 'Announcement background',
+                'Background colour of the announcement bar.', '#0b1b3a'),
+            'announcement_text_color' => array('color', 'branding', 'Announcement text colour',
+                'Text colour of the announcement bar. Keep the contrast high — this strip sits above '
+                .'everything else on the page.', '#ffffff'),
+            'announcement_speed_seconds' => array('int', 'branding', 'Announcement scroll time (seconds)',
+                'How long one full pass of the message takes. Larger is slower; 0 stops the scroll and '
+                .'centres a single message.', 40),
+
+            // ---- the contact page map (Admin → Settings → Contact) --------
+            'contact_map_enabled' => array('bool', 'contact', 'Show a map on the contact page',
+                'Off hides the map entirely — the right choice for a business with no public address.', false),
+            'contact_address' => array('longtext', 'contact', 'Business address',
+                'Shown next to the map and used to place the pin when no explicit map query is set. '
+                .'One line per line of the address.', ''),
+            'contact_map_query' => array('text', 'contact', 'Map location',
+                'What the map should centre on: an address, a place name, or "latitude,longitude". '
+                .'Leave blank to use the business address above.', ''),
+            'contact_map_zoom' => array('int', 'contact', 'Map zoom',
+                'Roughly: 12 shows a city, 15 a district, 17 a street.', 15),
+            'contact_phone' => array('text', 'contact', 'Public phone number',
+                'Shown on the contact page. Leave blank to hide it.', ''),
+            'contact_hours' => array('text', 'contact', 'Support hours',
+                'Free text, e.g. “Mon–Fri, 9:00–18:00 WAT”. Leave blank to hide it.', ''),
+
+            // Legal identity. The Terms and the Privacy Policy used to say
+            // "the party that deployed this instance" because there was
+            // nowhere to record who that is — a panel that holds prepaid
+            // balances has to name its trader and its data controller.
+            'legal_entity_name' => array('text', 'legal', 'Legal entity name',
+                'The company or person customers are contracting with, exactly as registered. '
+                .'Shown in the Terms, the Privacy Policy and the footer.', ''),
+            'legal_registration_number' => array('text', 'legal', 'Company registration number',
+                'RC number, company number, VAT id — whatever identifies the entity in its register. '
+                .'Leave blank for a sole trader.', ''),
+            'legal_registered_address' => array('longtext', 'legal', 'Registered address',
+                'Where formal notices are served. One line per line of the address.', ''),
+            'legal_jurisdiction' => array('text', 'legal', 'Governing law',
+                'The country (and state, where it matters) whose law governs the terms, '
+                .'e.g. “the Federal Republic of Nigeria”.', ''),
+            'legal_courts' => array('text', 'legal', 'Courts',
+                'Where disputes are heard, if different from the governing law above. '
+                .'Leave blank to use the same place.', ''),
+            'legal_contact_email' => array('text', 'legal', 'Legal contact email',
+                'Where legal notices go. Leave blank to use the support email.', ''),
+            'legal_dpo_contact' => array('text', 'legal', 'Data protection contact',
+                'The data protection officer or privacy contact. Leave blank to use the legal contact.', ''),
+            'legal_supervisory_authority' => array('text', 'legal', 'Supervisory authority',
+                'The data-protection regulator customers may complain to, e.g. “the Nigeria Data Protection '
+                .'Commission”. Leave blank if none applies.', ''),
 
             'default_theme' => array('choice:system|light|dark', 'branding', 'Default theme',
                 'System follows the visitor\'s OS preference; light and dark force a theme. Visitors can still override it in their browser.', 'system'),
@@ -209,8 +368,9 @@ class SettingsService {
     /** Settings shown but not editable, with the reason. */
     public static function readonly_settings() {
         return array(
-            // base_currency became editable (Admin → Settings → Currency) so it is
-            // no longer listed here. It is read via marvy_base_currency().
+            // Shown, never editable: every wallet, order and ledger entry is
+            // already denominated in it, so it moves by migration only.
+            'base_currency'       => 'Fixed for the ledger. Redenominating is a migration, not a setting.',
             // Wired, but edited on their own screen rather than as text fields:
             // a logo is chosen from the media library, not typed as a URL.
             'brand_primary_color' => 'Set in Admin → Appearance.',
@@ -353,44 +513,60 @@ class SettingsService {
                 // treated as a required field. A non-empty value must still be
                 // a well-formed http(s) URL, so a typo is caught here rather
                 // than surfacing as a silent webhook that never fires.
-                $value = (string)$value;
-                // Allow empty values (leave blank to disable) as documented in the schema
+                $value = trim((string)$value);
+                // Allow empty values (leave blank to disable) as documented in the schema.
                 if ($value === '') {
                     return array('value' => '', 'error' => null);
                 }
-                // Validate URL format - allow http:// or https://
-                // If the URL doesn't have a scheme, try prepending http://
-                if (!filter_var($value, FILTER_VALIDATE_URL) || !preg_match('#^https?://#i', $value)) {
-                    // Try prepending http:// if not already present
-                    $test_url = 'http://' . $value;
-                    if (filter_var($test_url, FILTER_VALIDATE_URL)) {
-                        return array('value' => $value, 'error' => null);
-                    }
+                // A non-empty value must be a complete http(s) URL. Anything
+                // else is refused rather than "repaired": a webhook stored as
+                // `not-a-url` (or as a scheme-less host) never fires, and a
+                // silent dead endpoint is far worse than a validation error.
+                $host = parse_url($value, PHP_URL_HOST);
+                $host_ok = $host !== null && $host !== false && $host !== ''
+                    && (strpos($host, '.') !== false || strtolower($host) === 'localhost');
+                if (!preg_match('#^https?://#i', $value) || !filter_var($value, FILTER_VALIDATE_URL) || !$host_ok) {
                     return array('value' => null, 'error' => $label.' must be a valid http(s) URL, or left empty to disable it.');
                 }
                 return array('value' => mb_substr($value, 0, 512), 'error' => null);
             
             case 'int':
-                $value = (int)$value;
-                if (!is_numeric($value) || (int)$value != $value || (int)$value < 0) {
+                // Validate BEFORE casting: (int)'abc' is 0, so casting first
+                // silently accepted any text as the number zero.
+                $raw = trim((string)$value);
+                if ($raw === '' || !preg_match('/^\d+$/', $raw)) {
                     return array('value' => null, 'error' => $label.' must be a whole number of zero or more.');
                 }
-                return array('value' => $value, 'error' => null);
+                return array('value' => (int)$raw, 'error' => null);
             
             case 'money':
-                $value = (float)$value;
-                if (!is_numeric($value) || $value < 0) {
+                $raw = trim((string)$value);
+                if ($raw === '' || !is_numeric($raw) || (float)$raw < 0) {
                     return array('value' => null, 'error' => $label.' must be an amount of zero or more.');
                 }
-                return array('value' => number_format((float)$value, 8, '.', ''), 'error' => null);
+                return array('value' => number_format((float)$raw, 8, '.', ''), 'error' => null);
             
             case 'percent':
-                $value = (float)$value;
-                if (!is_numeric($value) || $value < 0 || $value > 100) {
+                $raw = trim((string)$value);
+                if ($raw === '' || !is_numeric($raw) || (float)$raw < 0 || (float)$raw > 100) {
                     return array('value' => null, 'error' => $label.' must be between 0 and 100.');
                 }
-                return array('value' => number_format((float)$value, 4, '.', ''), 'error' => null);
+                return array('value' => number_format((float)$raw, 4, '.', ''), 'error' => null);
             
+            case 'color':
+                // A colour lands in a `style` attribute, so anything that is
+                // not exactly #rrggbb is refused rather than escaped and
+                // hoped for: this is the one setting that writes into CSS.
+                $raw = strtolower(trim((string)$value));
+                if ($raw === '') return array('value' => '', 'error' => null);
+                if (preg_match('/^#[0-9a-f]{3}$/', $raw)) {
+                    $raw = '#'.$raw[1].$raw[1].$raw[2].$raw[2].$raw[3].$raw[3];
+                }
+                if (!preg_match('/^#[0-9a-f]{6}$/', $raw)) {
+                    return array('value' => null, 'error' => $label.' must be a colour like #0b1b3a.');
+                }
+                return array('value' => $raw, 'error' => null);
+
             case 'secret':
                 // May legitimately be blank (feature not configured yet), and
                 // is allowed to be long — API keys are not 255-char-limited

@@ -32,6 +32,8 @@ $t = $ticket;
               <span><?=date('M j, H:i', strtotime($m->created_at))?> UTC</span>
             </div>
             <p class="mt-1" style="white-space:pre-wrap"><?=htmlspecialchars($m->message)?></p>
+            <?php $this->load->view('partials/ticket_attachments',
+                    array('attachments' => $m->attachments ?? array())); ?>
           </li>
         <?php endforeach; ?>
       </ul>
@@ -48,8 +50,13 @@ $t = $ticket;
       // associated with the wrong form (or no form) after the first submit.
       // Two complete, sibling forms — no nesting, no overlap.
       ?>
-      <?=form_open('dashboard/tickets/'.$t->public_id.'/reply', array('class'=>'mt-2 stack'))?>
+      <?php // multipart: the attachment input below is useless without it. ?>
+      <?=form_open_multipart('dashboard/tickets/'.$t->public_id.'/reply', array('class'=>'mt-2 stack'))?>
         <textarea class="textarea" name="message" required rows="4" maxlength="20000" placeholder="Type your reply…"></textarea>
+        <label class="text-sm font-medium" for="reply-attachments">Attach files (optional)</label>
+        <input class="input" id="reply-attachments" type="file" name="attachments[]" multiple
+               accept="image/jpeg,image/png,image/gif,image/webp,application/pdf">
+        <p class="hint">Up to 5 files — screenshots (JPEG, PNG, GIF, WebP) or a PDF receipt.</p>
         <button class="btn btn-primary" type="submit">Send reply</button>
       <?=form_close()?>
       <div class="row mt-3" style="justify-content:flex-end">

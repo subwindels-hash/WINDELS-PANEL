@@ -119,7 +119,7 @@ $marvy = ['panel' =&gt; 'ready'];</code></pre>
 
   <section class="card" id="forms">
     <h2 class="card-title">Form fields</h2>
-    <form class="grid" style="grid-template-columns:1fr 1fr;gap:1rem" onsubmit="return false">
+    <form class="grid" style="grid-template-columns:1fr 1fr;gap:1rem" data-demo-form>
       <div class="field">
         <label class="label" for="sg-text">Text input</label>
         <input id="sg-text" class="input" placeholder="you@example.com">

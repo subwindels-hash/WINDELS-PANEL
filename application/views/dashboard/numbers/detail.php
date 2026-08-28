@@ -119,7 +119,7 @@ $remaining = $expires ? $expires - time() : null;
     </form>
   <?php else: ?>
     <form method="post" action="<?=site_url('dashboard/numbers/'.$tx->public_id.'/cancel')?>" class="mt-4"
-          onsubmit="return confirm('Cancel this reservation and get your money back?')">
+          data-confirm="Cancel this reservation and get your money back?" >
       <?=$csrf()?>
       <p class="hint mb-2">No code coming? Cancel and
         <?=marvy_money($tx->amount)?> goes straight back to your wallet.</p>
@@ -127,7 +127,7 @@ $remaining = $expires ? $expires - time() : null;
     </form>
 
     <form method="post" action="<?=site_url('dashboard/numbers/'.$tx->public_id.'/report')?>" class="mt-4"
-          onsubmit="return confirm('Report this number as already registered?')">
+          data-confirm="Report this number as already registered?" >
       <?=$csrf()?>
       <p class="hint mb-2">If the service says this number is already
         registered, report it — you are refunded and we stop reselling it.</p>

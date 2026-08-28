@@ -83,12 +83,144 @@ class RbacService {
     /**
      * Which permissions are granted but gate nothing yet.
      *
-     * Surfaced rather than hidden: a permission with no `require_perm()` call
-     * behind it is a promise the code does not keep, and an operator ticking
-     * it deserves to know it currently does nothing. This is how the missing
-     * admin modules were found in the first place.
+     * Surfaced rather than hidden: a permission with no check behind it is a
+     * promise the code does not keep, and an operator ticking it deserves to
+     * know it currently does nothing. This is how the missing admin modules
+     * were found in the first place.
+     *
+     * ## Why this is not a substring search any more
+     *
+     * It used to concatenate every PHP file under controllers/, libraries/ and
+     * core/ and ask whether the string `'vtu.refund'` appeared **anywhere** in
+     * it. Every permission key also appears in the navigation tree, in tab
+     * definitions, in `$this->auth->can()` calls that only decide whether to
+     * draw a button, and in queue maps — so a permission that merely *hides a
+     * link* was reported as enforced. That is the exact false reassurance this
+     * screen exists to prevent: the operator is told the tick means something,
+     * ticks it, and the endpoint behind the hidden button is still open to
+     * anyone who types the URL.
+     *
+     * A key now counts as enforced only when it reaches a **gate**:
+     *
+     *   - as a literal argument to `require_perm()` / `require_any_perm()`
+     *     (including via a shared `guard()` helper that passes it on), or
+     *   - as a value in a declared map a gate reads dynamically — the
+     *     `admin/Operations` queue table and `ContentService::permission()`
+     *     both do this, so their arrays are recognised.
+     *
+     * `can()` and `has_perm()` are deliberately NOT gates: they answer
+     * "should I draw this?", never "may you do this?".
      */
     public function unenforced() {
+        $src = $this->source();
+        $enforced = $this->enforced_keys($src);
+        $out = array();
+        foreach ($this->ci->db->get('permissions')->result() as $p) {
+            if (!in_array($p->perm_key, $enforced, true)) $out[] = $p->perm_key;
+        }
+        return $out;
+    }
+
+    /** Every permission key the code actually gates something with. */
+    public function enforced_keys($src = null) {
+        $src = $src === null ? $this->source() : $src;
+        $keys = array();
+
+        // 1. Literals handed to a gate, directly or through a guard helper.
+        //    The argument list is captured with one level of nesting allowed so
+        //    `require_perm(ContentService::permission($d))` does not truncate.
+        $gate = '/(?:require_perm|require_any_perm)\s*\(([^()]*(?:\([^()]*\)[^()]*)*)\)/';
+        if (preg_match_all($gate, $src, $calls)) {
+            foreach ($calls[1] as $args) {
+                if (preg_match_all("/'([a-z_]+(?:\.[a-z_*]+)+)'/", $args, $found)) {
+                    foreach ($found[1] as $key) $keys[] = $key;
+                }
+            }
+        }
+
+        // 2. Helpers that forward their argument to a gate. Half the admin
+        //    controllers share one `guard($public_id, $perm)` that ends in
+        //    `require_perm($perm)`, so the literal lives at the call site.
+        //    Detected by shape — a helper whose body gates a *variable* — so a
+        //    new controller following the same pattern is covered without
+        //    naming it here.
+        foreach ($this->forwarding_helpers($src) as $helper) {
+            $call = '/\$this->'.preg_quote($helper, '/').'\s*\(([^;]{0,200}?)\)/';
+            if (preg_match_all($call, $src, $calls)) {
+                foreach ($calls[1] as $args) {
+                    if (preg_match_all("/'([a-z_]+(?:\.[a-z_*]+)+)'/", $args, $found)) {
+                        foreach ($found[1] as $key) $keys[] = $key;
+                    }
+                }
+            }
+        }
+
+        // 3. Keys reached through a declared map a gate reads dynamically.
+        foreach ($this->dynamic_gate_maps($src) as $key) $keys[] = $key;
+
+        return array_values(array_unique($keys));
+    }
+
+    /**
+     * Helpers that gate on a permission handed to them.
+     *
+     * `private function guard($public_id, $perm) { ...; $this->require_perm($perm); }`
+     * is the shape: the check is real, the key is at the call site. A helper
+     * that merely *mentions* a permission does not qualify — the body has to
+     * pass a variable to require_perm().
+     */
+    private function forwarding_helpers($src) {
+        $out = array();
+        $re = '/function\s+(\w+)\s*\([^)]*\)\s*\{[\s\S]{0,800}?require_perm\(\s*\$/';
+        if (preg_match_all($re, $src, $m)) {
+            foreach (array_unique($m[1]) as $name) {
+                if ($name === 'require_perm') continue;
+                $out[] = $name;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Permission keys reached through a table rather than a literal.
+     *
+     * Two shapes exist in this codebase and both end in `require_perm()`:
+     *
+     *   private static $queues = array('refills' => array('Refills', 'orders.refill'), ...);
+     *   ... require_perm(self::$queues[$queue][1]);
+     *
+     *   public static function permission($d) { $m = array('blog' => 'blog.manage', ...); }
+     *   ... require_perm(ContentService::permission($domain));
+     *
+     * They are matched only when the same file also contains a `require_perm()`
+     * that reads them, so an ordinary lookup table cannot launder a key into
+     * looking enforced.
+     */
+    private function dynamic_gate_maps($src) {
+        $keys = array();
+        // self::$map[...][n] passed to require_perm
+        if (preg_match_all('/require_perm\(\s*self::\$(\w+)\[/', $src, $m)) {
+            foreach (array_unique($m[1]) as $prop) {
+                if (preg_match('/\$'.$prop.'\s*=\s*array\(([\s\S]{0,2000}?)\);/', $src, $arr)
+                    && preg_match_all("/'([a-z_]+(?:\.[a-z_*]+)+)'/", $arr[1], $found)) {
+                    foreach ($found[1] as $key) $keys[] = $key;
+                }
+            }
+        }
+        // require_perm(Something::method(...)) → that method's own literals
+        if (preg_match_all('/require_perm\(\s*(\w+)::(\w+)\(/', $src, $m, PREG_SET_ORDER)) {
+            foreach ($m as $call) {
+                if (preg_match('/function\s+'.$call[2].'\s*\([^)]*\)\s*\{([\s\S]{0,800}?)\n\s*\}/', $src, $fn)
+                    && preg_match_all("/'([a-z_]+(?:\.[a-z_*]+)+)'/", $fn[1], $found)) {
+                    foreach ($found[1] as $key) $keys[] = $key;
+                }
+            }
+        }
+        return $keys;
+    }
+
+    /** Every PHP file a gate could live in, as one string. */
+    private function source() {
         $root = defined('APPPATH') ? APPPATH : (dirname(dirname(__FILE__)).'/');
         $src  = '';
         foreach (array('controllers', 'libraries', 'core') as $dir) {
@@ -100,11 +232,7 @@ class RbacService {
                 $src .= file_get_contents($file->getPathname());
             }
         }
-        $out = array();
-        foreach ($this->ci->db->get('permissions')->result() as $p) {
-            if (strpos($src, "'".$p->perm_key."'") === false) $out[] = $p->perm_key;
-        }
-        return $out;
+        return $src;
     }
 
     /* ------------------------------ writing ----------------------------- */

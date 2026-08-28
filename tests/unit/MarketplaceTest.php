@@ -1,6 +1,7 @@
 <?php
 use PHPUnit\Framework\TestCase;
 
+require_once dirname(__DIR__).'/_support/ShellSource.php';
 require_once dirname(__DIR__).'/_support/FakeDb.php';
 require_once dirname(__DIR__).'/_support/IntegrationHarness.php';
 
@@ -623,7 +624,7 @@ class MarketplaceTest extends TestCase
                        'admin/marketplace/orders/(:any)/resolve') as $route) {
             $this->assertStringContainsString($route, $routes);
         }
-        $layout = file_get_contents(self::$root.'/application/views/layouts/app.php');
+        $layout = ShellSource::app(self::$root);
         $this->assertStringContainsString("'dashboard/marketplace'", $layout);
         $this->assertStringContainsString("'admin/marketplace'", $layout);
 

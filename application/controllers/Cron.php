@@ -15,7 +15,7 @@ class Cron extends Cron_Controller {
     /** Jobs that can be invoked, in the order `index` lists them. */
     private static $jobs = array(
         'dripfeed', 'order_status', 'vtu_status', 'numbers_status', 'identity_purge',
-        'giftcard_codes', 'marketplace_release',
+        'giftcard_codes', 'service_recovery', 'marketplace_release',
         'subscriptions', 'provider_health',
         'refill_status', 'payment_reconciliation', 'email_queue',
         'analytics', 'provider_sync', 'affiliate_payouts', 'pin_rotation',
@@ -23,7 +23,7 @@ class Cron extends Cron_Controller {
 
     public function __construct() {
         parent::__construct();
-        $this->load->library(array('JobRunner', 'CronWorkers'));
+        $this->load->library(array('JobRunner', 'CronWorkers', 'CronControlService'));
     }
 
     public function index() {
@@ -47,6 +47,19 @@ class Cron extends Cron_Controller {
     public function vtu_status() {
         $this->execute('vtu_status', function () {
             return $this->cronworkers->vtu_status();
+        });
+    }
+
+    /**
+     * Close service purchases no domain worker can settle, and refund them.
+     *
+     * The backstop for every domain: a purchase with no provider reference
+     * cannot be polled by anything, and without this it stays PROCESSING for
+     * ever with the customer's money in it.
+     */
+    public function service_recovery() {
+        $this->execute('service_recovery', function () {
+            return $this->cronworkers->service_recovery();
         });
     }
 
@@ -212,6 +225,20 @@ class Cron extends Cron_Controller {
 
     /** Run a job under the lock/record harness and print a one-line summary. */
     private function execute($job, callable $work) {
+        // An operator can pause a job from Admin → Cron jobs during an
+        // incident. The pause is honoured HERE, at the last moment before the
+        // work runs, rather than by editing the crontab: the tick still
+        // happens, so the run is recorded as SKIPPED and the screen can show
+        // that the schedule is alive and the job is deliberately idle. A
+        // crontab line commented out looks identical to a broken cron.
+        if ($this->croncontrolservice->is_paused($job)) {
+            $state = $this->croncontrolservice->state($job);
+            $reason = $state && $state->reason !== '' ? $state->reason : 'paused by an operator';
+            $this->jobrunner->record_skip($job, 'paused: '.$reason);
+            echo "{$job}: skipped (paused by an operator — {$reason})\n";
+            return;
+        }
+
         $result = $this->jobrunner->run($job, $work);
 
         if (!empty($result['skipped'])) {

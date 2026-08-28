@@ -1,6 +1,7 @@
 <?php
 use PHPUnit\Framework\TestCase;
 
+require_once dirname(__DIR__).'/_support/ShellSource.php';
 require_once dirname(__DIR__).'/_support/FakeDb.php';
 require_once dirname(__DIR__).'/_support/IntegrationHarness.php';
 
@@ -444,7 +445,7 @@ class AdminVtuTest extends TestCase
 
     public function testTheAdminNavLinksTheQueueBehindItsPermission()
     {
-        $layout = file_get_contents(self::$root.'/application/views/layouts/app.php');
+        $layout = ShellSource::app(self::$root);
         $this->assertStringContainsString("array('admin/vtu',", $layout,
             'the admin nav must link the VTU queue');
         $this->assertStringContainsString("'vtu.view'", $layout,
@@ -458,7 +459,7 @@ class AdminVtuTest extends TestCase
     public function testEveryNavIconExists()
     {
         $icons = file_get_contents(self::$root.'/application/views/partials/icon.php');
-        $layout = file_get_contents(self::$root.'/application/views/layouts/app.php');
+        $layout = ShellSource::app(self::$root);
 
         // The nav is defined as grouped sections ($nav_groups = $is_admin ?
         // array(...) : array(...)) and flattened afterwards. Read the whole

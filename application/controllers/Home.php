@@ -21,15 +21,12 @@ class Home extends Public_Controller {
         );
         if ($this->db_ready) {
             try {
+                // One read for the whole settings table, then pick the
+                // homepage keys out of it — never a query per key.
                 $this->load->model('Setting_model');
-                foreach (array(
-                    'homepage_hero_kicker','homepage_hero_title','homepage_hero_lede',
-                    'homepage_cta_primary','homepage_cta_secondary',
-                    'homepage_services_title','homepage_services_lede',
-                    'homepage_cta_band_title','homepage_cta_band_body',
-                    'homepage_meta_description',
-                ) as $k) {
-                    $copy[$k] = $this->Setting_model->get($k);
+                $all = $this->Setting_model->all();
+                foreach (array_keys($copy) as $k) {
+                    if (array_key_exists($k, $all) && $all[$k] !== NULL) $copy[$k] = $all[$k];
                 }
             } catch (Throwable $e) { /* defaults in the view */ }
         }
@@ -99,7 +96,6 @@ class Home extends Public_Controller {
         $this->load->view('layouts/public_theme', array('content_view'=>$view,'data'=>$data,
             'title' => $copy['homepage_hero_title'] ?: 'Grow and manage your social presence',
             'page_description' => $copy['homepage_meta_description'] ?: 'MarvySocials is a prepaid panel for social media growth services, Nigerian VTU and bills, virtual numbers, identity checks and gift cards. Add funds, place an order, track it from one dashboard.',
-            'brand' => $brand,
         ));
     }
     private function active_homepage(){
@@ -169,6 +165,10 @@ class Home extends Public_Controller {
                 'title'           => 'Contact',
                 'meta_description'=> 'Contact MarvySocials support about an order, payment or the reseller API. Signed-in customers get a ticket.',
                 'support_email'   => $this->support_email(),
+                // Everything about the map and the printed contact details is
+                // operator-controlled (Admin → Settings → Contact page), so a
+                // business with no public address simply switches it off.
+                'contact_details' => $this->contact_details(),
             ), $data),
         ));
     }
@@ -298,6 +298,47 @@ class Home extends Public_Controller {
     private function thanks_message() {
         return 'Thanks — your message is on its way to our support team. '
               .'We reply to the address you gave us, usually within one business day.';
+    }
+
+    /**
+     * The contact page's operator-controlled details.
+     *
+     * A missing settings table (fresh install, mid-migration) must leave the
+     * page working with the form and the support mailbox, so every read is
+     * defaulted and the map is off unless it was deliberately switched on.
+     */
+    private function contact_details() {
+        $get = function ($key, $default = '') {
+            try {
+                $this->load->model('Setting_model');
+                $value = $this->Setting_model->get($key, $default);
+                return $value === null ? $default : $value;
+            } catch (Exception $e) {
+                return $default;
+            }
+        };
+
+        $address = trim((string)$get('contact_address', ''));
+        $query   = trim((string)$get('contact_map_query', ''));
+        $enabled = $get('contact_map_enabled', false);
+        $enabled = ($enabled === true || $enabled === 1 || $enabled === '1' || $enabled === 'true');
+        $zoom    = (int)$get('contact_map_zoom', 15);
+        if ($zoom < 1)  $zoom = 1;
+        if ($zoom > 20) $zoom = 20;
+
+        // The map centres on the explicit query when there is one, otherwise
+        // on the address. With neither, there is nothing to show and the map
+        // stays hidden however the flag is set.
+        $target = $query !== '' ? $query : preg_replace('/\s*\R\s*/', ', ', $address);
+
+        return array(
+            'map_enabled' => $enabled && $target !== '',
+            'map_query'   => $target,
+            'map_zoom'    => $zoom,
+            'address'     => $address,
+            'phone'       => trim((string)$get('contact_phone', '')),
+            'hours'       => trim((string)$get('contact_hours', '')),
+        );
     }
 
     /** Support address from settings, falling back to config/.env. */

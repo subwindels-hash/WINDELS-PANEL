@@ -4,7 +4,7 @@
     <h2 class="mb-0" style="font-size:1.4rem;font-weight:600">Drip-feed</h2>
     <p class="muted text-sm">Split a large order into scheduled runs. The total charge is reserved up-front.</p>
   </div>
-  <button class="btn btn-primary" onclick="document.getElementById('ws-new-drip').showModal()">+ New drip-feed</button>
+  <button class="btn btn-primary" data-dialog-open="ws-new-drip" >+ New drip-feed</button>
 </div>
 
 <div class="card">
@@ -35,7 +35,7 @@
 <?php endif; ?>
 </div>
 
-<dialog id="ws-new-drip" class="ws-dialog" onclick="if(event.target===this)this.close()">
+<dialog id="ws-new-drip" class="ws-dialog" data-dialog-light-dismiss >
   <?=form_open('dashboard/drip-feed/create', array('class'=>'stack'))?>
     <h3 class="card-title mb-0">New drip-feed</h3>
     <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
@@ -55,7 +55,7 @@
     <p class="hint">Total = quantity per run × runs, and must be within the service min/max.</p>
     <input type="hidden" name="total_quantity" id="ws-total" value="400">
     <div class="row" style="justify-content:flex-end">
-      <button type="button" class="btn btn-ghost" onclick="document.getElementById('ws-new-drip').close()">Cancel</button>
+      <button type="button" class="btn btn-ghost" data-dialog-close="ws-new-drip" >Cancel</button>
       <button type="submit" class="btn btn-primary">Create schedule</button>
     </div>
   <?=form_close()?>

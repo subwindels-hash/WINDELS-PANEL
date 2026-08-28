@@ -45,7 +45,7 @@ $csrf = function () {
         <td class="text-right">
           <?php if (!in_array($e->status, array('PAID','REVERSED'), true)): ?>
           <form method="post" action="<?=site_url('admin/earnings/'.$e->public_id.'/reverse')?>"
-                onsubmit="return confirm('Reverse this earning? An offsetting ledger entry is written.')">
+                data-confirm="Reverse this earning? An offsetting ledger entry is written." >
             <?=$csrf()?>
             <input type="hidden" name="reason" value="Reversed by staff">
             <button class="btn btn-secondary btn-sm" type="submit">Reverse</button>

@@ -26,9 +26,16 @@
     <div class="grid grid-3" style="gap:1.25rem">
       <?php foreach ($posts as $p): ?>
       <article class="card card-hover">
-        <?php if (!empty($p->featured_image)): ?>
-          <img src="<?=htmlspecialchars($p->featured_image)?>" alt="" loading="lazy" style="width:100%;height:180px;object-fit:cover;border-radius:.75rem .75rem 0 0;margin:-1.25rem -1.25rem 1rem">
-        <?php endif; ?>
+        <?php
+          // A post without its own artwork still gets a cover: one of three
+          // bundled abstract illustrations, chosen from the slug so a given
+          // post always looks the same. Never a stock photo of a person.
+          $__cover = !empty($p->featured_image)
+            ? $p->featured_image
+            : base_url('assets/images/blog/cover-'.((crc32((string)$p->slug) % 3) + 1).'.jpg');
+        ?>
+        <img src="<?=htmlspecialchars($__cover)?>" alt="" loading="lazy" width="1200" height="675"
+             style="width:calc(100% + 2.5rem);height:180px;object-fit:cover;border-radius:.75rem .75rem 0 0;margin:-1.25rem -1.25rem 1rem">
         <h2 style="font-size:1.15rem;margin:0 0 .5rem">
           <a class="text-slate-900 hover:text-brand-700" href="<?=site_url('blog/'.$p->slug)?>"><?=htmlspecialchars($p->title)?></a>
         </h2>

@@ -91,6 +91,29 @@ class Refill_model extends MY_Model {
         return $this->db->where('public_id', $public_id)->get($this->table)->row();
     }
 
+    /**
+     * Refills that were never accepted by a provider and still have to be sent.
+     *
+     * These are the rows the old poller could not see: it only selected refills
+     * that already had a `provider_refill_id`, so a refill lost to a timeout —
+     * or refused and then wrongly left open — sat in PENDING for ever while the
+     * customer was told it had been requested.
+     */
+    public function pending_submission($limit = 50){
+        return $this->db
+            ->select('refills.*, orders.provider_id AS order_provider_id', false)
+            ->from($this->table)
+            ->join('orders', 'orders.id = refills.order_id', 'left')
+            ->where('refills.status', 'PENDING')
+            ->group_start()
+                ->where('refills.provider_refill_id IS NULL', null, false)
+                ->or_where('refills.provider_refill_id', '')
+            ->group_end()
+            ->order_by('refills.last_checked_at', 'ASC')
+            ->limit($limit)
+            ->get()->result();
+    }
+
     /** Refills awaiting a provider status poll (cron worker, Session 16). */
     public function pending_provider_sync($limit = 100){
         return $this->db

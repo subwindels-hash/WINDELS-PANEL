@@ -179,24 +179,38 @@ class ServicesTest extends TestCase
 #[AllowDynamicProperties]
 class ServicesFakeCI {
     public $user_price = null;
+    /** Which service the seeded override belongs to (batched pricing is keyed). */
+    public $service_id = 7;
     public $group_price = null;
     public function __construct() { $this->db = new ServicesFakeDb($this); }
 }
+/**
+ * Pricing is resolved for a whole list in one query per table (see
+ * PricingService::rates_for), so this double answers the batched shape:
+ * `select(...)->where(...)->where_in(...)->get()->result()`. It used to model
+ * the old point-query implementation, which meant the tests were pinned to
+ * *how* the rule was fetched rather than to the rule.
+ */
 class ServicesFakeDb {
     private $ci;
     public function __construct($ci){ $this->ci=$ci; }
+    public function select($f, $esc = null){ return $this; }
     public function where($k,$v=null){ return $this; }
-    public function get($t){ return new ServicesFakeResult($this->rowFor($t)); }
-    private function rowFor($t){
+    public function where_in($k,$v){ return $this; }
+    public function get($t){ return new ServicesFakeResult($this->rowsFor($t)); }
+    private function rowsFor($t){
+        // service_id must match the row the test prices; the batched query
+        // returns rows keyed by it rather than one anonymous rate.
         if ($t==='user_service_prices' && $this->ci->user_price)
-            return (object)array('rate'=>$this->ci->user_price);
+            return array((object)array('service_id'=>$this->ci->service_id,'rate'=>$this->ci->user_price));
         if ($t==='service_prices' && $this->ci->group_price)
-            return (object)array('rate'=>$this->ci->group_price);
-        return null;
+            return array((object)array('service_id'=>$this->ci->service_id,'rate'=>$this->ci->group_price));
+        return array();
     }
 }
 class ServicesFakeResult {
-    private $row;
-    public function __construct($row){ $this->row=$row; }
-    public function row(){ return $this->row; }
+    private $rows;
+    public function __construct(array $rows){ $this->rows=$rows; }
+    public function result(){ return $this->rows; }
+    public function row(){ return $this->rows ? $this->rows[0] : null; }
 }

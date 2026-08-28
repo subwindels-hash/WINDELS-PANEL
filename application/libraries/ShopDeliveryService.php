@@ -152,8 +152,8 @@ class ShopDeliveryService {
     }
 
     /** Every download this user currently has (My Downloads). */
-    public function for_user($user_id) {
-        return $this->ci->Digital_delivery_model->for_user($user_id);
+    public function for_user($user_id, $limit = 100, $offset = 0) {
+        return $this->ci->Digital_delivery_model->for_user($user_id, $limit, $offset);
     }
 
     /**
@@ -203,6 +203,36 @@ class ShopDeliveryService {
 
         $this->ci->Digital_delivery_model->record_download($delivery->id, $ip);
         return array('ok' => true, 'path' => $path, 'filename' => $delivery->original_filename, 'mime' => $delivery->mime_type);
+    }
+
+    /**
+     * Revoke every download granted by one order.
+     *
+     * Called when the money goes back. A refunded digital purchase used to
+     * leave the file in the buyer's "My Downloads" indefinitely: they kept the
+     * product *and* the payment, and nothing in the panel ever noticed. There
+     * is no delivery to revoke for a physical order, so this is a no-op there.
+     *
+     * Never throws: it runs inside a refund, and a refund must not fail
+     * because a download row would not update.
+     *
+     * @return int how many deliveries were revoked
+     */
+    public function revoke_for_order($order, $actor_id = null, $reason = 'Order refunded') {
+        $revoked = 0;
+        try {
+            if (!$order || empty($order->id)) return 0;
+            foreach ($this->ci->Digital_delivery_model->for_order($order->id) as $delivery) {
+                if ((int)$delivery->revoked === 1) continue;
+                $this->ci->Digital_delivery_model->revoke($delivery->id, $actor_id, $reason);
+                $this->audit($actor_id, 'shop.download.revoked', $delivery->public_id,
+                    array('reason' => $reason, 'order' => $order->public_id ?? null));
+                $revoked++;
+            }
+        } catch (Throwable $e) {
+            log_message('error', 'revoke_for_order failed: '.$e->getMessage());
+        }
+        return $revoked;
     }
 
     /** Admin: revoke a customer's access to a specific delivery. */

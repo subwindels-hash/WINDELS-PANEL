@@ -179,6 +179,144 @@ class CronWorkers {
         );
     }
 
+    /* =============== stuck service purchases (every domain) ================ */
+
+    /**
+     * Close service purchases that nothing else can ever settle.
+     *
+     * Each domain has its own settlement worker, and each of them can only act
+     * on rows it can see. Two shapes are invisible to all of them, and both
+     * leave a customer charged for something they never received:
+     *
+     *  - **PROCESSING with no provider reference.** `pending_provider_sync()`
+     *    explicitly filters those out — there is nothing to poll with. It
+     *    happens when a vendor accepts a purchase without returning a
+     *    reference, or when the process died between the charge and the
+     *    response. VTU had no give-up rule of any kind, so such a row stayed
+     *    PROCESSING for ever: the money was gone, the airtime never arrived,
+     *    and no screen, worker or alert would ever mention it again.
+     *  - **PENDING.** The row was created and the charge never completed. No
+     *    money moved, but the row sits in the queues and in the "stuck
+     *    purchases" counter for ever.
+     *
+     * Gift cards already had this discipline (`giftcard_give_up_minutes`), and
+     * this generalises it to every domain — including a hard backstop for rows
+     * that DO have a reference but whose own worker has plainly stopped
+     * settling them.
+     *
+     * Refunds go through TransactionEngine, so they are capped, idempotent,
+     * recorded in the status history and now announced to the customer. A
+     * PENDING row refunds nothing, because nothing was charged.
+     */
+    public function service_recovery($limit = 200) {
+        $this->need(array('Service_transaction_model'), array('TransactionEngine'));
+
+        $soft_minutes = $this->setting_int('service_stuck_minutes', 60, 5, 10080);
+        $hard_hours   = $this->setting_int('service_abandon_hours', 24, 1, 720);
+        $soft_cutoff  = gmdate('Y-m-d H:i:s', time() - ($soft_minutes * 60));
+        $hard_cutoff  = gmdate('Y-m-d H:i:s', time() - ($hard_hours * 3600));
+
+        $stuck = $this->ci->Service_transaction_model->stuck($soft_cutoff, $hard_cutoff, $limit);
+        if (!$stuck) {
+            return array('processed'=>0, 'failed'=>0, 'refunded'=>0,
+                         'message'=>'no stuck service purchases');
+        }
+
+        $processed = 0; $failed = 0; $refunded = 0; $skipped = 0;
+        foreach ($stuck as $tx) {
+            // A domain whose PROCESSING state is a *feature* must not be swept
+            // on the generic window. Marketplace escrow is the case that
+            // matters: a purchase sits PROCESSING for the whole inspection
+            // period (72 hours by default, up to 30 days), so the 24-hour
+            // backstop would have refunded buyers of goods that had already
+            // shipped — and left the order, the stock and the download intact
+            // while doing it.
+            if (!$this->recovery_due($tx)) { $skipped++; continue; }
+
+            // Marketplace refunds are not a bare ledger reversal: the escrow
+            // row has to be claimed, the stock put back and the download
+            // revoked. MarketplaceService owns that sequence, so the sweep
+            // asks it rather than reimplementing half of it.
+            if (strtoupper((string)$tx->service_domain) === 'MARKETPLACE') {
+                if ($this->recover_marketplace($tx)) { $processed++; $refunded++; }
+                else { $failed++; }
+                continue;
+            }
+            $reason = $tx->status === 'PENDING'
+                ? 'Abandoned before payment completed'
+                : ($tx->provider_reference
+                    ? 'The provider never settled this purchase'
+                    : 'The provider accepted nothing we can check on');
+            try {
+                // FAILED rather than REFUNDED: the purchase failed, and the
+                // refund is a consequence the engine applies. REFUNDED is
+                // reserved for a purchase that succeeded and was given back.
+                $res = $this->ci->transactionengine->transition(
+                    $tx->id, 'FAILED', 'SYSTEM', $reason
+                );
+            } catch (Throwable $e) {
+                $failed++;
+                log_message('error', "service_recovery {$tx->id}: ".$e->getMessage());
+                continue;
+            }
+            if (empty($res['ok'])) { $failed++; continue; }
+            $processed++;
+            if (!empty($res['refunded'])) $refunded++;
+        }
+
+        return array(
+            'processed' => $processed,
+            'failed'    => $failed,
+            'refunded'  => $refunded,
+            'skipped'   => $skipped,
+            'message'   => "{$processed} closed, {$refunded} refunded, {$failed} failed, "
+                          ."{$skipped} still inside their own window",
+        );
+    }
+
+    /**
+     * Whether this purchase is genuinely stuck, or simply living the life its
+     * own domain gives it.
+     *
+     * The generic windows suit a domain that settles in seconds. Marketplace
+     * escrow does not: the buyer's money is deliberately held until the
+     * inspection period ends, and `marketplace_release` is the worker that
+     * ends it. The sweep therefore waits for the escrow window *plus* a day of
+     * grace before treating such an order as abandoned — by which point the
+     * release worker has plainly stopped running, which is a real fault.
+     */
+    private function recovery_due($tx) {
+        if (strtoupper((string)$tx->service_domain) !== 'MARKETPLACE') return true;
+
+        $escrow_hours = $this->setting_int('marketplace_auto_release_hours', 72, 1, 720);
+        $window = max($this->setting_int('service_abandon_hours', 24, 1, 720), $escrow_hours + 24);
+        return strtotime((string)$tx->created_at.' UTC') < time() - ($window * 3600);
+    }
+
+    /**
+     * Close an abandoned marketplace purchase through the service that owns
+     * escrow, so the order, the stock and the buyer's money all move together.
+     */
+    private function recover_marketplace($tx) {
+        try {
+            $this->ci->load->library('MarketplaceService');
+            $this->ci->load->model('Marketplace_order_model');
+            $order = $this->ci->Marketplace_order_model->find_by_transaction($tx->id);
+            if (!$order) {
+                // No escrow row to keep in step: fall back to the plain refund.
+                $res = $this->ci->transactionengine->transition(
+                    $tx->id, 'FAILED', 'SYSTEM', 'The marketplace order behind this purchase is missing');
+                return !empty($res['ok']);
+            }
+            $res = $this->ci->marketplaceservice->refund(
+                $order, null, 'Escrow was never released; the purchase was abandoned');
+            return !empty($res['ok']);
+        } catch (Throwable $e) {
+            log_message('error', "service_recovery marketplace {$tx->id}: ".$e->getMessage());
+            return false;
+        }
+    }
+
     /* ======================== identity retention =========================== */
 
     /**
@@ -602,43 +740,234 @@ class CronWorkers {
     /* ======================== payment reconciliation ======================= */
 
     /**
-     * Age out deposits that were started but never paid.
+     * Reconcile deposits the gateway never told us about, then age out the
+     * ones that were genuinely never paid.
      *
-     * Successful payments are credited by the gateway webhook or by an admin
-     * approving a manual transfer — this worker deliberately credits nothing.
-     * It only closes rows that have sat unpaid past the window so the pending
-     * queue reflects reality.
+     * This used to do only the second half: after seven days every PENDING
+     * deposit was marked FAILED without anyone ever asking the provider
+     * whether the money had arrived. A single lost webhook — a deploy during
+     * the callback, a 500, a firewall blip, a signature refused because the
+     * secret was rotated — therefore turned a real payment into a written-off
+     * deposit, and the customer's money simply vanished from their point of
+     * view.
+     *
+     * The order of work matters:
+     *
+     *   1. Replay callbacks we stored but never finished processing. They are
+     *      already signature-verified; something transient stopped them.
+     *   2. Ask each gateway directly about deposits that have been pending
+     *      longer than the grace period. A provider-confirmed payment is
+     *      credited (through PaymentService::confirm, so exactly once); a
+     *      provider-confirmed failure is closed.
+     *   3. Only then expire what is past the window AND could not be verified.
+     *      A deposit whose gateway cannot be reached is never expired — an
+     *      outage on our side must not cost a customer their money.
+     *
+     * @param int $stale_days     age at which an unverifiable deposit is closed
+     * @param int $limit          rows examined per tick
+     * @param int $grace_minutes  how long to let the webhook arrive on its own
      */
-    public function payment_reconciliation($stale_days = 7, $limit = 500) {
-        $this->need(array('Payment_transaction_model'), array('PaymentService'));
+    public function payment_reconciliation($stale_days = null, $limit = 500, $grace_minutes = null) {
+        $this->need(array('Payment_transaction_model', 'Payment_webhook_model', 'Wallet_model', 'Setting_model'),
+                    array('PaymentService'));
 
+        // Operators tune both windows from Admin → Settings → Deposits; the
+        // arguments stay for tests and for a one-off manual run.
+        if ($stale_days === null)    $stale_days    = $this->setting_int('deposit_expiry_days', 7, 1, 365);
+        if ($grace_minutes === null) $grace_minutes = $this->setting_int('deposit_grace_minutes', 20, 1, 1440);
+
+        $replayed = $this->replay_unprocessed_webhooks($limit);
+
+        $grace  = gmdate('Y-m-d H:i:s', time() - ($grace_minutes * 60));
         $cutoff = gmdate('Y-m-d H:i:s', time() - ($stale_days * 86400));
-        $stale = $this->ci->db
+
+        $pending = $this->ci->db
             ->where_in('status', array('CREATED', 'PENDING'))
-            ->where('created_at <', $cutoff)
+            ->where('created_at <', $grace)
+            ->order_by('created_at', 'ASC')
             ->limit($limit)
             ->get('payment_transactions')->result();
-        if (!$stale) return array('processed'=>0, 'failed'=>0, 'message'=>'nothing to reconcile');
 
-        $expired = 0; $failed = 0;
-        foreach ($stale as $tx) {
+        $credited = 0; $closed = 0; $expired = 0; $unknown = 0; $failed = 0;
+
+        foreach ($pending as $tx) {
             try {
-                // PaymentService owns the transition; it refuses to touch a row
-                // that has already reached a terminal state.
-                $this->ci->paymentservice->mark_failed(
-                    $tx->id, "Expired: no payment received within {$stale_days} days"
-                );
-                $expired++;
-            } catch (Exception $e) {
+                $verdict = $this->verify_with_gateway($tx);
+
+                if ($verdict['status'] === 'SUCCESS') {
+                    $res = $this->ci->paymentservice->confirm($tx, 'RECONCILIATION', $verdict['provider_tx_id']);
+                    if (!empty($res['ok'])) {
+                        $credited++;
+                        log_message('error', 'payment_reconciliation: credited '.$tx->public_id
+                            .' from a provider check — its webhook never arrived');
+                    } else {
+                        $failed++;
+                    }
+                    continue;
+                }
+
+                if ($verdict['status'] === 'FAILED') {
+                    $this->ci->paymentservice->mark_failed($tx->id,
+                        'Closed by reconciliation: the gateway reports this payment as '
+                        .strtolower((string)($verdict['detail'] ?: 'failed')).'.');
+                    $closed++;
+                    continue;
+                }
+
+                // Still pending, or nobody to ask. Expire only when it is past
+                // the window and the answer was neither "the provider is down"
+                // nor "they paid, but short" — both of those need a human, and
+                // writing either off would be writing off real money.
+                $never_expire = in_array($verdict['status'], array('UNREACHABLE', 'UNDERPAID'), true);
+                if (!$never_expire && (string)($tx->created_at ?? '') < $cutoff) {
+                    $this->ci->paymentservice->mark_failed($tx->id,
+                        "Expired: no payment received within {$stale_days} days");
+                    $expired++;
+                } else {
+                    $unknown++;
+                }
+            } catch (Throwable $e) {
                 $failed++;
-                log_message('error', "payment_reconciliation {$tx->id}: ".$e->getMessage());
+                log_message('error', 'payment_reconciliation '.$tx->id.': '.$e->getMessage());
             }
         }
-        return array(
-            'processed' => $expired,
-            'failed'    => $failed,
-            'message'   => "{$expired} stale deposits expired",
+
+        $message = sprintf(
+            '%d webhook(s) replayed, %d deposit(s) credited from a provider check, '
+            .'%d closed as failed, %d expired, %d still open',
+            $replayed['processed'], $credited, $closed, $expired, $unknown
         );
+
+        return array(
+            'processed' => $replayed['processed'] + $credited + $closed + $expired,
+            'failed'    => $failed + $replayed['failed'],
+            'credited'  => $credited,
+            'closed'    => $closed,
+            'expired'   => $expired,
+            'pending'   => $unknown,
+            'message'   => $message,
+        );
+    }
+
+    /** A bounded integer setting, with the documented default when unset. */
+    private function setting_int($key, $default, $min, $max) {
+        try {
+            if (!isset($this->ci->Setting_model)) return $default;
+            $value = $this->ci->Setting_model->get($key, $default);
+        } catch (Throwable $e) {
+            return $default;
+        }
+        if (!is_numeric($value)) return $default;
+        return (int)min($max, max($min, (int)$value));
+    }
+
+    /**
+     * Ask the gateway what actually happened to one deposit.
+     *
+     * @return array{status:string, provider_tx_id:?string, detail:?string}
+     *         status is SUCCESS | FAILED | PENDING | UNREACHABLE | NO_VERIFIER
+     */
+    private function verify_with_gateway($tx) {
+        $none = array('status' => 'NO_VERIFIER', 'provider_tx_id' => null, 'detail' => null);
+
+        $method = isset($tx->payment_method_id)
+            ? $this->ci->db->where('id', (int)$tx->payment_method_id)->get('payment_methods')->row()
+            : null;
+        $code = strtolower((string)($method->code ?? ($tx->provider ?? '')));
+        if ($code === '' || $code === 'manual') return $none;
+
+        $gateway = $this->ci->paymentservice->adapter_for($method ?: (object)array('code' => $code));
+        // Only adapters that can ask the provider a question take part; the
+        // rest fall through to the age-out rule below.
+        if (!method_exists($gateway, 'verify')) return $none;
+        if (method_exists($gateway, 'is_configured') && !$gateway->is_configured()) return $none;
+
+        // The reference we gave the provider at initiation. Without one there
+        // is nothing to look up.
+        $reference = $tx->provider_tx_id ?: $tx->internal_reference;
+        if (!$reference) return $none;
+
+        $res = $gateway->verify($reference);
+        if (empty($res['ok'])) {
+            // "Could not reach" must never become "expired": treat every
+            // provider-side error as unknown and try again next tick.
+            return array('status' => 'UNREACHABLE', 'provider_tx_id' => null,
+                         'detail' => $res['error'] ?? null);
+        }
+
+        $status = strtoupper((string)($res['status'] ?? 'PENDING'));
+        if ($status === 'SUCCESS' && !$this->amount_covers_deposit($tx, $res)) {
+            // Paid, but short. Crediting the full figure would hand out money
+            // that never arrived; staff resolve it from the payment screen.
+            $this->ci->Payment_transaction_model->update_status($tx->id, array(
+                'metadata' => $this->merge_metadata($tx, array('reconciliation' => array(
+                    'underpaid'       => true,
+                    'expected'        => (string)$tx->amount,
+                    'provider_amount' => (string)($res['amount'] ?? ''),
+                    'checked_at'      => gmdate('Y-m-d H:i:s'),
+                ))),
+            ));
+            log_message('error', 'payment_reconciliation: '.$tx->public_id.' is short — provider reports '
+                .($res['amount'] ?? '?').' against '.$tx->amount.'; left for staff');
+            // Never expired: the money did arrive, just not all of it.
+            return array('status' => 'UNDERPAID', 'provider_tx_id' => $res['provider_tx_id'] ?? null,
+                         'detail' => 'underpaid');
+        }
+
+        return array(
+            'status'         => in_array($status, array('SUCCESS', 'FAILED'), true) ? $status : 'PENDING',
+            'provider_tx_id' => $res['provider_tx_id'] ?? null,
+            'detail'         => $res['status'] ?? null,
+        );
+    }
+
+    /** Whether what the provider says arrived covers what we expected. */
+    private function amount_covers_deposit($tx, array $res) {
+        if (!isset($res['amount']) || $res['amount'] === null || $res['amount'] === '') {
+            // The gateway did not report an amount; the deposit row is the
+            // only figure we have and the webhook path trusts it too.
+            return true;
+        }
+        return bccomp((string)$res['amount'], (string)$tx->amount, 8) >= 0;
+    }
+
+    /** Merge a key into a transaction's metadata JSON without losing the rest. */
+    private function merge_metadata($tx, array $extra) {
+        $meta = json_decode((string)$tx->metadata, true);
+        $meta = is_array($meta) ? $meta : array();
+        return json_encode(array_merge($meta, $extra), JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * Re-run callbacks that were stored but never finished processing.
+     *
+     * record_webhook() leaves a row unprocessed when the credit itself failed
+     * (a ledger rollback, a database blip). The gateway usually retries, but
+     * not every gateway does and not forever — so the panel retries too. Only
+     * signature-verified rows are replayed: an unverified event is evidence of
+     * a misconfiguration, not a payment.
+     */
+    private function replay_unprocessed_webhooks($limit = 100) {
+        $rows = $this->ci->db
+            ->where('processed', 0)
+            ->where('signature_valid', 1)
+            ->order_by('created_at', 'ASC')
+            ->limit($limit)
+            ->get('payment_webhooks')->result();
+
+        $done = 0; $failed = 0;
+        foreach ($rows as $row) {
+            try {
+                // Not record_webhook(): the signature headers are long gone, so
+                // re-verifying would close a verified event as forged.
+                $res = $this->ci->paymentservice->reprocess_stored_webhook($row);
+                if (!empty($res['ok'])) $done++; else $failed++;
+            } catch (Throwable $e) {
+                $failed++;
+                log_message('error', 'payment_reconciliation replay '.$row->id.': '.$e->getMessage());
+            }
+        }
+        return array('processed' => $done, 'failed' => $failed);
     }
 
     /* ============================= housekeeping ============================ */
@@ -729,40 +1058,175 @@ class CronWorkers {
 
     /* ============================ refill status ============================ */
 
-    /** Poll providers for the status of in-flight refills. */
-    public function refill_status($limit = 100) {
-        $this->need(array('Refill_model', 'Provider_model', 'Refill_status_history_model'), array('ProviderSyncService'));
+    /**
+     * Provider vocabulary for a refill, mapped onto our own statuses.
+     *
+     * A refill is NOT an order and does not speak the order vocabulary, which
+     * is what the previous version used. Panels answer "Rejected", "Refused",
+     * "Not found" or "Error" for a refill the guarantee does not cover — none
+     * of which existed in the order map, so the poller mapped them to null,
+     * skipped the row **without even updating last_checked_at**, and picked
+     * the very same rows again on the next run (they sort oldest-checked
+     * first). One refused refill could therefore starve every other refill in
+     * the queue, for ever.
+     */
+    private static $refill_status_map = array(
+        'completed'   => 'COMPLETED',
+        'complete'    => 'COMPLETED',
+        'success'     => 'COMPLETED',
+        'successful'  => 'COMPLETED',
+        'done'        => 'COMPLETED',
+        'finished'    => 'COMPLETED',
+        'in progress' => 'IN_PROGRESS',
+        'inprogress'  => 'IN_PROGRESS',
+        'in_progress' => 'IN_PROGRESS',
+        'processing'  => 'IN_PROGRESS',
+        'partial'     => 'IN_PROGRESS',
+        'running'     => 'IN_PROGRESS',
+        'pending'     => 'PENDING',
+        'awaiting'    => 'PENDING',
+        'queued'      => 'PENDING',
+        'waiting'     => 'PENDING',
+        'new'         => 'PENDING',
+        'rejected'    => 'FAILED',
+        'refused'     => 'FAILED',
+        'declined'    => 'FAILED',
+        'error'       => 'FAILED',
+        'failed'      => 'FAILED',
+        'fail'        => 'FAILED',
+        'canceled'    => 'FAILED',
+        'cancelled'   => 'FAILED',
+        'expired'     => 'FAILED',
+        'not found'   => 'FAILED',
+    );
 
+    /**
+     * Drive every in-flight refill one step closer to a terminal state.
+     *
+     * Three jobs, in the order a refill meets them:
+     *
+     *  1. **Send** the refills that never reached a provider. Nothing did this
+     *     before, so a refill lost to a timeout stayed PENDING for ever while
+     *     the customer had been told it was requested.
+     *  2. **Poll** the refills the provider accepted, and settle them.
+     *  3. **Close** the ones the provider has stopped answering about, so the
+     *     customer gets a resolution instead of an item that ages silently in
+     *     a staff queue.
+     */
+    public function refill_status($limit = 100) {
+        $this->need(array('Refill_model', 'Provider_model', 'Refill_status_history_model', 'Order_model'),
+                    array('ProviderSyncService', 'RefillService'));
+
+        $submitted = $this->submit_pending_refills(max(1, (int)floor($limit / 2)));
+        $polled    = $this->poll_refills($limit);
+        $closed    = $this->close_stale_refills();
+
+        $processed = $submitted['sent'] + $polled['processed'] + $closed;
+        $failed    = $submitted['failed'] + $polled['failed'];
+
+        return array(
+            'processed' => $processed,
+            'failed'    => $failed,
+            'sent'      => $submitted['sent'],
+            'closed'    => $closed,
+            'message'   => "{$submitted['sent']} sent, {$polled['processed']} updated, "
+                          ."{$closed} closed as unanswered, {$failed} failed",
+        );
+    }
+
+    /** Re-send refills the provider never acknowledged. */
+    private function submit_pending_refills($limit) {
+        $sent = 0; $failed = 0;
+        foreach ($this->ci->Refill_model->pending_submission($limit) as $refill) {
+            try {
+                $status = $this->ci->refillservice->retry($refill);
+                if ($status === 'PROCESSING') $sent++;
+                elseif ($status === 'FAILED') $failed++;
+            } catch (Exception $e) {
+                $failed++;
+                log_message('error', "refill submit {$refill->id}: ".$e->getMessage());
+            }
+        }
+        return array('sent' => $sent, 'failed' => $failed);
+    }
+
+    /** Ask each provider what became of the refills it accepted. */
+    private function poll_refills($limit) {
         $refills = $this->ci->Refill_model->pending_provider_sync($limit);
-        if (!$refills) return array('processed'=>0, 'failed'=>0, 'message'=>'no refills awaiting sync');
+        if (!$refills) return array('processed' => 0, 'failed' => 0);
 
         $processed = 0; $failed = 0;
         foreach ($refills as $refill) {
             try {
                 $provider = $refill->provider_id ? $this->ci->Provider_model->find_by_id($refill->provider_id) : null;
-                if (!$provider) { $failed++; continue; }
+                if (!$provider) {
+                    // Nothing to ask. Still record the look, or this row is
+                    // re-selected first on every single run.
+                    $this->ci->refillservice->touch($refill);
+                    $failed++;
+                    continue;
+                }
 
                 $res = $this->ci->providersyncservice->adapter($provider)
                     ->getRefillStatus($refill->provider_refill_id);
+
+                if (empty($res['ok'])) {
+                    $this->ci->refillservice->touch($refill, array('error' => $res['error'] ?? 'Provider unreachable'));
+                    $failed++;
+                    continue;
+                }
+
                 $raw = strtolower(trim((string)($res['data']['status'] ?? '')));
-                if ($raw === '') { $failed++; continue; }
+                $new = $raw === '' ? null : (self::$refill_status_map[$raw] ?? null);
+                if ($new === null) {
+                    // An unknown word is a provider we do not understand, not a
+                    // reason to re-ask the same row for eternity.
+                    log_message('error', "refill_status: unknown provider status '{$raw}' for refill {$refill->id}");
+                    $this->ci->refillservice->touch($refill);
+                    $failed++;
+                    continue;
+                }
+                if ($new === $refill->status) { $this->ci->refillservice->touch($refill); continue; }
 
-                $new = self::$status_map[$raw] ?? null;
-                if ($new === null || $new === $refill->status) continue;
-
-                $this->ci->Refill_status_history_model->record(
-                    $refill->id, $refill->status, $new, 'PROVIDER'
-                );
-                $this->ci->db->where('id', $refill->id)->update('refills', array(
-                    'status'          => $new,
-                    'last_checked_at' => gmdate('Y-m-d H:i:s'),
-                ));
+                $this->ci->refillservice->apply($refill, $new, 'PROVIDER',
+                    $new === 'FAILED' ? array('error' => 'The provider reported the refill as '.$raw.'.') : array());
                 $processed++;
             } catch (Exception $e) {
                 $failed++;
                 log_message('error', "refill_status {$refill->id}: ".$e->getMessage());
             }
         }
-        return array('processed'=>$processed, 'failed'=>$failed, 'message'=>"{$processed} updated, {$failed} failed");
+        return array('processed' => $processed, 'failed' => $failed);
+    }
+
+    /**
+     * Close refills the provider has never settled.
+     *
+     * `refill_abandon_hours` (default a week) is the point at which "still
+     * waiting" stops being true. Leaving the row open is not neutral: the
+     * customer sees a refill in progress that will never arrive, and staff see
+     * a queue whose oldest entries can never be cleared.
+     */
+    private function close_stale_refills() {
+        $hours  = $this->setting_int('refill_abandon_hours', 168, 1, 8760);
+        $cutoff = gmdate('Y-m-d H:i:s', time() - ($hours * 3600));
+
+        $stale = $this->ci->db->from('refills')
+            ->where_in('status', array('PENDING', 'PROCESSING', 'IN_PROGRESS'))
+            ->where('requested_at <', $cutoff)
+            ->limit(100)->get()->result();
+
+        $closed = 0;
+        foreach ($stale as $refill) {
+            try {
+                $this->ci->refillservice->apply($refill, 'FAILED', 'SYSTEM', array(
+                    'error' => 'The provider never settled this refill within '.$hours.' hours.',
+                ));
+                $closed++;
+            } catch (Exception $e) {
+                log_message('error', "refill close {$refill->id}: ".$e->getMessage());
+            }
+        }
+        return $closed;
     }
 }

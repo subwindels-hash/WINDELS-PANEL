@@ -6,7 +6,7 @@
         <strong>Copy your API key now.</strong> It will not be shown again.
         <div class="row mt-2" style="gap:.5rem">
           <code id="ws-key" class="flex-1 block rounded p-2" style="background:#fff;border:1px solid var(--slate-200);word-break:break-all"><?=htmlspecialchars($new_key['raw'])?></code>
-          <button class="btn btn-secondary btn-sm" type="button" onclick="navigator.clipboard?.writeText(document.getElementById('ws-key').textContent)">Copy</button>
+          <button class="btn btn-secondary btn-sm" type="button" data-copy="#ws-key" data-copied-label="Copied">Copy</button>
         </div>
       </div>
     <?php endif; ?>
@@ -33,7 +33,7 @@
               <td><?php if ($k->revoked_at): ?><span class="badge badge-default">revoked</span><?php elseif (!empty($k->expires_at) && strtotime($k->expires_at) <= time()): ?><span class="badge badge-warning">expired</span><?php else: ?><span class="badge badge-success badge-dot">active</span><?php endif; ?></td>
               <td>
                 <?php if (!$k->revoked_at): ?>
-                <form method="post" action="<?=site_url('dashboard/api/revoke/'.$k->public_id)?>" onsubmit="return confirm('Revoke this key? Applications using it will stop working immediately.')">
+                <form method="post" action="<?=site_url('dashboard/api/revoke/'.$k->public_id)?>" data-confirm="Revoke this key? Applications using it will stop working immediately." >
                   <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
                   <button class="btn btn-ghost btn-sm" type="submit">Revoke</button>
                 </form>
@@ -58,6 +58,32 @@
           <span class="label">IP whitelist (optional, comma-separated)</span>
           <input class="input" name="ip_whitelist" placeholder="203.0.113.10, 203.0.113.11">
         </label>
+
+        <fieldset class="field" style="border:1px solid var(--color-border);border-radius:.6rem;padding:.85rem">
+          <legend class="label" style="padding:0 .35rem">What this key may do</legend>
+          <label class="row" style="gap:.5rem;align-items:flex-start">
+            <input type="radio" name="access_mode" value="full" checked>
+            <span class="text-sm"><strong>Full access</strong> — everything your account can do through the API,
+              including placing orders that spend your wallet.</span>
+          </label>
+          <label class="row mt-2" style="gap:.5rem;align-items:flex-start">
+            <input type="radio" name="access_mode" value="scoped">
+            <span class="text-sm"><strong>Only the scopes I choose</strong> — a key that can read prices but not
+              spend, for a price scraper or a dashboard.</span>
+          </label>
+          <div class="stack mt-3" style="gap:.35rem;padding-left:1.6rem">
+            <?php foreach (($scope_catalogue ?? array()) as $scope => $description): ?>
+              <label class="row" style="gap:.5rem;align-items:flex-start">
+                <input type="checkbox" name="scopes[]" value="<?=htmlspecialchars($scope)?>"
+                       <?=$scope === 'services.read' ? 'checked' : ''?>>
+                <span class="text-sm"><code class="mono"><?=htmlspecialchars($scope)?></code>
+                  — <?=htmlspecialchars($description)?></span>
+              </label>
+            <?php endforeach; ?>
+            <span class="hint">Scopes only apply when "Only the scopes I choose" is selected.</span>
+          </div>
+        </fieldset>
+
         <div><button class="btn btn-primary" type="submit">Generate key</button></div>
       <?=form_close()?>
     </div>

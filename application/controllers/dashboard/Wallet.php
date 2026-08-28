@@ -38,7 +38,10 @@ class Wallet extends Auth_Controller {
 
     public function add_funds() {
         $wallet = $this->Wallet_model->for_user($this->current_user->id);
-        $methods = $this->db->where('is_active',1)->order_by('sorting','ASC')->get('payment_methods')->result();
+        // Only methods whose gateway is actually configured: an active row with
+        // no API credentials would take the customer all the way to "Pay" and
+        // then fail at the last step.
+        $methods = $this->paymentservice->payable_methods();
 
         // Deposit bounds come from settings, not the view. They were hardcoded
         // as 5/10000 in the template, which silently contradicted the settings
@@ -99,6 +102,7 @@ class Wallet extends Auth_Controller {
         // account details, and those live on the checkout row rather than on
         // the transaction. Loaded here so the view stays free of queries.
         $checkout = null;
+        $gateway_checkout = null;
         if ($tx && $tx->status === 'PENDING') {
             try {
                 $this->load->model('Fundsvera_checkout_model');
@@ -106,6 +110,11 @@ class Wallet extends Auth_Controller {
             } catch (Throwable $e) {
                 log_message('error', 'could not load checkout details: '.$e->getMessage());
             }
+            // Hosted gateways (Paystack, Stripe, PayPal, CoinPayments, …) store
+            // what they showed the customer on the transaction itself, so an
+            // interrupted payment can be resumed rather than restarted.
+            $meta = json_decode((string)$tx->metadata, true);
+            if (is_array($meta) && !empty($meta['checkout'])) $gateway_checkout = $meta['checkout'];
         }
         $this->load->view('layouts/app', array(
             'title' => 'Deposits',
@@ -117,6 +126,7 @@ class Wallet extends Auth_Controller {
             'deposits' => $deposits,
             'active_deposit' => $tx,
             'checkout' => $checkout,
+            'gateway_checkout' => $gateway_checkout,
         ));
     }
 }

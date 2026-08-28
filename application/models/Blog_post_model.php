@@ -5,21 +5,36 @@ class Blog_post_model extends MY_Model {
     protected $table = 'blog_posts';
 
     public function published($category_slug = null, $limit = 20, $offset = 0) {
-        $this->db->where('status', 'PUBLISHED')->where('published_at <=', gmdate('Y-m-d H:i:s'));
-        if ($category_slug) {
-            $cat = $this->db->where('slug', $category_slug)->get('blog_categories')->row();
-            if ($cat) $this->db->where('category_id', $cat->id);
+        // Resolve the category BEFORE the post conditions are staged: the query
+        // builder keeps pending where() clauses until the next get(), so looking
+        // the slug up mid-build ran `status = 'PUBLISHED'` against
+        // blog_categories and blew up with "Unknown column 'status'".
+        $category_id = $this->category_id_for_slug($category_slug);
+        if ($category_slug !== null && $category_slug !== '' && $category_id === null) {
+            return array();
         }
+
+        $this->db->where('status', 'PUBLISHED')->where('published_at <=', gmdate('Y-m-d H:i:s'));
+        if ($category_id !== null) $this->db->where('category_id', $category_id);
         return $this->db->order_by('published_at', 'DESC')->limit($limit, $offset)->get($this->table)->result();
     }
 
     public function count_published($category_slug = null) {
-        $this->db->where('status', 'PUBLISHED')->where('published_at <=', gmdate('Y-m-d H:i:s'));
-        if ($category_slug) {
-            $cat = $this->db->where('slug', $category_slug)->get('blog_categories')->row();
-            if ($cat) $this->db->where('category_id', $cat->id);
+        $category_id = $this->category_id_for_slug($category_slug);
+        if ($category_slug !== null && $category_slug !== '' && $category_id === null) {
+            return 0;
         }
+
+        $this->db->where('status', 'PUBLISHED')->where('published_at <=', gmdate('Y-m-d H:i:s'));
+        if ($category_id !== null) $this->db->where('category_id', $category_id);
         return (int)$this->db->count_all_results($this->table);
+    }
+
+    /** Category id for a slug, or null when the slug is empty/unknown. */
+    private function category_id_for_slug($slug) {
+        if ($slug === null || $slug === '') return null;
+        $row = $this->db->where('slug', $slug)->get('blog_categories')->row();
+        return $row ? (int)$row->id : null;
     }
 
     public function find_published($slug) {

@@ -27,7 +27,8 @@ const { translate, NOOP } = require('./translate');
 // CLI
 // ---------------------------------------------------------------------------
 function parseArgs(argv) {
-  const out = { port: 3399, host: '127.0.0.1', db: 'storage/devdb/marvy.sqlite', verbose: false, fresh: false };
+  const out = { port: 3399, host: '127.0.0.1', db: 'storage/devdb/marvy.sqlite', verbose: false,
+                fresh: false, statsPort: 0 };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--port') out.port = parseInt(argv[++i], 10);
@@ -35,6 +36,9 @@ function parseArgs(argv) {
     else if (a === '--db') out.db = argv[++i];
     else if (a === '--verbose') out.verbose = true;
     else if (a === '--fresh') out.fresh = true;
+    // A side-channel that counts queries, so a page's cost can be measured
+    // from outside the application instead of guessed by reading code.
+    else if (a === '--stats-port') out.statsPort = parseInt(argv[++i], 10);
   }
   return out;
 }
@@ -77,6 +81,16 @@ db.function('GREATEST', { varargs: true }, (...v) => {
 db.function('LEAST', { varargs: true }, (...v) => {
   const vals = v.filter((x) => x !== null && x !== undefined);
   return vals.length ? vals.reduce((a, b) => (a < b ? a : b)) : null;
+});
+// SUBSTRING_INDEX(str, delim, count) — MySQL's "everything before the Nth
+// delimiter". Migration 028 uses it to recover a rate-limit scope from an
+// identifier like 'assistant:1.2.3.4'.
+db.function('SUBSTRING_INDEX', (str, delim, count) => {
+  if (str === null || str === undefined) return null;
+  const parts = String(str).split(String(delim));
+  const n = Number(count);
+  return n >= 0 ? parts.slice(0, n).join(String(delim))
+                : parts.slice(parts.length + n).join(String(delim));
 });
 db.function('TIMESTAMPDIFF_SECOND', (a, b) =>
   Math.round((Date.parse(b + 'Z') - Date.parse(a + 'Z')) / 1000)
@@ -393,6 +407,32 @@ function handleAdminQuery(sql, session) {
 // ---------------------------------------------------------------------------
 // Query execution
 // ---------------------------------------------------------------------------
+/**
+ * Per-connection query accounting for the performance checks.
+ *
+ * `SELECT COUNT(*)` in a loop looks identical to one grouped query from inside
+ * PHP; from here the difference is a number. Reset before a request, read
+ * after, and an N+1 announces itself.
+ */
+const stats = { queries: 0, selects: 0, writes: 0, slowest: null, byTable: {}, samples: {} };
+function recordQuery(sql, ms) {
+  stats.queries++;
+  const isSelect = /^\s*\(?\s*select/i.test(sql);
+  if (isSelect) stats.selects++; else stats.writes++;
+  const table = (/\b(?:from|into|update)\s+[`"]?([a-z_]+)[`"]?/i.exec(sql) || [, '?'])[1];
+  stats.byTable[table] = (stats.byTable[table] || 0) + 1;
+  if (!stats.slowest || ms > stats.slowest.ms) {
+    stats.slowest = { ms: Math.round(ms * 100) / 100, sql: sql.slice(0, 200) };
+  }
+  // Keep a sample of each table's statements so a repeated query can be read
+  // back rather than inferred.
+  if (!stats.samples[table]) stats.samples[table] = sql.slice(0, 220);
+}
+function resetStats() {
+  stats.queries = 0; stats.selects = 0; stats.writes = 0;
+  stats.slowest = null; stats.byTable = {}; stats.samples = {};
+}
+
 function isSelectLike(sql) {
   return /^\s*(SELECT|WITH|PRAGMA|EXPLAIN|VALUES|SHOW)/i.test(sql);
 }
@@ -410,8 +450,23 @@ function refreshUniqueRegistry() {
   }
 }
 
+/**
+ * The MySQL column type advertised for a value.
+ *
+ * A non-integer JS number MUST NOT be advertised as LONGLONG. SQLite returns
+ * SUM() over a DECIMAL-as-TEXT column as a float, and this function used to
+ * label every number LONGLONG — so the client cast the perfectly good text
+ * "16215.60500004" to an integer and handed the application 16215. Every money
+ * aggregate read through the dev database silently lost its decimals: revenue
+ * cards, refund totals, wallet sums. Real MySQL returns those as DECIMAL, so
+ * the bug existed only here — which is worse, because it makes correct code
+ * look wrong (and could make wrong code look right).
+ */
 function columnTypeFor(value) {
-  if (typeof value === 'number' || typeof value === 'bigint') return proto.TYPE_LONGLONG;
+  if (typeof value === 'bigint') return proto.TYPE_LONGLONG;
+  if (typeof value === 'number') {
+    return Number.isInteger(value) ? proto.TYPE_LONGLONG : proto.TYPE_NEWDECIMAL;
+  }
   if (Buffer.isBuffer(value)) return proto.TYPE_BLOB;
   return proto.TYPE_VAR_STRING;
 }
@@ -447,8 +502,10 @@ function execute(sqlText, session) {
       log('SQL>', sql.slice(0, 400));
 
       if (isSelectLike(sql)) {
+        const started = process.hrtime.bigint();
         const prepared = db.prepare(sql);
         const rows = prepared.all();
+        recordQuery(sql, Number(process.hrtime.bigint() - started) / 1e6);
         const names = prepared.columns
           ? prepared.columns().map((c) => c.name ?? c.column ?? '?')
           : rows.length
@@ -719,6 +776,18 @@ function createConnection(socket) {
       }
       session.inTransaction = false;
     }
+  });
+}
+
+// The stats side-channel: plain HTTP, dev only, opt-in with --stats-port.
+if (args.statsPort) {
+  const http = require('node:http');
+  http.createServer((req, res) => {
+    if (req.method === 'POST' && req.url.startsWith('/reset')) resetStats();
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(stats));
+  }).listen(args.statsPort, '127.0.0.1', () => {
+    console.log(`[devdb] query stats on http://127.0.0.1:${args.statsPort}`);
   });
 }
 

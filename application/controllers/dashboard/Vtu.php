@@ -58,9 +58,12 @@ class Vtu extends Auth_Controller {
             'phone'      => $this->input->post('phone', true),
             'customer_name' => $this->input->post('customer_name', true),
             // Scoped to the user so one customer's retry key cannot collide
-            // with another's, and a double-click cannot double-charge.
-            'idempotency_key' => 'vtu:'.$this->current_user->id.':'
-                                 .substr(sha1((string)$this->input->post('form_token', true)), 0, 32),
+            // with another's, and a double-click cannot double-charge. A
+            // MISSING token yields null, not a hash of the empty string: that
+            // hash was the same for every tokenless purchase, so a client
+            // without the hidden field could buy exactly once and every later
+            // attempt silently resolved to that first purchase.
+            'idempotency_key' => $this->purchase_key(),
             'source'     => 'WEB',
         );
 
@@ -77,6 +80,13 @@ class Vtu extends Auth_Controller {
         $this->session->set_flashdata('success',
             self::$tabs[$tab][2].' purchase '.strtolower($tx->status).'.');
         redirect('dashboard/vtu/receipt/'.$tx->public_id);
+    }
+
+    /** The double-click key for one attempt, or null when none was supplied. */
+    private function purchase_key() {
+        $token = trim((string)$this->input->post('form_token', true));
+        if ($token === '') return null;
+        return 'vtu:'.$this->current_user->id.':'.substr(sha1($token), 0, 32);
     }
 
     /**

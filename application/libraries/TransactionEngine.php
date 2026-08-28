@@ -175,7 +175,14 @@ class TransactionEngine {
         $tx = $this->ci->Service_transaction_model->find_by_id($tx_id);
         try {
             $result = call_user_func($spec['dispatch'], $tx);
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
+            // Throwable, not Exception. A TypeError inside an adapter — an
+            // array where an object was expected, a method on null after a
+            // vendor changed a field — is not an Exception in PHP 7+, so it
+            // used to escape this handler entirely: the customer had already
+            // been charged, the row stayed PROCESSING, no refund was made and
+            // the request died as a 500. The money mattered more than the
+            // stack trace, and both are now handled.
             log_message('error', 'TransactionEngine dispatch threw: '.$e->getMessage());
             $this->transition($tx_id, 'FAILED', 'PROVIDER', 'Provider error');
             return $this->fail_result('The provider could not be reached', 'PROVIDER_ERROR');
@@ -274,7 +281,10 @@ class TransactionEngine {
                 // Never refund more than was charged, in total.
                 $remaining = bcsub($charged, $already, 8);
                 if (bccomp($target, $remaining, 8) > 0) $target = $remaining;
-                if (bccomp($target, '0', 8) > 0 && $tx->wallet_transaction_id) {
+                // No wallet_transaction_id means the charge never happened —
+                // a row abandoned between creation and payment. Closing it
+                // must move no money.
+                if (bccomp($target, '0', 8) > 0 && !empty($tx->wallet_transaction_id)) {
                     $refund_amount = $target;
                 }
             }
@@ -311,9 +321,19 @@ class TransactionEngine {
                 return array('ok' => false, 'error' => 'Transaction could not be committed', 'code' => 'DB_ERROR');
             }
 
+            $fresh = $this->ci->Service_transaction_model->find_by_id($tx->id);
+            // Last step, after the commit, and never fatal: the money has
+            // already moved. Until now a VTU top-up could fail, the charge
+            // could be returned, and the customer would be told nothing at all
+            // — they saw a purchase disappear and a balance change with no
+            // explanation, which is what support tickets are made of.
+            if ($refund_amount !== null) {
+                $this->notify_refund($fresh, $refund_amount, $reason);
+            }
+
             return array(
                 'ok' => true,
-                'transaction' => $this->ci->Service_transaction_model->find_by_id($tx->id),
+                'transaction' => $fresh,
                 'refunded' => $refund_amount,
             );
         } catch (Throwable $e) {
@@ -324,6 +344,38 @@ class TransactionEngine {
     }
 
     /* -------------------------------------------------------------------- */
+
+    /** Human wording for a domain, for the customer's inbox. */
+    private static $domain_words = array(
+        'VTU'         => 'top-up',
+        'NUMBER'      => 'virtual number',
+        'IDENTITY'    => 'identity check',
+        'GIFTCARD'    => 'gift card',
+        'EDUCATION'   => 'exam pin',
+        'MARKETPLACE' => 'order',
+    );
+
+    /** Tell the customer their money came back, and why. */
+    private function notify_refund($tx, $amount, $reason = null) {
+        try {
+            if (!$tx) return;
+            $this->ci->load->library('NotificationService');
+            if (!isset($this->ci->notificationservice)) return;
+
+            $what = self::$domain_words[strtoupper((string)$tx->service_domain)] ?? 'purchase';
+            $body = ucfirst($what).' '.$tx->public_id.' was not completed'
+                  .($reason ? ' ('.$reason.')' : '').'. '
+                  .marvy_money($amount, $tx->currency ?? null).' has been returned to your wallet.';
+
+            $this->ci->notificationservice->notify(
+                (int)$tx->user_id, 'purchase.refunded', $body,
+                array('reference' => $tx->public_id, 'url' => 'dashboard/history'),
+                array('reference' => $tx->public_id, 'amount' => marvy_money($amount, $tx->currency ?? null))
+            );
+        } catch (Throwable $e) {
+            log_message('error', 'purchase refund notify failed: '.$e->getMessage());
+        }
+    }
 
     /** The wallet_transactions.id behind a LedgerService result. */
     private function resolve_wallet_tx_id(array $charge) {

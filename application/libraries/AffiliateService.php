@@ -280,6 +280,97 @@ class AffiliateService {
         return array('paid'=>$paid,'skipped'=>$skipped,'amount'=>$total);
     }
 
+    /**
+     * Keep an already-accrued commission in step with what the customer
+     * actually paid.
+     *
+     * `record_for_order()` prices the commission from the order's NET charge —
+     * correct at the moment it accrues, and never revisited. So a refund that
+     * lands afterwards left the referrer holding a commission on money the
+     * platform gave back:
+     *
+     *   order completes at 10,000, commission accrues at 10% = 1,000;
+     *   the provider later reports a partial delivery and 4,000 is refunded;
+     *   the commission is still 1,000 on a net sale of 6,000 — a 400
+     *   overpayment, on every affected order, that nothing would ever notice.
+     *
+     * This re-prices the PENDING commission to the current net charge, voids
+     * it entirely when the whole sale came back, and — when the commission has
+     * already been PAID — refuses to touch it and reports the overpayment
+     * instead. Clawing money out of a referrer's wallet without a human
+     * deciding to is not something this class should do; making the
+     * overpayment visible is.
+     *
+     * @return array{ok:bool, action:string, before?:string, after?:string, overpaid?:string}
+     */
+    public function resync_for_order($order) {
+        if (!$order || empty($order->user_id)) return array('ok'=>false,'action'=>'NO_ORDER');
+        if (!$this->enabled()) return array('ok'=>false,'action'=>'DISABLED');
+
+        $referral = $this->ci->Referral_model->for_referred($order->user_id);
+        if (!$referral) return array('ok'=>true,'action'=>'NOT_REFERRED');
+
+        $commission = $this->ci->Referral_commission_model->find_for_order($referral->id, $order->id);
+        if (!$commission) {
+            // Nothing accrued yet: the ordinary path prices it correctly.
+            return $this->record_for_order($order);
+        }
+        if ($commission->status !== Referral_commission_model::STATUS_PENDING) {
+            $account = $this->ci->Referral_account_model->find_by_id($referral->referral_account_id);
+            $percent = $account ? (string)$account->commission_percent : $this->default_percent();
+            $target  = $this->commission_amount($this->net_charge($order), $percent);
+            $paid    = $this->decimal($commission->amount);
+            $over    = bcsub($paid, $target, 8);
+            if ($commission->status === Referral_commission_model::STATUS_PAID
+                && bccomp($over, '0', 8) > 0) {
+                // Named, logged and returned rather than silently absorbed:
+                // an operator can decide whether to claw it back.
+                log_message('error', 'affiliate: commission '.$commission->id.' was paid '
+                    .$paid.' on an order now worth '.$target.' — overpaid by '.$over);
+                $this->audit_overpayment($commission, $order, $paid, $target, $over);
+                return array('ok'=>true,'action'=>'ALREADY_PAID','overpaid'=>$over,
+                             'before'=>$paid,'after'=>$target);
+            }
+            return array('ok'=>true,'action'=>'NOT_PENDING');
+        }
+
+        $account = $this->ci->Referral_account_model->find_by_id($referral->referral_account_id);
+        $percent = $account ? (string)$account->commission_percent : $this->default_percent();
+        $target  = $this->commission_amount($this->net_charge($order), $percent);
+        $before  = $this->decimal($commission->amount);
+
+        if (bccomp($target, '0', 8) <= 0) {
+            // The whole sale came back: there is nothing to be paid a share of.
+            $this->ci->Referral_commission_model->reverse($commission->id);
+            return array('ok'=>true,'action'=>'REVERSED','before'=>$before,'after'=>'0.00000000');
+        }
+        if (bccomp($target, $before, 8) === 0) {
+            return array('ok'=>true,'action'=>'UNCHANGED','before'=>$before,'after'=>$target);
+        }
+
+        $this->ci->Referral_commission_model->reprice($commission->id, $target);
+        return array('ok'=>true,
+                     'action'=> bccomp($target, $before, 8) < 0 ? 'REDUCED' : 'INCREASED',
+                     'before'=>$before, 'after'=>$target);
+    }
+
+    /** Record a commission paid on money that was later refunded. */
+    private function audit_overpayment($commission, $order, $paid, $target, $over) {
+        try {
+            $this->ci->load->model('Audit_log_model');
+            if (!isset($this->ci->Audit_log_model)) return;
+            $this->ci->Audit_log_model->record(
+                null, 'affiliate.commission.overpaid', 'referral_commissions',
+                (string)$commission->id, array('amount' => $paid),
+                array('amount_now_earned' => $target, 'overpaid' => $over,
+                      'order' => $order->public_id ?? null),
+                null, null, null
+            );
+        } catch (Throwable $e) {
+            log_message('error', 'affiliate overpayment audit failed: '.$e->getMessage());
+        }
+    }
+
     /** Void unpaid commissions for an order that was refunded/canceled. */
     public function reverse_for_order($order) {
         if (!$order || empty($order->user_id)) return array('ok'=>false,'reversed'=>0);

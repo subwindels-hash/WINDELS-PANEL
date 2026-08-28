@@ -98,6 +98,83 @@ $value = function ($key) use ($form) {
         <?=form_close()?>
       </div>
 
+      <?php
+        // Operator-controlled contact block (Admin → Settings → Contact page).
+        //
+        // Two embeds, chosen by what the operator typed, because both have to
+        // work with no API key and no billing account:
+        //
+        //   · "latitude,longitude" → OpenStreetMap. Exact pin, no key, and no
+        //     third-party cookie dropped on a visitor who only wanted an
+        //     address.
+        //   · anything else (a street address, a place name) → Google Maps in
+        //     its keyless `output=embed` mode, which is the only embed that
+        //     geocodes free text without an account.
+        //
+        // Either way the operator gets a working map by typing one field.
+        $cd = $contact_details ?? array();
+        $map_enabled = !empty($cd['map_enabled']);
+        $address = trim((string)($cd['address'] ?? ''));
+        $phone   = trim((string)($cd['phone'] ?? ''));
+        $hours   = trim((string)($cd['hours'] ?? ''));
+        $embed = $search = '';
+        if ($map_enabled) {
+            $query = (string)$cd['map_query'];
+            $zoom  = (int)($cd['map_zoom'] ?? 15);
+            if (preg_match('/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/', $query, $m)) {
+                $lat = (float)$m[1]; $lng = (float)$m[2];
+                // A degree window that roughly matches the requested zoom, so
+                // "17" really does look like a street and "12" like a city.
+                $span = max(0.0015, 0.35 / pow(2, max(0, $zoom - 9)));
+                $embed = 'https://www.openstreetmap.org/export/embed.html?bbox='
+                       . rawurlencode(($lng - $span).','.($lat - $span).','.($lng + $span).','.($lat + $span))
+                       . '&layer=mapnik&marker='.rawurlencode($lat.','.$lng);
+                $search = 'https://www.openstreetmap.org/?mlat='.rawurlencode((string)$lat)
+                        . '&mlon='.rawurlencode((string)$lng).'#map='.$zoom.'/'.$lat.'/'.$lng;
+            } else {
+                $embed  = 'https://maps.google.com/maps?q='.rawurlencode($query).'&z='.$zoom.'&output=embed';
+                $search = 'https://www.google.com/maps/search/?api=1&query='.rawurlencode($query);
+            }
+        }
+      ?>
+      <?php if ($map_enabled || $address !== '' || $phone !== '' || $hours !== ''): ?>
+      <div class="card mt-6">
+        <h2 class="card-title">Find us</h2>
+        <div class="grid grid-2" style="gap:1.25rem;align-items:start">
+          <div>
+            <?php if ($address !== ''): ?>
+              <h3 class="text-sm font-semibold mb-1">Address</h3>
+              <p class="muted" style="white-space:pre-line;margin-top:0"><?=htmlspecialchars($address)?></p>
+            <?php endif; ?>
+            <?php if ($phone !== ''): ?>
+              <h3 class="text-sm font-semibold mb-1 mt-3">Phone</h3>
+              <p class="muted" style="margin-top:0">
+                <a href="tel:<?=htmlspecialchars(preg_replace('/[^0-9+]/', '', $phone))?>"><?=htmlspecialchars($phone)?></a>
+              </p>
+            <?php endif; ?>
+            <?php if ($hours !== ''): ?>
+              <h3 class="text-sm font-semibold mb-1 mt-3">Support hours</h3>
+              <p class="muted" style="margin-top:0"><?=htmlspecialchars($hours)?></p>
+            <?php endif; ?>
+            <?php if ($map_enabled): ?>
+              <p class="mt-3 mb-0">
+                <a class="btn btn-secondary btn-sm" href="<?=htmlspecialchars($search)?>"
+                   target="_blank" rel="noopener noreferrer">Open in maps</a>
+              </p>
+            <?php endif; ?>
+          </div>
+          <?php if ($map_enabled): ?>
+            <div class="ws-map" data-map-query="<?=htmlspecialchars((string)$cd['map_query'])?>"
+                 data-map-zoom="<?=(int)($cd['map_zoom'] ?? 15)?>">
+              <iframe title="Map showing our location" loading="lazy" referrerpolicy="no-referrer"
+                      src="<?=htmlspecialchars($embed)?>"
+                      style="border:0;width:100%;height:100%"></iframe>
+            </div>
+          <?php endif; ?>
+        </div>
+      </div>
+      <?php endif; ?>
+
       <div class="grid grid-3 mt-6">
         <div class="card">
           <h2 class="card-title">Email</h2>

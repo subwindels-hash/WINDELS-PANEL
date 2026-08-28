@@ -14,7 +14,7 @@ $fmt = function ($v) { return rtrim(rtrim(number_format((float)$v, 4, '.', ''), 
   </div>
   <?php if ($can_manage): ?>
   <form method="post" action="<?=site_url('admin/affiliates/payout')?>"
-        onsubmit="return confirm('Pay all commissions that have cleared the hold window?')">
+        data-confirm="Pay all commissions that have cleared the hold window?" >
     <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
     <button class="btn btn-primary" type="submit">Run payout now</button>
   </form>

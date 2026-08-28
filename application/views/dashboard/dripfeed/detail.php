@@ -32,7 +32,7 @@ $d = $dripfeed;
         </form>
         <?php endif; ?>
         <?php if (!in_array($d->status,array('CANCELED','COMPLETED'),true)): ?>
-        <form method="post" action="<?=site_url('dashboard/drip-feed/'.$d->public_id.'/cancel')?>" onsubmit="return confirm('Cancel this drip-feed? Unspent reserve is refunded.')">
+        <form method="post" action="<?=site_url('dashboard/drip-feed/'.$d->public_id.'/cancel')?>" data-confirm="Cancel this drip-feed? Unspent reserve is refunded." >
           <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
           <button class="btn btn-danger" type="submit">Cancel &amp; refund</button>
         </form>

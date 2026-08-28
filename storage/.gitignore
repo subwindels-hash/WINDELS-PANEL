@@ -4,3 +4,9 @@
 !.gitignore
 !logs/
 !cache/
+# The attachment store must exist in a fresh clone with its deny guard in
+# place; the customer documents inside it are never source.
+!ticket_attachments/
+ticket_attachments/*
+!ticket_attachments/.htaccess
+!ticket_attachments/index.html

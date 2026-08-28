@@ -80,6 +80,12 @@ class Auth extends MY_Controller {
 
         $this->render_auth('auth/admin_login', array(
             'title' => 'Staff sign-in',
+            // The staff door gets staff words. The customer pitch on this page
+            // was the same sales line the public login shows, which reads as a
+            // mistake to the person it is shown to.
+            'auth_visual_title' => 'Staff sign-in.',
+            'auth_visual_text'  => 'Orders, payments, refunds and the audit trail. '
+                                  .'Customer passwords cannot open the back office.',
         ));
     }
 
@@ -87,7 +93,15 @@ class Auth extends MY_Controller {
         $this->form_validation->set_rules('identifier', 'Email or username', 'required|trim');
         $this->form_validation->set_rules('password', 'Password', 'required');
         if (!$this->form_validation->run()) {
-            return $this->render_auth('auth/admin_login', array('title' => 'Staff sign-in'));
+            return $this->render_auth('auth/admin_login', array(
+            'title' => 'Staff sign-in',
+            // The staff door gets staff words. The customer pitch on this page
+            // was the same sales line the public login shows, which reads as a
+            // mistake to the person it is shown to.
+            'auth_visual_title' => 'Staff sign-in.',
+            'auth_visual_text'  => 'Orders, payments, refunds and the audit trail. '
+                                  .'Customer passwords cannot open the back office.',
+            ));
         }
 
         $ip         = $this->input->ip_address();

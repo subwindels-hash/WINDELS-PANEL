@@ -2068,4 +2068,97 @@ ALTER TABLE coupons
 ADD COLUMN is_public TINYINT(1) NOT NULL DEFAULT 0
 COMMENT 'Shown in the cart page discovery list when 1; still requires is_active + date window + usage limit to actually apply';
 
+-- ---------------------------------------------------------------------
+-- migration 027_wallet_counter_backfill
+-- ---------------------------------------------------------------------
+
+UPDATE wallets SET
+total_deposited = COALESCE((
+  SELECT SUM(wt.amount) FROM wallet_transactions wt
+   WHERE wt.wallet_id = wallets.id
+     AND wt.direction = 'CREDIT' AND wt.type = 'DEPOSIT'), 0),
+total_spent = GREATEST(0, COALESCE((
+  SELECT SUM(wt.amount) FROM wallet_transactions wt
+   WHERE wt.wallet_id = wallets.id AND wt.direction = 'DEBIT'), 0)
+  - COALESCE((
+  SELECT SUM(wt.amount) FROM wallet_transactions wt
+   WHERE wt.wallet_id = wallets.id
+     AND wt.direction = 'CREDIT' AND wt.type = 'REFUND'), 0));
+
+-- ---------------------------------------------------------------------
+-- migration 028_rate_limit_scope
+-- ---------------------------------------------------------------------
+
+ALTER TABLE login_attempts
+ADD COLUMN scope VARCHAR(32) NOT NULL DEFAULT 'login'
+COMMENT 'Which limiter wrote this row: login|admin_login|mfa|register|pwreset|assistant';
+
+UPDATE login_attempts
+  SET scope = SUBSTRING_INDEX(email, ':', 1)
+WHERE email LIKE '%:%';
+
+CREATE INDEX idx_la_scope_ip_created ON login_attempts (scope, ip, created_at);
+
+CREATE INDEX idx_la_scope_email_created ON login_attempts (scope, email, created_at);
+
+-- ---------------------------------------------------------------------
+-- migration 029_private_ticket_attachments
+-- ---------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------
+-- migration 030_coupon_redemption_slots
+-- ---------------------------------------------------------------------
+
+ALTER TABLE coupon_redemptions
+ADD COLUMN redemption_slot INT UNSIGNED NOT NULL DEFAULT 1
+COMMENT 'Which redemption number this is for this customer on this coupon; unique with (coupon_id,user_id)';
+
+UPDATE coupon_redemptions
+SET redemption_slot = 1 + (
+  SELECT COUNT(*) FROM (SELECT id, coupon_id, user_id FROM coupon_redemptions) e
+   WHERE e.coupon_id = coupon_redemptions.coupon_id
+     AND e.user_id = coupon_redemptions.user_id
+     AND e.id < coupon_redemptions.id
+);
+
+CREATE UNIQUE INDEX uq_couponredeem_slot
+ON coupon_redemptions (coupon_id, user_id, redemption_slot);
+
+-- ---------------------------------------------------------------------
+-- migration 031_cron_job_controls
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS cron_job_controls (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  job VARCHAR(64) NOT NULL UNIQUE COMMENT 'cron job name, as passed to php index.php cron <job>',
+  is_paused TINYINT(1) NOT NULL DEFAULT 0,
+  reason VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'why it was paused — required when pausing',
+  paused_by_id BIGINT UNSIGNED NULL,
+  paused_at DATETIME NULL,
+  resume_at DATETIME NULL COMMENT 'the pause expires here; the runner resumes the job itself',
+  resumed_by_id BIGINT UNSIGNED NULL,
+  resumed_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_cronctl_paused (is_paused, resume_at),
+  CONSTRAINT fk_cronctl_pauser FOREIGN KEY (paused_by_id) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_cronctl_resumer FOREIGN KEY (resumed_by_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- migration 032_marketplace_partial_refunds
+-- ---------------------------------------------------------------------
+
+ALTER TABLE marketplace_orders
+ADD COLUMN refunded_amount DECIMAL(20,8) NOT NULL DEFAULT 0
+COMMENT 'Total returned to the buyer so far; never exceeds gross_amount';
+
+ALTER TABLE marketplace_orders
+ADD COLUMN refunded_quantity INT UNSIGNED NOT NULL DEFAULT 0
+COMMENT 'Units returned to stock so far; a goodwill discount returns none';
+
+UPDATE marketplace_orders
+  SET refunded_amount = gross_amount, refunded_quantity = quantity
+WHERE status = 'REFUNDED' AND refunded_amount = 0;
+
 SET FOREIGN_KEY_CHECKS = 1;

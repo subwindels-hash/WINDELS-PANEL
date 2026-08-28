@@ -31,6 +31,86 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  */
 class SystemAdminService {
 
+    /* ----------------------------- cron jobs ----------------------------- */
+
+    /**
+     * A five-field cron expression, in words.
+     *
+     * Operators who have written crontabs for a decade read the star-slash-two
+     * form fluently; everybody else does not, and the whole point of the cron
+     * screen is that somebody who has never installed a crontab can tell
+     * whether the panel's background work is happening.
+     */
+    public static function describe_schedule($expr) {
+        $expr = trim(preg_replace('/\s+/', ' ', (string)$expr));
+        if ($expr === '') return 'not scheduled';
+        $parts = explode(' ', $expr);
+        if (count($parts) !== 5) return $expr;
+        list($min, $hour, $dom, $mon, $dow) = $parts;
+
+        if ($min === '*' && $hour === '*') return 'every minute';
+        if (preg_match('#^\*/(\d+)$#', $min, $m) && $hour === '*') {
+            return 'every '.$m[1].' minute'.($m[1] === '1' ? '' : 's');
+        }
+        if (preg_match('#^\*/(\d+)$#', $hour, $m) && $min === '0') {
+            return 'every '.$m[1].' hour'.($m[1] === '1' ? '' : 's');
+        }
+        if ($min === '0' && $hour === '*') return 'hourly, on the hour';
+        if (ctype_digit($min) && ctype_digit($hour) && $dom === '*' && $mon === '*' && $dow === '*') {
+            return sprintf('daily at %02d:%02d UTC', (int)$hour, (int)$min);
+        }
+        if (ctype_digit($min) && $hour === '*') return 'hourly, at :'.sprintf('%02d', (int)$min);
+        return $expr;
+    }
+
+    /**
+     * How a scheduled job is doing: `ok`, `late`, `failing` or `never`.
+     *
+     * "Late" is judged against the job's own cadence with a generous multiple,
+     * because a busy host running a two-minute job four minutes late is not a
+     * fault — a job that has not run in an hour is.
+     */
+    public static function job_state($schedule, $last, $age_minutes) {
+        if (!$last) return 'never';
+        if (isset($last->status) && $last->status === 'FAILED') return 'failing';
+        if ($age_minutes === null) return 'ok';
+
+        $expected = self::cadence_minutes($schedule);
+        // Three missed ticks, and never less than fifteen minutes of slack.
+        $tolerance = max(15, $expected * 3);
+        return $age_minutes > $tolerance ? 'late' : 'ok';
+    }
+
+    /** Roughly how many minutes there should be between two runs. */
+    public static function cadence_minutes($schedule) {
+        $expr = trim(preg_replace('/\s+/', ' ', (string)$schedule));
+        $parts = explode(' ', $expr);
+        if (count($parts) !== 5) return 60;
+        list($min, $hour) = $parts;
+        if (preg_match('#^\*/(\d+)$#', $min, $m)) return max(1, (int)$m[1]);
+        if ($min === '*') return 1;
+        if (preg_match('#^\*/(\d+)$#', $hour, $m)) return max(1, (int)$m[1]) * 60;
+        if ($hour === '*') return 60;
+        return 1440;
+    }
+
+    /**
+     * The crontab an operator can paste, built from the same schedule table
+     * the application reads — so it cannot drift from what the panel expects.
+     */
+    public static function crontab_lines(array $schedules) {
+        $lines = array(
+            '# MarvySocials background jobs — paste into: crontab -e',
+            '# Replace /home/USER/public_html with your document root.',
+            'MYPANEL=/home/USER/public_html',
+            '',
+        );
+        foreach ($schedules as $job => $expr) {
+            $lines[] = sprintf('%-16s cd $MYPANEL && php index.php cron %s', $expr, $job);
+        }
+        return $lines;
+    }
+
     /** Blacklist kinds, mapped to their table and value column. */
     public static function lists() {
         return array(

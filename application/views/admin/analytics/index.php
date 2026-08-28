@@ -36,7 +36,15 @@ $has_series = bccomp($peak, '0', 8) > 0;
   <div class="card">
     <div class="muted text-sm">Net revenue</div>
     <div class="text-2xl font-bold"><?=marvy_money($summary['net'])?></div>
-    <div class="hint"><?=number_format((int)$summary['orders'])?> sale<?=$summary['orders'] == 1 ? '' : 's'?></div>
+    <div class="hint">
+      <?=number_format((int)$summary['orders'])?> sale<?=$summary['orders'] == 1 ? '' : 's'?>
+      <?php if (!empty($summary['unearned'])): ?>
+        <?php /* Stated, not hidden: revenue counts delivered sales only, and an
+                 operator who sees the attempts knows the smaller figure is the
+                 honest one rather than missing data. */ ?>
+        · <span title="Failed, cancelled or not yet delivered — no income either way"><?=number_format((int)$summary['unearned'])?> not counted</span>
+      <?php endif; ?>
+    </div>
   </div>
   <div class="card">
     <div class="muted text-sm">Gross</div>
@@ -159,7 +167,7 @@ $has_series = bccomp($peak, '0', 8) > 0;
   <div class="card">
     <h3 class="text-sm font-semibold mb-2">Delivery health</h3>
     <?php if (empty($health)): ?>
-      <p class="muted text-sm">No service transactions yet.</p>
+      <p class="muted text-sm">Nothing has been sold yet.</p>
     <?php else: ?>
     <div class="overflow-x-auto">
       <table class="table">
@@ -191,9 +199,11 @@ $has_series = bccomp($peak, '0', 8) > 0;
     </div>
     <p class="hint mt-2">
       "Stuck" means paid and still processing after 30 minutes — a customer
-      waiting for something they have already been charged for. Success rate
-      counts only purchases that reached an outcome, so a busy minute does not
-      read as an outage.
+      waiting for something they have already been charged for. SMM orders get
+      24 hours instead, because delivery there legitimately takes hours while a
+      gift card or an airtime top-up settles in seconds. Success rate counts
+      only purchases that reached an outcome, so a busy minute does not read as
+      an outage.
     </p>
     <?php endif; ?>
   </div>

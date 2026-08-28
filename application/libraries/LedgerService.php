@@ -96,7 +96,26 @@ class LedgerService {
             'currency'=>$wallet->currency,
             'created_at'=>gmdate('Y-m-d H:i:s'),
         ));
-        $this->ci->db->where('id',$wallet_id)->update('wallets', array('balance'=>$bal_after, 'updated_at'=>gmdate('Y-m-d H:i:s')));
+        // The lifetime counters move with the balance, in the same locked
+        // transaction. They had existed since migration 002 and NOTHING had
+        // ever written them, so "Total spent" on every admin customer screen
+        // read ₦0.00 for every customer who had ever bought anything, and the
+        // platform wallets summary said the same. Kept here rather than
+        // recomputed per page because the admin customer list would otherwise
+        // need an aggregate over the whole movement history per row.
+        $counters = array('balance' => $bal_after, 'updated_at' => gmdate('Y-m-d H:i:s'));
+        if ($direction === 'DEBIT') {
+            $counters['total_spent'] = bcadd((string)($wallet->total_spent ?? '0'), $amt, 8);
+        } elseif ($tx_type === 'DEPOSIT') {
+            $counters['total_deposited'] = bcadd((string)($wallet->total_deposited ?? '0'), $amt, 8);
+        } elseif ($tx_type === 'REFUND') {
+            // Money handed back was never spent. Floored at zero: a refund of
+            // a charge taken before this counter existed must not drive it
+            // negative and make the column look broken all over again.
+            $spent = bcsub((string)($wallet->total_spent ?? '0'), $amt, 8);
+            $counters['total_spent'] = bccomp($spent, '0', 8) < 0 ? '0.00000000' : $spent;
+        }
+        $this->ci->db->where('id',$wallet_id)->update('wallets', $counters);
         $this->ci->db->trans_complete();
         if ($this->ci->db->trans_status()===FALSE) return array('ok'=>FALSE,'error'=>'Transaction failed');
         return array('ok'=>TRUE,'public_id'=>$public_id,'balance_after'=>$bal_after);

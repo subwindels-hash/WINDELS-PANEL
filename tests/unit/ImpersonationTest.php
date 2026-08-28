@@ -1,6 +1,7 @@
 <?php
 use PHPUnit\Framework\TestCase;
 
+require_once dirname(__DIR__).'/_support/ShellSource.php';
 require_once dirname(__DIR__).'/_support/FakeDb.php';
 require_once dirname(__DIR__).'/_support/IntegrationHarness.php';
 
@@ -280,7 +281,7 @@ class ImpersonationTest extends TestCase
         $core = file_get_contents(self::$root.'/application/core/MY_Controller.php');
         $users = file_get_contents(self::$root.'/application/controllers/admin/Users.php');
         $stop = file_get_contents(self::$root.'/application/controllers/Impersonation.php');
-        $layout = file_get_contents(self::$root.'/application/views/layouts/app.php');
+        $layout = ShellSource::app(self::$root);
         $detail = file_get_contents(self::$root.'/application/views/admin/users/detail.php');
 
         $action = strpos($routes, "admin/customers/(:any)/impersonate");

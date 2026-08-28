@@ -1,43 +1,62 @@
-<?php defined('BASEPATH') OR exit('No direct script access allowed');?>
-<!-- Dashboard header theme with neon accents -->
-<header class="border-b border-white/10 bg-[gradient_legacy] from-[#0a0a0f] to-[#12121a] shadow-lg">
-  <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-    <div class="flex items-center gap-3">
-      <a href="<?=site_url()?>" class="flex items-center gap-2">
-        <img src="<?=base_url('assets/images/logo-white.png')?>" alt="WINDELS" class="w-6 h-6">
-        <span class="text-xl font-bold tracking-widest text-purple-400">WINDELSOCIALS</span>
-      </a>
-    </div>
-    <div class="hidden sm:flex items-center gap-6">
-      <a href="<?=site_url('dashboard')?>" class="text-slate-400 hover:text-white transition-colors font-medium">Dashboard</a>
-      <a href="<?=site_url('dashboard/orders')?>" class="text-slate-400 hover:text-white transition-colors font-medium">Orders</a>
-      <a href="<?=site_url('dashboard/wallet')?>" class="text-slate-400 hover:text-white transition-colors font-medium">Wallet</a>
-      <a href="<?=site_url('dashboard/earnings')?>" class="text-slate-400 hover:text-white transition-colors font-medium">Earnings</a>
-    </div>
-    <div class="flex items-center gap-3">
-      <button class="btn btn-ghost btn-sm theme-toggle dark:hidden" aria-label="Toggle light mode">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="5"></circle>
-          <line x1="12" y1="1" x2="12" y2="3"></line>
-          <line x1="12" y1="21" x2="12" y2="23"></line>
-          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-          <line x1="18.36" y1="18.36" x2="21.78" y2="21.78"></line>
-          <line x1="1" y1="12" x2="3" y2="12"></line>
-          <line x1="21" y1="12" x2="23" y2="12"></line>
-          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-          <line x1="18.36" y1="5.64" x2="21.78" y2="4.22"></line>
-        </svg>
-      </button>
-      <button class="btn btn-ghost btn-sm hidden sm:block" aria-label="Open menu">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="3" y1="6" x2="21" y2="6"></line>
-          <line x1="3" y1="12" x2="21" y2="12"></line>
-          <line x1="3" y1="18" x2="21" y2="18"></line>
-        </svg>
-      </button>
-      <a href="<?=site_url('auth/logout')?>" class="btn btn-ghost text-sm px-4 py-2 rounded-lg hover:bg-white/10 transition-colors">
-        Log out
-      </a>
-    </div>
+<?php defined('BASEPATH') OR exit('No direct script access allowed');
+/**
+ * Themed top bar for the authenticated shell.
+ *
+ * Expects: $is_admin, $unread, $current_user. Every link points at a route
+ * declared in config/routes.php, and logout is a POST form (the session must
+ * never be destroyed by a GET a third party can prime).
+ */
+$__user = $current_user ?? null;
+$__unread = (int)($unread ?? 0);
+$__links = ($is_admin ?? false)
+  ? array(
+      array('admin', 'Dashboard'),
+      array('admin/orders', 'Orders'),
+      array('admin/customers', 'Users'),
+      array('admin/payments', 'Payments'),
+    )
+  : array(
+      array('dashboard', 'Dashboard'),
+      array('dashboard/orders', 'Orders'),
+      array('dashboard/add-funds', 'Add funds'),
+      array('dashboard/earnings', 'Earnings'),
+    );
+?>
+<header class="ws-topbar">
+  <div class="ws-topbar-left">
+    <button type="button" class="btn btn-ghost btn-sm ws-sidebar-toggle" data-sidebar-toggle
+            aria-controls="ws-app-sidebar" aria-expanded="false">Menu</button>
+    <a href="<?=site_url()?>" class="ws-brand flex items-center gap-2">
+      <?php $this->load->view('partials/brand_logo', array('variant'=>'icon','height'=>26,'force_legacy'=>true)); ?>
+      <span class="font-bold tracking-tight ws-brand-word"><?=htmlspecialchars(function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials')?></span>
+    </a>
+  </div>
+
+  <nav class="hidden sm:flex items-center gap-6" aria-label="Quick links">
+    <?php foreach ($__links as $l): ?>
+      <a href="<?=site_url($l[0])?>" class="text-sm font-medium hover:text-purple-400 transition-colors"><?=htmlspecialchars($l[1])?></a>
+    <?php endforeach; ?>
+  </nav>
+
+  <div class="ws-topbar-right">
+    <button type="button" class="btn btn-ghost btn-sm" data-theme-toggle
+            aria-label="Toggle light or dark theme" title="Toggle theme">
+      <span data-theme-toggle-label>Dark</span>
+    </button>
+    <a href="<?=site_url('dashboard/notifications')?>" class="relative p-2 rounded-lg hover:bg-white/10" aria-label="Notifications">
+      <?php $this->load->view('partials/icon', array('name'=>'bell','class'=>'w-5 h-5')); ?>
+      <?php if ($__unread > 0): ?>
+        <span class="ws-unread"><?=$__unread > 99 ? '99+' : $__unread?></span>
+      <?php endif; ?>
+    </a>
+    <a href="<?=site_url(($is_admin ?? false) ? 'admin' : 'dashboard/profile')?>" class="hidden sm:inline-flex btn btn-ghost btn-sm">
+      <?php $this->load->view('partials/icon', array('name'=>'user','class'=>'w-4 h-4')); ?>
+      <?=htmlspecialchars($__user->username ?? '')?>
+    </a>
+    <form method="post" action="<?=site_url('logout')?>" class="m-0">
+      <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>"
+             value="<?=htmlspecialchars($this->security->get_csrf_hash())?>">
+      <button type="submit" class="btn btn-ghost btn-sm">Log out</button>
+    </form>
   </div>
 </header>

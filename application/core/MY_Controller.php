@@ -239,15 +239,35 @@ class MY_Controller extends CI_Controller {
     /**
      * Security response headers (§61).
      *
-     * Inline scripts and inline event-handler attributes (onclick="...", used
-     * widely by the admin UI to open <dialog>s, copy to clipboard, etc.) are
-     * allowed via 'unsafe-inline'. A nonce was tried but, by spec, a nonce in
-     * script-src disables 'unsafe-inline', which silently killed every inline
-     * handler — so the nonce bought nothing while breaking the buttons.
+     * script-src is nonce-only: no 'unsafe-inline', no 'unsafe-eval'. Every
+     * inline <script> in the views prints the nonce via csp_nonce_attr(), and
+     * the inline event-handler attributes the admin UI used to rely on
+     * (onclick="…showModal()", onsubmit="return confirm(…)", …) were replaced
+     * by declarative data-* attributes handled by one delegated listener in
+     * assets/js/app.js — attributes a nonce can never cover.
      *
      * Inline *styles* are still allowed. They are used widely for layout in the
      * admin views and cannot execute script, so the tradeoff is different.
      */
+    /**
+     * `frame-src` for the contact map, or nothing at all.
+     *
+     * Read from settings rather than hard-coded so the allowance disappears
+     * with the feature. Any failure (no database yet, table missing) returns
+     * the strict answer: no frames.
+     */
+    private function map_frame_src() {
+        try {
+            if (!function_exists('marvy_load_database') || !marvy_load_database()) return null;
+            $this->load->model('Setting_model');
+            $on = $this->Setting_model->get('contact_map_enabled', false);
+            if (!($on === true || $on === 1 || $on === '1' || $on === 'true')) return null;
+        } catch (Throwable $e) {
+            return null;
+        }
+        return "frame-src 'self' https://www.openstreetmap.org https://maps.google.com https://www.google.com";
+    }
+
     protected function send_security_headers() {
         $this->csp_nonce = base64_encode(random_bytes(16));
         // Expose it to views via the helper, which does not depend on knowing
@@ -263,19 +283,21 @@ class MY_Controller extends CI_Controller {
             // Production stays locked to same-origin (and X-Frame-Options below).
             (env_str('APP_ENV') === 'production') ? "frame-ancestors 'self'" : "frame-ancestors *",
             "form-action 'self'",
-            // NOTE: this panel's admin views use inline event-handler attributes
-            // (onclick="...showModal()...") on many buttons, not just inline
-            // <script> blocks. A nonce present in script-src disables
-            // 'unsafe-inline' by spec, which would silently kill every one of
-            // those handlers (e.g. "Add provider" / "Add product" open nothing).
-            // We therefore allow inline scripts rather than carrying a nonce
-            // that the rest of the UI never honours.
-            "script-src 'self' 'unsafe-inline'",
+            // Nonce-only. Inline handler attributes are gone (see the method
+            // docblock); anything that needs script prints the nonce.
+            "script-src 'self' 'nonce-".$this->csp_nonce."'",
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
             "font-src 'self' https://fonts.gstatic.com",
             "img-src 'self' data: https:",
             "connect-src 'self'",
+            // Nothing may be framed by default. The contact page's map is the
+            // only embed this panel has, so the two providers it can use are
+            // allowed only when an operator has actually switched the map on —
+            // an install without a map keeps a policy that forbids every
+            // iframe outright.
+            $this->map_frame_src(),
         );
+        $csp = array_values(array_filter($csp));
 
         $this->output->set_header('X-Content-Type-Options: nosniff');
         if (env_str('APP_ENV') === 'production') {

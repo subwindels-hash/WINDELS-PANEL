@@ -256,7 +256,8 @@ class AdminPanelTest extends TestCase
             // an explicitly guarded read-only support session, and resets
             // credentials (reset only — a PIN or password can never be read).
             'Users.php'    => array('status','role','price_group','adjust','impersonate',
-                                    'pin_reset','pin_unlock','password_reset'),
+                                    'pin_reset','pin_unlock','force_logout','revoke_keys',
+                                    'password_reset'),
             // Operations refunds through the schedulers' own cancel paths.
             'Operations.php' => array('refill_request','cancel','dripfeed_action','subscription_action'),
         );

@@ -32,6 +32,15 @@ class FakeDb
     /** @var array<string, array<int, array>> */
     public $rows = array();
     public $queries = array();
+
+    /**
+     * CI's drivers expose the live connection handle here, and application
+     * code checks it to answer "is the database up?" — `marvy_load_database()`
+     * does exactly that before writing a rate-limit row. Without it the double
+     * looked like an unconnected database, so every such write silently
+     * no-opped and the tests around it proved nothing.
+     */
+    public $conn_id = true;
     public $raw_updates = array();
 
     private $pending_where = array();
@@ -47,6 +56,11 @@ class FakeDb
     private $pending_select_all = false;
     private $pending_aliases = array();
     private $pending_aggregates = array();
+    /** Computed SELECT columns (currently SUBSTR), alias => spec. */
+    private $pending_expressions = array();
+
+    /** Values staged with set() before an update(). */
+    private $pending_set = array();
     private $pending_group = array();
     private $affected = 0;
     private $pending_order = array();
@@ -99,6 +113,22 @@ class FakeDb
                     $this->schema[$table]['unique'][] = array($name);
                 }
             }
+            return;
+        }
+
+        // CREATE UNIQUE INDEX — a constraint that lives outside CREATE TABLE.
+        //
+        // Ignoring these used to be harmless, because every unique key in this
+        // schema was declared inline. Migration 030 adds one afterwards
+        // (`uq_couponredeem_slot`), and it is the entire mechanism that stops
+        // two simultaneous checkouts redeeming a one-per-customer coupon
+        // twice — a double that does not model it cannot test the race it
+        // exists to close.
+        if (preg_match('/^\s*CREATE\s+UNIQUE\s+INDEX\s+`?\w+`?\s+ON\s+`?(\w+)`?\s*\(([^)]*)\)/is', $sql, $m)) {
+            $table = $m[1];
+            if (!isset($this->schema[$table])) return;
+            $cols = array_map(function ($c) { return trim($c, " `"); }, explode(',', $m[2]));
+            $this->schema[$table]['unique'][] = $cols;
             return;
         }
 
@@ -220,9 +250,54 @@ class FakeDb
         return $this;
     }
 
+    /**
+     * SQL-escape a value, as CI's driver does.
+     *
+     * Models interpolate escaped values into hand-written WHERE fragments
+     * (`(starts_at IS NULL OR starts_at <= '2026-01-01')`), and without this
+     * the double threw where production works.
+     */
+    public function escape($value)
+    {
+        if ($value === null) return 'NULL';
+        if (is_bool($value)) return $value ? '1' : '0';
+        if (is_int($value) || is_float($value)) return (string)$value;
+        return "'".str_replace("'", "''", (string)$value)."'";
+    }
+
+    /**
+     * set('col', 'col + 1', false) — the atomic-increment form.
+     *
+     * Coupon redemption counts and other counters are incremented this way on
+     * purpose (read-modify-write races over a usage limit), so a double that
+     * cannot express it cannot test them.
+     */
+    public function set($key, $value = null, $escape = true)
+    {
+        if (is_array($key)) {
+            foreach ($key as $k => $v) $this->pending_set[$k] = array('value' => $v, 'escape' => true);
+            return $this;
+        }
+        $this->pending_set[$key] = array('value' => $value, 'escape' => $escape);
+        return $this;
+    }
+
     public function where_in($key, array $values)
     {
         $this->pending_where[$key] = array('__in' => array_map('strval', $values));
+        return $this;
+    }
+
+    /**
+     * where_not_in('col', array(...)).
+     *
+     * Reporting queries need it as much as where_in does — "every row that did
+     * NOT earn money" is one of them — and a double that silently lacked it
+     * would fail with "undefined method" only once someone wrote the query.
+     */
+    public function where_not_in($key, array $values)
+    {
+        $this->pending_where[$key] = array('__not_in' => array_map('strval', $values));
         return $this;
     }
 
@@ -234,10 +309,12 @@ class FakeDb
         $select_all = $this->pending_select_all;
         $aliases = $this->pending_aliases;
         $aggregates = $this->pending_aggregates;
+        $expressions = $this->pending_expressions; $this->pending_expressions = array();
         $group = $this->pending_group;
         $distinct = $this->pending_distinct; $this->pending_distinct = false;
         $this->pending_from = null; $this->pending_joins = array();
         $this->pending_select = array(); $this->pending_aggregates = array();
+        $this->pending_expressions = array();
         $this->pending_group = array(); $this->pending_select_all = false;
         $this->pending_aliases = array();
 
@@ -262,6 +339,13 @@ class FakeDb
             // A join can fan one base row out into several, as SQL does.
             foreach ($this->applyJoins($this->hydrate($table, $row), $joins) as $full) {
                 $full = $this->applyAliases($full, $aliases);
+                foreach ($expressions as $alias => $spec) {
+                    $source = strpos($spec['column'], '.') !== false
+                        ? substr($spec['column'], strrpos($spec['column'], '.') + 1) : $spec['column'];
+                    // SQL SUBSTR is 1-based; PHP's is 0-based.
+                    $full[$alias] = array_key_exists($source, $full)
+                        ? substr((string)$full[$source], $spec['start'] - 1, $spec['length']) : null;
+                }
                 if (!$this->matches($full, $where, $or, $like, $groups)) continue;
                 // Projection is deferred when there are aggregates: SUM(amount)
                 // needs `amount` on the row, and the projected shape only carries
@@ -386,11 +470,27 @@ class FakeDb
         return true;
     }
 
-    public function update($table, array $data)
+    public function update($table, array $data = array())
     {
         $this->assertTable($table, 'update');
         $where = $this->takeWhere();
         $groups = $this->takeGroups();
+        // Values staged with set(), including the unescaped `col = col + 1`
+        // increment form the counters use.
+        $increments = array();
+        foreach ($this->pending_set as $column => $spec) {
+            // `col = col + 1` and `col = col - 1`: counters go both ways.
+            // Releasing a reserved coupon slot decrements times_used, and a
+            // double that only understood increments would have stored the
+            // literal string "times_used - 1" in the column.
+            if (!$spec['escape'] && preg_match('/^\s*'.preg_quote($column, '/').'\s*([+-])\s*(\d+)\s*$/i',
+                                               (string)$spec['value'], $m)) {
+                $increments[$column] = ($m[1] === '-' ? -1 : 1) * (int)$m[2];
+            } else {
+                $data[$column] = $spec['value'];
+            }
+        }
+        $this->pending_set = array();
         foreach ($data as $column => $_) {
             if (!isset($this->schema[$table]['columns'][$column])) {
                 throw new RuntimeException("FakeDb: unknown column {$table}.{$column} in update");
@@ -403,7 +503,11 @@ class FakeDb
         $this->affected = 0;
         foreach ($this->rows[$table] as $i => $row) {
             if ($this->matches($row, $where, array(), array(), $groups)) {
-                $this->rows[$table][$i] = array_merge($row, $data);
+                $merged = array_merge($row, $data);
+                foreach ($increments as $column => $by) {
+                    $merged[$column] = (int)($row[$column] ?? 0) + $by;
+                }
+                $this->rows[$table][$i] = $merged;
                 $this->affected++;
             }
         }
@@ -442,6 +546,18 @@ class FakeDb
             // "t.*, other.col AS alias" queries return.
             if ($field === '*' || preg_match('/^[\w`]+\.\*$/', $field)) {
                 $this->pending_select_all = true;
+                continue;
+            }
+            // SUBSTR(col, start, len) AS alias — a computed column, used by the
+            // revenue sparkline to bucket rows by day in SQL instead of
+            // dragging every row of the window into PHP. Materialised onto the
+            // row below so GROUP BY can bucket on it like a real column.
+            if (preg_match('/^SUBSTR\(\s*([\w`.]+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)\s+AS\s+(\S+)$/i', $field, $m)) {
+                $alias = trim($m[4], '`');
+                $this->pending_expressions[$alias] = array(
+                    'column' => trim($m[1], '`'), 'start' => (int)$m[2], 'length' => (int)$m[3],
+                );
+                $list[] = $alias;
                 continue;
             }
             // COUNT(*) AS alias.
@@ -659,6 +775,7 @@ class FakeDb
         $this->pending_order = array(); $this->pending_limit = null;
         $this->pending_from = null; $this->pending_joins = array();
         $this->pending_select = array(); $this->pending_aggregates = array();
+        $this->pending_expressions = array();
         $this->pending_group = array(); $this->pending_select_all = false;
         $this->pending_aliases = array();
         return $this;
@@ -680,6 +797,28 @@ class FakeDb
     public function insert_id() { return $this->last_insert_id; }
 
     public function table_exists($table) { return isset($this->schema[$table]); }
+
+    /**
+     * Column metadata, as CI's drivers return it.
+     *
+     * Production code asks this to find out whether a migration has run yet —
+     * RateLimiter does, to decide whether the `scope` column exists. Without
+     * it the double threw, the caller fell back to its pre-migration path, and
+     * the tests exercised code production would never reach.
+     */
+    public function field_data($table)
+    {
+        $this->assertTable($table, 'field_data');
+        $out = array();
+        foreach ($this->schema[$table]['columns'] as $name => $spec) {
+            $field = new stdClass();
+            $field->name       = $name;
+            $field->type       = $spec['type'];
+            $field->primary_key = 0;
+            $out[] = $field;
+        }
+        return $out;
+    }
 
     public function list_tables() { return array_keys($this->schema); }
 
@@ -787,6 +926,7 @@ class FakeDb
         $joins = $this->pending_joins;
         $this->pending_from = null; $this->pending_joins = array();
         $this->pending_select = array(); $this->pending_aggregates = array();
+        $this->pending_expressions = array();
         $this->pending_group = array(); $this->pending_select_all = false;
         $this->pending_aliases = array();
         $this->assertTable($table, 'count_all_results');
@@ -905,6 +1045,9 @@ class FakeDb
         if (is_array($value) && isset($value['__in'])) {
             return in_array((string)$row[$key], $value['__in'], true);
         }
+        if (is_array($value) && isset($value['__not_in'])) {
+            return !in_array((string)$row[$key], $value['__not_in'], true);
+        }
 
         $a = $row[$key];
         $b = $value;
@@ -993,11 +1136,33 @@ class FakeDb
      */
     private function parseSumCondition($cond)
     {
+        // `A AND B` — two facts about one row.
+        //
+        // The dashboard's consolidated aggregates ask "how many sales in the
+        // last day", which is a window AND a status in a single pass over the
+        // table. A double that only understood one condition per CASE would
+        // have forced the production code back into a query per widget, which
+        // is exactly the cost module 12 set out to remove.
+        if (preg_match('/\s+AND\s+/i', $cond)) {
+            $parts = array();
+            foreach (preg_split('/\s+AND\s+/i', $cond) as $part) {
+                $one = $this->parseSumCondition(trim($part));
+                if ($one === null) return null;
+                $parts[] = $one;
+            }
+            return array('op' => 'AND', 'parts' => $parts);
+        }
         if (preg_match('/^([\w.`]+)\s+IS\s+NOT\s+NULL$/i', $cond, $m)) {
             return array('column' => $this->bareColumn(trim($m[1], '`')), 'op' => 'NOT NULL');
         }
         if (preg_match('/^([\w.`]+)\s+IS\s+NULL$/i', $cond, $m)) {
             return array('column' => $this->bareColumn(trim($m[1], '`')), 'op' => 'NULL');
+        }
+        if (preg_match('/^([\w.`]+)\s+NOT\s+IN\s*\((.+)\)$/is', $cond, $m)) {
+            $values = array();
+            foreach (explode(',', $m[2]) as $v) $values[] = trim($v, " '\"`");
+            return array('column' => $this->bareColumn(trim($m[1], '`')),
+                         'op' => 'NOT IN', 'values' => $values);
         }
         if (preg_match('/^([\w.`]+)\s+IN\s*\((.+)\)$/is', $cond, $m)) {
             $values = array();
@@ -1026,28 +1191,7 @@ class FakeDb
                 continue;
             }
             // sum_case
-            $c   = $spec['cond'];
-            $lhs = $row[$c['column']] ?? null;
-            $hit = false;
-            if ($c['op'] === 'NOT NULL') {
-                $hit = $lhs !== null && $lhs !== '';
-            } elseif ($c['op'] === 'NULL') {
-                $hit = $lhs === null || $lhs === '';
-            } elseif ($c['op'] === 'IN') {
-                $hit = in_array((string)$lhs, $c['values'], true);
-            } else {
-                $cmp = (is_numeric($lhs) && is_numeric($c['value']))
-                    ? ($lhs <=> $c['value']) : strcmp((string)$lhs, (string)$c['value']);
-                switch ($c['op']) {
-                    case '=':  $hit = $cmp === 0; break;
-                    case '!=':
-                    case '<>': $hit = $cmp !== 0; break;
-                    case '<':  $hit = $cmp < 0;   break;
-                    case '<=': $hit = $cmp <= 0;  break;
-                    case '>':  $hit = $cmp > 0;   break;
-                    case '>=': $hit = $cmp >= 0;  break;
-                }
-            }
+            $hit = $this->conditionHolds($spec['cond'], $row);
             $branch = $hit ? $spec['then'] : $spec['else'];
             // The branch is either a literal (1, 0) or a column name.
             $v = is_numeric($branch) ? $branch
@@ -1058,6 +1202,36 @@ class FakeDb
         // COUNT-shaped CASE sums; money keeps its 8dp string form.
         return (strpos($total, '.') !== false && rtrim(substr($total, strpos($total, '.') + 1), '0') === '')
             ? (string)(int)$total : $total;
+    }
+
+    /** Does one parsed CASE condition hold for this row? */
+    private function conditionHolds(array $c, array $row)
+    {
+        if (isset($c['op']) && $c['op'] === 'AND') {
+            foreach ($c['parts'] as $part) {
+                if (!$this->conditionHolds($part, $row)) return false;
+            }
+            return true;
+        }
+
+        $lhs = array_key_exists($c['column'], $row) ? $row[$c['column']] : null;
+        if ($c['op'] === 'NOT NULL') return $lhs !== null && $lhs !== '';
+        if ($c['op'] === 'NULL')     return $lhs === null || $lhs === '';
+        if ($c['op'] === 'IN')       return in_array((string)$lhs, $c['values'], true);
+        if ($c['op'] === 'NOT IN')   return !in_array((string)$lhs, $c['values'], true);
+
+        $cmp = (is_numeric($lhs) && is_numeric($c['value']))
+            ? ($lhs <=> $c['value']) : strcmp((string)$lhs, (string)$c['value']);
+        switch ($c['op']) {
+            case '=':  return $cmp === 0;
+            case '!=':
+            case '<>': return $cmp !== 0;
+            case '<':  return $cmp < 0;
+            case '<=': return $cmp <= 0;
+            case '>':  return $cmp > 0;
+            case '>=': return $cmp >= 0;
+        }
+        return false;
     }
 
     /** "giftcard_products.price" → "price"; joins merge columns flat. */

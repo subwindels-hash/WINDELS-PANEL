@@ -14,6 +14,11 @@ class Dashboard extends Admin_Controller {
         $this->load->library(array('AdminStats', 'ActivityFeed', 'DashboardStats'));
         $permissions = $this->auth->permissions();
 
+        // Today and the month come from one pass over each money table
+        // instead of a query per window: this is the first screen every staff
+        // member opens, and the two windows are nested anyway.
+        $revenue = $this->adminstats->revenue_windows(array(1, 30));
+
         $this->load->view('layouts/app', array(
             'title'         => 'Admin',
             'nav_active'    => 'admin',
@@ -23,8 +28,8 @@ class Dashboard extends Admin_Controller {
             'unread'        => $this->dashboardstats->unread_count($this->current_user->id),
             'overview'      => $this->adminstats->platform_overview(),
             'series'        => $this->adminstats->revenue_series(14),
-            'today'         => $this->adminstats->revenue(1),
-            'month'         => $this->adminstats->revenue(30),
+            'today'         => $revenue[1],
+            'month'         => $revenue[30],
             'queue'         => $this->adminstats->action_queue(),
             'customers'     => $this->adminstats->customers(),
             'health'        => $this->adminstats->provider_health(),

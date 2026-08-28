@@ -37,8 +37,11 @@ $cancellable = array('PENDING','PROCESSING','IN_PROGRESS');
 </div>
 
 <div class="alert alert-info mb-4">
-  Cancelling refunds the charge to the customer's wallet through the ledger, and asks the provider
-  to stop if the order was already submitted. Orders that have completed are refunded from
+  Cancelling asks the provider to stop first and only refunds the charge to the customer's wallet
+  when the provider agrees — refunding an order the provider keeps delivering costs the panel the
+  full provider charge. If the provider refuses, cancel from the
+  <a href="<?=site_url('admin/orders')?>">order page</a>, where “cancel anyway” lets you accept that
+  cost knowingly. Orders that have completed are refunded from
   <a href="<?=site_url('admin/orders')?>">Orders</a> instead.
 </div>
 

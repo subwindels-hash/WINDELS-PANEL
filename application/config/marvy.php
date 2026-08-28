@@ -28,6 +28,9 @@ $config['marvy'] = array(
 $config['rate_limits'] = array(
     'api_global' => array('limit' => 60, 'window' => 60),
     'api_orders' => array('limit' => 30, 'window' => 60),
+    // Failed API authentications per IP. Low on purpose: a legitimate reseller
+    // fails auth once (a typo), a key guesser fails continuously.
+    'api_auth'   => array('limit' => 20, 'window' => 300),
     'login' => array('limit' => 5, 'window' => 300),
     'register' => array('limit' => 3, 'window' => 600),
 );
@@ -72,6 +75,9 @@ $config['cron'] = array(
     'numbers_status'         => '* * * * *',
     'identity_purge'         => '30 3 * * *',
     'giftcard_codes'         => '*/2 * * * *',
+    // Closes purchases no domain worker can settle (no provider reference, or
+    // a provider that stopped answering) and returns the money.
+    'service_recovery'       => '*/10 * * * *',
     'marketplace_release'    => '*/5 * * * *',
     'order_status' => '*/2 * * * *',
     'subscriptions' => '*/5 * * * *',

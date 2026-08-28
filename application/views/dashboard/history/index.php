@@ -21,7 +21,7 @@ $qs = function (array $over = array()) use ($filters, $page) {
     <?php if (!empty($filters['domain'])): ?>
       <input type="hidden" name="domain" value="<?=htmlspecialchars($filters['domain'])?>">
     <?php endif; ?>
-    <select name="status" class="select" style="width:auto" onchange="this.form.submit()">
+    <select name="status" class="select" style="width:auto" data-autosubmit >
       <?php foreach ($statuses as $k => $v): ?>
         <option value="<?=htmlspecialchars($k)?>"
           <?=(($filters['status'] ?? '') === $k) ? 'selected' : ''?>><?=htmlspecialchars($v)?></option>

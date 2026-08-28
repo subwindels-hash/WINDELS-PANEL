@@ -82,6 +82,67 @@ class PerformanceTest extends TestCase
         $this->assertSame('NEW', $m->get('site_name'));
     }
 
+    /**
+     * Feature flags are read a dozen times per page — the navigation asks
+     * about one per module it might render — and each check used to be its own
+     * point query. Nine queries per authenticated page load, before the page
+     * did any of its own work.
+     */
+    public function testRepeatedFeatureFlagChecksHitTheDatabaseOnce()
+    {
+        require_once self::$root.'/application/models/Feature_flag_model.php';
+        Feature_flag_model::forget();
+        $db = new PerfCountingDb(array('feature_flags' => array(
+            (object)array('flag_key' => 'marketplace', 'enabled' => 1),
+            (object)array('flag_key' => 'vtu',         'enabled' => 0),
+        )));
+        $m = $this->model('Feature_flag_model', $db);
+
+        for ($i = 0; $i < 12; $i++) {
+            $m->enabled('marketplace');
+            $m->enabled('vtu');
+        }
+
+        $this->assertTrue($m->enabled('marketplace'));
+        $this->assertFalse($m->enabled('vtu'));
+        $this->assertSame(1, $db->count('feature_flags'),
+            'the whole flag table is tiny and cannot change inside one request');
+    }
+
+    /**
+     * Every formatted price asks for its currency row. That was a query each —
+     * with a correlated subquery over `users` for a column only the admin
+     * currencies screen shows — so a catalogue page with 24 prices on it made
+     * 24 of them.
+     */
+    public function testRepeatedCurrencyReadsHitTheDatabaseOnce()
+    {
+        require_once self::$root.'/application/models/Currency_model.php';
+        Currency_model::forget();
+        $db = new PerfCountingDb(array('currencies' => array(
+            (object)array('code' => 'NGN', 'symbol' => '₦', 'decimal_precision' => 2,
+                          'is_base' => 1, 'is_active' => 1, 'exchange_rate' => '1.00000000'),
+        )));
+        $m = $this->model('Currency_model', $db);
+
+        for ($i = 0; $i < 24; $i++) {
+            $row = $m->find('NGN');
+            $this->assertNotNull($row);
+        }
+
+        $this->assertSame(1, $db->count('currencies'),
+            'one currency read per request, not one per price on the page');
+    }
+
+    /** The admin-only join stays on the admin-only query. */
+    public function testTheHotCurrencyReadDoesNotJoinUsers()
+    {
+        $src = file_get_contents(self::$root.'/application/models/Currency_model.php');
+        $this->assertSame(1, preg_match_all('/rate_updated_by_username/', $src),
+            'the username subquery belongs only to all_rows(), which renders it');
+        $this->assertStringContainsString('public function all_rows', $src);
+    }
+
     public function testPermissionLookupsForOneRoleQueryOnce()
     {
         $db = new PerfCountingDb(array(

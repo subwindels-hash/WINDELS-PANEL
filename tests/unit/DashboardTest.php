@@ -1,4 +1,5 @@
 <?php
+require_once dirname(__DIR__).'/_support/ShellSource.php';
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -82,7 +83,10 @@ class DashboardTest extends TestCase
             $src = file_get_contents($file);
             // Controllers that only POST-and-redirect never render the shell,
             // so they have no view variables to pass.
-            if (strpos($src, "load->view('layouts/app'") === false) {
+            // Both authenticated shells (layouts/app and the themed
+            // layouts/app_theme) take the same variables.
+            if (strpos($src, "load->view('layouts/app'") === false
+                && strpos($src, "load->view('layouts/app_theme'") === false) {
                 $this->assertStringContainsString('redirect(', $src,
                     basename($file).' renders no shell, so it must redirect');
                 continue;
@@ -133,7 +137,9 @@ class DashboardTest extends TestCase
         $this->assertSame(3, $out['totals']['orders']);
         $this->assertSame(2, $out['totals']['completed']);
         $this->assertSame(1, $out['totals']['active']);
-        $this->assertSame('13.20000000', $out['totals']['spent']);
+        $this->assertSame('12.00000000', $out['totals']['spent'],
+            'spent is what left the wallet and stayed gone: charges minus refunds');
+        $this->assertSame('1.20000000', $out['totals']['refunded']);
         $this->assertSame('100.00000000', $out['totals']['deposited']);
         $this->assertCount(2, $out['recent_orders']);
         $this->assertCount(2, $out['recent_transactions']);
@@ -167,15 +173,15 @@ class DashboardTest extends TestCase
 
     public function testAppShellRendersNotificationBadgeAndMobileNav()
     {
-        $shell = file_get_contents(self::$root.'/application/views/layouts/app.php');
+        $shell = ShellSource::app(self::$root);
         $this->assertStringContainsString('dashboard/notifications', $shell);
-        $this->assertStringContainsString('Mobile bottom nav', $shell);
+        $this->assertStringContainsString('ws-mobile-tabbar', $shell);
         $this->assertStringContainsString('ws-nav-group', $shell);
-        $this->assertStringContainsString('New Order', $shell);
+        $this->assertStringContainsString('New order', $shell);
         $this->assertStringContainsString('partials/icon', $shell);
-        // Brand component classes used.
-        $this->assertStringContainsString('bg-brand-50', $shell);
-        $this->assertStringContainsString('text-brand-700', $shell);
+        // Design-system component classes used (not raw utilities).
+        $this->assertStringContainsString('ws-nav-link', $shell);
+        $this->assertStringContainsString('ws-unread', $shell);
     }
 }
 
@@ -275,8 +281,13 @@ class DashboardFakeDb {
             // If we selected aggregate columns, return the aggregate row.
             $sel = implode(' ', $selects);
             if (strpos($sel, 'COUNT(*)') !== false) {
+                // charged/refunded, not a pre-computed `spent`: the library now
+                // nets refunds itself, which is the whole point — a customer
+                // whose half-delivered order was partly refunded used to be
+                // shown the full price as spent.
                 return new DashboardFakeResult(array(
-                    (object)array('orders'=>3,'completed'=>2,'active'=>1,'pending'=>0,'spent'=>'13.20000000'),
+                    (object)array('orders'=>3,'completed'=>2,'active'=>1,'pending'=>0,
+                                  'charged'=>'13.20000000','refunded'=>'1.20000000'),
                 ));
             }
             return new DashboardFakeResult(array(

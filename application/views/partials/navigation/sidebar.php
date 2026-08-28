@@ -8,10 +8,13 @@ $current_user = $current_user ?? null;
 <div class="ws-sidebar-brand">
   <a href="<?=site_url()?>" class="ws-brand">
     <?php if (!empty($brand['brand_logo_url'])): ?>
-      <img src="<?=htmlspecialchars($brand['brand_logo_url'])?>" alt="MarvySocials" class="ws-logo">
+      <img src="<?=htmlspecialchars($brand['brand_logo_url'])?>"
+           alt="<?=htmlspecialchars(function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials')?>"
+           class="ws-logo">
     <?php else: ?>
       <?php $this->load->view('partials/brand_logo', array('variant'=>'icon','height'=>32,'force_legacy'=>true)); ?>
-      <span class="font-bold tracking-tight">MARVYSOCIALS</span>
+      <span class="font-bold tracking-tight ws-brand-word"><?=htmlspecialchars(
+          strtoupper(function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials'))?></span>
     <?php endif; ?>
   </a>
 </div>
@@ -44,7 +47,12 @@ $current_user = $current_user ?? null;
   <?php endforeach; ?>
 </nav>
 <div class="ws-sidebar-user">
-  <div class="ws-avatar-initial"><?=htmlspecialchars(strtoupper(substr($current_user->username ?? 'U', 0, 1)))?></div>
+  <?php if (!empty($current_user->avatar_url)): ?>
+    <img class="ws-avatar" src="<?=htmlspecialchars($current_user->avatar_url)?>" alt=""
+         width="40" height="40" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex:none">
+  <?php else: ?>
+    <div class="ws-avatar-initial"><?=htmlspecialchars(strtoupper(substr($current_user->username ?? 'U', 0, 1)))?></div>
+  <?php endif; ?>
   <div class="min-w-0 flex-1">
     <div class="font-medium text-slate-800 truncate text-sm"><?=htmlspecialchars($current_user->username ?? '')?></div>
     <div class="text-xs text-slate-500 truncate"><?=htmlspecialchars($current_user->email ?? '')?></div>

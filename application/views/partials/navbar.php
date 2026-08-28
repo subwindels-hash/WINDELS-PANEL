@@ -22,7 +22,7 @@ $active = function ($href) use ($path) {
 <nav class="ws-public-nav ws-sticky-below-announce" aria-label="Primary">
   <div class="ws-public-nav-inner">
     <a class="ws-brand" href="<?=site_url()?>" aria-label="<?=htmlspecialchars($site)?> home">
-      <?php $this->load->view('partials/brand_logo', array('variant'=>'horizontal','height'=>32)); ?>
+      <?php $this->load->view('partials/brand_logo', array('variant'=>'dark','height'=>32)); ?>
       <span class="sr-only"><?=htmlspecialchars($site)?></span>
     </a>
 

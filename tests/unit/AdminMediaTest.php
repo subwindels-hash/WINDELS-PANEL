@@ -1,6 +1,7 @@
 <?php
 use PHPUnit\Framework\TestCase;
 
+require_once dirname(__DIR__).'/_support/ShellSource.php';
 require_once dirname(__DIR__).'/_support/FakeDb.php';
 require_once dirname(__DIR__).'/_support/IntegrationHarness.php';
 
@@ -327,7 +328,7 @@ class AdminMediaTest extends TestCase
     /** The layout must actually render what the branding screen stores. */
     public function testTheLayoutRendersTheStoredBranding()
     {
-        $layout = file_get_contents(self::$root.'/application/views/layouts/app.php');
+        $layout = ShellSource::app(self::$root);
         $this->assertStringContainsString("brand_logo_url", $layout);
         $this->assertStringContainsString("brand_favicon_url", $layout);
         $this->assertStringContainsString("brand_primary_color", $layout);

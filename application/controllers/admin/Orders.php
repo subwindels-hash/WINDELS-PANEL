@@ -137,15 +137,31 @@ class Orders extends Admin_Controller {
         redirect('admin/orders/'.$order->public_id);
     }
 
-    /** POST /admin/orders/:id/cancel — cancel and refund in one step. */
+    /**
+     * POST /admin/orders/:id/cancel — cancel and refund in one step.
+     *
+     * This used to go through apply_status(), which never spoke to the
+     * provider at all: staff cancelled the order, the customer's wallet was
+     * credited, and the provider carried on delivering an order we had already
+     * paid for. It now goes through OrderService::cancel(), which asks the
+     * provider first and refuses when the provider says no — unless staff tick
+     * "cancel anyway", which is a cost they are choosing to accept.
+     */
     public function cancel($public_id) {
         $order  = $this->guard($public_id, 'orders.cancel');
         $reason = trim((string)$this->input->post('reason', true));
+        $force  = (bool)$this->input->post('force');
 
         $before = array('status' => $order->status);
-        $result = $this->orderservice->apply_status($order, 'CANCELED', 'ADMIN', $reason ?: 'Canceled by staff');
+        $result = $this->orderservice->cancel($order, null, array(
+            'source' => 'ADMIN', 'force' => $force, 'reason' => $reason ?: 'Canceled by staff',
+        ));
         if (empty($result['ok'])) {
-            return $this->fail($order, $result['error'] ?? 'Could not cancel the order.');
+            $message = $result['error'] ?? 'Could not cancel the order.';
+            if (($result['code'] ?? '') === 'PROVIDER_REFUSED') {
+                $message .= ' Tick “cancel anyway” to refund the customer regardless — the provider charge stands.';
+            }
+            return $this->fail($order, $message);
         }
 
         $this->audit('order.canceled', $order, $before, array('status' => 'CANCELED', 'reason' => $reason));

@@ -182,12 +182,12 @@ $pin_locked = !empty($user->pin_locked_until) && strtotime($user->pin_locked_unt
       <button class="btn btn-secondary btn-sm" type="submit">Email a password-reset link</button>
     </form>
     <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/force-logout')?>" style="margin:0"
-          onsubmit="return confirm('Revoke refresh tokens for this account?');">
+          data-confirm="Revoke refresh tokens for this account?" >
       <?=$csrf()?>
       <button class="btn btn-secondary btn-sm" type="submit">Force logout</button>
     </form>
     <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/revoke-keys')?>" style="margin:0"
-          onsubmit="return confirm('Revoke every API key for this account?');">
+          data-confirm="Revoke every API key for this account?" >
       <?=$csrf()?>
       <button class="btn btn-secondary btn-sm" type="submit">Revoke API keys</button>
     </form>

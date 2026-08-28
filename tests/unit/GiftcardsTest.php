@@ -1,6 +1,7 @@
 <?php
 use PHPUnit\Framework\TestCase;
 
+require_once dirname(__DIR__).'/_support/ShellSource.php';
 require_once dirname(__DIR__).'/_support/FakeDb.php';
 require_once dirname(__DIR__).'/_support/IntegrationHarness.php';
 
@@ -1495,7 +1496,7 @@ class GiftcardsTest extends TestCase
     {
         $icons = file_get_contents(self::$root.'/application/views/partials/icon.php');
         $this->assertStringContainsString("'gift-card'", $icons);
-        $layout = file_get_contents(self::$root.'/application/views/layouts/app.php');
+        $layout = ShellSource::app(self::$root);
         $this->assertStringContainsString('admin/giftcards', $layout);
         $this->assertStringContainsString('dashboard/giftcards', $layout);
     }

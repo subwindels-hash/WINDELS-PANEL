@@ -44,6 +44,13 @@ php index.php seed core
 php index.php seed demo
 ```
 
+## Editing PHP while the dev server runs
+
+The wasm runtime keeps compiled PHP per worker, so **restart
+`tools/devserver/server.mjs` after changing any `.php` file** — otherwise the
+running workers keep serving the previous version and you will debug a file
+that is not the one being executed.
+
 ## The test scripts
 
 ```bash
@@ -55,7 +62,69 @@ node tools/devserver/content_check.mjs  --admin-password <pw>   # CMS round trip
 node tools/devserver/pin_check.mjs                              # security PIN lifecycle
 node tools/devserver/blockonomics_check.mjs                     # BTC callback handling
 node tools/devserver/responsive_check.mjs                       # layout audit
+node tools/devserver/gateway_check.mjs        --admin-password <pw>   # hosted gateway config + signed webhook
+node tools/devserver/reconciliation_check.mjs                   # deposits whose callback never arrived
+node tools/devserver/notifications_check.mjs  --admin-password <pw>   # inbox, email queue, preferences
+node tools/devserver/smm_provider_check.mjs                     # real SMM adapter against a fake panel
+node tools/devserver/page_audit.mjs           --password <pw>   # every dashboard/admin page
+node tools/devserver/link_crawl.mjs           --password <pw>   # follow every internal link
+node tools/devserver/image_audit.mjs          --password <pw>   # every <img> resolves
+node tools/devserver/api_check.mjs            --password <pw>   # reseller API: envelope, scopes, idempotency
+node tools/devserver/refunds_check.mjs        --admin-password <pw>   # refills, partial refunds, refused cancellations
+node tools/devserver/analytics_check.mjs      --admin-password <pw>   # every reported figure vs the database
+node tools/devserver/service_recovery_check.mjs --admin-password <pw> # stuck VTU/number/identity/giftcard purchases
+node tools/devserver/security_check.mjs       --admin-password <pw>   # IDOR, CSRF, privilege escalation, live RBAC matrix
+node tools/devserver/support_check.mjs        --admin-password <pw>   # assistant limits, ticket attachments
+node tools/devserver/marketplace_fulfilment_check.mjs --admin-password <pw> # escrow, refunds, download revocation
+node tools/devserver/seed_load.mjs                              # a year of trading, for measurement (--clean removes it)
+node tools/devserver/perf_check.mjs           --admin-password <pw>   # query cost of every heavy screen under that load
+node tools/devserver/deployment_check.mjs                       # extract the zip, import the SQL, boot it, sign in
+node tools/devserver/pricing_check.mjs        --admin-password <pw>   # coupon limits, minimum spend, batched pricing
+node tools/devserver/chrome_check.mjs         --admin-password <pw>   # one menu everywhere, navy chrome, announcement, cron screen, contact map
+node tools/devserver/attachment_check.mjs     --admin-password <pw>   # who may read a support attachment: owner, stranger, staff, internal note
+node tools/devserver/legal_check.mjs          --admin-password <pw>   # the operator's legal identity on Terms, Privacy and the footer
+node tools/devdb/import_sql.cjs --port 3410 --file database/marvysocials.sql  # apply a dump over the wire
 ```
+
+`smm_provider_check.mjs` and `refunds_check.mjs` stand up
+`tools/devserver/fake_smm_panel.mjs` on localhost and need
+`HTTP_ALLOW_PRIVATE_HOSTS=true` in `.env` — `SecureHttpClient` refuses
+non-public hosts by default (SSRF protection). Never set that in production.
+
+## One command for all of it
+
+```bash
+bash tools/verify_all.sh --admin-password '<demo password>'             # everything
+bash tools/verify_all.sh --admin-password '<demo password>' --with-load # + performance
+bash tools/verify_all.sh --unit-only                                    # no server needed
+```
+
+It runs the static checks, the PHP suite, the packaging, every end-to-end
+check, the fresh-deployment simulation and (with `--with-load`) the performance
+measurement, and exits with the number of failed stages.
+
+Start the application server with `--max-requests 300`. Each wasm runtime leaks
+a few file descriptors per request; after a few hundred the process answers 500
+to everything, which looks exactly like the application breaking. The flag
+recycles the PHP pool the way PHP-FPM's `pm.max_requests` does.
+
+If a check that uses the fake provider panel fails with "Incorrect API key",
+an abandoned panel from an earlier run is still holding the port:
+`pkill -f fake_smm_panel`. Both checks now refuse to start in that state rather
+than testing somebody else's process.
+
+## Measuring query cost
+
+Start the database with a stats side-channel and the number of statements each
+page issues can be read from outside the application:
+
+```bash
+node tools/devdb/server.js --port 3399 --stats-port 3400 --db storage/devdb/marvy.sqlite
+curl -X POST localhost:3400/reset && curl -s localhost:3400/    # { queries, byTable, slowest, samples }
+```
+
+That is what `perf_check.mjs` uses. An N+1 is invisible in a functional test and
+obvious here.
 
 ## What this does and does not prove
 
@@ -78,3 +147,8 @@ PHP suite against native PHP and MySQL for exactly this reason.
   SQLite cannot add a foreign key to an existing table.
 - Multi-statement `COM_QUERY` is supported; prepared-statement protocol
   (`COM_STMT_PREPARE`) is not — the CI3 drivers do not use it.
+- `SUM()` over a DECIMAL column comes back from SQLite as a float, so the
+  column is advertised as NEWDECIMAL (not LONGLONG) and the client keeps the
+  fraction. Advertising it as an integer — which this server used to do —
+  silently truncated every money aggregate in development while real MySQL
+  returned it correctly.

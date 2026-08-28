@@ -179,17 +179,14 @@ if (!function_exists('marvy_base_currency')) {
     function marvy_base_currency(){
         static $code = NULL;
         if ($code !== NULL) return $code;
+        // Config only — never the settings table. The ledger is already
+        // written in this currency: a form that could rewrite it would
+        // silently reinterpret every stored balance, order and ledger entry.
+        // Redenominating is a migration, not a setting.
         $code = 'NGN';
         if (function_exists('get_instance')) {
             $ci = @get_instance();
-            if ($ci && isset($ci->db) && is_object($ci->db) && !empty($ci->db->conn_id)) {
-                $ci->load->model('Setting_model');
-                $stored = $ci->Setting_model->get('base_currency', 'NGN');
-                if ($stored && strtoupper(trim((string)$stored)) !== '') {
-                    $code = strtoupper(trim((string)$stored));
-                }
-            }
-            if ($code === 'NGN') {
+            if ($ci && isset($ci->config)) {
                 $cfg = $ci->config->item('marvy');
                 if (is_array($cfg) && !empty($cfg['base_currency'])) {
                     $code = strtoupper($cfg['base_currency']);
@@ -299,9 +296,15 @@ if (!function_exists('marvy_feature_enabled')) {
         try {
             $ci =& get_instance();
             $ci->load->model('Feature_flag_model');
-            $row = $ci->db->where('flag_key', $key)->get('feature_flags')->row();
-            if (!$row) return (bool)$default;
-            return (bool)$row->enabled;
+            // Through the model's per-request memo rather than a point query:
+            // the navigation alone asks about a flag per module, so this ran
+            // nine times per authenticated page load before the page did any
+            // of its own work. A stubbed CI that does not provide the model
+            // falls back to the caller's default, as it did before.
+            if (!isset($ci->Feature_flag_model)) return (bool)$default;
+            $all = $ci->Feature_flag_model->all_flags();
+            if (!array_key_exists($key, $all)) return (bool)$default;
+            return (bool)$all[$key];
         } catch (Throwable $e) {
             return (bool)$default;
         }

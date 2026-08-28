@@ -85,12 +85,7 @@ class MailService {
         if (!$mail || empty($mail->to_email)) {
             return array('ok'=>false, 'error'=>'missing recipient');
         }
-        require_once APPPATH.'core/Env.php';
-        $default_transport = strtolower((string)Env::get('MAIL_DRIVER', 'log'));
-        if (!in_array($default_transport, array('log', 'smtp', 'mail'), TRUE)) {
-            $default_transport = 'log';
-        }
-        $transport = strtolower((string)$this->ci->Setting_model->get('mail_transport', $default_transport));
+        $transport = $this->transport();
 
         if ($transport === 'log' || env_bool('MAIL_LOG')) {
             log_message('info', sprintf(
@@ -128,6 +123,48 @@ class MailService {
         } catch (Exception $e) {
             return array('ok'=>false, 'error'=>$e->getMessage());
         }
+    }
+
+    /**
+     * The transport delivery will use: settings first, then VP_MAIL_DRIVER,
+     * defaulting to `log` so a fresh install never silently drops mail into a
+     * misconfigured SMTP server.
+     *
+     * Public because the admin mail-queue screen has to tell the operator
+     * which transport their test will actually go through — "it worked" means
+     * nothing if it worked by writing to a log file.
+     */
+    public function transport() {
+        require_once APPPATH.'core/Env.php';
+        $default = strtolower((string)Env::get('MAIL_DRIVER', 'log'));
+        if (!in_array($default, array('log', 'smtp', 'mail'), true)) $default = 'log';
+
+        $configured = strtolower((string)$this->ci->Setting_model->get('mail_transport', $default));
+        return in_array($configured, array('log', 'smtp', 'mail'), true) ? $configured : $default;
+    }
+
+    /**
+     * Send a test message immediately, bypassing the queue.
+     *
+     * The operator is waiting for an answer: queueing would report success for
+     * a message the SMTP server has not seen yet, which is exactly the thing
+     * they are trying to find out.
+     */
+    public function send_test($to) {
+        $site = $this->ci->Setting_model->get('site_name', 'MarvySocials');
+        $mail = (object)array(
+            'to_email'  => strtolower(trim((string)$to)),
+            'to_name'   => null,
+            'subject'   => $site.' — test message',
+            'body_html' => '<p>This is a test message from '.htmlspecialchars($site).'.</p>'
+                          .'<p>If you are reading it, outbound email works. Sent '
+                          .gmdate('Y-m-d H:i:s').' UTC via the '.$this->transport().' transport.</p>',
+            'body_text' => 'Test message from '.$site.'. Sent '.gmdate('Y-m-d H:i:s').' UTC.',
+        );
+
+        $res = $this->deliver($mail);
+        $res['transport'] = $res['transport'] ?? $this->transport();
+        return $res;
     }
 
     /* -------------------------------------------------------------- */

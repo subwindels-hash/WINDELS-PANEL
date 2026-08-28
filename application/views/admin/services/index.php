@@ -59,7 +59,7 @@ $csrf_hash = $this->security->get_csrf_hash();
           <?php if ($can_manage && $service->status !== 'ARCHIVED'): ?>
           <form method="post" action="<?=site_url('admin/services/'.$service->public_id.'/delete')?>" style="display:inline">
             <input type="hidden" name="<?=htmlspecialchars($csrf_name)?>" value="<?=htmlspecialchars($csrf_hash)?>">
-            <button class="btn btn-ghost btn-sm text-rose-600" type="submit" onclick="return confirm('Delete this service? This cannot be undone.')">Delete</button>
+            <button class="btn btn-ghost btn-sm text-rose-600" type="submit" data-confirm="Delete this service? This cannot be undone." >Delete</button>
           </form>
           <?php endif; ?>
         </td>

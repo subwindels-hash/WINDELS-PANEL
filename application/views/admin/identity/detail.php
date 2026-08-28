@@ -126,7 +126,7 @@ $readable    = $check && $check->status === 'VERIFIED' && !$purged && !empty($ch
         this customer — the access is logged against your account.
       </p>
       <form method="post" action="<?=site_url('admin/identity/'.$tx->public_id.'/reveal')?>"
-            onsubmit="return confirm('Open this identity record? Your access will be logged.')">
+            data-confirm="Open this identity record? Your access will be logged." >
         <?=$csrf()?>
         <button class="btn btn-secondary btn-sm" type="submit">Reveal result</button>
       </form>
@@ -147,7 +147,7 @@ $readable    = $check && $check->status === 'VERIFIED' && !$purged && !empty($ch
 
     <?php if ($has('identity.refund') && $can_refund): ?>
     <form method="post" action="<?=site_url('admin/identity/'.$tx->public_id.'/refund')?>" class="mb-4"
-          onsubmit="return confirm('Refund <?=htmlspecialchars(marvy_money($outstanding, $tx->currency))?> to this customer\'s wallet?')">
+          data-confirm="Refund <?=htmlspecialchars(marvy_money($outstanding, $tx->currency))?> to this customer&#39;s wallet?" >
       <?=$csrf()?>
       <label class="text-sm font-medium" for="reason">Refund reason</label>
       <input class="input mb-2" id="reason" name="reason" placeholder="Recorded in the status history">
@@ -160,7 +160,7 @@ $readable    = $check && $check->status === 'VERIFIED' && !$purged && !empty($ch
 
     <?php if ($has('identity.manage') && $readable): ?>
     <form method="post" action="<?=site_url('admin/identity/'.$tx->public_id.'/purge')?>"
-          onsubmit="return confirm('Permanently delete the stored result for this check? This cannot be undone.')">
+          data-confirm="Permanently delete the stored result for this check? This cannot be undone." >
       <?=$csrf()?>
       <p class="hint mb-2">
         For an erasure request. Deletes the encrypted record now, ahead of the

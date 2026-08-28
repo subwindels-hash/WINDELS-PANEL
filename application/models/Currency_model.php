@@ -5,6 +5,9 @@ class Currency_model extends MY_Model {
     protected $table = 'currencies';
 
     protected $primary_key = 'code';
+
+    /** Per-request cache of code => row (see find()). */
+    private static $memo = array();
     public function active(){ return $this->db->where('is_active',1)->order_by('is_base','DESC')->order_by('code','ASC')->get($this->table)->result(); }
     public function base(){ return $this->db->where('is_base',1)->get($this->table)->row(); }
 
@@ -14,10 +17,25 @@ class Currency_model extends MY_Model {
             ->order_by('is_base', 'DESC')->order_by('code', 'ASC')->get($this->table)->result();
     }
 
+    /**
+     * One currency, memoised for the request.
+     *
+     * Every formatted money value on a page asks for a currency row, and this
+     * used to issue a query — with a correlated subquery over `users` for a
+     * column only the admin currencies screen displays — for each one. A
+     * services catalogue with 24 prices on it made 24 of these; a 100-row
+     * catalogue made hundreds. Nothing about the row can change inside one
+     * request, so it is read once per code, and the admin-only column stays in
+     * all_rows() where it is actually rendered.
+     */
     public function find($code){
-        return $this->db->select('*, (SELECT username FROM users WHERE users.id = currencies.rate_updated_by) AS rate_updated_by_username', false)
-            ->where('code', strtoupper($code))->get($this->table)->row();
+        $code = strtoupper((string)$code);
+        if (array_key_exists($code, self::$memo)) return self::$memo[$code];
+        return self::$memo[$code] = $this->db->where('code', $code)->get($this->table)->row();
     }
+
+    /** Drop the per-request memo after a write, so the next read is truthful. */
+    public static function forget(){ self::$memo = array(); }
 
     /** Enable/disable a currency for display. The base currency can never be disabled. */
     public function set_active($code, $active){
@@ -29,6 +47,7 @@ class Currency_model extends MY_Model {
             'is_active' => $active ? 1 : 0,
             'updated_at' => $this->now_utc(),
         ));
+        self::forget();
         return true;
     }
 
@@ -50,6 +69,7 @@ class Currency_model extends MY_Model {
             'rate_effective_at'  => $effective_at ?: $this->now_utc(),
             'updated_at'         => $this->now_utc(),
         ));
+        self::forget();
         return true;
     }
 

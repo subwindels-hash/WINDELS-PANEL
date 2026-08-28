@@ -1,6 +1,7 @@
 <?php
 use PHPUnit\Framework\TestCase;
 
+require_once dirname(__DIR__).'/_support/ShellSource.php';
 require_once dirname(__DIR__).'/_support/FakeDb.php';
 require_once dirname(__DIR__).'/_support/IntegrationHarness.php';
 
@@ -188,7 +189,7 @@ class AdminResellerApiManagementTest extends TestCase
         $runtime = file_get_contents(self::$root.'/application/controllers/Api_v1.php');
         $account = file_get_contents(self::$root.'/application/controllers/dashboard/Account.php');
         $routes = file_get_contents(self::$root.'/application/config/routes.php');
-        $nav = file_get_contents(self::$root.'/application/views/layouts/app.php');
+        $nav = ShellSource::app(self::$root);
 
         $this->assertStringContainsString("require_perm('api.manage')", $controller);
         $this->assertStringContainsString("'DashboardStats'", $controller);

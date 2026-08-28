@@ -16,7 +16,7 @@ $total_pages = max(1, (int)ceil($total / $per_page));
         page <?=$page?> of <?=$total_pages?></p>
     </div>
     <form method="get" class="row" style="gap:.5rem">
-      <select name="status" class="select" style="width:auto" onchange="this.form.submit()">
+      <select name="status" class="select" style="width:auto" data-autosubmit >
         <?php foreach ($statuses as $k=>$v): ?>
           <option value="<?=htmlspecialchars($k)?>"
             <?=(($filters['status'] ?? '')===$k)?'selected':''?>><?=htmlspecialchars($v)?></option>

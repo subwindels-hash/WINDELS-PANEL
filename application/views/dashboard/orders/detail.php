@@ -65,7 +65,7 @@
         ?>
         <?php if ($cancelable && $cancel_supported): ?>
           <form method="post" action="<?=site_url('dashboard/orders/'.$order->public_id.'/cancel')?>"
-                onsubmit="return confirm('Cancel this order? An in-progress order may still be delivered.')">
+                data-confirm="Cancel this order? An in-progress order may still be delivered." >
             <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
             <button class="btn btn-danger btn-block" type="submit">Request cancellation</button>
           </form>
@@ -74,7 +74,7 @@
         <?php endif; ?>
         <?php if (!empty($service) && (int)$service->refill_supported === 1 && in_array($order->status, array('COMPLETED','PARTIAL'), true)): ?>
           <form method="post" action="<?=site_url('dashboard/orders/'.$order->public_id.'/refill')?>"
-                onsubmit="return confirm('Request a refill for this order?')">
+                data-confirm="Request a refill for this order?" >
             <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
             <button class="btn btn-secondary btn-block" type="submit">Request refill</button>
           </form>

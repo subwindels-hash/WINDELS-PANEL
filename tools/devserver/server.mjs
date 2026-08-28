@@ -19,18 +19,25 @@ import { loadNodeRuntime, createNodeFsMountHandler, withNetworking } from '@php-
 import { PHPRequestHandler } from '@php-wasm/universal';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '../..');
 
 function parseArgs(argv) {
-  const out = { port: 8080, host: '0.0.0.0', workers: 3 };
+  const out = { port: 8080, host: '0.0.0.0', workers: 3, root: null, maxRequests: 400 };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--port') out.port = parseInt(argv[++i], 10);
     else if (argv[i] === '--host') out.host = argv[++i];
     else if (argv[i] === '--workers') out.workers = parseInt(argv[++i], 10);
+    // Serve a different document root — used to boot the *extracted
+    // deployment package* as a brand new cPanel account would, rather than
+    // the working tree it was built from.
+    else if (argv[i] === '--root') out.root = argv[++i];
+    // Recycle the PHP pool after this many requests (0 = never), the same
+    // discipline PHP-FPM's pm.max_requests exists for.
+    else if (argv[i] === '--max-requests') out.maxRequests = parseInt(argv[++i], 10);
   }
   return out;
 }
 const args = parseArgs(process.argv);
+const ROOT = args.root ? path.resolve(args.root) : path.resolve(__dirname, '../..');
 
 const MIME = {
   '.css': 'text/css; charset=utf-8',
@@ -52,6 +59,21 @@ const MIME = {
 };
 
 let processIdSeq = 100;
+
+/**
+ * The paths a correctly configured host never serves.
+ *
+ * Mirrors the shipped `.htaccess` (dotfiles, *.sql, *.zip) and the nginx
+ * configs (application/, system/, vendor/, storage/). Kept as one function so
+ * the rule is stated once and can be read next to the config it mirrors.
+ */
+function isDenied(pathname) {
+  const clean = pathname.replace(/\\/g, '/');
+  if (/(^|\/)\.[^/]/.test(clean)) return true;               // .env, .git, .htpasswd
+  if (/\.(sql|sqlite|zip|gz|log)$/i.test(clean)) return true;  // dumps and archives
+  if (/^\/(application|system|vendor|storage|tools|tests)(\/|$)/i.test(clean)) return true;
+  return false;
+}
 
 /**
  * Per-request cookie passthrough.
@@ -80,29 +102,52 @@ const cookiePassthrough = {
   },
 };
 
-const handler = new PHPRequestHandler({
-  cookieStore: cookiePassthrough,
-  documentRoot: '/app',
-  absoluteUrl: process.env.DEV_ABSOLUTE_URL || `http://localhost:${args.port}`,
-  maxPhpInstances: args.workers,
-  phpFactory: async () => {
-    const php = await (async () => {
-      const { PHP } = await import('@php-wasm/universal');
-      const runtime = await loadNodeRuntime(
-        '8.2',
-        await withNetworking({ emscriptenOptions: { processId: ++processIdSeq } })
-      );
-      return new PHP(runtime);
-    })();
-    php.mkdir('/app');
-    await php.mount('/app', createNodeFsMountHandler(ROOT));
-    php.chdir('/app');
-    return php;
-  },
-  // Mirror .htaccess: an existing file is served as-is, everything else is a
-  // front-controller route handled by index.php.
+function createHandler() {
+  return new PHPRequestHandler({
+    cookieStore: cookiePassthrough,
+    documentRoot: '/app',
+    absoluteUrl: process.env.DEV_ABSOLUTE_URL || `http://localhost:${args.port}`,
+    maxPhpInstances: args.workers,
+    phpFactory: async () => {
+      const php = await (async () => {
+        const { PHP } = await import('@php-wasm/universal');
+        const runtime = await loadNodeRuntime(
+          '8.2',
+          await withNetworking({ emscriptenOptions: { processId: ++processIdSeq } })
+        );
+        return new PHP(runtime);
+      })();
+      php.mkdir('/app');
+      await php.mount('/app', createNodeFsMountHandler(ROOT));
+      php.chdir('/app');
+      return php;
+    },
+    // Mirror .htaccess: an existing file is served as-is, everything else is a
+    // front-controller route handled by index.php.
   getFileNotFoundAction: () => ({ type: 'internal-redirect', uri: '/index.php' }),
-});
+  });
+}
+
+/**
+ * The PHP pool, recycled after a bounded number of requests.
+ *
+ * Each wasm runtime holds open file descriptors, and this build leaks a few
+ * per request. After a few hundred — one long end-to-end run — the process
+ * hits "No file descriptors available" and every route starts answering 500,
+ * which looks exactly like the application breaking and has cost several
+ * debugging sessions. PHP-FPM solves the same class of problem with
+ * pm.max_requests; so does this. The old handler stays alive until its
+ * in-flight requests finish, then goes away with its descriptors.
+ */
+let handler = createHandler();
+let servedSinceRecycle = 0;
+function noteRequestServed() {
+  if (args.maxRequests <= 0) return;
+  if (++servedSinceRecycle < args.maxRequests) return;
+  servedSinceRecycle = 0;
+  handler = createHandler();
+  console.log(`[devserver] recycled the PHP pool after ${args.maxRequests} requests`);
+}
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -116,6 +161,22 @@ function readBody(req) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = decodeURIComponent(url.pathname);
+
+  // Paths the shipped .htaccess and nginx configs refuse, refused here too.
+  //
+  // This server reads files straight from disk and knows nothing about
+  // .htaccess, so until now it happily served `/.env` — every credential on
+  // the panel — plus `database/marvysocials.sql` (schema and the seeded
+  // administrator hash) and anything under storage/. On a laptop that is
+  // careless; in a sandbox whose port is published as a preview URL it is a
+  // credential leak. Production denies these in Apache and nginx; the dev
+  // server now denies the same list, so a deployment check that asks "is .env
+  // reachable?" gets a truthful answer here as well.
+  if (isDenied(pathname)) {
+    res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
+    res.end('Forbidden');
+    return;
+  }
 
   // Static assets straight from disk — faster, and keeps binary files intact.
   if (pathname !== '/' && !pathname.endsWith('/')) {
@@ -145,7 +206,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     cookiePassthrough.current = headers.cookie || '';
-    const response = await handler.request({
+    const pool = handler;                 // the instance this request belongs to
+    const response = await pool.request({
       url: req.url,
       method: req.method,
       headers,
@@ -160,6 +222,7 @@ const server = http.createServer(async (req, res) => {
     res.end(Buffer.from(response.bytes));
 
     if (response.errors) process.stderr.write(String(response.errors));
+    noteRequestServed();
   } catch (err) {
     console.error('[devserver]', req.method, req.url, err?.message || err);
     const detail = err?.response

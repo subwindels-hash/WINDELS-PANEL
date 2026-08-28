@@ -35,7 +35,14 @@ class Tickets extends Auth_Controller {
 
     public function create() {
         if ($this->input->method(true) !== 'POST') show_404();
-        $res = $this->ticketservice->open($this->current_user, $this->input->post());
+        $input = $this->input->post();
+        $upload = $this->ticketservice->attachments_from_upload(
+            $_FILES['attachments'] ?? null, $this->current_user->id);
+        $input['attachments'] = $upload['files'];
+        // A rejected file must not silently vanish: the customer chose it
+        // deliberately, and "my screenshot did not arrive" is a second ticket.
+        if ($upload['errors']) $this->session->set_flashdata('warning', implode(' ', $upload['errors']));
+        $res = $this->ticketservice->open($this->current_user, $input);
         if (empty($res['ok'])) {
             $this->session->set_flashdata('error', $res['error'] ?? 'Could not create ticket');
             redirect('dashboard/tickets');
@@ -65,7 +72,11 @@ class Tickets extends Auth_Controller {
 
     public function reply($public_id) {
         if ($this->input->method(true) !== 'POST') show_404();
-        $res = $this->ticketservice->reply($public_id, $this->current_user, $this->input->post('message'));
+        $upload = $this->ticketservice->attachments_from_upload(
+            $_FILES['attachments'] ?? null, $this->current_user->id);
+        if ($upload['errors']) $this->session->set_flashdata('warning', implode(' ', $upload['errors']));
+        $res = $this->ticketservice->reply($public_id, $this->current_user,
+            $this->input->post('message'), false, $upload['files']);
         if (empty($res['ok'])) {
             $this->session->set_flashdata('error', $res['error'] ?? 'Could not send reply');
         } else {

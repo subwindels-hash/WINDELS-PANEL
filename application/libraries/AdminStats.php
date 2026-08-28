@@ -25,16 +25,52 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  */
 class AdminStats {
 
-    /** Statuses in which money has actually been earned, per table. */
+    /**
+     * Statuses in which money has actually been earned, per table.
+     *
+     * This constant existed from the start and **was never used by a single
+     * query**: every revenue figure counted every row created in the window,
+     * so a failed VTU top-up, an order cancelled before it was submitted and a
+     * deposit-less PENDING order all reported as revenue. The headline number
+     * on the first screen an operator sees was the *volume of attempts*, not
+     * income, and it was always too high.
+     *
+     * What belongs here:
+     *
+     *  - delivered, or being delivered — the sale stands;
+     *  - REFUNDED — the sale happened and the money was given back, so it must
+     *    appear in gross AND in refunded, or a goodwill refund would be
+     *    invisible in the reporting;
+     *
+     * and what does not: PENDING (charged but not yet delivered — the action
+     * queue's job, not revenue's), FAILED / ERROR / CANCELED / EXPIRED (a wash:
+     * charged, then refunded, no income either way).
+     */
     private static $earned = array(
-        'orders'               => array('COMPLETED', 'PARTIAL', 'IN_PROGRESS', 'PROCESSING'),
-        'service_transactions' => array('SUCCESSFUL', 'PROCESSING'),
+        'orders'               => array('COMPLETED', 'PARTIAL', 'IN_PROGRESS', 'PROCESSING', 'REFUNDED'),
+        'service_transactions' => array('SUCCESSFUL', 'PROCESSING', 'REFUNDED'),
     );
 
     private $ci;
 
+    /**
+     * Per-request memo.
+     *
+     * The admin landing page asked the same questions more than once —
+     * `order_status_counts()` was called by the controller AND by
+     * `platform_overview()`, so the same GROUP BY ran twice on every load.
+     * Widgets are composed, so the only place that duplication can be removed
+     * without coupling them to each other is here.
+     */
+    private $memo = array();
+
     public function __construct() {
         $this->ci =& get_instance();
+    }
+
+    /** Drop the memo — a long-running CLI process can outlive its own answers. */
+    public function flush() {
+        $this->memo = array();
     }
 
     /**
@@ -46,35 +82,104 @@ class AdminStats {
      * side anyway. Two indexed aggregate queries is the cheaper honest answer.
      */
     public function revenue($days = 1) {
-        $since = gmdate('Y-m-d H:i:s', strtotime('-'.(int)$days.' days'));
+        $windows = $this->revenue_windows(array((int)$days));
+        return $windows[(int)$days];
+    }
 
-        $smm = $this->ci->db
-            ->select('COUNT(*) AS n', false)
-            ->select('COALESCE(SUM(charge),0) AS gross', false)
-            ->select('COALESCE(SUM(refunded_amount),0) AS refunded', false)
-            ->where('created_at >=', $since)
-            ->get('orders')->row();
+    /**
+     * The same revenue answer for several windows, in one pass per table.
+     *
+     * The dashboard shows today AND the last thirty days. Asked separately
+     * that cost eight queries — a sum and an "unearned" count per table per
+     * window — over the two largest tables in the panel, on the first screen
+     * every staff member opens. The windows are nested (today is inside the
+     * month), so one scan can answer all of them with conditional sums, and
+     * the answers are identical.
+     *
+     * @param int[] $day_windows e.g. array(1, 30)
+     * @return array window => the same shape revenue() has always returned
+     */
+    public function revenue_windows(array $day_windows) {
+        $day_windows = array_values(array_unique(array_map('intval', $day_windows)));
+        sort($day_windows);
+        if (!$day_windows) return array();
 
-        $services = $this->ci->db
-            ->select('COUNT(*) AS n', false)
-            ->select('COALESCE(SUM(amount),0) AS gross', false)
-            ->select('COALESCE(SUM(refunded_amount),0) AS refunded', false)
-            ->where('created_at >=', $since)
-            ->get('service_transactions')->row();
+        $key = 'revenue:'.implode(',', $day_windows);
+        if (isset($this->memo[$key])) return $this->memo[$key];
 
-        $gross    = bcadd($this->money($smm->gross ?? 0),    $this->money($services->gross ?? 0), 8);
-        $refunded = bcadd($this->money($smm->refunded ?? 0), $this->money($services->refunded ?? 0), 8);
+        $since = array();
+        foreach ($day_windows as $days) {
+            $since[$days] = gmdate('Y-m-d H:i:s', strtotime('-'.$days.' days'));
+        }
+        $oldest = $since[max($day_windows)];
 
-        return array(
-            // `orders` is kept as the key for backwards compatibility with the
-            // existing widget; it now means "sales", of every kind.
-            'orders'   => (int)($smm->n ?? 0) + (int)($services->n ?? 0),
-            'smm'      => (int)($smm->n ?? 0),
-            'services' => (int)($services->n ?? 0),
-            'gross'    => $gross,
-            'refunded' => $refunded,
-            'net'      => bcsub($gross, $refunded, 8),
-        );
+        $smm      = $this->windowed_totals('orders', 'charge', self::$earned['orders'], $since, $oldest);
+        $services = $this->windowed_totals('service_transactions', 'amount',
+            self::$earned['service_transactions'], $since, $oldest);
+
+        $out = array();
+        foreach ($day_windows as $days) {
+            $gross = bcadd($smm[$days]['gross'], $services[$days]['gross'], 8);
+            $refunded = bcadd($smm[$days]['refunded'], $services[$days]['refunded'], 8);
+            $out[$days] = array(
+                // `orders` is kept as the key for backwards compatibility with
+                // the existing widget; it now means "sales", of every kind.
+                'orders'   => $smm[$days]['n'] + $services[$days]['n'],
+                'smm'      => $smm[$days]['n'],
+                'services' => $services[$days]['n'],
+                'gross'    => $gross,
+                'refunded' => $refunded,
+                'net'      => bcsub($gross, $refunded, 8),
+                // Attempts that earned nothing. Reported, not hidden: an
+                // operator who sees 40 sales and 60 attempts knows to look at
+                // delivery, and it stops anyone reading a suddenly smaller
+                // revenue figure as data loss.
+                'unearned' => $smm[$days]['unearned'] + $services[$days]['unearned'],
+            );
+        }
+        return $this->memo[$key] = $out;
+    }
+
+    /**
+     * One aggregate query per table covering every window.
+     *
+     * Every figure is a conditional sum over the same scan: sales, gross,
+     * refunds and unearned attempts, per window. The WHERE clause is bounded
+     * by the widest window so the index still does the work.
+     */
+    private function windowed_totals($table, $money_column, array $earned, array $since, $oldest) {
+        $in = "'".implode("','", array_map(array($this, 'escape_status'), $earned))."'";
+
+        $db = $this->ci->db;
+        foreach ($since as $days => $from) {
+            $window = "created_at >= '".$from."'";
+            $db->select("COALESCE(SUM(CASE WHEN {$window} AND status IN ({$in}) THEN 1 ELSE 0 END),0) AS n_{$days}", false)
+               ->select("COALESCE(SUM(CASE WHEN {$window} AND status IN ({$in}) THEN {$money_column} ELSE 0 END),0) AS gross_{$days}", false)
+               ->select("COALESCE(SUM(CASE WHEN {$window} AND status IN ({$in}) THEN refunded_amount ELSE 0 END),0) AS refunded_{$days}", false)
+               ->select("COALESCE(SUM(CASE WHEN {$window} AND status NOT IN ({$in}) THEN 1 ELSE 0 END),0) AS unearned_{$days}", false);
+        }
+        $row = $db->where('created_at >=', $oldest)->get($table)->row();
+
+        $out = array();
+        foreach (array_keys($since) as $days) {
+            $out[$days] = array(
+                'n'        => (int)($row->{'n_'.$days} ?? 0),
+                'gross'    => $this->money($row->{'gross_'.$days} ?? 0),
+                'refunded' => $this->money($row->{'refunded_'.$days} ?? 0),
+                'unearned' => (int)($row->{'unearned_'.$days} ?? 0),
+            );
+        }
+        return $out;
+    }
+
+    /**
+     * Statuses are our own constants, never user input — but they are
+     * interpolated into SQL here, so they are constrained to the character
+     * class a status can legally have rather than trusted because of where
+     * they came from.
+     */
+    private function escape_status($status) {
+        return preg_replace('/[^A-Z_]/', '', strtoupper((string)$status));
     }
 
     /**
@@ -101,6 +206,7 @@ class AdminStats {
             ->select('COALESCE(SUM(provider_charge),0) AS cost', false)
             ->select('COALESCE(SUM(CASE WHEN provider_charge IS NOT NULL THEN 1 ELSE 0 END),0) AS costed', false)
             ->where('created_at >=', $since)
+            ->where_in('status', self::$earned['orders'])
             ->get('orders')->row();
         if ((int)($smm->n ?? 0) > 0) $out['SMM'] = $this->shape($smm);
 
@@ -112,6 +218,7 @@ class AdminStats {
             ->select('COALESCE(SUM(provider_cost),0) AS cost', false)
             ->select('COALESCE(SUM(CASE WHEN provider_cost IS NOT NULL THEN 1 ELSE 0 END),0) AS costed', false)
             ->where('created_at >=', $since)
+            ->where_in('status', self::$earned['service_transactions'])
             ->group_by('service_domain')
             ->get('service_transactions')->result();
         foreach ($rows as $r) $out[$r->service_domain] = $this->shape($r);
@@ -130,7 +237,7 @@ class AdminStats {
      * into one figure — a backlog in gift cards and a backlog in airtime need
      * different people to look at them.
      */
-    public function domain_health($stuck_after_minutes = 30) {
+    public function domain_health($stuck_after_minutes = 30, $smm_stuck_after_minutes = 1440) {
         $cutoff = gmdate('Y-m-d H:i:s', time() - ((int)$stuck_after_minutes * 60));
 
         $rows = $this->ci->db
@@ -176,7 +283,46 @@ class AdminStats {
             $out[$r->service_domain]['stuck'] = (int)$r->n;
         }
 
+        // SMM comes from `orders` and was missing from this table entirely —
+        // the panel's largest domain had a revenue row on this page and no
+        // delivery row, so an SMM backlog was the one thing the delivery-health
+        // widget could not show. Its own window is far wider on purpose: an SMM
+        // order in flight for half an hour is ordinary, while a gift card in
+        // that state means a customer has paid and has no code.
+        $smm = $this->smm_health($smm_stuck_after_minutes);
+        if ($smm !== null) $out = array('SMM' => $smm) + $out;
+
         return $out;
+    }
+
+    /** The `orders` half of domain_health(), in the same shape. */
+    private function smm_health($stuck_after_minutes) {
+        $row = $this->ci->db
+            ->select('COUNT(*) AS n', false)
+            ->select("COALESCE(SUM(CASE WHEN status IN ('PENDING','PROCESSING','IN_PROGRESS') THEN 1 ELSE 0 END),0) AS in_flight", false)
+            ->select("COALESCE(SUM(CASE WHEN status IN ('COMPLETED','PARTIAL') THEN 1 ELSE 0 END),0) AS successful", false)
+            ->select("COALESCE(SUM(CASE WHEN status IN ('FAILED','ERROR') THEN 1 ELSE 0 END),0) AS failed", false)
+            ->select("COALESCE(SUM(CASE WHEN status = 'REFUNDED' THEN 1 ELSE 0 END),0) AS refunded", false)
+            ->get('orders')->row();
+        if (!$row || (int)$row->n === 0) return null;
+
+        $settled = (int)$row->successful + (int)$row->failed;
+        $stuck = (int)$this->ci->db
+            ->where_in('status', array('PENDING', 'PROCESSING', 'IN_PROGRESS'))
+            ->where('created_at <', gmdate('Y-m-d H:i:s', time() - ((int)$stuck_after_minutes * 60)))
+            ->count_all_results('orders');
+
+        return array(
+            'total'        => (int)$row->n,
+            'in_flight'    => (int)$row->in_flight,
+            'successful'   => (int)$row->successful,
+            'failed'       => (int)$row->failed,
+            'refunded'     => (int)$row->refunded,
+            // A cancellation is neither a delivery nor a fault, so it is left
+            // out of the denominator exactly as in-flight rows are.
+            'success_rate' => $settled > 0 ? round(((int)$row->successful / $settled) * 100, 1) : null,
+            'stuck'        => $stuck,
+        );
     }
 
     /**
@@ -227,10 +373,21 @@ class AdminStats {
     /**
      * Daily revenue for a sparkline, oldest first.
      *
-     * Grouped in PHP over two already-filtered queries rather than with a
-     * per-day SQL group, because the two tables would each need their own
-     * DATE() grouping and then a merge anyway — and a DATE() call on the
-     * column defeats the index on `created_at`.
+     * Aggregated in SQL. It used to `SELECT` every order and every service
+     * transaction in the window and add them up in PHP — on a panel doing a
+     * few thousand sales a day that is tens of thousands of rows materialised
+     * on **every admin page load**, because the landing page draws this chart
+     * too. Grouping by the date prefix costs the index on the GROUP BY (it
+     * cannot use one either way) but keeps the range scan in the WHERE, and
+     * returns at most one row per day per table.
+     *
+     * `SUBSTR(created_at, 1, 10)` rather than `DATE()`: both MySQL and the
+     * SQLite-backed dev database implement it identically for a DATETIME
+     * column, and the values are UTC in both, matching the keys built below.
+     *
+     * It also applies the same earned-status filter as the cards above it. A
+     * chart that counted cancelled orders while the summary did not would have
+     * the page disagreeing with itself.
      */
     public function revenue_series($days = 14) {
         $days  = max(1, (int)$days);
@@ -242,21 +399,26 @@ class AdminStats {
         }
 
         $sources = array(
-            array('orders', 'charge'),
-            array('service_transactions', 'amount'),
+            array('orders', 'charge', self::$earned['orders']),
+            array('service_transactions', 'amount', self::$earned['service_transactions']),
         );
         foreach ($sources as $source) {
-            list($table, $column) = $source;
+            list($table, $column, $statuses) = $source;
             $rows = $this->ci->db
-                ->select('created_at, '.$column.' AS amount, refunded_amount', false)
+                ->select('SUBSTR(created_at, 1, 10) AS day', false)
+                ->select('COUNT(*) AS sales', false)
+                ->select('COALESCE(SUM('.$column.'),0) AS gross', false)
+                ->select('COALESCE(SUM(refunded_amount),0) AS refunded', false)
                 ->where('created_at >=', $since)
+                ->where_in('status', $statuses)
+                ->group_by('day', false)
                 ->get($table)->result();
             foreach ($rows as $r) {
-                $day = substr((string)$r->created_at, 0, 10);
+                $day = (string)$r->day;
                 if (!isset($series[$day])) continue;
                 $series[$day]['net'] = bcadd($series[$day]['net'],
-                    bcsub($this->money($r->amount), $this->money($r->refunded_amount), 8), 8);
-                $series[$day]['sales']++;
+                    bcsub($this->money($r->gross), $this->money($r->refunded), 8), 8);
+                $series[$day]['sales'] += (int)$r->sales;
             }
         }
         return $series;
@@ -291,11 +453,43 @@ class AdminStats {
 
     /** Orders grouped by status, for the queue widget. */
     public function order_status_counts() {
-        $rows = $this->ci->db->select('status, COUNT(*) AS c', false)
+        return $this->order_counts()['by_status'];
+    }
+
+    /**
+     * Orders grouped by status, plus how many arrived today, in one scan.
+     *
+     * This used to be two queries — the GROUP BY here and a separate
+     * COUNT(*) for "orders today" in platform_overview() — and the GROUP BY
+     * itself ran twice per page, because the dashboard controller asked for
+     * it and platform_overview() asked for it again. Same table, same load,
+     * three scans of the largest table in the panel for two numbers.
+     */
+    private function order_counts() {
+        if (isset($this->memo['order_counts'])) return $this->memo['order_counts'];
+
+        $today = gmdate('Y-m-d 00:00:00');
+        // "Stuck" rides along on the same scan: an order still PENDING or
+        // PROCESSING 24 hours later is a customer who has paid and is waiting,
+        // and asking for it separately meant a third pass over the biggest
+        // table on the page.
+        $stuck_before = gmdate('Y-m-d H:i:s', strtotime('-24 hours'));
+        $rows = $this->ci->db
+            ->select('status, COUNT(*) AS c', false)
+            ->select("COALESCE(SUM(CASE WHEN created_at >= '".$today."' THEN 1 ELSE 0 END),0) AS today_c", false)
+            ->select("COALESCE(SUM(CASE WHEN status IN ('PENDING','PROCESSING') AND created_at < '".$stuck_before."' THEN 1 ELSE 0 END),0) AS stuck_c", false)
             ->group_by('status')->get('orders')->result();
-        $out = array();
-        foreach ($rows as $r) $out[$r->status] = (int)$r->c;
-        return $out;
+
+        $by_status = array();
+        $today_total = 0;
+        $stuck_total = 0;
+        foreach ($rows as $r) {
+            $by_status[$r->status] = (int)$r->c;
+            $today_total += (int)($r->today_c ?? 0);
+            $stuck_total += (int)($r->stuck_c ?? 0);
+        }
+        return $this->memo['order_counts'] = array(
+            'by_status' => $by_status, 'today' => $today_total, 'stuck' => $stuck_total);
     }
 
     /**
@@ -309,17 +503,15 @@ class AdminStats {
      * almost certainly outlived the vendor's hold.
      */
     public function action_queue() {
+        $tickets = $this->ticket_queue();
         return array(
             'deposits' => (int)$this->ci->db->where('status', 'PENDING')
                 ->count_all_results('payment_transactions'),
-            'tickets'  => (int)$this->ci->db->where_in('status', array('OPEN', 'PENDING'))
-                ->count_all_results('tickets'),
-            'unassigned_tickets' => (int)$this->ci->db->where('assigned_to_id IS NULL', null, false)
-                ->where_in('status', array('OPEN', 'PENDING'))->count_all_results('tickets'),
-            'stuck_orders' => (int)$this->ci->db
-                ->where_in('status', array('PENDING', 'PROCESSING'))
-                ->where('created_at <', gmdate('Y-m-d H:i:s', strtotime('-24 hours')))
-                ->count_all_results('orders'),
+            // Open tickets and the unassigned subset differ by one column, so
+            // they come from one scan rather than two.
+            'tickets'  => $tickets['open'],
+            'unassigned_tickets' => $tickets['unassigned'],
+            'stuck_orders' => $this->order_counts()['stuck'],
             'stuck_services' => (int)$this->ci->db
                 ->where_in('status', array('PENDING', 'PROCESSING'))
                 ->where('created_at <', gmdate('Y-m-d H:i:s', strtotime('-30 minutes')))
@@ -327,31 +519,41 @@ class AdminStats {
         );
     }
 
+    /** Open tickets, and how many of them nobody owns, in one query. */
+    private function ticket_queue() {
+        if (isset($this->memo['ticket_queue'])) return $this->memo['ticket_queue'];
+
+        $row = $this->ci->db
+            ->select("COALESCE(SUM(CASE WHEN status IN ('OPEN','PENDING') THEN 1 ELSE 0 END),0) AS open_n", false)
+            ->select("COALESCE(SUM(CASE WHEN status IN ('OPEN','PENDING') AND assigned_to_id IS NULL THEN 1 ELSE 0 END),0) AS unassigned_n", false)
+            ->get('tickets')->row();
+
+        return $this->memo['ticket_queue'] = array(
+            'open'       => (int)($row->open_n ?? 0),
+            'unassigned' => (int)($row->unassigned_n ?? 0),
+        );
+    }
+
     /** Headline platform counts for the admin command center. */
     public function platform_overview() {
-        $users = $this->ci->db
-            ->select('COUNT(*) AS total', false)
-            ->select("COALESCE(SUM(CASE WHEN status='ACTIVE' THEN 1 ELSE 0 END),0) AS active", false)
-            ->select("COALESCE(SUM(CASE WHEN status='SUSPENDED' THEN 1 ELSE 0 END),0) AS suspended", false)
-            ->select("COALESCE(SUM(CASE WHEN created_at >= '".gmdate('Y-m-d 00:00:00')."' THEN 1 ELSE 0 END),0) AS new_today", false)
-            ->get('users')->row();
-        $orders = $this->order_status_counts();
-        $order_today = (int)$this->ci->db->where('created_at >=', gmdate('Y-m-d 00:00:00'))->count_all_results('orders');
+        $users  = $this->user_totals();
+        $orders = $this->order_counts();
         $wallet = $this->ci->db->select('COALESCE(SUM(balance),0) AS total', false)->get('wallets')->row();
         $payouts = 0;
         if ($this->ci->db->table_exists('payouts')) {
             $payouts = (int)$this->ci->db->where_in('status', array('PENDING','APPROVED'))->count_all_results('payouts');
         }
-        $failed_orders = (int)($orders['FAILED'] ?? 0) + (int)($orders['ERROR'] ?? 0);
+        $by_status = $orders['by_status'];
+        $failed_orders = (int)($by_status['FAILED'] ?? 0) + (int)($by_status['ERROR'] ?? 0);
         return array(
-            'users_total'     => (int)($users->total ?? 0),
-            'users_active'    => (int)($users->active ?? 0),
-            'users_suspended' => (int)($users->suspended ?? 0),
-            'users_today'     => (int)($users->new_today ?? 0),
-            'orders_total'    => array_sum($orders),
-            'orders_today'    => $order_today,
-            'orders_pending'  => (int)($orders['PENDING'] ?? 0),
-            'orders_completed'=> (int)($orders['COMPLETED'] ?? 0),
+            'users_total'     => $users['total'],
+            'users_active'    => $users['active'],
+            'users_suspended' => $users['suspended'],
+            'users_today'     => $users['new_today'],
+            'orders_total'    => array_sum($by_status),
+            'orders_today'    => $orders['today'],
+            'orders_pending'  => (int)($by_status['PENDING'] ?? 0),
+            'orders_completed'=> (int)($by_status['COMPLETED'] ?? 0),
             'orders_failed'   => $failed_orders,
             'wallet_float'    => $this->money($wallet->total ?? 0),
             'payouts_pending' => $payouts,
@@ -360,16 +562,46 @@ class AdminStats {
 
     /** Customer totals. */
     public function customers() {
+        $u = $this->user_totals();
+        return array(
+            'total'   => $u['customers_total'],
+            'active'  => $u['customers_active'],
+            'new_30d' => $u['customers_new_30d'],
+        );
+    }
+
+    /**
+     * Every headcount the dashboard needs, from one pass over `users`.
+     *
+     * The overview widget aggregated all users and the customers widget
+     * aggregated customers — two full scans of the same table on one page,
+     * for figures that differ only by a WHERE clause. Conditional sums
+     * answer both, and the memo means the two widgets can keep asking
+     * independently without paying twice.
+     */
+    private function user_totals() {
+        if (isset($this->memo['user_totals'])) return $this->memo['user_totals'];
+
+        $today = gmdate('Y-m-d 00:00:00');
+        $month = gmdate('Y-m-d', strtotime('-30 days'));
         $row = $this->ci->db
             ->select('COUNT(*) AS total', false)
             ->select("COALESCE(SUM(CASE WHEN status='ACTIVE' THEN 1 ELSE 0 END),0) AS active", false)
-            ->select("COALESCE(SUM(CASE WHEN created_at >= '".gmdate('Y-m-d', strtotime('-30 days'))."' THEN 1 ELSE 0 END),0) AS new_30d", false)
-            ->where('role', 'CUSTOMER')
+            ->select("COALESCE(SUM(CASE WHEN status='SUSPENDED' THEN 1 ELSE 0 END),0) AS suspended", false)
+            ->select("COALESCE(SUM(CASE WHEN created_at >= '".$today."' THEN 1 ELSE 0 END),0) AS new_today", false)
+            ->select("COALESCE(SUM(CASE WHEN role='CUSTOMER' THEN 1 ELSE 0 END),0) AS customers_total", false)
+            ->select("COALESCE(SUM(CASE WHEN role='CUSTOMER' AND status='ACTIVE' THEN 1 ELSE 0 END),0) AS customers_active", false)
+            ->select("COALESCE(SUM(CASE WHEN role='CUSTOMER' AND created_at >= '".$month."' THEN 1 ELSE 0 END),0) AS customers_new_30d", false)
             ->get('users')->row();
-        return array(
-            'total'   => (int)($row->total ?? 0),
-            'active'  => (int)($row->active ?? 0),
-            'new_30d' => (int)($row->new_30d ?? 0),
+
+        return $this->memo['user_totals'] = array(
+            'total'             => (int)($row->total ?? 0),
+            'active'            => (int)($row->active ?? 0),
+            'suspended'         => (int)($row->suspended ?? 0),
+            'new_today'         => (int)($row->new_today ?? 0),
+            'customers_total'   => (int)($row->customers_total ?? 0),
+            'customers_active'  => (int)($row->customers_active ?? 0),
+            'customers_new_30d' => (int)($row->customers_new_30d ?? 0),
         );
     }
 

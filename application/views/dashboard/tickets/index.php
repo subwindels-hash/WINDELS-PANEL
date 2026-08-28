@@ -4,7 +4,7 @@
     <h2 class="mb-0" style="font-size:1.4rem;font-weight:600">Support tickets</h2>
     <p class="muted text-sm">Questions about an order or deposit? Open a ticket and our team will reply.</p>
   </div>
-  <button class="btn btn-primary" onclick="document.getElementById('ws-new-ticket').showModal()">+ New ticket</button>
+  <button class="btn btn-primary" data-dialog-open="ws-new-ticket" >+ New ticket</button>
 </div>
 
 <div class="card">
@@ -37,8 +37,8 @@
 <?php endif; ?>
 </div>
 
-<dialog id="ws-new-ticket" class="ws-dialog" onclick="if(event.target===this)this.close()">
-  <?=form_open('dashboard/tickets/create', array('class'=>'stack'))?>
+<dialog id="ws-new-ticket" class="ws-dialog" data-dialog-light-dismiss >
+  <?=form_open_multipart('dashboard/tickets/create', array('class'=>'stack'))?>
     <h3 class="card-title mb-0">Open a ticket</h3>
     <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
     <label class="field"><span class="label">Subject</span>
@@ -59,9 +59,15 @@
     </label>
     <label class="field"><span class="label">Message</span>
       <textarea class="textarea" name="message" required rows="5" maxlength="20000"></textarea>
+    </div>
+    <div>
+      <label class="text-sm font-medium" for="new-attachments">Attach files (optional)</label>
+      <input class="input" id="new-attachments" type="file" name="attachments[]" multiple
+             accept="image/jpeg,image/png,image/gif,image/webp,application/pdf">
+      <p class="hint">A screenshot usually answers the first question support would ask. Up to 5 files.</p>
     </label>
     <div class="row" style="justify-content:flex-end">
-      <button type="button" class="btn btn-ghost" onclick="document.getElementById('ws-new-ticket').close()">Cancel</button>
+      <button type="button" class="btn btn-ghost" data-dialog-close="ws-new-ticket" >Cancel</button>
       <button type="submit" class="btn btn-primary">Open ticket</button>
     </div>
   <?=form_close()?>

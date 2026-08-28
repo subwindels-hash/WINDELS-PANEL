@@ -1,6 +1,7 @@
 <?php
 use PHPUnit\Framework\TestCase;
 
+require_once dirname(__DIR__).'/_support/ShellSource.php';
 require_once dirname(__DIR__).'/_support/IntegrationHarness.php';
 
 /** Complete mass-order parser, orchestration, replay, and delivery contract. */
@@ -256,7 +257,7 @@ class MassOrderTest extends TestCase
         $routes = file_get_contents($root.'/application/config/routes.php');
         $dashboard = file_get_contents($root.'/application/controllers/dashboard/Orders.php');
         $api = file_get_contents($root.'/application/controllers/Api_v1.php');
-        $layout = file_get_contents($root.'/application/views/layouts/app.php');
+        $layout = ShellSource::app($root);
         $view = file_get_contents($root.'/application/views/dashboard/orders/mass_order.php');
         $sql = implode("\n", Migration_Mass_orders::statements());
 

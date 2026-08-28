@@ -70,7 +70,7 @@ $published = $override ? (int)$override->is_published === 1 : true;
 
 <?php if ($override): ?>
 <form method="post" action="<?=site_url('admin/pages/'.$page_key.'/reset')?>" class="card mt-4"
-      onsubmit="return confirm('Remove your custom version and restore the text that ships with the panel?')">
+      data-confirm="Remove your custom version and restore the text that ships with the panel?" >
   <?=$csrf()?>
   <h3 style="font-size:1rem;font-weight:600" class="mb-1">Reset to default</h3>
   <p class="muted text-xs mb-3">

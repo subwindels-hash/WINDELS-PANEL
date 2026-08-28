@@ -174,7 +174,7 @@ $dt = function ($field) use ($row) {
     <div>
       <?php if (!$is_new): ?>
         <button class="btn btn-ghost btn-sm" type="button"
-                onclick="document.getElementById('ws-del').showModal()">Delete</button>
+                data-dialog-open="ws-del" >Delete</button>
       <?php endif; ?>
     </div>
     <button class="btn btn-primary" type="submit"><?=$is_new ? 'Create' : 'Save changes'?></button>
@@ -194,7 +194,7 @@ $dt = function ($field) use ($row) {
     </p>
     <div class="row" style="gap:.5rem;justify-content:flex-end">
       <button class="btn btn-ghost btn-sm" type="button"
-              onclick="document.getElementById('ws-del').close()">Cancel</button>
+              data-dialog-close="ws-del" >Cancel</button>
       <button class="btn btn-danger btn-sm" type="submit">Delete</button>
     </div>
   </form>

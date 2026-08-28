@@ -20,7 +20,7 @@ class Product_review_model extends MY_Model {
     /** Approved reviews for a listing, newest first. */
     public function approved_for_listing($listing_id, $limit = 20, $offset = 0) {
         return $this->db
-            ->select($this->table.'.*, users.username', false)
+            ->select($this->table.'.*, users.username, users.avatar_url', false)
             ->from($this->table)
             ->join('users', 'users.id = '.$this->table.'.user_id', 'left')
             ->where($this->table.'.listing_id', (int)$listing_id)

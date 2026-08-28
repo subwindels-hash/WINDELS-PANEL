@@ -1,6 +1,7 @@
 <?php
 use PHPUnit\Framework\TestCase;
 
+require_once dirname(__DIR__).'/_support/ShellSource.php';
 require_once dirname(__DIR__).'/_support/FakeDb.php';
 require_once dirname(__DIR__).'/_support/IntegrationHarness.php';
 
@@ -815,7 +816,7 @@ class CatalogueTest extends TestCase
         $this->assertLessThan($grid, strpos($routes, "\$route['admin/catalogue/(:any)/create']"),
             'the create route must precede the single-segment grid route');
 
-        $layout = file_get_contents(self::$root.'/application/views/layouts/app.php');
+        $layout = ShellSource::app(self::$root);
         $this->assertStringContainsString('admin/catalogue', $layout);
 
         // The SMM catalogue and the four-domain catalogue are distinct admin
@@ -843,7 +844,7 @@ class CatalogueTest extends TestCase
         $this->assertStringContainsString('flashdata($key)', $flash);
         $this->assertStringContainsString("'warning' => array('class' => 'warning'", $flash,
             'the warning bucket must map to the shared alert-warning component class');
-        $layout = file_get_contents(self::$root.'/application/views/layouts/app.php');
+        $layout = ShellSource::app(self::$root);
         $this->assertStringContainsString("partials/flash", $layout,
             'layouts/app.php must render the unified flash partial');
     }

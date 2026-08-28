@@ -224,6 +224,53 @@ class Service_transaction_model extends MY_Model {
     }
 
     /** Transactions a status worker should re-check. */
+    /**
+     * Purchases that have been in flight too long to still be in flight.
+     *
+     * The domain workers each settle what they can reach: vtu_status polls
+     * VTU, numbers_status polls reservations, giftcard_codes chases codes.
+     * None of them can settle a row they cannot see, and two kinds are
+     * invisible to all of them:
+     *
+     *   - PROCESSING with no `provider_reference` (the vendor accepted the
+     *     purchase but returned nothing to poll with, or the process died) —
+     *     `pending_provider_sync()` filters those out by definition;
+     *   - PENDING, where the charge never completed.
+     *
+     * Both leave a customer charged for something nobody will ever look at
+     * again. Deliberately two plain queries rather than one clause with nested
+     * OR groups: each is separately index-friendly, each is obvious at a
+     * glance, and money queries are not the place to be clever.
+     *
+     * @param string $soft_cutoff UTC datetime — unpollable rows older than this
+     * @param string $hard_cutoff UTC datetime — ANY in-flight row older than this
+     */
+    public function stuck($soft_cutoff, $hard_cutoff, $limit = 100){
+        $unpollable = $this->db
+            ->where_in('status', array('PENDING', 'PROCESSING'))
+            ->where('created_at <', $soft_cutoff)
+            ->group_start()
+                ->where('provider_reference IS NULL', null, false)
+                ->or_where('provider_reference', '')
+            ->group_end()
+            ->order_by('created_at', 'ASC')
+            ->limit($limit)
+            ->get($this->table)->result();
+
+        $abandoned = $this->db
+            ->where_in('status', array('PENDING', 'PROCESSING'))
+            ->where('created_at <', $hard_cutoff)
+            ->order_by('created_at', 'ASC')
+            ->limit($limit)
+            ->get($this->table)->result();
+
+        $out = array();
+        foreach (array_merge($unpollable, $abandoned) as $row) {
+            $out[(int)$row->id] = $row;      // the two sets overlap by design
+        }
+        return array_slice(array_values($out), 0, $limit);
+    }
+
     public function pending_provider_sync($domain, $limit = 100){
         return $this->db->where('service_domain',$domain)
                         ->where('status','PROCESSING')

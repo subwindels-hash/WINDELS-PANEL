@@ -1,13 +1,21 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
 $site_name = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials';
 $year = date('Y');
+// Who is legally behind the brand. Empty until the operator publishes it, and
+// an empty line is simply not rendered — a footer must never show a stray
+// comma or the word "null" to a customer deciding whether to deposit.
+if (!class_exists('LegalIdentity', false)) {
+    require_once APPPATH.'libraries/LegalIdentity.php';
+}
+$legal_line = LegalIdentity::line();
 ?>
 <footer class="ws-footer">
   <div class="container">
     <div class="ws-footer-grid">
       <div class="ws-footer-brand">
         <a class="ws-brand" href="<?=site_url()?>" aria-label="<?=htmlspecialchars($site_name)?> home">
-          <?php $this->load->view('partials/brand_logo', array('variant'=>'full','height'=>40)); ?>
+          <?php // The footer is navy: the light wordmark, not the dark one with a CSS filter over it.
+                $this->load->view('partials/brand_logo', array('variant'=>'dark','height'=>40)); ?>
           <span class="sr-only"><?=htmlspecialchars($site_name)?></span>
         </a>
         <p class="muted mt-2" style="max-width:22rem">
@@ -58,7 +66,12 @@ $year = date('Y');
     </div>
 
     <div class="ws-footer-meta">
-      <div>© <?=$year?> <?=htmlspecialchars($site_name)?>. Wallet balances are for spending on this platform only and cannot be withdrawn.</div>
+      <div>
+        © <?=$year?> <?=htmlspecialchars($site_name)?>. Wallet balances are for spending on this platform only and cannot be withdrawn.
+        <?php if ($legal_line !== ''): ?>
+          <div class="muted text-xs mt-1">Operated by <?=htmlspecialchars($legal_line)?>.</div>
+        <?php endif; ?>
+      </div>
       <div class="ws-footer-links">
         <a href="<?=site_url('login')?>">Customer login</a>
         <a href="<?=site_url('admin/login')?>">Staff login</a>

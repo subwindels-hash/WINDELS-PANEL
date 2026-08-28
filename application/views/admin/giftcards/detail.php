@@ -130,7 +130,7 @@ $plain_id     = $plain ? (int)$plain['card_id'] : 0;
             <?php if ($plain_id !== (int)$c->id): ?>
             <form method="post"
                   action="<?=site_url('admin/giftcards/'.$tx->public_id.'/reveal/'.$c->public_id)?>"
-                  onsubmit="return confirm('Open this gift card code? Your access will be logged.')">
+                  data-confirm="Open this gift card code? Your access will be logged." >
               <?=$csrf()?>
               <button class="btn btn-secondary btn-sm" type="submit">Reveal code</button>
             </form>
@@ -177,7 +177,7 @@ $plain_id     = $plain ? (int)$plain['card_id'] : 0;
 
     <?php if ($has('giftcards.refund') && $open && empty($cards)): ?>
     <form method="post" action="<?=site_url('admin/giftcards/'.$tx->public_id.'/abandon')?>" class="mb-4"
-          onsubmit="return confirm('Write this order off and refund <?=htmlspecialchars(marvy_money($outstanding, $tx->currency))?> to the customer?')">
+          data-confirm="Write this order off and refund <?=htmlspecialchars(marvy_money($outstanding, $tx->currency))?> to the customer?" >
       <?=$csrf()?>
       <label class="text-sm font-medium" for="abandon-reason">Write-off reason</label>
       <input class="input mb-2" id="abandon-reason" name="reason" placeholder="Recorded in the status history">
@@ -192,7 +192,7 @@ $plain_id     = $plain ? (int)$plain['card_id'] : 0;
 
     <?php if ($has('giftcards.refund') && $can_refund && !$open): ?>
     <form method="post" action="<?=site_url('admin/giftcards/'.$tx->public_id.'/refund')?>" class="mb-4"
-          onsubmit="return confirm('Refund <?=htmlspecialchars(marvy_money($outstanding, $tx->currency))?> to this customer\'s wallet?')">
+          data-confirm="Refund <?=htmlspecialchars(marvy_money($outstanding, $tx->currency))?> to this customer&#39;s wallet?" >
       <?=$csrf()?>
       <label class="text-sm font-medium" for="reason">Refund reason</label>
       <input class="input mb-2" id="reason" name="reason" placeholder="Recorded in the status history">

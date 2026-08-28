@@ -9,7 +9,7 @@ $filters = array(''=>'All','PENDING'=>'Pending','PAID'=>'Paid','REVERSED'=>'Reve
     </div>
     <div class="row" style="gap:.5rem">
       <form method="get" class="row" style="gap:.5rem">
-        <select name="status" class="select" style="width:auto" onchange="this.form.submit()">
+        <select name="status" class="select" style="width:auto" data-autosubmit >
           <?php foreach ($filters as $k => $v): ?>
             <option value="<?=htmlspecialchars($k)?>" <?=((string)$status === $k) ? 'selected' : ''?>><?=htmlspecialchars($v)?></option>
           <?php endforeach; ?>

@@ -2,65 +2,153 @@
 defined('BASEPATH') OR exit('No direct script access allowed');
 
 /**
- * PaystackGateway — adapter for Paystack hosted gateway.
+ * PaystackGateway — Paystack hosted checkout (NGN, GHS, ZAR, KES, USD).
  *
- * Implemented: initiate() (redirect to hosted checkout), verify_webhook()
- * (HMAC-SHA512), parse_event() (normalized). Credentials read from env/config;
- * never hardcoded. Requires live Paystack account + webhook URL validation.
- * Wired into PaymentService. Requires PAYSTACK_SECRET_KEY and a webhook URL.
+ * Documented API (https://paystack.com/docs/api):
+ *
+ *   POST /transaction/initialize   — returns data.authorization_url
+ *   GET  /transaction/verify/:ref  — authoritative status for a reference
+ *   webhook: HMAC-SHA512 of the raw body in X-Paystack-Signature
+ *
+ * Money moves on the webhook, never on the browser's return trip: the return
+ * URL is something a customer can open by hand, the signed callback is not.
+ * `verify()` exists so staff (and the reconciliation sweep) can ask Paystack
+ * directly when a callback was missed.
+ *
+ * Amounts are sent in the currency's minor unit (kobo/pesewas/cents), which is
+ * what Paystack expects; the reference we send is our own internal_reference,
+ * so the callback identifies the deposit without trusting anything else.
  */
-class PaystackGateway implements GatewayInterface {
-    private $method;
-    private $secret_key;
-    private $public_key;
+class PaystackGateway extends HostedGateway {
 
-    public function __construct($method_row = null) {
-        $this->method = $method_row;
-        $this->secret_key = getenv('PAYSTACK_SECRET_KEY') ?: (getenv('PAYSTACK_KEY') ?: '');
-        $this->public_key = getenv('PAYSTACK_PUBLIC_KEY') ?: (getenv('PAYSTACK_PK') ?: '');
+    const DEFAULT_BASE_URL = 'https://api.paystack.co';
+    const SIGNATURE_HEADER = 'X-Paystack-Signature';
+
+    /** Currencies Paystack settles. Anything else is refused up front. */
+    const SUPPORTED = array('NGN', 'GHS', 'ZAR', 'KES', 'USD');
+
+    public function code() { return 'paystack'; }
+
+    public function config() {
+        return array(
+            'enabled'    => $this->flag('PAYSTACK_ENABLED', 'paystack_enabled', true),
+            'base_url'   => rtrim($this->secret('PAYSTACK_BASE_URL', 'paystack_base_url') ?: self::DEFAULT_BASE_URL, '/'),
+            'secret_key' => $this->secret('PAYSTACK_SECRET_KEY', 'paystack_secret_key'),
+            'public_key' => $this->secret('PAYSTACK_PUBLIC_KEY', 'paystack_public_key'),
+        );
+    }
+
+    public function is_configured() {
+        $cfg = $this->config();
+        return !empty($cfg['secret_key']);
     }
 
     public function initiate($transaction, $user) {
-        if (empty($this->secret_key)) {
-            return array('ok' => false, 'error' => 'Paystack secret key not configured', 'code' => 'CONFIG_MISSING');
+        $cfg = $this->config();
+        if (empty($cfg['enabled']))  return $this->fail('PROVIDER_DISABLED', 'Card payments are currently unavailable.');
+        if (!$this->is_configured()) return $this->not_configured();
+
+        $currency = strtoupper((string)$transaction->currency);
+        if (!in_array($currency, self::SUPPORTED, true)) {
+            return $this->fail('CURRENCY_UNSUPPORTED',
+                'Paystack does not settle '.$currency.'. Supported: '.implode(', ', self::SUPPORTED).'.');
         }
-        $amount_kobo = round($transaction->amount * 100); // Paystack uses kobo
-        $reference = $transaction->public_id ?: ('WIND-' . uniqid());
-        // Hosted checkout redirect building (real endpoint requires secret-key call)
-        $checkout_url = 'https://checkout.paystack.com/' . ($this->public_key ?: 'demo');
-        return array(
-            'ok' => true,
-            'status' => 'PENDING',
-            'redirect_url' => $checkout_url,
-            'checkout' => array(
-                'reference' => $reference,
-                'amount_display' => number_format($transaction->amount, 2) . ' ' . ($transaction->currency ?? 'NGN'),
-                'instructions' => 'Complete payment on the secure Paystack hosted page. Do not refresh after payment.',
+
+        $reference = $this->reference($transaction);
+        $res = $this->post_json($cfg['base_url'].'/transaction/initialize', array(
+            'email'        => (string)$user->email,
+            'amount'       => $this->minor_units($transaction->amount, $currency),
+            'currency'     => $currency,
+            'reference'    => $reference,
+            'callback_url' => $this->return_url($transaction),
+            'metadata'     => array(
+                'user_id'                => (string)$user->public_id,
+                'payment_transaction_id' => (string)$transaction->id,
+                'internal_reference'     => $reference,
             ),
-            'metadata' => array('gateway' => 'paystack', 'reference' => $reference),
+        ), array('Authorization: Bearer '.$cfg['secret_key']));
+
+        if (empty($res['ok'])) return $this->fail('PROVIDER_ERROR', $res['error']);
+
+        $url = $res['body']['data']['authorization_url'] ?? null;
+        if (!$url) {
+            log_message('error', 'paystack: initialize returned no authorization_url');
+            return $this->fail('PROVIDER_ERROR', 'Paystack did not return a checkout link. Try again shortly.');
+        }
+
+        return array(
+            'ok'              => true,
+            'status'          => 'PENDING',
+            'redirect_url'    => $url,
+            'provider_tx_id'  => $reference,
+            'checkout'        => array(
+                'provider'     => 'paystack',
+                'method'       => 'card',
+                'reference'    => $reference,
+                'access_code'  => $res['body']['data']['access_code'] ?? null,
+                'amount'       => (string)$transaction->amount,
+                'currency'     => $currency,
+                'instructions' => 'Complete the payment on Paystack. Your wallet is credited automatically once '
+                                  .'Paystack confirms it — do not send the money twice if the page is slow to return.',
+            ),
         );
     }
 
     public function verify_webhook($raw_body, array $headers) {
-        $sig_header = $headers['X-Paystack-Signature'] ?? ($headers['x-paystack-signature'] ?? '');
-        if (!$sig_header || empty($this->secret_key)) return false;
-        $expected = hash_hmac('sha512', $raw_body, $this->secret_key);
-        return hash_equals($expected, $sig_header);
+        $cfg = $this->config();
+        if (empty($cfg['secret_key'])) return null; // unverifiable: store, never credit
+        $signature = $this->header($headers, self::SIGNATURE_HEADER);
+        if ($signature === '') return false;
+        return hash_equals(hash_hmac('sha512', (string)$raw_body, $cfg['secret_key']), $signature);
     }
 
     public function parse_event($raw_body) {
-        $data = @json_decode($raw_body, true) ?: array();
-        $event = $data['event'] ?? 'charge.success';
-        $ref = $data['data']['reference'] ?? null;
-        $tx_ref = $data['data']['reference'] ?? $ref;
-        $status = ($event === 'charge.success') ? 'SUCCESS' : (($event === 'charge.failed') ? 'FAILED' : 'PENDING');
+        $data  = json_decode((string)$raw_body, true);
+        $data  = is_array($data) ? $data : array();
+        $event = (string)($data['event'] ?? '');
+        $tx    = isset($data['data']) && is_array($data['data']) ? $data['data'] : array();
+
+        // Paystack's own `status` is authoritative; the event name alone would
+        // credit a `charge.success` carrying status=failed.
+        $status = $this->normalise_status($tx['status'] ?? '', array('success'), array('failed', 'abandoned', 'reversed'));
+        if ($event !== '' && strpos($event, 'charge.success') !== 0 && $status === 'SUCCESS') {
+            $status = 'PENDING';
+        }
+
+        $reference = (string)($tx['reference'] ?? '');
         return array(
-            'event_id' => $data['data']['transaction_tag'] ?? ($ref . '-' . ($data['data']['id'] ?? uniqid())),
-            'type' => strtolower(str_replace('.', '_', $event)),
-            'provider_tx_id' => $data['data']['id'] ?? $ref,
-            'status' => $status,
-            'amount' => isset($data['data']['amount']) ? ($data['data']['amount'] / 100) : null,
-            'currency' => $data['data']['currency'] ?? null,
+            // Paystack's numeric transaction id is unique per charge and is
+            // what makes a retry idempotent.
+            'event_id'       => (string)($tx['id'] ?? ($reference.':'.$event)),
+            'type'           => strtolower(str_replace('.', '_', $event ?: 'charge_success')),
+            'provider_tx_id' => $reference,
+            'status'         => $status,
+            'amount'         => isset($tx['amount']) ? (string)((float)$tx['amount'] / 100) : null,
+            'currency'       => isset($tx['currency']) ? strtoupper((string)$tx['currency']) : null,
+            'metadata'       => is_array($tx['metadata'] ?? null) ? $tx['metadata'] : array(),
+        );
+    }
+
+    /**
+     * Ask Paystack directly what happened to a reference.
+     *
+     * Used by staff and by reconciliation when a webhook never arrived.
+     */
+    public function verify($reference) {
+        $cfg = $this->config();
+        if (!$this->is_configured()) return $this->not_configured();
+
+        $res = $this->get_json($cfg['base_url'].'/transaction/verify/'.rawurlencode($reference),
+            array('Authorization: Bearer '.$cfg['secret_key']));
+        if (empty($res['ok'])) return $this->fail('PROVIDER_ERROR', $res['error']);
+
+        $tx = $res['body']['data'] ?? array();
+        return array(
+            'ok'             => true,
+            'status'         => $this->normalise_status($tx['status'] ?? '', array('success'), array('failed', 'abandoned', 'reversed')),
+            'provider_tx_id' => (string)($tx['reference'] ?? $reference),
+            'amount'         => isset($tx['amount']) ? (string)((float)$tx['amount'] / 100) : null,
+            'currency'       => isset($tx['currency']) ? strtoupper((string)$tx['currency']) : null,
         );
     }
 }
