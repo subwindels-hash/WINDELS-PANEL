@@ -136,4 +136,16 @@ const server = http.createServer(async (req, res) => {
   return json({ error: 'Incorrect request' });
 });
 
+// Refuse to share a port. An abandoned panel from an earlier run answers with
+// a DIFFERENT api key, so the checker's calls come back "Incorrect API key"
+// and the failure looks like an adapter bug — which cost a debugging session
+// once already.
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`fake smm panel: port ${PORT} is already in use — another panel is still `
+                + `running (pkill -f fake_smm_panel) or something else has the port.`);
+    process.exit(3);
+  }
+  throw err;
+});
 server.listen(PORT, '127.0.0.1', () => console.log(`fake smm panel on 127.0.0.1:${PORT}`));

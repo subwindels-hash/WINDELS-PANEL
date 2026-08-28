@@ -27,6 +27,7 @@
  * localhost. Never set that in production.
  */
 
+import net from 'node:net';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -72,6 +73,24 @@ function adapterCall(key, action, params = []) {
 // PHP CLI run, which blocks this script's event loop — an in-process server
 // could never answer while that is happening.
 const PANEL_URL = `http://127.0.0.1:${PANEL_PORT}/api/v2`;
+/**
+ * A panel left over from an earlier run answers with a different API key, so
+ * every call fails as "Incorrect API key" and the report blames the adapter.
+ * Refuse to start rather than test somebody else's process.
+ */
+async function portIsFree(port) {
+  return new Promise((resolve) => {
+    const socket = net.connect(port, '127.0.0.1');
+    socket.on('connect', () => { socket.destroy(); resolve(false); });
+    socket.on('error', () => resolve(true));
+  });
+}
+if (!(await portIsFree(PANEL_PORT))) {
+  console.error(`\n  Port ${PANEL_PORT} is already in use — a fake panel from an earlier run is `
+              + `still listening.\n  Stop it first:  pkill -f fake_smm_panel\n`);
+  process.exit(2);
+}
+
 const panelProcess = spawn('node',
   ['tools/devserver/fake_smm_panel.mjs', '--port', String(PANEL_PORT), '--key', GOOD_KEY],
   { cwd: ROOT, stdio: 'ignore', detached: false });

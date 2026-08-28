@@ -288,11 +288,22 @@ Two rules the tests enforce:
 
 ```bash
 composer install
-vendor/bin/phpunit --testdox        # full suite: tests/unit (≈1,100 tests)
+vendor/bin/phpunit --testdox        # full suite: tests/unit (1,404 tests)
 
 # No composer / no network? The dependency-free runner executes the same suite:
 php tools/phpunit_lite.php          # or one class: php tools/phpunit_lite.php SchemaTest
+
+# Everything — suite, packaging, ~40 end-to-end checks, a fresh-deployment
+# simulation and (optionally) a performance run under a year of seeded trading:
+bash tools/verify_all.sh --admin-password '<demo password>' --with-load
 ```
+
+`tools/verify_all.sh` is the whole verification pipeline in one command and
+exits with the number of failed stages. It needs the dev database and the
+application server running — see `tools/devdb/README.md`, which also documents
+the end-to-end checkers individually. What each of them exists to prevent is
+indexed in [docs/modules.md](docs/modules.md); the current state of the audit is
+[docs/COMPLETION_AUDIT.md](docs/COMPLETION_AUDIT.md).
 
 The suite runs entirely in-memory through `tests/_support/FakeDb.php`, which
 is built from the real migration DDL — seeders and services execute and their

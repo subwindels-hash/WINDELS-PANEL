@@ -88,6 +88,28 @@ node tools/devdb/import_sql.cjs --port 3410 --file database/marvysocials.sql  # 
 `HTTP_ALLOW_PRIVATE_HOSTS=true` in `.env` — `SecureHttpClient` refuses
 non-public hosts by default (SSRF protection). Never set that in production.
 
+## One command for all of it
+
+```bash
+bash tools/verify_all.sh --admin-password '<demo password>'             # everything
+bash tools/verify_all.sh --admin-password '<demo password>' --with-load # + performance
+bash tools/verify_all.sh --unit-only                                    # no server needed
+```
+
+It runs the static checks, the PHP suite, the packaging, every end-to-end
+check, the fresh-deployment simulation and (with `--with-load`) the performance
+measurement, and exits with the number of failed stages.
+
+Start the application server with `--max-requests 300`. Each wasm runtime leaks
+a few file descriptors per request; after a few hundred the process answers 500
+to everything, which looks exactly like the application breaking. The flag
+recycles the PHP pool the way PHP-FPM's `pm.max_requests` does.
+
+If a check that uses the fake provider panel fails with "Incorrect API key",
+an abandoned panel from an earlier run is still holding the port:
+`pkill -f fake_smm_panel`. Both checks now refuse to start in that state rather
+than testing somebody else's process.
+
 ## Measuring query cost
 
 Start the database with a stats side-channel and the number of statements each

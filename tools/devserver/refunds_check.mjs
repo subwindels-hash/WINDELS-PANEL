@@ -33,6 +33,7 @@
  * Requires HTTP_ALLOW_PRIVATE_HOSTS=true in .env (the fake panel is on
  * localhost and SecureHttpClient blocks private hosts by default).
  */
+import net from 'node:net';
 import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -77,6 +78,24 @@ function panelState(patch = null) {
 const money = (v) => Number(v || 0);
 
 /* --------------------------- the fake provider --------------------------- */
+
+/**
+ * A panel left over from an earlier run answers with a different API key, so
+ * every call fails as "Incorrect API key" and the report blames the adapter.
+ * Refuse to start rather than test somebody else's process.
+ */
+async function portIsFree(port) {
+  return new Promise((resolve) => {
+    const socket = net.connect(port, '127.0.0.1');
+    socket.on('connect', () => { socket.destroy(); resolve(false); });
+    socket.on('error', () => resolve(true));
+  });
+}
+if (!(await portIsFree(PANEL_PORT))) {
+  console.error(`\n  Port ${PANEL_PORT} is already in use — a fake panel from an earlier run is `
+              + `still listening.\n  Stop it first:  pkill -f fake_smm_panel\n`);
+  process.exit(2);
+}
 
 const panelProcess = spawn('node',
   ['tools/devserver/fake_smm_panel.mjs', '--port', String(PANEL_PORT), '--key', GOOD_KEY],
