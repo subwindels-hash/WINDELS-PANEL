@@ -179,6 +179,81 @@ class CronWorkers {
         );
     }
 
+    /* =============== stuck service purchases (every domain) ================ */
+
+    /**
+     * Close service purchases that nothing else can ever settle.
+     *
+     * Each domain has its own settlement worker, and each of them can only act
+     * on rows it can see. Two shapes are invisible to all of them, and both
+     * leave a customer charged for something they never received:
+     *
+     *  - **PROCESSING with no provider reference.** `pending_provider_sync()`
+     *    explicitly filters those out — there is nothing to poll with. It
+     *    happens when a vendor accepts a purchase without returning a
+     *    reference, or when the process died between the charge and the
+     *    response. VTU had no give-up rule of any kind, so such a row stayed
+     *    PROCESSING for ever: the money was gone, the airtime never arrived,
+     *    and no screen, worker or alert would ever mention it again.
+     *  - **PENDING.** The row was created and the charge never completed. No
+     *    money moved, but the row sits in the queues and in the "stuck
+     *    purchases" counter for ever.
+     *
+     * Gift cards already had this discipline (`giftcard_give_up_minutes`), and
+     * this generalises it to every domain — including a hard backstop for rows
+     * that DO have a reference but whose own worker has plainly stopped
+     * settling them.
+     *
+     * Refunds go through TransactionEngine, so they are capped, idempotent,
+     * recorded in the status history and now announced to the customer. A
+     * PENDING row refunds nothing, because nothing was charged.
+     */
+    public function service_recovery($limit = 200) {
+        $this->need(array('Service_transaction_model'), array('TransactionEngine'));
+
+        $soft_minutes = $this->setting_int('service_stuck_minutes', 60, 5, 10080);
+        $hard_hours   = $this->setting_int('service_abandon_hours', 24, 1, 720);
+        $soft_cutoff  = gmdate('Y-m-d H:i:s', time() - ($soft_minutes * 60));
+        $hard_cutoff  = gmdate('Y-m-d H:i:s', time() - ($hard_hours * 3600));
+
+        $stuck = $this->ci->Service_transaction_model->stuck($soft_cutoff, $hard_cutoff, $limit);
+        if (!$stuck) {
+            return array('processed'=>0, 'failed'=>0, 'refunded'=>0,
+                         'message'=>'no stuck service purchases');
+        }
+
+        $processed = 0; $failed = 0; $refunded = 0;
+        foreach ($stuck as $tx) {
+            $reason = $tx->status === 'PENDING'
+                ? 'Abandoned before payment completed'
+                : ($tx->provider_reference
+                    ? 'The provider never settled this purchase'
+                    : 'The provider accepted nothing we can check on');
+            try {
+                // FAILED rather than REFUNDED: the purchase failed, and the
+                // refund is a consequence the engine applies. REFUNDED is
+                // reserved for a purchase that succeeded and was given back.
+                $res = $this->ci->transactionengine->transition(
+                    $tx->id, 'FAILED', 'SYSTEM', $reason
+                );
+            } catch (Throwable $e) {
+                $failed++;
+                log_message('error', "service_recovery {$tx->id}: ".$e->getMessage());
+                continue;
+            }
+            if (empty($res['ok'])) { $failed++; continue; }
+            $processed++;
+            if (!empty($res['refunded'])) $refunded++;
+        }
+
+        return array(
+            'processed' => $processed,
+            'failed'    => $failed,
+            'refunded'  => $refunded,
+            'message'   => "{$processed} closed, {$refunded} refunded, {$failed} failed",
+        );
+    }
+
     /* ======================== identity retention =========================== */
 
     /**

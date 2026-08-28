@@ -421,6 +421,8 @@ class Core_seeder extends Seeder {
             array('order_auto_submit',TRUE,'orders',0),
             array('partial_refund_enabled',TRUE,'orders',0),
             array('refill_window_days','30','orders',0),
+            array('service_stuck_minutes','60','orders',0),
+            array('service_abandon_hours','24','orders',0),
             array('refill_abandon_hours','168','orders',0),
             // security
             array('registration_enabled',TRUE,'security',1),

@@ -117,6 +117,13 @@ class SettingsService {
                 'Off holds new orders in PENDING for staff to review and submit manually.', true),
             'partial_refund_enabled' => array('bool', 'orders', 'Auto-refund partial deliveries',
                 'On refunds the undelivered share of a partial delivery automatically; off leaves it for staff to refund.', true),
+            'service_stuck_minutes' => array('int', 'orders', 'Give up on an unpollable purchase after (minutes)',
+                'A VTU, number, identity or gift card purchase the vendor accepted without giving us a '
+                .'reference cannot be checked by anything. After this long it is failed and the customer '
+                .'refunded, because nobody will ever look at it again.', 60),
+            'service_abandon_hours' => array('int', 'orders', 'Give up on any in-flight purchase after (hours)',
+                'The backstop for purchases that DO have a vendor reference but whose vendor has stopped '
+                .'settling them. Refunds the customer rather than leaving them charged indefinitely.', 24),
             'refill_window_days' => array('int', 'orders', 'Refill guarantee window (days)',
                 'How long after completion a customer may ask for a refill. Providers honour their own '
                 .'window and refuse anything older, so asking outside it only produces a refusal the '

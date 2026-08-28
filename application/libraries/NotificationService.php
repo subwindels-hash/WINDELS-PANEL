@@ -40,6 +40,10 @@ class NotificationService {
         // damaging. Both endings are announced.
         'refill.completed' => array('Refill completed',       null),
         'refill.failed'    => array('Refill could not be completed', null),
+        // Every non-SMM domain (VTU, numbers, identity, gift cards) returns
+        // money through TransactionEngine. It used to do so in complete
+        // silence: the customer saw a balance change and no explanation.
+        'purchase.refunded' => array('Purchase refunded',    null),
         'payment.credited' => array('Wallet credited',        'payment.credited'),
         'ticket.replied'   => array('Support replied',        'ticket.replied'),
     );

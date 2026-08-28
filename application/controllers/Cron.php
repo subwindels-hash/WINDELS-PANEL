@@ -15,7 +15,7 @@ class Cron extends Cron_Controller {
     /** Jobs that can be invoked, in the order `index` lists them. */
     private static $jobs = array(
         'dripfeed', 'order_status', 'vtu_status', 'numbers_status', 'identity_purge',
-        'giftcard_codes', 'marketplace_release',
+        'giftcard_codes', 'service_recovery', 'marketplace_release',
         'subscriptions', 'provider_health',
         'refill_status', 'payment_reconciliation', 'email_queue',
         'analytics', 'provider_sync', 'affiliate_payouts', 'pin_rotation',
@@ -47,6 +47,19 @@ class Cron extends Cron_Controller {
     public function vtu_status() {
         $this->execute('vtu_status', function () {
             return $this->cronworkers->vtu_status();
+        });
+    }
+
+    /**
+     * Close service purchases no domain worker can settle, and refund them.
+     *
+     * The backstop for every domain: a purchase with no provider reference
+     * cannot be polled by anything, and without this it stays PROCESSING for
+     * ever with the customer's money in it.
+     */
+    public function service_recovery() {
+        $this->execute('service_recovery', function () {
+            return $this->cronworkers->service_recovery();
         });
     }
 

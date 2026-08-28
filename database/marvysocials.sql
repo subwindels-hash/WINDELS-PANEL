@@ -2807,6 +2807,12 @@ INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
 VALUES ('refill_window_days', '{"value":"30"}', 'orders', 0);
 
 INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
+VALUES ('service_stuck_minutes', '{"value":"60"}', 'orders', 0);
+
+INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
+VALUES ('service_abandon_hours', '{"value":"24"}', 'orders', 0);
+
+INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)
 VALUES ('refill_abandon_hours', '{"value":"168"}', 'orders', 0);
 
 INSERT INTO `settings` (`setting_key`, `setting_value`, `category`, `is_public`)

@@ -75,6 +75,9 @@ $config['cron'] = array(
     'numbers_status'         => '* * * * *',
     'identity_purge'         => '30 3 * * *',
     'giftcard_codes'         => '*/2 * * * *',
+    // Closes purchases no domain worker can settle (no provider reference, or
+    // a provider that stopped answering) and returns the money.
+    'service_recovery'       => '*/10 * * * *',
     'marketplace_release'    => '*/5 * * * *',
     'order_status' => '*/2 * * * *',
     'subscriptions' => '*/5 * * * *',

@@ -72,6 +72,7 @@ node tools/devserver/image_audit.mjs          --password <pw>   # every <img> re
 node tools/devserver/api_check.mjs            --password <pw>   # reseller API: envelope, scopes, idempotency
 node tools/devserver/refunds_check.mjs        --admin-password <pw>   # refills, partial refunds, refused cancellations
 node tools/devserver/analytics_check.mjs      --admin-password <pw>   # every reported figure vs the database
+node tools/devserver/service_recovery_check.mjs --admin-password <pw> # stuck VTU/number/identity/giftcard purchases
 ```
 
 `smm_provider_check.mjs` and `refunds_check.mjs` stand up
