@@ -13,6 +13,7 @@ $category_titles = array(
     'crypto'    => 'Bitcoin and crypto deposits',
     'fundsvera' => 'Bank transfers (Fundsvera)',
     'gateways'  => 'Card and wallet gateways',
+    'email'     => 'Outgoing email',
     'referrals' => 'Referrals, earnings and payouts',
     'marketplace' => 'Marketplace',
     'orders'    => 'Orders',

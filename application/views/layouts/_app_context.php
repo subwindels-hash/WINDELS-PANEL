@@ -67,6 +67,7 @@ $nav_groups = $is_admin ? array(
         array('admin/pages',        'Website pages','content.pages', 'globe'),
         array('admin/blog',         'Blog',    'blog.manage',     'list'),
         array('admin/email-templates','Email templates','settings.manage','list'),
+        array('admin/mail-queue',   'Mail queue', 'settings.manage', 'message-square'),
         array('admin/media',        'Media',      'media.manage',    'star'),
     )),
     array('Developer', array(

@@ -195,6 +195,30 @@ class PaymentService {
         $this->transition($tx->id, $tx->status, self::STATUS_SUCCESS, $source, 'Confirmed');
         $this->ci->db->trans_complete();
 
+        // The customer asked for this money to arrive; tell them it has.
+        // Outside the transaction and never fatal — the credit is already
+        // committed and a mail problem must not undo it.
+        try {
+            $this->ci->load->library('NotificationService');
+            // load->library() succeeding does not guarantee the property is
+            // there (a test double, or a loader that resolved it under another
+            // name); reading it blind raises a warning try/catch cannot see.
+            if (isset($this->ci->notificationservice)) {
+                $wallet_now = $this->ci->Wallet_model->for_user($tx->user_id);
+                $this->ci->notificationservice->notify(
+                    $tx->user_id, 'payment.credited',
+                    marvy_money($credited, $tx->currency).' has been added to your wallet.',
+                    array('reference' => $tx->public_id, 'url' => 'dashboard/wallet/deposits/'.$tx->public_id),
+                    array(
+                        'amount'  => marvy_money($credited, $tx->currency),
+                        'balance' => marvy_money($wallet_now->balance ?? '0', $tx->currency),
+                    )
+                );
+            }
+        } catch (Throwable $e) {
+            log_message('error', 'deposit notification failed for '.$tx->public_id.': '.$e->getMessage());
+        }
+
         // A confirmed deposit may be the event that qualifies a referral.
         // Outside the transaction and never fatal: the deposit has already
         // succeeded, and a referral bookkeeping problem must not roll it back.

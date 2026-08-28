@@ -89,6 +89,49 @@ $initial   = strtoupper(substr($current_user->username ?? 'U', 0, 1));
         </div>
       <?=form_close()?>
     </div>
+
+    <div class="card">
+      <h2 class="card-title">Notifications</h2>
+      <p class="muted">What reaches your inbox in the panel, and what we email you about. Account security
+        email — verifying your address and resetting your password — is always sent.</p>
+
+      <form method="post" action="<?=site_url('dashboard/profile')?>" class="mt-4">
+        <input type="hidden" name="<?=htmlspecialchars($csrf_name)?>" value="<?=htmlspecialchars($csrf_hash)?>" readonly>
+        <input type="hidden" name="action" value="notifications">
+        <div class="overflow-x-auto">
+          <table class="table">
+            <thead><tr><th>Event</th><th style="width:7rem">In the panel</th><th style="width:7rem">Email</th></tr></thead>
+            <tbody>
+              <?php foreach (($notification_events ?? array()) as $type => $meta):
+                $pref = $notification_prefs[$type] ?? array('in_app' => true, 'email' => true);
+                // CI3 refuses array keys containing a dot, so the event type
+                // travels as order__completed and is translated back on save.
+                $field = str_replace('.', '__', $type); ?>
+                <tr>
+                  <td><input type="hidden" name="notify_rendered[<?=htmlspecialchars($field)?>]" value="1">
+                    <?=htmlspecialchars($meta[0])?>
+                    <?php if ($meta[1] === null): ?><span class="badge badge-default">in-panel only</span><?php endif; ?>
+                  </td>
+                  <td>
+                    <input type="checkbox" name="notify[<?=htmlspecialchars($field)?>][in_app]" value="1"
+                           <?=$pref['in_app'] ? 'checked' : ''?>>
+                  </td>
+                  <td>
+                    <?php if ($meta[1] === null): ?>
+                      <span class="muted text-xs">—</span>
+                    <?php else: ?>
+                      <input type="checkbox" name="notify[<?=htmlspecialchars($field)?>][email]" value="1"
+                             <?=$pref['email'] ? 'checked' : ''?>>
+                    <?php endif; ?>
+                  </td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
+        <button class="btn btn-primary mt-3" type="submit">Save preferences</button>
+      </form>
+    </div>
   </div>
 
   <aside class="card" style="align-self:flex-start">

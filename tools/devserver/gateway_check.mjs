@@ -46,30 +46,6 @@ function withDb(fn) {
   try { return fn(db); } finally { db.close(); }
 }
 
-function settingsForm(html) {
-  const fields = {};
-  // Text/number/secret inputs only. A checkbox also carries value="1", so
-  // scooping those up here would re-post every boolean setting as ON — which
-  // is exactly how an earlier version of this script switched the panel into
-  // maintenance mode.
-  for (const m of html.matchAll(/<input(?![^>]*type="checkbox")[^>]*id="set-([a-z0-9_]+)"[^>]*value="([^"]*)"/g)) {
-    fields[m[1]] = m[2];
-  }
-  for (const m of html.matchAll(/<textarea[^>]*id="set-([a-z0-9_]+)"[^>]*>([\s\S]*?)<\/textarea>/g)) {
-    fields[m[1]] = m[2];
-  }
-  for (const m of html.matchAll(/<select[^>]*id="set-([a-z0-9_]+)"[\s\S]*?<\/select>/g)) {
-    const sel = /<option[^>]*value="([^"]*)"[^>]*selected/.exec(m[0]);
-    if (sel) fields[m[1]] = sel[1];
-  }
-  for (const m of html.matchAll(/name="__rendered_([a-z0-9_]+)"/g)) {
-    const key = m[1];
-    const on = new RegExp(`id="set-${key}"[^>]*checked`).test(html);
-    fields[`__rendered_${key}`] = '1';
-    if (on) fields[key] = '1';
-  }
-  return fields;
-}
 
 const admin = new Client(BASE);
 await admin.get('/admin/login');
@@ -106,18 +82,23 @@ check('an enabled but unconfigured gateway is NOT offered to customers',
 
 // ---------------------------------------------------------------------------
 console.log('\n── Gateways · configuring credentials makes the method payable');
+// Only the keys being changed are posted: a whole-form re-post has to satisfy
+// every other setting's validation, and one unrelated rejection would abort
+// the save and make this check fail for the wrong reason.
 let settings = await admin.get('/admin/settings');
-const fields = settingsForm(settings.text);
-fields['paystack_secret_key'] = SECRET;
-fields['paystack_enabled'] = '1';
-fields['__rendered_paystack_enabled'] = '1';
+let saved = await admin.postForm('/admin/settings/save', {
+  paystack_secret_key: SECRET,
+  paystack_enabled: '1', __rendered_paystack_enabled: '1',
+}, { fromHtml: settings.text });
+check('gateway credentials save from the admin settings screen',
+  /setting updated|settings updated|Nothing changed/i.test(saved.text),
+  (saved.text.match(/alert alert-\w+"[^>]*>([^<]*)/) || [])[1]);
+
 methods = await admin.get('/admin/payments/methods');
 await admin.postForm('/admin/payments/methods/paystack/save', {
   is_active: '1', name: 'Paystack', fee_percent: '0', fee_fixed: '0', bonus_percent: '0',
   min_amount: '500', max_amount: '1000000', sorting: '40',
 }, { fromHtml: methods.text });
-let saved = await admin.postForm('/admin/settings/save', fields, { fromHtml: settings.text });
-check('gateway credentials save from the admin settings screen', saved.status === 200 && /setting/i.test(saved.text));
 
 addFunds = await cust.get('/dashboard/add-funds');
 check('the configured gateway now appears on Add funds', /value="paystack"/.test(addFunds.text));
@@ -216,10 +197,8 @@ check('the webhook log lists the paystack event', hooks.status === 200 && /payst
 // ---------------------------------------------------------------------------
 // Leave the panel as we found it.
 settings = await admin.get('/admin/settings');
-const reset = settingsForm(settings.text);
-delete reset['paystack_enabled'];
-reset['__rendered_paystack_enabled'] = '1';
-await admin.postForm('/admin/settings/save', reset, { fromHtml: settings.text });
+await admin.postForm('/admin/settings/save',
+  { __rendered_paystack_enabled: '1' }, { fromHtml: settings.text });
 methods = await admin.get('/admin/payments/methods');
 await admin.postForm('/admin/payments/methods/paystack/save', {
   name: 'Paystack', fee_percent: '0', fee_fixed: '0', bonus_percent: '0', sorting: '40',

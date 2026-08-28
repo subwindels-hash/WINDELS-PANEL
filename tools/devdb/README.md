@@ -44,6 +44,13 @@ php index.php seed core
 php index.php seed demo
 ```
 
+## Editing PHP while the dev server runs
+
+The wasm runtime keeps compiled PHP per worker, so **restart
+`tools/devserver/server.mjs` after changing any `.php` file** — otherwise the
+running workers keep serving the previous version and you will debug a file
+that is not the one being executed.
+
 ## The test scripts
 
 ```bash
@@ -55,6 +62,13 @@ node tools/devserver/content_check.mjs  --admin-password <pw>   # CMS round trip
 node tools/devserver/pin_check.mjs                              # security PIN lifecycle
 node tools/devserver/blockonomics_check.mjs                     # BTC callback handling
 node tools/devserver/responsive_check.mjs                       # layout audit
+node tools/devserver/gateway_check.mjs        --admin-password <pw>   # hosted gateway config + signed webhook
+node tools/devserver/reconciliation_check.mjs                   # deposits whose callback never arrived
+node tools/devserver/notifications_check.mjs  --admin-password <pw>   # inbox, email queue, preferences
+node tools/devserver/smm_provider_check.mjs                     # real SMM adapter against a fake panel
+node tools/devserver/page_audit.mjs           --password <pw>   # every dashboard/admin page
+node tools/devserver/link_crawl.mjs           --password <pw>   # follow every internal link
+node tools/devserver/image_audit.mjs          --password <pw>   # every <img> resolves
 ```
 
 ## What this does and does not prove

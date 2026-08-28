@@ -145,6 +145,107 @@ class Content extends Admin_Controller {
         ));
     }
 
+    /**
+     * GET /admin/mail-queue — what the panel has tried to send.
+     *
+     * Delivery is asynchronous, so without this screen a failed email is
+     * invisible: staff cannot see that a customer never received their
+     * password reset, why it failed, or retry it.
+     */
+    public function mail_queue() {
+        $this->require_perm('settings.manage');
+
+        $status = strtoupper((string)$this->input->get('status', true));
+        $allowed = array('QUEUED', 'SENDING', 'SENT', 'FAILED');
+        if (!in_array($status, $allowed, true)) $status = '';
+
+        if ($status !== '') $this->db->where('status', $status);
+        $rows = $this->db->order_by('id', 'DESC')->limit(100)->get('email_queue')->result();
+
+        $counts = array();
+        foreach ($allowed as $s) {
+            $counts[$s] = (int)$this->db->where('status', $s)->count_all_results('email_queue');
+        }
+
+        $this->load->library('MailService');
+        $this->render('email', 'admin/content/mail_queue', 'Mail queue', array(
+            'rows'      => $rows,
+            'counts'    => $counts,
+            'status'    => $status,
+            'transport' => $this->mailservice->transport(),
+            'page_description' => 'Every message the panel has queued, with the delivery error when there '
+                                  .'is one. Retry puts a failed message back in the queue for the next cron run.',
+        ));
+    }
+
+    /** POST /admin/mail-queue/:id/retry — put a failed message back in the queue. */
+    public function retry_mail($id) {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm('settings.manage');
+
+        $row = $this->db->where('id', (int)$id)->get('email_queue')->row();
+        if (!$row) show_404();
+        if ($row->status === 'SENT') {
+            $this->session->set_flashdata('error', 'That message was already delivered.');
+            return redirect('admin/mail-queue');
+        }
+
+        // attempts is reset so the worker's backoff starts again from zero;
+        // leaving it at the cap would re-fail the message immediately.
+        $this->db->where('id', $row->id)->update('email_queue', array(
+            'status'       => 'QUEUED',
+            'attempts'     => 0,
+            'scheduled_at' => gmdate('Y-m-d H:i:s'),
+            'last_error'   => null,
+        ));
+        $this->Audit_log_model->record(
+            $this->current_user->id, 'mail.requeued', 'email_queue', (string)$row->id,
+            array('status' => $row->status, 'attempts' => (int)$row->attempts), array('status' => 'QUEUED'),
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
+        $this->session->set_flashdata('success', 'Message re-queued. The next cron run will try again.');
+        redirect('admin/mail-queue');
+    }
+
+    /**
+     * POST /admin/mail-queue/test — prove the mail transport works.
+     *
+     * Sends immediately rather than queueing: the operator is standing in
+     * front of the screen waiting for an answer, and "queued" would tell them
+     * nothing about whether SMTP accepts the message.
+     */
+    public function test_mail() {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm('settings.manage');
+
+        $to = trim((string)$this->input->post('to', true));
+        if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
+            $this->session->set_flashdata('error', 'Enter a valid email address to send the test to.');
+            return redirect('admin/mail-queue');
+        }
+
+        $this->load->library('MailService');
+        $res = $this->mailservice->send_test($to);
+
+        $this->Audit_log_model->record(
+            $this->current_user->id, 'mail.test_sent', 'email_queue', null, null,
+            array('to' => $to, 'ok' => !empty($res['ok']), 'transport' => $res['transport'] ?? null),
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
+
+        if (empty($res['ok'])) {
+            // CI3's SMTP debugger dumps every header; the first line is the
+            // actual reason and the rest is noise in a flash message.
+            $reason = trim(strtok((string)($res['error'] ?? 'unknown error'), "\r\n"));
+            $this->session->set_flashdata('error', 'Test failed via '.($res['transport'] ?? 'unknown')
+                .': '.mb_substr($reason, 0, 300));
+        } else {
+            $this->session->set_flashdata('success', 'Test message accepted by the '
+                .$res['transport'].' transport. Check '.$to.'.');
+        }
+        redirect('admin/mail-queue');
+    }
+
     /** POST /admin/email-templates/:id */
     public function save_email_template($id) {
         if ($this->input->method(true) !== 'POST') show_404();

@@ -19,7 +19,15 @@ class Account extends Auth_Controller {
         if ($this->input->method(true) === 'POST') {
             return $this->profile_update();
         }
-        $this->render('Profile', 'dashboard/account/profile', 'dashboard/profile', array());
+        $this->load->library('NotificationService');
+        $prefs = array();
+        foreach (array_keys(NotificationService::EVENTS) as $type) {
+            $prefs[$type] = $this->notificationservice->preferences($this->current_user->id, $type);
+        }
+        $this->render('Profile', 'dashboard/account/profile', 'dashboard/profile', array(
+            'notification_events' => NotificationService::EVENTS,
+            'notification_prefs'  => $prefs,
+        ));
     }
 
     private function profile_update() {
@@ -28,6 +36,9 @@ class Account extends Auth_Controller {
         }
         if ($this->input->post('action', true) === 'avatar_remove') {
             return $this->avatar_remove();
+        }
+        if ($this->input->post('action', true) === 'notifications') {
+            return $this->notification_prefs_update();
         }
 
         $this->form_validation->set_rules('username', 'Username', 'trim|required|min_length[3]|max_length[64]|alpha_dash');
@@ -99,6 +110,48 @@ class Account extends Auth_Controller {
             }
         }
         $this->session->set_flashdata('success', $message);
+        redirect('dashboard/profile');
+    }
+
+    /**
+     * Save which events reach the inbox and which reach the mailbox.
+     *
+     * A missing row means "both on", so a row is only written when the
+     * customer turns something OFF — and deleted again when they turn it back
+     * on. That keeps notification_preferences small and makes the default
+     * unambiguous.
+     */
+    private function notification_prefs_update() {
+        $this->load->library('NotificationService');
+        // Field names carry the event type with its dot replaced: CodeIgniter's
+        // input sanitiser rejects any array key outside [a-z0-9:_/|-], so a
+        // field named notify[order.completed][email] arrives with its key
+        // mangled and the preference is silently never saved.
+        $posted   = (array)$this->input->post('notify', true);
+        $rendered = (array)$this->input->post('notify_rendered', true);
+        if (!$rendered) return redirect('dashboard/profile');
+
+        foreach (array_keys(NotificationService::EVENTS) as $type) {
+            $field = str_replace('.', '__', $type);
+            if (!isset($rendered[$field])) continue;
+            $in_app = !empty($posted[$field]['in_app']);
+            $email  = !empty($posted[$field]['email']);
+            $where  = array('user_id' => $this->current_user->id, 'type' => $type);
+
+            if ($in_app && $email) {
+                $this->db->where($where)->delete('notification_preferences');
+                continue;
+            }
+            $exists = $this->db->where($where)->get('notification_preferences')->row();
+            $values = array('in_app' => $in_app ? 1 : 0, 'email' => $email ? 1 : 0);
+            if ($exists) $this->db->where($where)->update('notification_preferences', $values);
+            else         $this->db->insert('notification_preferences', array_merge($where, $values));
+        }
+
+        $this->Audit_log_model->record($this->current_user->id, 'profile.notification_prefs', 'users',
+            $this->current_user->public_id, null, $posted,
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id);
+        $this->session->set_flashdata('success', 'Notification preferences saved.');
         redirect('dashboard/profile');
     }
 

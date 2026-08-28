@@ -115,6 +115,29 @@ class TicketService {
 
         if ($this->ci->db->trans_status() === false)
             return array('ok'=>false,'error'=>'Could not save reply','code'=>'PERSIST_FAILED');
+
+        // An internal note is staff bookkeeping — notifying the customer about
+        // it would leak the note's existence and, worse, promise a reply that
+        // is not there.
+        if (!$internal) {
+            try {
+                $this->ci->load->library('NotificationService');
+                if (!isset($this->ci->notificationservice)) throw new RuntimeException('notification service unavailable');
+                $this->ci->notificationservice->notify(
+                    $ticket->user_id, 'ticket.replied',
+                    'Support replied to your ticket: '.$ticket->subject,
+                    array('ticket_id' => $ticket->public_id, 'url' => 'dashboard/tickets/'.$ticket->public_id),
+                    array(
+                        'ticket_id'  => $ticket->public_id,
+                        'subject'    => $ticket->subject,
+                        'ticket_url' => site_url('dashboard/tickets/'.$ticket->public_id),
+                    )
+                );
+            } catch (Throwable $e) {
+                log_message('error', 'ticket notification failed for '.$ticket->public_id.': '.$e->getMessage());
+            }
+        }
+
         return array(
             'ok'      => true,
             'message' => $msg,

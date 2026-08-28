@@ -259,7 +259,55 @@ class OrderService {
         }
         $this->sync_affiliate($order);
         $this->notify_reseller_webhook($order, $new_status);
+        $this->notify_customer($order, $new_status);
         return array('ok'=>true, 'order'=>$order);
+    }
+
+    /**
+     * Tell the customer what happened to their order.
+     *
+     * Last step on purpose, and never fatal: the order has already reached its
+     * new state, and a mail or inbox problem must not roll that back or make
+     * the caller think the transition failed.
+     */
+    private function notify_customer($order, $status) {
+        $types = array(
+            'COMPLETED' => 'order.completed',
+            'PARTIAL'   => 'order.partial',
+            'CANCELED'  => 'order.canceled',
+            'REFUNDED'  => 'order.refunded',
+        );
+        if (!isset($types[$status])) return;
+
+        try {
+            $this->ci->load->library('NotificationService');
+            if (!isset($this->ci->notificationservice)) return;
+            $service = $this->ci->db->select('name')->where('id', $order->service_id)->get('services')->row();
+            $name = $service->name ?? 'your service';
+
+            $bodies = array(
+                'COMPLETED' => 'Order '.$order->public_id.' for '.$name.' is complete.',
+                'PARTIAL'   => 'Order '.$order->public_id.' was partially delivered. '
+                               .marvy_money($order->refunded_amount ?? '0', $order->currency ?? null).' has been refunded to your wallet.',
+                'CANCELED'  => 'Order '.$order->public_id.' was cancelled and the charge returned to your wallet.',
+                'REFUNDED'  => 'Order '.$order->public_id.' was refunded to your wallet.',
+            );
+
+            $this->ci->notificationservice->notify(
+                $order->user_id, $types[$status], $bodies[$status],
+                array('order_id' => $order->public_id, 'url' => 'dashboard/orders/'.$order->public_id),
+                array(
+                    'order_id'      => $order->public_id,
+                    'service_name'  => $name,
+                    'quantity'      => number_format((int)$order->quantity),
+                    'charge'        => marvy_money($order->charge ?? '0', $order->currency ?? null),
+                    'remains'       => (string)($order->remains ?? '0'),
+                    'refund_amount' => marvy_money($order->refunded_amount ?? '0', $order->currency ?? null),
+                )
+            );
+        } catch (Throwable $e) {
+            log_message('error', 'order notification failed for '.$order->public_id.': '.$e->getMessage());
+        }
     }
 
     private function notify_reseller_webhook($order, $status) {
@@ -355,6 +403,7 @@ class OrderService {
         $this->ci->db->where('id',$order->id)->update('orders', $update);
         $order = $this->ci->Order_model->find_by_id($order->id);
         $this->sync_affiliate($order);
+        $this->notify_customer($order, 'PARTIAL');
         return array('ok'=>true, 'order'=>$order);
     }
 

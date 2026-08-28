@@ -94,6 +94,17 @@ class SettingsService {
                 'The smallest top-up a customer may make.', '500.00000000'),
             'max_deposit' => array('money', 'payments', 'Maximum deposit',
                 'The largest single top-up, before manual review.', '5000000.00000000'),
+            'mail_transport' => array('choice:mail|smtp|log', 'email', 'How email is sent',
+                'mail = PHP mail() (what a cPanel account has working out of the box), smtp = the server '
+                .'configured in .env, log = write the message to the log and send nothing (development). '
+                .'Use Send test on the Mail queue screen to prove it before relying on it.', 'mail'),
+            'mail_from_email' => array('text', 'email', 'From address',
+                'The address customers see. Use one on your own domain or providers will reject the mail.', ''),
+            'mail_from_name' => array('text', 'email', 'From name',
+                'The sender name shown in the inbox. Defaults to the site name.', ''),
+            'notification_emails_enabled' => array('bool', 'general', 'Send notification emails',
+                'Off keeps the in-app inbox working but stops outbound email for order, deposit and '
+                .'support events. Account email (verification, password reset) is never affected.', true),
             'deposit_grace_minutes' => array('int', 'payments', 'Wait for the callback (minutes)',
                 'How long a pending deposit is left alone before reconciliation asks the gateway what '
                 .'happened to it. Too short wastes API calls on customers still typing their card details.', 20),
