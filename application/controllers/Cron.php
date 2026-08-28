@@ -8,27 +8,20 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * Every job is a thin wrapper: JobRunner takes an exclusive lock (so a slow run
  * never overlaps the next tick), records the run in `job_runs`, and contains
  * any exception. The work itself lives in the CronWorkers library so it can be
- * tested without a request.
+ * tested without a request, and the name → code mapping lives in CronRegistry,
+ * so the CLI and the admin "Run now" button run byte-identical work under the
+ * same harness.
  */
 class Cron extends Cron_Controller {
 
-    /** Jobs that can be invoked, in the order `index` lists them. */
-    private static $jobs = array(
-        'dripfeed', 'order_status', 'vtu_status', 'numbers_status', 'identity_purge',
-        'giftcard_codes', 'service_recovery', 'marketplace_release',
-        'subscriptions', 'provider_health',
-        'refill_status', 'payment_reconciliation', 'email_queue',
-        'analytics', 'provider_sync', 'affiliate_payouts', 'pin_rotation',
-    );
-
     public function __construct() {
         parent::__construct();
-        $this->load->library(array('JobRunner', 'CronWorkers', 'CronControlService'));
+        $this->load->library(array('JobRunner', 'CronRegistry', 'CronControlService'));
     }
 
     public function index() {
         echo "Usage: php index.php cron <job>\n\nJobs:\n";
-        foreach (self::$jobs as $job) {
+        foreach ($this->cronregistry->jobs() as $job) {
             $schedule = $this->config->item('cron')[$job] ?? '';
             printf("  %-24s %s\n", $job, $schedule);
         }
@@ -38,16 +31,12 @@ class Cron extends Cron_Controller {
     /* ------------------------------- jobs ------------------------------- */
 
     public function order_status() {
-        $this->execute('order_status', function () {
-            return $this->cronworkers->order_status();
-        });
+        $this->execute('order_status');
     }
 
     /** Settle VTU purchases the provider accepted but has not completed. */
     public function vtu_status() {
-        $this->execute('vtu_status', function () {
-            return $this->cronworkers->vtu_status();
-        });
+        $this->execute('vtu_status');
     }
 
     /**
@@ -58,9 +47,7 @@ class Cron extends Cron_Controller {
      * ever with the customer's money in it.
      */
     public function service_recovery() {
-        $this->execute('service_recovery', function () {
-            return $this->cronworkers->service_recovery();
-        });
+        $this->execute('service_recovery');
     }
 
     /**
@@ -70,9 +57,7 @@ class Cron extends Cron_Controller {
      * fifteen, and the customer is watching the screen for their code.
      */
     public function numbers_status() {
-        $this->execute('numbers_status', function () {
-            return $this->cronworkers->numbers_status();
-        });
+        $this->execute('numbers_status');
     }
 
     /**
@@ -83,9 +68,7 @@ class Cron extends Cron_Controller {
      * deleting a record while support has it open.
      */
     public function identity_purge() {
-        $this->execute('identity_purge', function () {
-            return $this->cronworkers->identity_purge();
-        });
+        $this->execute('identity_purge');
     }
 
     /**
@@ -97,66 +80,46 @@ class Cron extends Cron_Controller {
      * vendor never fulfilled, which refunds them.
      */
     public function giftcard_codes() {
-        $this->execute('giftcard_codes', function () {
-            return $this->cronworkers->giftcard_codes();
-        });
+        $this->execute('giftcard_codes');
     }
 
     /** Make held earnings available once their holding period elapses. */
     public function earnings_release() {
-        $this->execute('earnings_release', function () {
-            return $this->cronworkers->earnings_release();
-        });
+        $this->execute('earnings_release');
     }
 
     /** Close bank-transfer checkouts whose 30-minute window has passed. */
     public function fundsvera_expire() {
-        $this->execute('fundsvera_expire', function () {
-            return $this->cronworkers->fundsvera_expire();
-        });
+        $this->execute('fundsvera_expire');
     }
 
     /** Release undisputed marketplace deliveries after the review window. */
     public function marketplace_release() {
-        $this->execute('marketplace_release', function () {
-            return $this->cronworkers->marketplace_release();
-        });
+        $this->execute('marketplace_release');
     }
 
     public function dripfeed() {
-        $this->execute('dripfeed', function () {
-            return $this->cronworkers->dripfeed();
-        });
+        $this->execute('dripfeed');
     }
 
     public function subscriptions() {
-        $this->execute('subscriptions', function () {
-            return $this->cronworkers->subscriptions();
-        });
+        $this->execute('subscriptions');
     }
 
     public function email_queue() {
-        $this->execute('email_queue', function () {
-            return $this->cronworkers->email_queue();
-        });
+        $this->execute('email_queue');
     }
 
     public function provider_health() {
-        $this->execute('provider_health', function () {
-            return $this->cronworkers->provider_health();
-        });
+        $this->execute('provider_health');
     }
 
     public function provider_sync() {
-        $this->execute('provider_sync', function () {
-            return $this->cronworkers->provider_sync();
-        });
+        $this->execute('provider_sync');
     }
 
     public function refill_status() {
-        $this->execute('refill_status', function () {
-            return $this->cronworkers->refill_status();
-        });
+        $this->execute('refill_status');
     }
 
     /**
@@ -164,30 +127,17 @@ class Cron extends Cron_Controller {
      * configured window (24 hours by default). See CronWorkers::pin_rotation().
      */
     public function pin_rotation() {
-        $this->execute('pin_rotation', function () {
-            return $this->cronworkers->pin_rotation();
-        });
+        $this->execute('pin_rotation');
     }
 
     /**
      * Pay referral commissions that have cleared the hold window (Session 14).
      * Idempotent: each commission row is claimed with a compare-and-set and the
      * wallet credit carries a deterministic idempotency key, so overlapping runs
-     * can never pay twice.
+     * can never pay twice. The worker itself lives in CronRegistry.
      */
     public function affiliate_payouts() {
-        $this->execute('affiliate_payouts', function () {
-            $this->load->library('AffiliateService');
-            $result = $this->affiliateservice->pay_due(500);
-            if (!empty($result['disabled'])) {
-                return array('processed'=>0, 'failed'=>0, 'message'=>'skipped (program disabled)');
-            }
-            return array(
-                'processed' => (int)$result['paid'],
-                'failed'    => (int)($result['skipped'] ?? 0),
-                'message'   => "paid {$result['paid']}, skipped {$result['skipped']}, total {$result['amount']}",
-            );
-        });
+        $this->execute('affiliate_payouts');
     }
 
     /**
@@ -195,16 +145,12 @@ class Cron extends Cron_Controller {
      * CronWorkers::payment_reconciliation().
      */
     public function payment_reconciliation() {
-        $this->execute('payment_reconciliation', function () {
-            return $this->cronworkers->payment_reconciliation();
-        });
+        $this->execute('payment_reconciliation');
     }
 
     /** Housekeeping: prune high-volume logs (audit_logs are never touched). */
     public function analytics() {
-        $this->execute('analytics', function () {
-            return $this->cronworkers->analytics();
-        });
+        $this->execute('analytics');
     }
 
     /** Recent run history, for "did the cron actually run?" */
@@ -223,8 +169,20 @@ class Cron extends Cron_Controller {
 
     /* ------------------------------ plumbing ----------------------------- */
 
-    /** Run a job under the lock/record harness and print a one-line summary. */
-    private function execute($job, callable $work) {
+    /**
+     * Run a job under the lock/record harness and print a one-line summary.
+     *
+     * The work is resolved from CronRegistry, which is the same map the admin
+     * "Run now" button uses — one implementation of "run job X safely", two
+     * doors into it.
+     */
+    private function execute($job) {
+        $worker = $this->cronregistry->worker($job);
+        if ($worker === null) {
+            fwrite(STDERR, "Unknown cron job: {$job}\n");
+            exit(1);
+        }
+
         // An operator can pause a job from Admin → Cron jobs during an
         // incident. The pause is honoured HERE, at the last moment before the
         // work runs, rather than by editing the crontab: the tick still
@@ -239,7 +197,7 @@ class Cron extends Cron_Controller {
             return;
         }
 
-        $result = $this->jobrunner->run($job, $work);
+        $result = $this->jobrunner->run($job, $worker);
 
         if (!empty($result['skipped'])) {
             echo "{$job}: skipped (already running)\n";

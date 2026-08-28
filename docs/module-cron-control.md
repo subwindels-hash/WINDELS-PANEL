@@ -49,16 +49,32 @@ Ten jobs are flagged as money-moving (`payment_reconciliation`,
 needs to stop a bad refund sweep must be able to. They simply cannot do it
 without reading what stops happening.
 
-## 3. Still no "run now"
+## 3. "Run now" — one door, one harness
 
-The obvious next button is deliberately absent, and the screen says so:
-triggering a reconciliation or refund sweep from a web request is how deposits
-get credited twice — a double-submit, a proxy retry, an impatient second click.
-The screen already prints the exact command, and the pause is the control an
-operator actually needs during an incident.
+The button an operator asked for ("did the crontab even install? I cannot tell
+without SSH") is there, and the thing that made it dangerous is not: a manual
+run is **not a second implementation of the job**. It resolves the worker from
+`CronRegistry` — the same map `php index.php cron <job>` dispatches through —
+and executes it under the same `JobRunner` exclusive lock. That lock is what
+makes a double-credit impossible: a manual run that starts while the crontab's
+tick is in flight is skipped (`already running`), exactly as two overlapping
+ticks always have been. Every manual run is recorded in `job_runs` like any
+other tick and audited as `cron.run` naming the operator, so the history reads
+the same whichever door the run came in through.
+
+The guards around it:
+
+| Guard | Why |
+| --- | --- |
+| POST-only, `settings.manage` | the same permission as pausing — running the reconciliation sweep is not an everyday support action |
+| Paused jobs are refused, and the refusal is recorded as a `SKIPPED` tick | a manual run must not work around an incident switch someone deliberately threw |
+| Money-moving jobs confirm first, naming the consequence | the operator reads what they are about to move |
+| Runs with `db_debug` off, like the crontab in production | a failing query is a FAILED run in `job_runs`, not a dead admin page mid-sweep |
 
 Nothing here can edit a schedule either. The crontab remains the source of
-truth for *when*; this only controls *whether*.
+truth for *when*; this controls *whether* and offers a manual tick. The screen
+says so: "Run now is for testing and catching up, not for replacing the
+crontab."
 
 ---
 
@@ -78,8 +94,10 @@ refused and leave nothing half-applied; a typo in a job name creates no row;
 money-moving jobs carry their consequence and are still pausable; both
 transitions are audited and the automatic one has no actor; the runner honours
 the pause and records the skipped tick; the write actions are POST-only and
-gated on `settings.manage` while the screen stays on `audit.view`; there is no
-run-now; and the screen promises the expiry in two places.
+gated on `settings.manage` while the screen stays on `audit.view`; run-now
+must go through `CronRegistry` and `JobRunner`, refuse paused jobs and stay on
+the same three endpoints as pause/resume; and the screen promises the expiry
+in two places.
 
 `chrome_check.mjs` drills it against the running panel: pause `analytics`
 through the real form, confirm the row, the audit entry and the *"Paused …

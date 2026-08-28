@@ -227,10 +227,33 @@ check('it shows a crontab to install', /crontab -e/.test(flat) && /php index\.ph
 check('it reports the last run of a job that has run',
   /Healthy|Overdue|Never run|Failing/.test(flat));
 check('the screen is reachable from the sidebar', /admin\/cron/.test((await admin.get('/admin')).text));
-// Module 22 gave the screen exactly two write actions — pause and resume —
-// and deliberately no "run now": triggering a reconciliation or refund sweep
-// from a web request is how deposits get credited twice.
-check('there is still no run-now button', !/admin\/cron\/run/i.test(cron.text));
+// The screen's third write action is "run now" — the operator-facing answer to
+// "did the crontab even install?". It is safe because it is not a second
+// implementation: it resolves the same CronRegistry worker and runs it under
+// the same exclusive JobRunner lock as the crontab tick, so it can never
+// overlap a scheduled run or credit anything twice.
+check('a run-now button posts to the run endpoint', /admin\/cron\/run/i.test(cron.text));
+check('and the screen says why that is safe', /exclusive lock/i.test(flat));
+
+console.log('\n── Running a job by hand');
+// `analytics` prunes logs: no money, no customer-visible consequence, and it
+// leaves a job_runs row the screen itself then reports.
+const runBefore = withDb((db) => db.prepare(
+  `SELECT COUNT(*) AS n FROM job_runs WHERE job = 'analytics'`).get().n);
+const runRes = await admin.postForm('/admin/cron/run',
+  { job: 'analytics' }, { fromHtml: cron.text });
+check('the job runs and reports back', /analytics: ok/i.test(runRes.text),
+  (/alert[^>]*>([\s\S]{0,200}?)</.exec(runRes.text) || [, ''])[1].replace(/<[^>]+>/g, ' ').trim());
+const runAfter = withDb((db) => db.prepare(
+  `SELECT COUNT(*) AS n FROM job_runs WHERE job = 'analytics'`).get().n);
+check('the run is recorded in job_runs like any other tick', runAfter === runBefore + 1,
+  `before=${runBefore} after=${runAfter}`);
+check('and the manual run is audited',
+  !!withDb((db) => db.prepare(
+    `SELECT id FROM audit_logs WHERE action = 'cron.run' AND resource_id = 'analytics'`).get()));
+const bogusRun = await admin.postForm('/admin/cron/run',
+  { job: 'not_a_job' }, { fromHtml: cron.text });
+check('an unknown job is refused', /Unknown cron job/i.test(bogusRun.text));
 
 console.log('\n── Pausing a job during an incident');
 

@@ -295,6 +295,79 @@ class System extends Admin_Controller {
         redirect('admin/cron');
     }
 
+    /**
+     * POST /admin/cron/run — run one job right now, from the browser.
+     *
+     * This is the "did the crontab even install?" answer that used to require
+     * SSH. It runs the *same* code the crontab would have run — CronRegistry
+     * resolves the worker, JobRunner takes the exclusive lock and records the
+     * run in job_runs — so a manual run can never overlap a scheduled tick, can
+     * never double-apply anything the CLI run applies, and shows up in the run
+     * history like any other tick. What it must never be is a second,
+     * weaker implementation of the job.
+     */
+    public function cron_run() {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm('settings.manage');
+
+        $this->load->library(array('JobRunner', 'CronRegistry', 'CronControlService'));
+        $job = (string)$this->input->post('job', true);
+
+        if (!$this->cronregistry->has($job)) {
+            $this->session->set_flashdata('error', 'Unknown cron job.');
+            return redirect('admin/cron');
+        }
+
+        // A paused job is idle on purpose: a manual run would work around an
+        // incident switch, so it is refused — and the refusal is recorded as a
+        // SKIPPED tick, exactly as the crontab's own attempt would be.
+        if ($this->croncontrolservice->is_paused($job)) {
+            $state = $this->croncontrolservice->state($job);
+            $reason = $state && $state->reason !== '' ? $state->reason : 'paused by an operator';
+            $this->jobrunner->record_skip($job, 'manual run refused: paused ('.$reason.')');
+            $this->session->set_flashdata('warning',
+                "{$job} is paused ({$reason}). Resume it first, then run it.");
+            return redirect('admin/cron');
+        }
+
+        $worker = $this->cronregistry->worker($job);
+
+        // A manual run must mirror what the crontab gets in production:
+        // db_debug off, so a failing query is a FAILED run recorded in
+        // job_runs — not a dead admin page halfway through the job.
+        if (isset($this->db) && is_object($this->db)) {
+            $this->db->db_debug = false;
+        }
+
+        // A big catalogue sync or a long reconciliation can outlive a default
+        // PHP-FPM request timeout; ask for the room, ignore the refusal on
+        // hosts that cap it (the harness still contains the failure).
+        if (function_exists('set_time_limit')) @set_time_limit(0);
+        @ignore_user_abort(true);
+
+        $result = $this->jobrunner->run($job, $worker);
+        $seconds = $this->jobrunner->elapsed();
+
+        $this->audit('cron.run', 'job_runs', $job, null, array(
+            'status'    => !empty($result['ok']) ? (empty($result['skipped']) ? 'SUCCESS' : 'SKIPPED') : 'FAILED',
+            'message'   => (string)($result['message'] ?? ($result['error'] ?? '')),
+            'seconds'   => round((float)$seconds, 3),
+            'triggered' => 'admin',
+        ));
+
+        if (!empty($result['skipped'])) {
+            $this->session->set_flashdata('warning',
+                "{$job}: skipped — it is already running. The tick in progress owns the lock.");
+        } elseif (empty($result['ok'])) {
+            $this->session->set_flashdata('error',
+                "{$job}: FAILED — ".($result['error'] ?? 'unknown error'));
+        } else {
+            $this->session->set_flashdata('success',
+                "{$job}: ok — ".($result['message'] ?? 'done').sprintf(' (%.3fs)', $seconds));
+        }
+        redirect('admin/cron');
+    }
+
     /** GET /admin/api-logs */
     public function api_logs() {
         $this->require_perm('api.manage');

@@ -44,6 +44,7 @@ class Services extends Admin_Controller {
             $res = $this->smmserviceadminservice->save(null, $this->input->post(null, true));
             if (empty($res['ok'])) return $this->fail('admin/services/create', $res['error']);
 
+            $this->audit_created_category($res);
             $this->audit('service.created', $res['service'], null, get_object_vars($res['service']));
             $this->flash_result($res, 'Service created.');
             return redirect('admin/services/'.$res['service']->public_id);
@@ -69,6 +70,28 @@ class Services extends Admin_Controller {
         ));
     }
 
+    /**
+     * GET /admin/services/provider-services?provider=<public-id> — the synced
+     * catalogue of one provider, as JSON for the create form's picker.
+     *
+     * The same permission as reading the services screen; it exposes nothing a
+     * logged-out visitor or a customer could reach, and no credential ever
+     * leaves the provider row.
+     */
+    public function provider_services() {
+        $this->require_perm('services.view');
+        $res = $this->smmserviceadminservice->provider_service_options(
+            (string)$this->input->get('provider', true));
+        $this->output
+            ->set_content_type('application/json')
+            ->set_output(json_encode(array(
+                'ok' => !empty($res['ok']),
+                'error' => $res['error'] ?? null,
+                'truncated' => !empty($res['truncated']),
+                'services' => $res['services'] ?? array(),
+            ), JSON_UNESCAPED_SLASHES));
+    }
+
     /** GET /admin/services/:public-id */
     public function edit($public_id) {
         $service = $this->find_or_404($public_id);
@@ -89,6 +112,7 @@ class Services extends Admin_Controller {
         $res = $this->smmserviceadminservice->save($service, $this->input->post(null, true));
         if (empty($res['ok'])) return $this->fail('admin/services/'.$public_id, $res['error']);
 
+        $this->audit_created_category($res);
         $this->audit('service.updated', $res['service'], $res['before'], get_object_vars($res['service']));
         $this->flash_result($res, 'Service updated.');
         redirect('admin/services/'.$public_id);
@@ -149,6 +173,7 @@ class Services extends Admin_Controller {
     private function blank_draft() {
         return (object)array(
             'id'=>null, 'public_id'=>null, 'name'=>'', 'slug'=>'', 'category_id'=>null,
+            'provider_category'=>null,
             'description'=>null, 'service_type'=>'DEFAULT', 'rate'=>'',
             'min_quantity'=>100, 'max_quantity'=>10000, 'increment_step'=>1,
             'average_time'=>null, 'average_time_minutes'=>null,
@@ -199,6 +224,22 @@ class Services extends Admin_Controller {
         $this->Audit_log_model->record(
             $this->current_user->id, $action, 'services', (string)$service->id,
             $before, $after,
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
+    }
+
+    /**
+     * A category created as a side effect of "create the category from the
+     * provider" is a category write and is audited as one, with the same
+     * action name Admin → System uses, so the trail reads the same whichever
+     * door the category came in through.
+     */
+    private function audit_created_category(array $res) {
+        if (empty($res['category_created'])) return;
+        $category = $res['category_created'];
+        $this->Audit_log_model->record(
+            $this->current_user->id, 'category.created', 'service_categories',
+            (string)$category->id, null, get_object_vars($category),
             $this->input->ip_address(), $this->input->user_agent(), $this->request_id
         );
     }

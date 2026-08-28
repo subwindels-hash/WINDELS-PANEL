@@ -193,6 +193,63 @@ class Providers extends Admin_Controller {
     }
 
     /**
+     * POST /admin/providers/:id/import — bring the whole synced catalogue
+     * across as panel services in one action.
+     *
+     * "Add provider → sync → hand-build hundreds of services" was the only
+     * path from a provider to a sellable catalogue, which in practice meant
+     * the provider sat there and customers saw nothing. The import reuses the
+     * single-create mapping (trusted rates, the provider's pricing rule,
+     * capability flags) so there is exactly one definition of a panel service.
+     *
+     * It writes the services catalogue, so the permission is services.manage —
+     * not providers.sync, which only reaches out and reads.
+     */
+    public function import($public_id) {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm('services.manage');
+        $provider = $this->Provider_model->find_by_public_id($public_id);
+        if (!$provider) show_404();
+
+        $this->load->library(array('SmmServiceAdminService'));
+        $res = $this->smmserviceadminservice->import_provider_services(
+            $provider, $this->input->post(null, true));
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error'] ?? 'The import failed.');
+            return redirect('admin/providers/'.$public_id);
+        }
+
+        $this->load->model('Audit_log_model');
+        $this->Audit_log_model->record(
+            $this->current_user->id, 'services.imported', 'providers', (string)$provider->id,
+            null,
+            array(
+                'created' => (int)$res['created'],
+                'skipped_linked' => (int)$res['skipped_linked'],
+                'skipped_category' => (int)$res['skipped_category'],
+                'skipped_rate' => (int)$res['skipped_rate'],
+                'categories_created' => (int)$res['categories_created'],
+                'status' => strtoupper(trim((string)$this->input->post('status', true))) ?: 'INACTIVE',
+            ),
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
+
+        $msg = 'Imported '.$res['created'].' service'.($res['created'] === 1 ? '' : 's')
+            .' from '.$provider->name.'.';
+        if ($res['categories_created'] > 0) {
+            $msg .= ' Created '.$res['categories_created'].' categor'.($res['categories_created'] === 1 ? 'y' : 'ies').'.';
+        }
+        if ($res['skipped_linked'] > 0) {
+            $msg .= ' '.$res['skipped_linked'].' were already imported (left untouched).';
+        }
+        $this->session->set_flashdata('success', $msg);
+        if (!empty($res['warnings'])) {
+            $this->session->set_flashdata('warning', implode(' ', $res['warnings']));
+        }
+        redirect('admin/services?provider='.urlencode($public_id));
+    }
+
+    /**
      * POST-only, plus the permission the action needs.
      *
      * Defaults to `providers.sync`: test/sync/sync-balance all reach out to a

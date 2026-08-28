@@ -1462,7 +1462,11 @@ class GiftcardsTest extends TestCase
 
         $cron = file_get_contents(self::$root.'/application/controllers/Cron.php');
         $this->assertStringContainsString('public function giftcard_codes()', $cron);
-        $this->assertStringContainsString("'giftcard_codes',", $cron);
+        // Job registration moved from Cron.php's own list to the shared
+        // registry (one map for the CLI and the admin "Run now" button), so
+        // "is the sweep wired" is asked where the list now lives.
+        $registry = file_get_contents(self::$root.'/application/libraries/CronRegistry.php');
+        $this->assertStringContainsString("'giftcard_codes',", $registry);
 
         $crontab = file_get_contents(self::$root.'/cron/crontab.example');
         $this->assertStringContainsString('cron giftcard_codes', $crontab);

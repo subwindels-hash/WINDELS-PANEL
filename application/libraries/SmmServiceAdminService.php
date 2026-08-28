@@ -76,11 +76,24 @@ class SmmServiceAdminService {
         return array(
             'categories' => $categories,
             'providers' => $providers,
+            // The synced catalogue of the linked provider, so "Upstream
+            // service" is a picker rather than a field that must be typed at.
+            'provider_services' => $selected && !empty($selected->provider_id)
+                ? $this->provider_service_options(
+                    $selected->provider_public_id
+                        ?: $this->provider_public_id_by_row($selected))['services']
+                : array(),
             'price_groups' => $this->ci->db->order_by('name', 'ASC')
                 ->limit(100)->get('price_groups')->result(),
             'types' => self::types(),
             'statuses' => self::statuses(),
         );
+    }
+
+    /** The public id of the provider a draft/service row is linked to. */
+    private function provider_public_id_by_row($selected) {
+        $provider = $this->ci->Provider_model->smm_picker_by_id((int)$selected->provider_id);
+        return $provider ? $provider->public_id : '';
     }
 
     /**
@@ -93,12 +106,22 @@ class SmmServiceAdminService {
 
         $p = $link['provider'];
         $s = $link['source'];
+        // When the panel already has a category whose slug matches the
+        // provider's own category, preselect it: "add provider, create
+        // services" then needs no detour through Admin → Categories.
+        $category_id = null;
+        $provider_category = trim((string)($s->category ?? ''));
+        if ($provider_category !== '') {
+            $match = $this->ci->Service_category_model->find_by_slug($this->slug($provider_category));
+            if ($match) $category_id = (int)$match->id;
+        }
         return array('ok' => true, 'draft' => (object)array(
             'id' => null,
             'public_id' => null,
             'name' => $s->name,
             'slug' => $this->slug($s->name.'-'.$s->provider_service_id),
-            'category_id' => null,
+            'category_id' => $category_id,
+            'provider_category' => $provider_category !== '' ? $provider_category : null,
             'description' => null,
             'service_type' => $s->service_type,
             'rate' => $this->selling_rate($p, $s->rate),
@@ -127,6 +150,272 @@ class SmmServiceAdminService {
         ));
     }
 
+    /**
+     * The value of the "create a category from the provider" option in the
+     * service form. A constant rather than a magic string so the form, the
+     * validator and the tests can never disagree about it.
+     */
+    const PROVIDER_CATEGORY_OPTION = '__provider_category__';
+
+    /**
+     * Bounded list of a provider's synced services for the form's picker.
+     *
+     * A provider can carry thousands of rows; the picker is capped and says so
+     * in its label, so "choose a service" never quietly loses the tail of the
+     * catalogue — the raw ID field remains for anything beyond the cap.
+     */
+    public function provider_service_options($provider_public_id, $limit = 1000) {
+        $provider = $this->ci->Provider_model->find_by_public_id(trim((string)$provider_public_id));
+        if (!$provider || !in_array(strtoupper((string)$provider->api_type),
+                Provider_manager::supported_types(Provider_manager::FAMILY_SMM), true)) {
+            return array('ok' => false, 'error' => 'Choose a valid SMM provider.', 'services' => array());
+        }
+        $limit = max(1, min(2000, (int)$limit));
+        $rows = $this->ci->db
+            ->select('provider_service_id, name, category, rate, min_quantity, max_quantity', false)
+            ->where('provider_id', (int)$provider->id)
+            ->order_by('provider_service_id', 'ASC')
+            ->limit($limit + 1)
+            ->get('provider_services')->result();
+        $truncated = count($rows) > $limit;
+        if ($truncated) array_pop($rows);
+        $services = array();
+        foreach ($rows as $r) {
+            $services[] = array(
+                'id' => (string)$r->provider_service_id,
+                'name' => (string)$r->name,
+                'category' => (string)($r->category ?? ''),
+                'rate' => (string)$r->rate,
+                'min' => (int)$r->min_quantity,
+                'max' => (int)$r->max_quantity,
+            );
+        }
+        return array('ok' => true, 'services' => $services, 'truncated' => $truncated,
+            'error' => null);
+    }
+
+    /**
+     * Import every synced service of a provider as a panel service in one go.
+     *
+     * This is the missing half of "add provider → sell its services": a sync
+     * mirrors the upstream catalogue into provider_services, and until now the
+     * only bridge to the customer-facing catalogue was one hand-built service
+     * at a time. The import reuses exactly the mapping the single create form
+     * uses (trusted provider rate, provider pricing rule, capability flags),
+     * so there is no second, weaker definition of "a panel service" to drift.
+     *
+     * Options (all from the operator, none guessed):
+     *   status           ACTIVE (customers can order immediately) or INACTIVE
+     *   create_categories  create panel categories named after the provider's
+     *   auto_price_sync    follow the provider's pricing rule on every sync
+     *
+     * Idempotent by construction: a provider service already linked to a panel
+     * service is skipped, never duplicated, so re-running after a sync only
+     * ever adds what is new.
+     */
+    public function import_provider_services($provider, array $input) {
+        if (!$provider || !in_array(strtoupper((string)$provider->api_type),
+                Provider_manager::supported_types(Provider_manager::FAMILY_SMM), true)) {
+            return $this->err('INVALID_PROVIDER', 'Choose a valid SMM provider.');
+        }
+
+        $status = strtoupper($this->scalar($input, 'status', 'INACTIVE'));
+        if (!in_array($status, self::statuses(), true) || $status === 'ARCHIVED') {
+            return $this->err('INVALID_STATUS', 'Choose ACTIVE or INACTIVE for the imported services.');
+        }
+        $create_categories = $this->checked($input, 'create_categories');
+        $auto = $this->checked($input, 'auto_price_sync');
+
+        $sources = $this->ci->Provider_service_model->for_provider((int)$provider->id);
+        if (!$sources) {
+            return $this->err('NOTHING_SYNCED',
+                'This provider has no synced services yet. Run "Sync services" first.');
+        }
+
+        // Already-linked provider services: the bridge exists, skip them.
+        $linked = array();
+        foreach ($this->ci->db
+                ->select('provider_service_id', false)
+                ->where('provider_id', (int)$provider->id)
+                ->where('provider_service_id IS NOT NULL', null, false)
+                ->get('services')->result() as $row) {
+            $linked[(string)$row->provider_service_id] = true;
+        }
+
+        $summary = array(
+            'ok' => true, 'error' => null, 'code' => null, 'warnings' => array(),
+            'created' => 0, 'skipped_linked' => 0, 'skipped_category' => 0,
+            'skipped_rate' => 0, 'limits_adjusted' => 0,
+            'categories_created' => 0, 'category_ids' => array(),
+        );
+
+        $this->ci->db->trans_start();
+        foreach ($sources as $s) {
+            if (isset($linked[(string)$s->provider_service_id])) {
+                $summary['skipped_linked']++;
+                continue;
+            }
+
+            // A selling rate the schema cannot hold (or that rounds to zero)
+            // is a provider-pricing problem, not something to import blind.
+            $rate = $this->decimal($this->selling_rate($provider, $s->rate));
+            if ($rate === null || bccomp($rate, '0', 8) <= 0) {
+                $summary['skipped_rate']++;
+                continue;
+            }
+
+            $category = $this->category_for_source($s, $create_categories, $summary);
+            if (!$category) {
+                $summary['skipped_category']++;
+                continue;
+            }
+
+            $min = max(1, (int)$s->min_quantity);
+            $max = max($min, (int)$s->max_quantity);
+            if ($min !== (int)$s->min_quantity || $max !== (int)$s->max_quantity) {
+                $summary['limits_adjusted']++;
+            }
+
+            $slug = $this->unique_slug($this->slug($s->name.'-'.$s->provider_service_id));
+            if ($slug === '') { $summary['skipped_rate']++; continue; }
+
+            $this->ci->db->insert('services', array(
+                'public_id' => marvy_public_id(),
+                'name' => mb_substr((string)$s->name, 0, 255),
+                'slug' => $slug,
+                'category_id' => (int)$category->id,
+                'description' => null,
+                'service_type' => in_array((string)$s->service_type, self::types(), true)
+                    ? (string)$s->service_type : 'DEFAULT',
+                'rate' => $rate,
+                'min_quantity' => $min,
+                'max_quantity' => $max,
+                'increment_step' => 1,
+                'average_time' => null,
+                'average_time_minutes' => null,
+                'provider_id' => (int)$provider->id,
+                'provider_service_id' => (string)$s->provider_service_id,
+                'provider_rate' => (string)$s->rate,
+                'status' => $status,
+                'cancel_supported' => (int)$s->cancel_supported,
+                'refill_supported' => (int)$s->refill_supported,
+                'refill_days' => null,
+                'dripfeed_supported' => (int)$s->dripfeed_supported,
+                'subscription_supported' => $s->service_type === 'SUBSCRIPTION' ? 1 : 0,
+                'package_supported' => $s->service_type === 'PACKAGE' ? 1 : 0,
+                'custom_comments_supported' => strpos((string)$s->service_type, 'CUSTOM') === 0 ? 1 : 0,
+                'sorting' => 0,
+                'featured' => 0,
+                'trending' => 0,
+                'auto_price_sync' => $auto ? 1 : 0,
+                'metadata' => null,
+                'provider_source_snapshot' => $this->snapshot($s),
+                'created_at' => gmdate('Y-m-d H:i:s'),
+                'updated_at' => gmdate('Y-m-d H:i:s'),
+            ));
+            $summary['created']++;
+        }
+        $this->ci->db->trans_complete();
+        if (!$this->ci->db->trans_status()) {
+            return $this->err('SAVE_FAILED', 'The import could not be saved.');
+        }
+
+        if ($summary['created'] > 0 && strtoupper((string)$provider->status) !== 'ACTIVE') {
+            $summary['warnings'][] = 'The provider itself is not ACTIVE — new orders may stay pending until it is enabled.';
+        }
+        if ($status === 'ACTIVE') {
+            $summary['warnings'][] = $summary['created'] > 0
+                ? $summary['created'].' services are live: customers can see and order them now.'
+                : 'Nothing new to import — already-imported services keep their current status.';
+        }
+        if ($summary['skipped_rate'] > 0) {
+            $summary['warnings'][] = $summary['skipped_rate'].' service(s) were skipped because the provider pricing rule produced an unusable selling rate.';
+        }
+        if ($summary['skipped_category'] > 0) {
+            $summary['warnings'][] = $summary['skipped_category'].' service(s) were skipped because no panel category matched and category creation was switched off.';
+        }
+        return $summary;
+    }
+
+    /**
+     * The panel category a provider service belongs in: an existing one whose
+     * slug matches the provider's category, or (when allowed) a new active
+     * category named after it. Provider services with no category at all land
+     * in "Imported", so an import never silently drops them.
+     */
+    private function category_for_source($s, $create, array &$summary) {
+        $name = trim((string)($s->category ?? ''));
+        if ($name === '') $name = 'Imported';
+        $name = mb_substr($name, 0, 128);
+
+        $existing = $this->ci->Service_category_model->find_by_slug($this->slug($name));
+        if ($existing) return $existing;
+        if (!$create) return null;
+
+        $row = array(
+            'public_id' => marvy_public_id(),
+            'name' => $name,
+            'slug' => $this->unique_category_slug($this->slug($name)),
+            'parent_id' => null,
+            'description' => null,
+            'icon' => null,
+            'platform' => null,
+            'sorting' => 0,
+            'is_active' => 1,
+            'created_at' => gmdate('Y-m-d H:i:s'),
+            'updated_at' => gmdate('Y-m-d H:i:s'),
+        );
+        $this->ci->db->insert('service_categories', $row);
+        $summary['categories_created']++;
+        $category = $this->ci->Service_category_model->find_by_id((int)$this->ci->db->insert_id());
+        if ($category) $summary['category_ids'][] = (int)$category->id;
+        return $category;
+    }
+
+    /** A services.slug that is not taken: -2, -3, … before giving up. */
+    private function unique_slug($base) {
+        if ($base === '') return '';
+        if (!$this->ci->db->where('slug', $base)->get('services')->row()) return $base;
+        for ($i = 2; $i < 100; $i++) {
+            $candidate = substr($base, 0, 253).'-'.$i;
+            if (!$this->ci->db->where('slug', $candidate)->get('services')->row()) return $candidate;
+        }
+        return '';
+    }
+
+    /** A service_categories.slug that is not taken: -2, -3, … */
+    private function unique_category_slug($base) {
+        if ($base === '') $base = 'category';
+        if (!$this->ci->db->where('slug', $base)->get('service_categories')->row()) return $base;
+        for ($i = 2; $i < 100; $i++) {
+            $candidate = substr($base, 0, 126).'-'.$i;
+            if (!$this->ci->db->where('slug', $candidate)->get('service_categories')->row()) return $candidate;
+        }
+        return 'category-'.bin2hex(random_bytes(4));
+    }
+
+    /** Create the panel category named after the linked provider service's own. */
+    private function create_provider_category($source) {
+        $name = mb_substr(trim((string)($source->category ?? '')), 0, 128);
+        if ($name === '') return null;
+        $row = array(
+            'public_id' => marvy_public_id(),
+            'name' => $name,
+            'slug' => $this->unique_category_slug($this->slug($name)),
+            'parent_id' => null,
+            'description' => null,
+            'icon' => null,
+            'platform' => null,
+            'sorting' => 0,
+            'is_active' => 1,
+            'created_at' => gmdate('Y-m-d H:i:s'),
+            'updated_at' => gmdate('Y-m-d H:i:s'),
+        );
+        $this->ci->db->insert('service_categories', $row);
+        $category = $this->ci->Service_category_model->find_by_id((int)$this->ci->db->insert_id());
+        return $category ?: null;
+    }
+
     /** Create or update one internal service. */
     public function save($existing, array $input) {
         $name = trim($this->scalar($input, 'name'));
@@ -141,9 +430,40 @@ class SmmServiceAdminService {
             return $this->err('DUPLICATE', 'Another service already uses the slug "'.$slug.'".');
         }
 
-        $category = $this->ci->Service_category_model->find_by_public_id(
-            $this->scalar($input, 'category'));
-        if (!$category) return $this->err('INVALID_CATEGORY', 'Choose a valid category.');
+        // The provider link is resolved before the category: the category
+        // choice may be "create one named after the provider's own", which is
+        // only meaningful for a real synced provider service.
+        $provider_public_id = trim($this->scalar($input, 'provider'));
+        $provider_service_id = trim($this->scalar($input, 'provider_service_id'));
+        if (($provider_public_id === '') !== ($provider_service_id === '')) {
+            return $this->err('BAD_PROVIDER_LINK', 'Choose both a provider and its service ID, or leave both blank.');
+        }
+
+        $provider = null;
+        $source = null;
+        if ($provider_public_id !== '') {
+            $link = $this->provider_link($provider_public_id, $provider_service_id);
+            if (empty($link['ok'])) return $link;
+            $provider = $link['provider'];
+            $source = $link['source'];
+        }
+
+        $category_value = $this->scalar($input, 'category');
+        $wants_provider_category = $category_value === self::PROVIDER_CATEGORY_OPTION;
+        if ($wants_provider_category) {
+            if (!$source) {
+                return $this->err('INVALID_CATEGORY',
+                    'Choose a synced provider service before creating a category from it.');
+            }
+            if (trim((string)($source->category ?? '')) === '') {
+                return $this->err('INVALID_CATEGORY',
+                    'That provider service has no category of its own — pick an existing category instead.');
+            }
+            $category = null;
+        } else {
+            $category = $this->ci->Service_category_model->find_by_public_id($category_value);
+            if (!$category) return $this->err('INVALID_CATEGORY', 'Choose a valid category.');
+        }
 
         $type = strtoupper($this->scalar($input, 'service_type', 'DEFAULT'));
         if (!in_array($type, self::types(), true)) {
@@ -163,21 +483,6 @@ class SmmServiceAdminService {
         }
         if ($step < 1 || $step > $max) {
             return $this->err('BAD_STEP', 'Increment step must be between 1 and the maximum quantity.');
-        }
-
-        $provider_public_id = trim($this->scalar($input, 'provider'));
-        $provider_service_id = trim($this->scalar($input, 'provider_service_id'));
-        if (($provider_public_id === '') !== ($provider_service_id === '')) {
-            return $this->err('BAD_PROVIDER_LINK', 'Choose both a provider and its service ID, or leave both blank.');
-        }
-
-        $provider = null;
-        $source = null;
-        if ($provider_public_id !== '') {
-            $link = $this->provider_link($provider_public_id, $provider_service_id);
-            if (empty($link['ok'])) return $link;
-            $provider = $link['provider'];
-            $source = $link['source'];
         }
 
         $auto = $this->checked($input, 'auto_price_sync');
@@ -219,6 +524,19 @@ class SmmServiceAdminService {
             return $this->err('BAD_TIME', 'The average-time label is limited to 64 characters.');
         }
 
+        $this->ci->db->trans_start();
+        // "Create a category from the provider" is resolved here, inside the
+        // transaction and after every other rule has passed: a validation
+        // failure earlier must not leave an orphaned category behind, and a
+        // failed service write must not leave one either.
+        if ($wants_provider_category) {
+            $category = $this->create_provider_category($source);
+            if (!$category) {
+                $this->ci->db->trans_rollback();
+                return $this->err('SAVE_FAILED', 'The category could not be created.');
+            }
+        }
+
         $row = array(
             'name' => $name,
             'slug' => $slug,
@@ -253,6 +571,7 @@ class SmmServiceAdminService {
         );
 
         if ($row['average_time_minutes'] !== null && $row['average_time_minutes'] < 0) {
+            $this->ci->db->trans_rollback();
             return $this->err('BAD_TIME', 'Average time in minutes cannot be negative.');
         }
 
@@ -267,7 +586,6 @@ class SmmServiceAdminService {
             $warnings[] = 'The selling rate is below the upstream rate before currency conversion or provider pricing rules.';
         }
 
-        $this->ci->db->trans_start();
         if ($existing) {
             $before = get_object_vars($existing);
             $this->ci->db->where('id', $existing->id)->update('services', $row);
@@ -292,6 +610,10 @@ class SmmServiceAdminService {
             'before' => $before,
             'service' => $this->ci->Service_model->find_by_id($id),
             'warnings' => $warnings,
+            // Set when the operator chose "create a category from the
+            // provider": the controller audits it like any other category
+            // write, with the same before/after shape.
+            'category_created' => $wants_provider_category ? $category : null,
         );
     }
 

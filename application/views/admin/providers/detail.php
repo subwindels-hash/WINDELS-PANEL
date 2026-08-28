@@ -1,5 +1,6 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
 $p = $provider;
+$is_vtu = (isset($family) && $family === 'VTU');
 $can_manage_services = (isset($family) && $family === 'SMM')
     && (in_array('*', $permissions ?? array(), true)
         || in_array('services.manage', $permissions ?? array(), true));
@@ -52,6 +53,9 @@ $has = function ($permission) use ($permissions) {
           <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
           <button class="btn btn-primary" type="submit">⇅ Sync services</button>
         </form>
+        <?php if ($can_manage_services && !$is_vtu): ?>
+        <button class="btn btn-secondary" type="button" data-dialog-open="ws-import-services">⇥ Import all services…</button>
+        <?php endif; ?>
       </div>
       <?php endif; ?>
       <?php if ($has('providers.manage')): ?>
@@ -129,7 +133,6 @@ $has = function ($permission) use ($permissions) {
     </div>
 
     <div class="card">
-      <?php $is_vtu = (isset($family) && $family === 'VTU'); ?>
       <h3 class="card-title"><?=$is_vtu ? 'VTU catalogue' : 'Provider services'?></h3>
       <?php if (empty($services)): ?>
         <p class="muted mt-2">
@@ -166,6 +169,11 @@ $has = function ($permission) use ($permissions) {
         </table>
       </div>
       <?php else: ?>
+      <p class="muted text-sm mt-2">
+        These are the provider's own services — the raw mirror of a sync. Customers only ever see
+        panel services: create them one by one with the link on each row, or use
+        <strong>Import all services…</strong> above to bring the whole catalogue across at once.
+      </p>
       <div class="overflow-x-auto mt-3">
         <table class="table">
           <thead><tr><th>Provider ID</th><th>Name</th><th>Rate</th><th>Min/Max</th><th>Flags</th><th>Synced</th><?php if ($can_manage_services): ?><th></th><?php endif; ?></tr></thead>
@@ -228,3 +236,41 @@ $has = function ($permission) use ($permissions) {
     </div>
   </aside>
 </div>
+
+<?php if ($can_manage_services && empty($is_vtu)): ?>
+<dialog id="ws-import-services" class="ws-dialog" data-dialog-light-dismiss>
+  <?=form_open('admin/providers/'.$p->public_id.'/import', array('class'=>'stack'))?>
+    <h3 class="card-title mb-0">Import every synced service</h3>
+    <p class="text-sm muted mt-1">
+      Creates a panel service for each of this provider's <?=number_format($total)?> synced
+      services that is not linked to one already — pricing each at the provider's rate plus your
+      pricing rule (currently <?=rtrim(rtrim(number_format(ProviderSyncService::markup_percent($p), 2, '.', ''), '0'), '.')?>%).
+      Re-running after a sync only ever adds what is new.
+    </p>
+    <fieldset class="stack" style="gap:.5rem">
+      <legend class="text-sm font-medium">Import as</legend>
+      <label class="row" style="gap:.5rem"><input type="radio" name="status" value="ACTIVE" checked>
+        <span><strong>Active</strong> — customers can see and order them immediately.</span></label>
+      <label class="row" style="gap:.5rem"><input type="radio" name="status" value="INACTIVE">
+        <span><strong>Inactive</strong> — review and switch on from the services list first.</span></label>
+    </fieldset>
+    <label class="row" style="gap:.5rem;align-items:flex-start">
+      <input type="checkbox" name="create_categories" value="1" checked>
+      <span><strong>Create categories from the provider's own</strong>
+        <small class="block muted">Panel categories named after the provider's categories; an existing category with the same name is reused.</small></span>
+    </label>
+    <label class="row" style="gap:.5rem;align-items:flex-start">
+      <input type="checkbox" name="auto_price_sync" value="1" checked>
+      <span><strong>Follow provider pricing</strong>
+        <small class="block muted">Each service re-prices itself whenever this provider syncs. Hand-priced later — it stops following.</small></span>
+    </label>
+    <div class="row" style="justify-content:flex-end;gap:.5rem">
+      <button type="button" class="btn btn-ghost" data-dialog-close="ws-import-services">Cancel</button>
+      <button type="submit" class="btn btn-primary"
+              data-confirm="Import <?=number_format($total)?> services from <?=htmlspecialchars($p->name)?>? This cannot be undone one by one — bulk-deleting later is the way back.">Import all services</button>
+    </div>
+  <?=form_close()?>
+</dialog>
+<style>.ws-dialog{border:0;border-radius:1rem;padding:0;width:min(560px,92vw);box-shadow:0 30px 80px -20px rgba(0,0,0,.4)}
+.ws-dialog::backdrop{background:rgba(15,23,42,.55)} .ws-dialog form{padding:1.5rem}</style>
+<?php endif; ?>

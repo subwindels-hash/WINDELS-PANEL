@@ -270,6 +270,8 @@ $route['admin/catalogue/(:any)'] = 'admin/catalogue/domain/$1';
 // public-id catch-all or "create" would be treated as a service ID.
 $route['admin/services'] = 'admin/services/index';
 $route['admin/services/create'] = 'admin/services/create';
+// Synced-catalogue picker for the create form (JSON, services.view).
+$route['admin/services/provider-services'] = 'admin/services/provider_services';
 $route['admin/services/(:any)/update'] = 'admin/services/update/$1';
 $route['admin/services/(:any)/archive'] = 'admin/services/archive/$1';
 $route['admin/services/(:any)/pricing/group/(:num)'] = 'admin/services/group_rate/$1/$2';
@@ -291,6 +293,9 @@ $route['admin/providers/(:any)/pricing'] = 'admin/providers/pricing/$1';
 $route['admin/providers/(:any)/test'] = 'admin/providers/test/$1';
 $route['admin/providers/(:any)/sync'] = 'admin/providers/sync/$1';
 $route['admin/providers/(:any)/sync-balance'] = 'admin/providers/sync_balance/$1';
+// Bulk-import the synced catalogue as panel services (writes the catalogue,
+// so services.manage — POST-only like every other write here).
+$route['admin/providers/(:any)/import'] = 'admin/providers/import/$1';
 $route['admin/providers/(:any)'] = 'admin/providers/detail/$1';
 $route['admin/customers'] = 'admin/users/customers';
 $route['admin/wallets'] = 'admin/users/wallets';
@@ -386,6 +391,9 @@ $route['admin/cron'] = 'admin/system/cron';
 // Pausing a background job is a write: POST-only, gated on settings.manage.
 $route['admin/cron/pause'] = 'admin/system/cron_pause';
 $route['admin/cron/resume'] = 'admin/system/cron_resume';
+// Run one job now: same harness, same lock as the crontab tick (POST-only,
+// settings.manage) — the browser-side answer to "did the cron even install?".
+$route['admin/cron/run'] = 'admin/system/cron_run';
 $route['admin/api-logs'] = 'admin/system/api_logs';
 $route['admin/refunds'] = 'admin/orders/refunds';
 $route['admin/blacklist'] = 'admin/system/blacklist';

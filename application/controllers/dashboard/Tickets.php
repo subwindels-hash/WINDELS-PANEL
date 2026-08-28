@@ -33,8 +33,18 @@ class Tickets extends Auth_Controller {
         ));
     }
 
+    /**
+     * GET shows the new-ticket form; POST creates the ticket.
+     *
+     * The POST half has always existed (the index dialog targets it), but the
+     * empty state links here with a plain GET and used to meet a 404 — the
+     * customer's very first "Open a ticket" click was a dead end.
+     */
     public function create() {
-        if ($this->input->method(true) !== 'POST') show_404();
+        if ($this->input->method(true) !== 'POST') {
+            return $this->render_create(array());
+        }
+
         $input = $this->input->post();
         $upload = $this->ticketservice->attachments_from_upload(
             $_FILES['attachments'] ?? null, $this->current_user->id);
@@ -44,11 +54,31 @@ class Tickets extends Auth_Controller {
         if ($upload['errors']) $this->session->set_flashdata('warning', implode(' ', $upload['errors']));
         $res = $this->ticketservice->open($this->current_user, $input);
         if (empty($res['ok'])) {
-            $this->session->set_flashdata('error', $res['error'] ?? 'Could not create ticket');
-            redirect('dashboard/tickets');
+            // Re-render the form rather than bouncing to the inbox: the
+            // message the customer just typed must still be on the page, or
+            // the error costs them their whole message too.
+            return $this->render_create(array(
+                'error' => $res['error'] ?? 'Could not create ticket',
+                'old' => $input,
+            ));
         }
         $this->session->set_flashdata('success', 'Ticket opened.');
         redirect('dashboard/tickets/'.$res['ticket']->public_id);
+    }
+
+    /** Shared renderer for the create form (GET and a failed POST). */
+    private function render_create(array $state) {
+        $this->load->view('layouts/app', array(
+            'title' => 'Open a ticket',
+            'nav_active' => 'dashboard/tickets',
+            'unread' => $this->dashboardstats->unread_count($this->current_user->id),
+            'content_view' => 'dashboard/tickets/create',
+            'current_user' => $this->current_user,
+            'permissions' => $this->auth->permissions(),
+            'order_prefill' => $this->input->get('order', true),
+            'form_error' => $state['error'] ?? null,
+            'old_input' => $state['old'] ?? array(),
+        ));
     }
 
     public function detail($public_id) {
