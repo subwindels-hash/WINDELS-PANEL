@@ -329,7 +329,9 @@ class SettingsService {
 
             // ---- the contact page map (Admin → Settings → Contact) --------
             'contact_map_enabled' => array('bool', 'contact', 'Show a map on the contact page',
-                'Off hides the map entirely — the right choice for a business with no public address.', false),
+                'Off hides the map entirely — the right choice for a business with no public address. '
+                .'The map is rendered from your own server (OpenStreetMap tiles, cached for a month), '
+                .'so visitors\' browsers make no request to any map provider.', false),
             'contact_address' => array('longtext', 'contact', 'Business address',
                 'Shown next to the map and used to place the pin when no explicit map query is set. '
                 .'One line per line of the address.', ''),

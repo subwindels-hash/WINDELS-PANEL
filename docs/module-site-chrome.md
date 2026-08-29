@@ -232,17 +232,30 @@ New settings group `contact`: `contact_map_enabled` (**off by default**),
 `contact_phone`, `contact_hours`. `Home::contact()` passes them through
 `Home::contact_details()` and `public/contact.php` renders a "Find us" card.
 
-Both embed paths are **keyless** — an operator should not have to obtain a
-Google Maps API key to show where their office is. A `lat,lng` value uses
-OpenStreetMap's `export/embed.html` with a bounding box and marker; free text
-falls back to `maps.google.com/maps?q=…&output=embed`. Either way there is an
-"Open in maps" link for people who want directions.
+The map is rendered **first-party**, not embedded: an iframe is a request to
+someone else's origin, so the visitor's IP goes to OpenStreetMap or Google for
+a page that exists to show a street address, and an EU operator must disclose
+that tracking in the privacy policy. `ContactMapService`
+(`application/libraries/ContactMapService.php`) instead:
 
-The security detail: embedding a third-party iframe means relaxing
-`frame-src`, and the panel ships a strict CSP. `MY_Controller::map_frame_src()`
-adds the three map origins **only while the map is enabled**, so a panel that
-never turns the feature on keeps its original policy. `chrome_check.mjs`
-asserts the header both ways.
+- resolves a `lat,lng` query locally (no network at all);
+- geocodes free text **on the server** (Nominatim, OSM's public keyless
+  geocoder) once per address and caches the answer for 30 days;
+- fetches the nine OSM tiles around the point **on the server** and caches
+  them for 30 days under `storage/cache/maps/`, serving them back from this
+  origin at `/contact/map/tile/{key}/{i}/{j}`;
+- scopes that endpoint to a 96-bit key over the operator's configured map, so
+  it cannot be abused to proxy arbitrary OSM tiles — only the 3×3 around the
+  operator's own address;
+- degrades to "no map box" (the printed address, phone, hours and the
+  user-initiated "Open in maps" link remain) when the server has no outbound
+  route or the place is unknown — no broken image, nothing to disclose.
+
+The result: a visitor on `/contact` makes requests to exactly one origin.
+The CSP no longer needs any third-party `frame-src` at all — `frame-src
+'self'` is now unconditional, because the panel has no iframes remaining.
+`chrome_check.mjs` and `contact_map_check.mjs` pin all of it, including the
+offline degradation paths.
 
 ## 8. The "customer reviews" were cartoons
 
@@ -284,10 +297,6 @@ without the new colour and map settings.
 
 ## Still open
 
-- **The map is an iframe, not a first-party render.** It costs a request to
-  OpenStreetMap or Google from the visitor's browser, which is a privacy
-  disclosure worth mentioning in the cookie notice for an EU operator. A
-  static-tile screenshot would avoid it and lose the pan-and-zoom.
 - **`announcement_text` is plain text by design.** Operators will eventually
   want a link in the banner; that needs the same sanitising path the CMS uses,
   not a raw HTML setting.

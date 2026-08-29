@@ -17,10 +17,18 @@
  *
  *   node tools/devserver/chrome_check.mjs --admin-password '…'
  */
+import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { Client } from './client.mjs';
+
+/* A real 1×1 transparent PNG — ContactMapService accepts anything with a
+   PNG magic under 2 MB, and the browser scales one pixel to a whole tile. */
+const PNG_1x1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'base64');
 
 const require = createRequire(import.meta.url);
 const argv = process.argv.slice(2);
@@ -345,6 +353,20 @@ for (const key of ['contact_map_enabled', 'contact_address', 'contact_map_query'
 const beforeContact = withDb((db) => db.prepare(
   `SELECT setting_key, setting_value FROM settings WHERE setting_key LIKE 'contact_%'`).all());
 
+// The map is first-party (ContactMapService): the server geocodes and fetches
+// OSM tiles, caching them for 30 days, and serves them from this origin. In
+// an offline environment we pre-cache the centre tile exactly as a month of
+// production traffic would have.
+const Z = 16, MAP_LAT = 6.4281, MAP_LON = 3.4219;
+const nTiles = 1 << Z;
+const tX = Math.floor((MAP_LON + 180) / 360 * nTiles) % nTiles;
+const mRad = (MAP_LAT * Math.PI) / 180;
+const tY = Math.floor((1 - Math.log(Math.tan(mRad) + 1 / Math.cos(mRad)) / Math.PI) / 2 * nTiles);
+const tileDir = path.join(ROOT, 'storage', 'cache', 'maps', 'tiles', String(Z), String(tX));
+fs.mkdirSync(tileDir, { recursive: true });
+fs.writeFileSync(path.join(tileDir, `${tY}.png`), PNG_1x1);
+const mapKey = createHash('sha1').update('6.4281,3.4219|16').digest('hex').slice(0, 24);
+
 await admin.postForm('/admin/settings/save', {
   __rendered_contact_map_enabled: '1', contact_map_enabled: '1',
   contact_address: '12 Adeola Odeku Street\nVictoria Island, Lagos',
@@ -353,40 +375,49 @@ await admin.postForm('/admin/settings/save', {
 }, { fromHtml: contactSettings.text });
 
 const contact = await new Client(BASE).get('/contact');
-check('the map is embedded', /<iframe[^>]+openstreetmap\.org\/export\/embed/.test(contact.text),
-  (/<iframe[^>]*src="([^"]{0,90})/.exec(contact.text) || [, 'no iframe'])[1]);
-check('the pin uses the coordinates the operator typed', /marker=6\.4281/.test(contact.text));
+check('the map renders nine first-party tiles and no iframe',
+  (contact.text.match(/<img class="ws-map-tile"/g) || []).length === 9 && !/<iframe[\s>]/i.test(contact.text));
+check('every tile is served from this origin',
+  [...contact.text.matchAll(/<img class="ws-map-tile" src="([^"]+)"/g)]
+    .every(([, src]) => src.startsWith(BASE)));
+check('a pin marks the operator\'s coordinates', /<span class="ws-map-pin"/.test(contact.text));
 check('the address, phone and hours are shown',
   /Victoria Island/.test(contact.text) && /800 111 2222/.test(contact.text) && /WAT/.test(contact.text));
-check('the content-security-policy allows the map frame and nothing else',
-  /frame-src 'self' https:\/\/www\.openstreetmap\.org/.test(
-    contact.headers.get('content-security-policy') || ''));
+check('"Open in maps" is the single user-initiated link',
+  /href="https:\/\/www\.openstreetmap\.org\/\?mlat=6\.4281[^"]*"/.test(contact.text));
+check('the content-security-policy still forbids third-party frames',
+  (contact.headers.get('content-security-policy') || '').match(/frame-src\s+([^;]+)/)?.[1].trim() === "'self'",
+  (contact.headers.get('content-security-policy') || '').match(/frame-src[^;]*/)?.[0]);
 
-// A typed address (not coordinates) must also work, keylessly.
+const tileRes = await fetch(`${BASE}/contact/map/tile/${mapKey}/1/1`);
+check('the tile endpoint serves the cached tile with a long cache',
+  tileRes.status === 200 && (tileRes.headers.get('content-type') || '').includes('image/png')
+    && /public,\s*max-age=2592000/.test(tileRes.headers.get('cache-control') || ''),
+  `status=${tileRes.status} cache=${tileRes.headers.get('cache-control')}`);
+
+// A typed address (not coordinates): the geocode happens server-side and is
+// cached. Offline with no geocode cache there is nothing to draw, so the map
+// box is omitted rather than broken — the details and the "Open in maps"
+// search link remain, and no third-party request is ever made from the
+// visitor's browser.
 const s2 = await admin.get('/admin/settings');
 await admin.postForm('/admin/settings/save',
   { __rendered_contact_map_enabled: '1', contact_map_enabled: '1',
     contact_map_query: 'Victoria Island, Lagos, Nigeria' }, { fromHtml: s2.text });
 const contact2 = await new Client(BASE).get('/contact');
-check('a typed address gets a keyless embed too',
-  /<iframe[^>]+maps\.google\.com[^"]*output=embed/.test(contact2.text));
+check('an unresolvable address degrades gracefully (no iframe, no broken grid)',
+  !/<iframe[\s>]/i.test(contact2.text) && !/ws-map-tile/.test(contact2.text)
+    && /Victoria Island, Lagos/.test(contact2.text));
 
-// Off again: no iframe, and the relaxed policy goes with it.
+// Off again: the map markup goes with it, and the strict frame policy stays.
 const s3 = await admin.get('/admin/settings');
 await admin.postForm('/admin/settings/save',
   { __rendered_contact_map_enabled: '1' }, { fromHtml: s3.text });
 const contact3 = await new Client(BASE).get('/contact');
-check('switching the map off removes the iframe', !/<iframe/.test(contact3.text));
-check('and restores the strict frame policy',
-  !/frame-src/.test(contact3.headers.get('content-security-policy') || ''));
-
-withDb((db) => {
-  db.prepare(`DELETE FROM settings WHERE setting_key LIKE 'contact_%'`).run();
-  for (const row of beforeContact) {
-    db.prepare(`INSERT INTO settings (setting_key, setting_value, category, is_public, updated_at)
-                VALUES (?, ?, 'contact', 0, datetime('now'))`).run(row.setting_key, row.setting_value);
-  }
-});
+check('switching the map off removes the map markup',
+  !/ws-map-tile|ws-map-pin/.test(contact3.text) && !/<iframe[\s>]/i.test(contact3.text));
+check('and the frame policy stays strict',
+  (contact3.headers.get('content-security-policy') || '').match(/frame-src\s+([^;]+)/)?.[1].trim() === "'self'");
 
 /* ==================== the signed-in shell keeps its chrome =============== */
 

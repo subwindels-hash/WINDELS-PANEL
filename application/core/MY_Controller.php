@@ -281,25 +281,6 @@ class MY_Controller extends CI_Controller {
      * Inline *styles* are still allowed. They are used widely for layout in the
      * admin views and cannot execute script, so the tradeoff is different.
      */
-    /**
-     * `frame-src` for the contact map, or nothing at all.
-     *
-     * Read from settings rather than hard-coded so the allowance disappears
-     * with the feature. Any failure (no database yet, table missing) returns
-     * the strict answer: no frames.
-     */
-    private function map_frame_src() {
-        try {
-            if (!function_exists('marvy_load_database') || !marvy_load_database()) return null;
-            $this->load->model('Setting_model');
-            $on = $this->Setting_model->get('contact_map_enabled', false);
-            if (!($on === true || $on === 1 || $on === '1' || $on === 'true')) return null;
-        } catch (Throwable $e) {
-            return null;
-        }
-        return "frame-src 'self' https://www.openstreetmap.org https://maps.google.com https://www.google.com";
-    }
-
     protected function send_security_headers() {
         $this->csp_nonce = base64_encode(random_bytes(16));
         // Expose it to views via the helper, which does not depend on knowing
@@ -322,12 +303,13 @@ class MY_Controller extends CI_Controller {
             "font-src 'self' https://fonts.gstatic.com",
             "img-src 'self' data: https:",
             "connect-src 'self'",
-            // Nothing may be framed by default. The contact page's map is the
-            // only embed this panel has, so the two providers it can use are
-            // allowed only when an operator has actually switched the map on —
-            // an install without a map keeps a policy that forbids every
-            // iframe outright.
-            $this->map_frame_src(),
+            // Nothing third-party may ever be framed. The contact page's map
+            // used to be the exception — an OpenStreetMap/Google iframe whose
+            // frame-src this policy used to allow when the operator switched
+            // the map on. The map is now first-party: OSM tiles fetched by
+            // the server and served from this origin (ContactMapService), so
+            // the panel has no embeds at all and the policy says so.
+            "frame-src 'self'",
         );
         $csp = array_values(array_filter($csp));
 
