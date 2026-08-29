@@ -62,7 +62,11 @@ class User_model extends MY_Model {
      * operator to a second screen for the one number they came to see.
      *
      * password_hash and mfa_secret are never selected. A screen cannot leak a
-     * column it does not read.
+     * column it does not read. pin_hash / pin_cipher travel because the
+     * directory shows each customer's security PIN (the operator asked for
+     * exactly that) — the ciphertext, never a plaintext column, and the view
+     * only renders a value after PinService::reveal_many() decrypts it for
+     * staff holding users.edit, with an audit row per page load.
      */
     public function admin_search(array $filters, $limit = 25, $offset = 0){
         $this->admin_filters($filters);
@@ -71,6 +75,8 @@ class User_model extends MY_Model {
                       users.first_name, users.last_name, users.phone, users.status,
                       users.role, users.price_group_id, users.email_verified_at,
                       users.mfa_enabled, users.last_login_at, users.created_at,
+                      users.user_code,
+                      users.pin_hash, users.pin_cipher,
                       wallets.balance, wallets.currency, wallets.total_spent,
                       wallets.total_deposited, price_groups.name AS price_group_name', false)
             ->join('wallets', 'wallets.user_id = users.id', 'left')
@@ -107,6 +113,9 @@ class User_model extends MY_Model {
                 ->or_like('users.email', $term)
                 ->or_like('users.public_id', $term)
                 ->or_like('users.phone', $term)
+                // A customer on the phone quotes the six-digit ID, not a
+                // ULID — the directory search has to find them by it.
+                ->or_like('users.user_code', $term)
                 ->group_end();
         }
     }

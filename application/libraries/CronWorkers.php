@@ -694,6 +694,29 @@ class CronWorkers {
         );
     }
 
+    /* ============================== inbox ================================ */
+
+    /**
+     * Pull new mail from the configured mailbox into the dashboard inboxes.
+     *
+     * The sending half of email is the queue above; this is the receiving
+     * half — mail addressed to the configured SMTP account lands on the
+     * admin dashboard, mail addressed to a registered customer lands in
+     * that customer's dashboard (InboxService routes and stores it). Every
+     * poll run is bounded by $limit and reports what it did, exactly like
+     * the other workers, so job_runs shows the inbox traffic like any other
+     * pipeline.
+     */
+    public function inbox_poll($limit = 50) {
+        $this->need(array(), array('InboxService'));
+        $res = $this->ci->inboxservice->poll_once($limit);
+        return array(
+            'processed' => (int) ($res['processed'] ?? 0),
+            'failed'    => (int) ($res['failed'] ?? 0),
+            'message'   => (string) ($res['message'] ?? 'nothing to do'),
+        );
+    }
+
     /* =========================== provider health =========================== */
 
     /** Ping every active provider and record its health. */

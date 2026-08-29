@@ -44,6 +44,11 @@ $qs = function (array $over = array()) use ($filters, $page) {
           <td>
             <div class="font-medium text-slate-900"><?=htmlspecialchars((string)$u->username)?></div>
             <div class="text-xs muted"><?=htmlspecialchars((string)$u->email)?></div>
+            <?php if (!empty($u->user_code)): ?>
+              <div class="text-xs" title="Six-digit account number — also a valid login identifier">
+                ID <span class="mono" style="letter-spacing:.15em"><?=htmlspecialchars((string)$u->user_code)?></span>
+              </div>
+            <?php endif; ?>
           </td>
           <td class="text-xs"><?=htmlspecialchars((string)$u->role)?></td>
           <td><span class="badge <?=$status_badge($u->status)?>"><?=htmlspecialchars((string)$u->status)?></span></td>

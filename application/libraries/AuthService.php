@@ -593,6 +593,33 @@ class AuthService {
         return array('ok' => true);
     }
 
+    /**
+     * Administrator-initiated MFA removal — no code required.
+     *
+     * This is the door for the customer who lost the device holding their
+     * authenticator: disable_mfa() asks for a code, and that is exactly what
+     * they cannot produce. The security boundary moves to the caller —
+     * the admin controller gates it on `users.edit`, makes it POST-only,
+     * audits it against the acting staff member and notifies the customer —
+     * so this method deliberately only does the account mutation.
+     */
+    public function force_disable_mfa($user) {
+        if (!$user) {
+            return array('ok' => false, 'error' => 'UNKNOWN_USER');
+        }
+        $method = $this->ci->db->where('user_id', $user->id)->where('type', 'TOTP')
+            ->get('mfa_methods')->row();
+        if ($method) {
+            $this->ci->db->where('id', $method->id)->delete('mfa_methods');
+        }
+        $this->ci->db->where('id', $user->id)->update('users', array(
+            'mfa_enabled'  => 0,
+            'mfa_secret'   => null,
+            'updated_at'   => gmdate('Y-m-d H:i:s'),
+        ));
+        return array('ok' => true);
+    }
+
     /* -------------------------------------------------------------- */
     /* API keys                                                       */
     /* -------------------------------------------------------------- */

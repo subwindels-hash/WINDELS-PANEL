@@ -94,6 +94,13 @@ class Env
         'VP_MAIL_CRYPTO'        => array('SMTP_CRYPTO'),
         'VP_MAIL_FROM_ADDRESS'  => array('MAIL_FROM_ADDRESS'),
         'VP_MAIL_FROM_NAME'     => array('MAIL_FROM_NAME'),
+
+        // Inbox (receiving). Only the PASS shorthand needs an entry — the
+        // generic rule already maps VP_INBOX_HOST / _PORT / _USER / _CRYPTO /
+        // _PROTOCOL / _PASSWORD to their INBOX_* names. VP_INBOX_PASS is
+        // spelled like VP_MAIL_PASS on purpose, so an operator who configures
+        // one account for send + receive writes the same "pass" twice.
+        'VP_INBOX_PASS'         => array('INBOX_PASSWORD'),
     );
 
     /**

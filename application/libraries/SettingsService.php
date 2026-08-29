@@ -106,6 +106,21 @@ class SettingsService {
                 'The address customers see. Use one on your own domain or providers will reject the mail.', ''),
             'mail_from_name' => array('text', 'email', 'From name',
                 'The sender name shown in the inbox. Defaults to the site name.', ''),
+            'inbox_enabled' => array('bool', 'email', 'Receive mail in the dashboard inboxes',
+                'On, a scheduled worker pulls new messages from the configured mailbox (VP_INBOX_* in '\
+                .'.env, defaulting to the SMTP account, port 995 over SSL) every two minutes. Mail '\
+                .'addressed to the admin address below lands on the Admin → Inbox screen; mail '\
+                .'addressed to a customer lands in their dashboard inbox. Off stops the polling; '\
+                .'messages already stored stay put.', true),
+            'inbox_admin_email' => array('text', 'email', 'Admin inbox address',
+                'The address the staff inbox is for. Leave empty to use the mailbox account itself '\
+                .'(VP_INBOX_USER / VP_MAIL_USER), then the From address above. Anything not addressed '\
+                .'to a registered customer lands here as the catch-all, so the mailbox never fills up '\
+                .'with mail the panel can no longer see.', ''),
+            'inbox_user_delivery' => array('bool', 'email', 'Deliver customer mail to their inbox',
+                'On, mail addressed to a registered customers email address lands in that customers '\
+                .'dashboard inbox instead of the admin catch-all. Turn off to keep every message on the '\
+                .'admin screen (useful while the mailbox is new).', true),
             'notification_emails_enabled' => array('bool', 'general', 'Send notification emails',
                 'Off keeps the in-app inbox working but stops outbound email for order, deposit and '
                 .'support events. Account email (verification, password reset) is never affected.', true),
@@ -299,7 +314,7 @@ class SettingsService {
             'announcement_enabled' => array('bool', 'branding', 'Show the announcement bar',
                 'The scrolling strip at the very top of every page. Off removes it everywhere.', true),
             'announcement_text' => array('longtext', 'branding', 'Announcement text',
-                'One message per line. Each line scrolls in turn. Add a link with '
+                'One message per line. Lines render in the static bar, stacked. Add a link with '
                 .'[Read more](/blog/outage) — a site path, an https:// address or a mailto: only; '
                 .'HTML is not accepted. Leave empty to show your published '
                 .'announcements from Content → Announcements instead.', ''),
@@ -309,8 +324,8 @@ class SettingsService {
                 'Text colour of the announcement bar. Keep the contrast high — this strip sits above '
                 .'everything else on the page.', '#ffffff'),
             'announcement_speed_seconds' => array('int', 'branding', 'Announcement scroll time (seconds)',
-                'How long one full pass of the message takes. Larger is slower; 0 stops the scroll and '
-                .'centres a single message.', 40),
+                'The announcement bar is now static and does not scroll, so this no longer moves the bar. '
+                .'It is kept so existing settings keep loading; leave it at any value.', 40),
 
             // ---- the contact page map (Admin → Settings → Contact) --------
             'contact_map_enabled' => array('bool', 'contact', 'Show a map on the contact page',

@@ -147,6 +147,29 @@ $healthy = (int)($health['HEALTHY'] ?? 0);
   </div>
 </div>
 
+<?php if ($has('settings.manage') && !empty($inbox_recent)): ?>
+<div class="card mt-4">
+  <div class="row justify-between mb-2">
+    <h3 class="text-sm font-semibold mb-0">Inbox
+      <?php if ($inbox_unread > 0): ?><span class="badge badge-info badge-dot"><?=$inbox_unread?> new</span><?php endif; ?>
+    </h3>
+    <a class="text-xs" href="<?=site_url('admin/inbox')?>">Open inbox →</a>
+  </div>
+  <ul class="stack" style="gap:.25rem">
+    <?php foreach ($inbox_recent as $m): ?>
+      <li class="row justify-between" style="gap:.75rem;padding:.5rem 0;border-bottom:1px solid var(--slate-100)">
+        <a class="text-sm min-w-0" href="<?=site_url('admin/inbox/'.$m->public_id)?>" style="text-decoration:none;color:inherit">
+          <span style="width:8px;height:8px;border-radius:50%;background:<?=$m->is_read?'var(--slate-300)':'var(--brand-500)?>"></span>
+          <?=htmlspecialchars((string)($m->from_name ?: ($m->from_email ?: 'Unknown sender')))?>
+          <span class="muted">— <?=htmlspecialchars((string)$m->subject)?></span>
+        </a>
+        <span class="muted text-xs whitespace-nowrap"><?=$m->received_at ? date('M j H:i', strtotime($m->received_at)) : '—'?></span>
+      </li>
+    <?php endforeach; ?>
+  </ul>
+</div>
+<?php endif; ?>
+
 <div class="card mt-4">
   <div class="row justify-between mb-2">
     <h3 class="text-sm font-semibold mb-0">Revenue by domain · 30 days</h3>

@@ -68,6 +68,7 @@ $nav_groups = $is_admin ? array(
         array('admin/blog',         'Blog',    'blog.manage',     'list'),
         array('admin/email-templates','Email templates','settings.manage','list'),
         array('admin/mail-queue',   'Mail queue', 'settings.manage', 'message-square'),
+        array('admin/inbox',        'Inbox',      'settings.manage', 'inbox'),
         array('admin/media',        'Media',      'media.manage',    'star'),
     )),
     array('Developer', array(
@@ -128,6 +129,7 @@ $nav_groups = $is_admin ? array(
     )),
     array('Support & account', array(
         array('dashboard/tickets',   'Support tickets',    null, 'message-square'),
+        array('dashboard/inbox',     'Inbox',        null, 'inbox'),
         array('dashboard/notifications','Notifications', null, 'bell'),
         array('dashboard/security',  'Security',   null, 'shield'),
         array('dashboard/profile',   'Profile / settings', null, 'user'),

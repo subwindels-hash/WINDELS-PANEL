@@ -19,12 +19,17 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *   - **Write a balance.** Adjustments go through UserAdminService →
  *     LedgerService, so a manual correction is double-entry and idempotent
  *     like every other movement.
- *   - **Read or reset credentials.** No password hash, MFA secret or API key
- *     is loaded here. The one exception is the transaction PIN: at the
- *     operator's request it can be *revealed* (`pin_reveal`, `users.edit`,
- *     POST-only, audited per reveal) from its encrypted copy. Explicitly
- *     permitted staff may open a short-lived, audited, read-only dashboard
- *     view; that session cannot submit changes.
+ *   - **Handle a password.** No password hash is ever loaded or displayed;
+ *     staff can only email the customer's own reset link. The transaction PIN
+ *     is the one credential staff can read back, because the operator asked
+ *     for exactly that: the directory and the customer file show it to staff
+ *     holding `users.edit` (from its encrypted copy), and every exposure is
+ *     audited. `mfa_disable` removes a customer's two-factor without a code —
+ *     the lost-device case — and `email_verify` vouches for an address that
+ *     never got its confirmation mail; both are `users.edit`, POST-only,
+ *     audited against the acting staff member and notified to the customer.
+ *     Explicitly permitted staff may open a short-lived, audited, read-only
+ *     dashboard view; that session cannot submit changes.
  *   - **Delete anyone.** Accounts carry ledger history; they are suspended or
  *     banned, never removed.
  */
@@ -50,7 +55,16 @@ class Users extends Admin_Controller {
         redirect('admin/customers');
     }
 
-    /** GET /admin/customers — the directory. */
+    /**
+     * GET /admin/customers — the directory.
+     *
+     * The directory shows each customer's security PIN next to their name at
+     * the operator's request. Only staff holding `users.edit` get the values
+     * (the same permission that gates the per-account reveal button); everyone
+     * else sees "set / not set" state without the numbers. Every page render
+     * that exposes values writes one audit row — the trail records how many
+     * pins were read by whom, never the pins.
+     */
     public function customers() {
         $filters = $this->filters();
         $filters['customers_only'] = !$this->input->get('role');
@@ -60,6 +74,23 @@ class Users extends Admin_Controller {
         $grid  = $this->useradminservice->grid($filters, $limit, ($page - 1) * $limit);
         $total = (int)$grid['total'];
 
+        $perms = $this->auth->permissions();
+        $can_reveal = in_array('*', $perms, true) || in_array('users.edit', $perms, true);
+        $pins = array();
+        if ($can_reveal) {
+            $this->load->library('PinService');
+            $pins = $this->pinservice->reveal_many($grid['rows']);
+            if ($pins) {
+                // resource_id caps at 64 chars, so the page is the resource;
+                // the after payload says how many PINs that page exposed.
+                $this->Audit_log_model->record(
+                    $this->current_user->id, 'user.pin_listed', 'users', 'directory',
+                    null, array('page' => $page, 'pins_revealed' => count($pins)),
+                    $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+                );
+            }
+        }
+
         $this->render('Customers', 'admin/users/index', array(
             'users'       => $grid['rows'],
             'counts'      => $this->User_model->status_counts(
@@ -67,6 +98,8 @@ class Users extends Admin_Controller {
             'filters'     => $filters,
             'groups'      => $this->db->order_by('name', 'ASC')->get('price_groups')->result(),
             'roles'       => UserAdminService::ROLES,
+            'pins'        => $pins,
+            'can_reveal_pins' => $can_reveal,
             'page'        => $page,
             'total'       => $total,
             'total_pages' => max(1, (int)ceil($total / $limit)),
@@ -96,10 +129,29 @@ class Users extends Admin_Controller {
         ));
     }
 
-    /** GET /admin/customers/:id — one customer's file. */
+    /**
+     * GET /admin/customers/:id — one customer's file.
+     *
+     * The credentials panel shows the security PIN inline for staff holding
+     * `users.edit` (the operator asked to see it on the file, not just behind
+     * a button). The audit row records that the file exposed a PIN — again,
+     * the value itself never touches the audit trail.
+     */
     public function detail($public_id) {
         $user = $this->useradminservice->profile($public_id);
         if (!$user) show_404();
+
+        $perms = $this->auth->permissions();
+        $can_reveal = in_array('*', $perms, true) || in_array('users.edit', $perms, true);
+        $pin_value = null;
+        if ($can_reveal && !empty($user->pin_hash) && !empty($user->pin_cipher)) {
+            $this->load->library('PinService');
+            $res = $this->pinservice->reveal($user);
+            if (!empty($res['ok'])) {
+                $pin_value = $res['pin'];
+                $this->audit('user.pin_shown', $user, null, array('scope' => 'detail'));
+            }
+        }
 
         // A customer's file shows recent activity, not their whole history —
         // a five-year-old account would otherwise load thousands of rows to
@@ -110,7 +162,6 @@ class Users extends Admin_Controller {
         // viewing operator can actually act on it (Admin → Payouts is gated
         // on earnings.view/payouts.review); everyone else's file loads
         // without it rather than paying for a permission-denied panel.
-        $perms = $this->auth->permissions();
         $can_view_earnings = in_array('*', $perms, true)
             || in_array('earnings.view', $perms, true)
             || in_array('payouts.review', $perms, true);
@@ -126,6 +177,7 @@ class Users extends Admin_Controller {
 
         $this->render($user->username, 'admin/users/detail', array(
             'user'         => $user,
+            'pin_value'    => $pin_value,
             'movements'    => $this->Wallet_transaction_model->for_wallet($user->wallet->id, $limit),
             'orders'       => $this->Order_model->admin_search(array('user_id' => $user->id), $limit),
             'services'     => $this->Service_transaction_model->admin_search(array('user_id' => $user->id), $limit),
@@ -333,6 +385,66 @@ class Users extends Admin_Controller {
     }
 
     /**
+     * POST /admin/customers/:id/mfa-disable — remove two-factor from an account.
+     *
+     * Support reaches for this when a customer has lost the device that holds
+     * their authenticator and cannot produce a code (the self-service disable
+     * demands one, which is exactly what they do not have). The operator acts
+     * without a code on purpose — that is the point of the door — so the
+     * permission gate is the same users.edit as every other credential
+     * control here, the action is POST-only, and both the audit row (naming
+     * the acting staff member) and the customer's notification say it
+     * happened. The customer can re-enrol from Account → Security at will.
+     */
+    public function mfa_disable($public_id) {
+        $user = $this->guard($public_id, 'users.edit');
+        if ((int)$user->mfa_enabled !== 1) {
+            return $this->fail($user, 'Two-factor is not enabled on this account.');
+        }
+
+        $this->load->library('AuthService');
+        $res = $this->authservice->force_disable_mfa($user);
+        if (empty($res['ok'])) return $this->fail($user, $res['error']);
+
+        $this->audit('user.mfa_disabled', $user, array('mfa_enabled' => 1), array('mfa_enabled' => 0));
+        $this->notify_customer($user, 'Two-factor removed from your account',
+            'An administrator disabled two-factor authentication on your account, usually because the '
+            .'authenticator device was unavailable. Sign in and re-enable it any time from '
+            .'Account → Security.');
+        $this->done($user, 'Two-factor authentication disabled for '.$user->username
+            .'. They can re-enable it from Account → Security.');
+    }
+
+    /**
+     * POST /admin/customers/:id/email-verify — mark an address verified.
+     *
+     * The customer may not have received the confirmation mail (spam folder,
+     * bounced, or they signed up before verification existed), and an
+     * unverified address blocks features behind email_verification_required.
+     * The operator vouches for the address on the phone or at the counter,
+     * same as create_admin does for staff it mints — so the button is
+     * POST-only, users.edit, audited, and the customer is told.
+     */
+    public function email_verify($public_id) {
+        $user = $this->guard($public_id, 'users.edit');
+        if (!empty($user->email_verified_at)) {
+            return $this->done($user, $user->email.' was already verified on '
+                .date('M j, Y', strtotime($user->email_verified_at.' UTC')).'.');
+        }
+
+        $now = gmdate('Y-m-d H:i:s');
+        $this->db->where('id', $user->id)->update('users', array(
+            'email_verified_at' => $now,
+            'updated_at'        => $now,
+        ));
+        $this->audit('user.email_verified', $user, array('email_verified_at' => null),
+            array('email_verified_at' => $now));
+        $this->notify_customer($user, 'Your email address is verified',
+            'An administrator marked '.$user->email.' as verified on your account.');
+        $this->done($user, $user->email.' is now marked as verified.');
+    }
+
+    /**
      * POST /admin/customers/:id/password-reset — send a reset link.
      *
      * Deliberately issues the customer's own reset flow rather than setting a
@@ -414,5 +526,43 @@ class Users extends Admin_Controller {
             $before, $after,
             $this->input->ip_address(), $this->input->user_agent(), $this->request_id
         );
+    }
+
+    /**
+     * Tell the affected customer what just changed to their account.
+     *
+     * In-app notification plus a queued email: the change is about their
+     * security, they may not be sitting at the dashboard, and the audit log
+     * alone is invisible to them. Failures are logged, never fatal — the
+     * account change has already happened and stands on its own.
+     */
+    private function notify_customer($user, $title, $body) {
+        try {
+            $this->db->insert('notifications', array(
+                'public_id'  => marvy_public_id(),
+                'user_id'    => $user->id,
+                'type'       => 'security.account',
+                'channel'    => 'IN_APP',
+                'title'      => $title,
+                'body'       => $body,
+                'created_at' => gmdate('Y-m-d H:i:s'),
+            ));
+        } catch (Throwable $e) {
+            log_message('error', 'admin user notice failed: '.$e->getMessage());
+        }
+        try {
+            $this->load->library('MailService');
+            $this->mailservice->enqueue_raw(
+                $user->email,
+                'Your MarvySocials account: '.$title,
+                '<p>Hi '.htmlspecialchars((string)$user->username).',</p><p>'.
+                    htmlspecialchars($body).'</p>',
+                'Hi '.$user->username.",\n\n".$body,
+                $user->username,
+                'security.account_notice'
+            );
+        } catch (Throwable $e) {
+            log_message('error', 'admin user notice email failed: '.$e->getMessage());
+        }
     }
 }

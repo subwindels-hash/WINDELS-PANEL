@@ -29,6 +29,7 @@ class CronRegistry {
         'marketplace_release', 'earnings_release', 'fundsvera_expire',
         'subscriptions', 'provider_health', 'provider_sync', 'refill_status',
         'payment_reconciliation', 'email_queue', 'analytics', 'pin_rotation',
+        'inbox_poll',
     );
 
     /** The one job whose worker is not a CronWorkers method. */

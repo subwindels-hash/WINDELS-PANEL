@@ -354,6 +354,27 @@ class PinService {
         return array('ok' => true, 'pin' => $pin);
     }
 
+    /**
+     * Reveal a page of customers' PINs at once (the admin directory).
+     *
+     * Same contract as reveal() — staff capability, never silent — but batched
+     * so one directory page does not open one envelope per row. Callers must
+     * gate on `users.edit` and audit that the page was viewed; the audit row
+     * records HOW MANY pins were read, never the pins themselves.
+     *
+     * @return array<int,string>  user_id => plaintext PIN (only revealable rows)
+     */
+    public function reveal_many(array $users) {
+        $out = array();
+        foreach ($users as $u) {
+            if (!$u || empty($u->pin_hash)) continue;
+            $pin = $this->ci->encryptionservice->open($u->pin_cipher ?? null);
+            if ($pin === null || $pin === '') continue; // hash-only legacy PIN
+            $out[(int)$u->id] = (string)$pin;
+        }
+        return $out;
+    }
+
     /** A random 4-digit PIN that also passes validate_format()'s weak-PIN checks. */
     private function generate_pin() {
         for ($attempt = 0; $attempt < 50; $attempt++) {

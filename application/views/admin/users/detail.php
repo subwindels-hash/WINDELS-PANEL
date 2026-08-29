@@ -158,6 +158,12 @@ $pin_revealable = $pin_set && !empty($user->pin_cipher);
   <div class="row mb-3" style="gap:1.25rem;flex-wrap:wrap">
     <div>
       <div class="muted text-xs">Security PIN</div>
+      <?php if (!empty($pin_value)): ?>
+        <div class="mono" style="font-size:1.5rem;letter-spacing:.3em;align-items:center"
+             title="Shown to staff holding users.edit — this viewing is recorded in the audit log">
+          <?=htmlspecialchars((string)$pin_value)?>
+        </div>
+      <?php endif; ?>
       <div class="text-sm">
         <?php if (!$pin_set): ?>
           Not set
@@ -201,10 +207,6 @@ $pin_revealable = $pin_set && !empty($user->pin_cipher);
     </form>
 
     <?php if ($pin_set): ?>
-    <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/pin-reveal')?>" style="margin:0" data-confirm="Reveal this customer's security PIN? The reveal is recorded in the audit log.">
-      <?=$csrf()?>
-      <button class="btn btn-secondary btn-sm" type="submit">Reveal security PIN</button>
-    </form>
     <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/pin-reset')?>" style="margin:0" data-confirm="Clear this customer's security PIN? They must set a new one before their next PIN-protected action.">
       <?=$csrf()?>
       <input type="hidden" name="reason" value="Reset from the customer file">
@@ -216,6 +218,22 @@ $pin_revealable = $pin_set && !empty($user->pin_cipher);
     <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/pin-unlock')?>" style="margin:0">
       <?=$csrf()?>
       <button class="btn btn-secondary btn-sm" type="submit">Lift PIN lockout</button>
+    </form>
+    <?php endif; ?>
+
+    <?php if ((int)$user->mfa_enabled === 1): ?>
+    <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/mfa-disable')?>" style="margin:0"
+          data-confirm="Disable two-factor authentication for this user? They will no longer be asked for an authenticator code, usually because the device is lost. The change is audited and they are notified.">
+      <?=$csrf()?>
+      <button class="btn btn-warning btn-sm" type="submit">Disable two-factor</button>
+    </form>
+    <?php endif; ?>
+
+    <?php if (empty($user->email_verified_at)): ?>
+    <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/email-verify')?>" style="margin:0"
+          data-confirm="Mark <?=htmlspecialchars((string)$user->email)?> as verified? Use this when the customer confirmed the address with you but the confirmation mail never landed.">
+      <?=$csrf()?>
+      <button class="btn btn-secondary btn-sm" type="submit">Verify email</button>
     </form>
     <?php endif; ?>
   </div>

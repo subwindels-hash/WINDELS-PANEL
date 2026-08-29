@@ -110,6 +110,10 @@ class Cron extends Cron_Controller {
         $this->execute('email_queue');
     }
 
+    public function inbox_poll() {
+        $this->execute('inbox_poll');
+    }
+
     public function provider_health() {
         $this->execute('provider_health');
     }

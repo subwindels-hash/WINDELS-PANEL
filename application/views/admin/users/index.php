@@ -72,6 +72,7 @@ $status_badge = function ($s) {
     <table class="table">
       <thead>
         <tr><th>Customer</th><th>Role</th><th>Status</th><th>Price group</th>
+            <th>Security PIN</th>
             <th class="text-right">Balance</th><th class="text-right">Lifetime spend</th>
             <th>Last seen</th><th></th></tr>
       </thead>
@@ -81,6 +82,11 @@ $status_badge = function ($s) {
           <td>
             <div class="font-medium text-slate-900"><?=htmlspecialchars((string)$u->username)?></div>
             <div class="text-xs muted"><?=htmlspecialchars((string)$u->email)?></div>
+            <?php if (!empty($u->user_code)): ?>
+              <div class="text-xs" title="Six-digit account number — also a valid login identifier">
+                ID <span class="mono" style="letter-spacing:.15em"><?=htmlspecialchars((string)$u->user_code)?></span>
+              </div>
+            <?php endif; ?>
             <?php if (empty($u->email_verified_at)): ?>
               <span class="badge badge-warning">unverified</span>
             <?php endif; ?>
@@ -91,6 +97,18 @@ $status_badge = function ($s) {
           <td class="text-xs"><?=htmlspecialchars((string)$u->role)?></td>
           <td><span class="badge <?=$status_badge($u->status)?>"><?=htmlspecialchars((string)$u->status)?></span></td>
           <td class="text-xs muted"><?=htmlspecialchars((string)($u->price_group_name ?? '—'))?></td>
+          <td>
+            <?php if (!empty($can_reveal_pins) && isset($pins[(int)$u->id])): ?>
+              <span class="mono" style="letter-spacing:.2em" title="Security PIN — reveal audited"><?=htmlspecialchars($pins[(int)$u->id])?></span>
+            <?php elseif (!empty($u->pin_hash)): ?>
+              <span class="badge badge-default">set</span>
+              <?php if (!empty($can_reveal_pins)): ?>
+                <span class="muted text-xs" title="Set before encrypted PIN history — readable only after the customer sets their next PIN">· legacy</span>
+              <?php endif; ?>
+            <?php else: ?>
+              <span class="muted text-xs">—</span>
+            <?php endif; ?>
+          </td>
           <td class="text-right mono"><?=marvy_money($u->balance ?? '0', $u->currency ?? null)?></td>
           <td class="text-right mono muted"><?=marvy_money($u->total_spent ?? '0', $u->currency ?? null)?></td>
           <td class="text-xs muted whitespace-nowrap">

@@ -179,11 +179,26 @@ $route['dashboard/referrals'] = 'dashboard/referrals/index';
 $route['dashboard/referrals/commissions'] = 'dashboard/referrals/commissions';
 $route['dashboard/notifications'] = 'dashboard/notifications/index';
 $route['dashboard/notifications/read'] = 'dashboard/notifications/mark_read';
+// The customer's inbox: mail addressed to their email address, pulled in by
+// the inbox_poll cron worker. Read-only actions plus delete, scoped to the
+// signed-in customer in the queries themselves.
+$route['dashboard/inbox'] = 'dashboard/inbox/index';
+$route['dashboard/inbox/read'] = 'dashboard/inbox/mark_read';
+$route['dashboard/inbox/(:any)/delete'] = 'dashboard/inbox/delete/$1';
+$route['dashboard/inbox/(:any)'] = 'dashboard/inbox/detail/$1';
 $route['dashboard/profile'] = 'dashboard/account/profile';
 $route['dashboard/security'] = 'dashboard/account/security';
 
 // Admin
 $route['admin'] = 'admin/dashboard/index';
+// The staff inbox: mail pulled from the configured mailbox (inbox_poll cron)
+// addressed to the admin account or not attributable to a customer. Gated on
+// settings.manage in the controller, like the mail queue.
+$route['admin/inbox'] = 'admin/inbox/index';
+$route['admin/inbox/read'] = 'admin/inbox/mark_read';
+$route['admin/inbox/(:any)/reply'] = 'admin/inbox/reply/$1';
+$route['admin/inbox/(:any)/delete'] = 'admin/inbox/delete/$1';
+$route['admin/inbox/(:any)'] = 'admin/inbox/detail/$1';
 $route['admin/orders/failed'] = 'admin/orders/failed';
 $route['admin/orders'] = 'admin/orders/index';
 // Action routes must precede the catch-all detail route below.
@@ -314,6 +329,11 @@ $route['admin/customers/(:any)/wallet-currency'] = 'admin/users/wallet_currency/
 $route['admin/customers/(:any)/pin-reveal'] = 'admin/users/pin_reveal/$1';
 $route['admin/customers/(:any)/pin-reset'] = 'admin/users/pin_reset/$1';
 $route['admin/customers/(:any)/pin-unlock'] = 'admin/users/pin_unlock/$1';
+// Account security maintenance by staff: remove a customer's two-factor
+// (lost-device case) and vouch for an address that never got its
+// confirmation mail. Both are POST-only, users.edit, audited.
+$route['admin/customers/(:any)/mfa-disable'] = 'admin/users/mfa_disable/$1';
+$route['admin/customers/(:any)/email-verify'] = 'admin/users/email_verify/$1';
 $route['admin/customers/(:any)/password-reset'] = 'admin/users/password_reset/$1';
 $route['admin/customers/(:any)/force-logout'] = 'admin/users/force_logout/$1';
 $route['admin/customers/(:any)/revoke-keys'] = 'admin/users/revoke_keys/$1';

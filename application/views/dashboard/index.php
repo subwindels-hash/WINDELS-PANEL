@@ -33,7 +33,96 @@ $name = htmlspecialchars($current_user->username ?? 'there');
     <div class="ws-stat-value"><?=number_format($t['completed'])?></div>
     <p class="hint"><?=marvy_money($t['spent'])?> spent</p>
   </a>
+  <div class="card ws-stat-card">
+    <div class="row justify-between" style="align-items:center">
+      <div class="card-meta">Your security PIN</div>
+      <?php if (!empty($pin_set)): ?>
+        <span class="badge badge-success badge-dot">Set</span>
+      <?php else: ?>
+        <span class="badge badge-default">Not set</span>
+      <?php endif; ?>
+    </div>
+    <?php if (!empty($pin_shown)): ?>
+      <div class="row" style="gap:.5rem;align-items:center;flex-wrap:wrap">
+        <span class="mono" id="ws-pin-value" style="font-size:1.5rem;letter-spacing:.35em"><?=htmlspecialchars((string)$pin_shown)?></span>
+        <button type="button" class="btn btn-ghost btn-sm" id="ws-pin-copy">Copy</button>
+      </div>
+      <p class="hint">Only visible in this signed-in session.</p>
+    <?php elseif (!empty($pin_set)): ?>
+      <p class="hint" style="margin-top:.25rem">Confirms wallet actions and security changes.</p>
+      <form method="post" action="<?=site_url('dashboard/security')?>" style="margin-top:.4rem">
+        <input type="hidden" name="action" value="show_pin">
+        <input type="hidden" name="return_to" value="dashboard">
+        <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>"
+               value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
+        <button class="btn btn-secondary btn-sm" type="submit">Show my PIN</button>
+      </form>
+    <?php else: ?>
+      <p class="hint" style="margin-top:.25rem">Set one from <a href="<?=site_url('dashboard/security')?>">Security</a> to confirm wallet actions.</p>
+    <?php endif; ?>
+  </div>
+  <?php if (!empty($current_user->user_code)): ?>
+  <div class="card ws-stat-card">
+    <div class="row justify-between" style="align-items:center">
+      <div class="card-meta">Your user ID</div>
+      <span class="badge badge-default">Account</span>
+    </div>
+    <div class="row" style="gap:.5rem;align-items:center;flex-wrap:wrap">
+      <span class="mono" id="ws-userid-value" style="font-size:1.5rem;letter-spacing:.3em"><?=htmlspecialchars((string)$current_user->user_code)?></span>
+      <button type="button" class="btn btn-ghost btn-sm" id="ws-userid-copy">Copy</button>
+    </div>
+    <p class="hint">Sign in with it, or quote it to support instead of your email.</p>
+  </div>
+  <?php endif; ?>
 </section>
+
+<?php if (!empty($current_user->user_code)): ?>
+<script>
+(function () {
+  var btn = document.getElementById('ws-userid-copy');
+  var val = document.getElementById('ws-userid-value');
+  if (!btn || !val) return;
+  btn.addEventListener('click', function () {
+    var text = val.textContent.trim();
+    function done() { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1500); }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(fallback);
+    } else { fallback(); }
+  });
+})();
+</script>
+<?php endif; ?>
+
+<?php if (!empty($pin_shown)): ?>
+<script>
+(function () {
+  var btn = document.getElementById('ws-pin-copy');
+  var val = document.getElementById('ws-pin-value');
+  if (!btn || !val) return;
+  btn.addEventListener('click', function () {
+    var text = val.textContent.trim();
+    function done() { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1500); }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function () { fallback(); });
+    } else { fallback(); }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+  });
+})();
+</script>
+<?php endif; ?>
 
 <section class="ws-action-grid">
   <a class="card card-hover ws-action-card" href="<?=site_url('dashboard/new-order')?>">
@@ -106,6 +195,29 @@ $name = htmlspecialchars($current_user->username ?? 'there');
     </ul>
   </div>
 </div>
+
+<?php if (isset($inbox_recent) && !empty($inbox_recent)): ?>
+<section class="card" style="max-width:52rem">
+  <div class="row justify-between">
+    <h2 class="card-title mb-0">Inbox
+      <?php if (!empty($inbox_unread)): ?><span class="badge badge-info badge-dot"><?=$inbox_unread?> new</span><?php endif; ?>
+    </h2>
+    <a class="btn btn-ghost btn-sm" href="<?=site_url('dashboard/inbox')?>">Open inbox</a>
+  </div>
+  <ul class="mt-3 stack" style="gap:.25rem">
+    <?php foreach ($inbox_recent as $m): ?>
+      <li class="row justify-between" style="gap:.75rem;padding:.5rem 0;border-bottom:1px solid var(--slate-100)">
+        <a class="text-sm min-w-0" href="<?=site_url('dashboard/inbox/'.$m->public_id)?>" style="text-decoration:none;color:inherit">
+          <span style="width:8px;height:8px;border-radius:50%;background:<?=$m->is_read?'var(--slate-300)':'var(--brand-500)?>"></span>
+          <?=htmlspecialchars((string)($m->from_name ?: ($m->from_email ?: 'Unknown sender')))?>
+          <span class="muted">— <?=htmlspecialchars((string)$m->subject)?></span>
+        </a>
+        <span class="muted text-xs whitespace-nowrap"><?=$m->received_at ? date('M j H:i', strtotime($m->received_at)) : '—'?></span>
+      </li>
+    <?php endforeach; ?>
+  </ul>
+</section>
+<?php endif; ?>
 
 <section class="ws-action-grid">
   <a class="card card-hover ws-action-card" href="<?=site_url('dashboard/services')?>"><h3 class="card-title">SMM services</h3><p class="muted mb-0">Catalogue of social media services.</p></a>

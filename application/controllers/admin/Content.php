@@ -234,11 +234,15 @@ class Content extends Admin_Controller {
         );
 
         if (empty($res['ok'])) {
-            // CI3's SMTP debugger dumps every header; the first line is the
-            // actual reason and the rest is noise in a flash message.
+            // MailService::smtp_failure_summary() already pulled the real
+            // failure out of CI3's debug buffer (the banner is a success, not
+            // the error) and paired it with a hint — append it, it is what
+            // turns "535" into a cPanel menu the operator can click through.
             $reason = trim(strtok((string)($res['error'] ?? 'unknown error'), "\r\n"));
-            $this->session->set_flashdata('error', 'Test failed via '.($res['transport'] ?? 'unknown')
-                .': '.mb_substr($reason, 0, 300));
+            $flash  = 'Test failed via '.($res['transport'] ?? 'unknown')
+                .': '.mb_substr($reason, 0, 300);
+            if (!empty($res['hint'])) $flash .= ' — '.(string)$res['hint'];
+            $this->session->set_flashdata('error', $flash);
         } else {
             $this->session->set_flashdata('success', 'Test message accepted by the '
                 .$res['transport'].' transport. Check '.$to.'.');
