@@ -24,6 +24,7 @@ MYPANEL=/var/www/marvysocials
 */10 * * * *  cd $MYPANEL && php index.php cron service_recovery   # refunds purchases no worker can settle (no provider reference / vendor stopped answering)
 */5  * * * *  cd $MYPANEL && php index.php cron payment_reconciliation  # asks each gateway about deposits whose callback never arrived
 */5  * * * *  cd $MYPANEL && php index.php cron email_queue
+*/2  * * * *  cd $MYPANEL && php index.php cron inbox_poll      # pull new mail from the SMTP account into the dashboard inboxes
 */10 * * * *  cd $MYPANEL && php index.php cron provider_health
 */10 * * * *  cd $MYPANEL && php index.php cron earnings_release   # releases held referral earnings once the holding period elapses
 */5  * * * *  cd $MYPANEL && php index.php cron fundsvera_expire   # expires unpaid FundsVera checkout sessions

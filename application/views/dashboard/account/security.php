@@ -62,6 +62,63 @@
       </div>
       <?php endif; ?>
 
+      <?php if (!empty($pin_set)): ?>
+      <div class="alert mt-3" style="background:var(--slate-50,#f8fafc);border:1px solid var(--slate-200,#e2e8f0)">
+        <?php if (!empty($pin_shown)): ?>
+          <div class="row" style="gap:.6rem;align-items:center;flex-wrap:wrap">
+            <span class="muted text-sm">Your security PIN</span>
+            <span class="mono" id="ws-pin-value" style="font-size:1.4rem;letter-spacing:.35em;align-items:center">
+              <?=htmlspecialchars((string)$pin_shown)?>
+            </span>
+            <button type="button" class="btn btn-ghost btn-sm" id="ws-pin-copy">Copy</button>
+          </div>
+          <p class="muted text-xs mb-0">
+            Visible only while you are signed in on this session — it is gone when you log out.
+          </p>
+        <?php else: ?>
+          <div class="row" style="gap:.6rem;align-items:center;flex-wrap:wrap">
+            <span class="muted text-sm">Forgot it? You can read your own PIN back.</span>
+            <form method="post" action="<?=site_url('dashboard/security')?>" style="margin:0">
+              <input type="hidden" name="action" value="show_pin">
+              <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>"
+                     value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
+              <button class="btn btn-secondary btn-sm" type="submit">Show my PIN</button>
+            </form>
+            <?php if (empty($pin_revealable)): ?>
+              <span class="muted text-xs">
+                This PIN predates encrypted PIN history and cannot be shown — change it below
+                and the new PIN will be readable.
+              </span>
+            <?php endif; ?>
+          </div>
+        <?php endif; ?>
+      </div>
+      <?php endif; ?>
+
+      <?php if (!empty($pin_shown)): ?>
+      <script>
+      (function () {
+        var btn = document.getElementById('ws-pin-copy');
+        var val = document.getElementById('ws-pin-value');
+        if (!btn || !val) return;
+        btn.addEventListener('click', function () {
+          var text = val.textContent.trim();
+          function done() { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1500); }
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(function () { fallback(); });
+          } else { fallback(); }
+          function fallback() {
+            var ta = document.createElement('textarea');
+            ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); done(); } catch (e) {}
+            document.body.removeChild(ta);
+          }
+        });
+      })();
+      </script>
+      <?php endif; ?>
+
       <?=form_open('dashboard/security', array('class'=>'mt-4 stack'))?>
         <input type="hidden" name="action" value="set_pin">
         <?php if (!empty($pin_set)): ?>
@@ -88,8 +145,8 @@
           </button>
         </div>
         <p class="muted text-xs">
-          Your PIN is stored as a one-way hash. Nobody — including our staff — can read it. If you forget it,
-          support can clear it so you can choose a new one.
+          Your PIN is stored encrypted, so you (and support, when you ask) can read it back. Use
+          "Show my PIN" above any time you need it; support can also clear it so you choose a new one.
         </p>
       <?=form_close()?>
     </div>

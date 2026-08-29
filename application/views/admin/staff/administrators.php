@@ -58,7 +58,14 @@ $can_mint_super = isset($current_user) && (string)$current_user->role === 'SUPER
     <tbody>
     <?php foreach ($staff as $u): ?>
       <tr>
-        <td><?=htmlspecialchars($u->username)?></td>
+        <td>
+          <?=htmlspecialchars($u->username)?>
+          <?php if (!empty($u->user_code)): ?>
+            <div class="text-xs" title="Six-digit account number — also a valid login identifier">
+              ID <span class="mono" style="letter-spacing:.15em"><?=htmlspecialchars((string)$u->user_code)?></span>
+            </div>
+          <?php endif; ?>
+        </td>
         <td><?=htmlspecialchars($u->email)?></td>
         <td><span class="badge badge-brand"><?=htmlspecialchars($u->role)?></span></td>
         <td><?=htmlspecialchars($u->status)?></td>

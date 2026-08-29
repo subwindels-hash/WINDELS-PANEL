@@ -136,6 +136,17 @@ $initial   = strtoupper(substr($current_user->username ?? 'U', 0, 1));
 
   <aside class="card" style="align-self:flex-start">
     <h3 class="card-title">Account</h3>
+    <?php if (!empty($current_user->user_code)): ?>
+    <div style="margin-bottom:1rem;padding:.8rem .95rem;background:var(--slate-50,#f8fafc);border:1px solid var(--slate-200,#e2e8f0);border-radius:.5rem">
+      <div class="muted text-xs">Your user ID</div>
+      <div class="row justify-between" style="gap:.5rem;align-items:center">
+        <span class="mono" id="ws-user-code" style="font-size:1.4rem;letter-spacing:.3em"><?=htmlspecialchars((string)$current_user->user_code)?></span>
+        <button type="button" class="btn btn-ghost btn-sm" id="ws-user-code-copy">Copy</button>
+      </div>
+      <p class="hint mb-0" style="margin-top:.4rem">You can sign in with this ID too, and quote it to support
+        instead of your email.</p>
+    </div>
+    <?php endif; ?>
     <dl class="stack" style="gap:.5rem">
       <div><dt class="muted text-xs">Role</dt><dd class="font-medium"><?=htmlspecialchars($current_user->role)?></dd></div>
       <div><dt class="muted text-xs">Referral code</dt><dd class="mono"><?=htmlspecialchars($current_user->referral_code)?></dd></div>
@@ -146,3 +157,27 @@ $initial   = strtoupper(substr($current_user->username ?? 'U', 0, 1));
     </dl>
   </aside>
 </div>
+
+<?php if (!empty($current_user->user_code)): ?>
+<script>
+(function () {
+  var btn = document.getElementById('ws-user-code-copy');
+  var val = document.getElementById('ws-user-code');
+  if (!btn || !val) return;
+  btn.addEventListener('click', function () {
+    var text = val.textContent.trim();
+    function done() { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1500); }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(fallback);
+    } else { fallback(); }
+  });
+})();
+</script>
+<?php endif; ?>

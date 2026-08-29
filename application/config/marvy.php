@@ -89,6 +89,10 @@ $config['cron'] = array(
     'earnings_release'       => '*/10 * * * *',
     'fundsvera_expire'       => '*/5 * * * *',
     'email_queue' => '*/5 * * * *',
+    // Pull new mail from the configured mailbox into the dashboard inboxes
+    // (admin + each customer's). Every 2 minutes so a customer replying to
+    // support waits at most two ticks to see it on their dashboard.
+    'inbox_poll' => '*/2 * * * *',
     'analytics' => '0 * * * *',
     'provider_sync' => '*/60 * * * *',
     'affiliate_payouts' => '*/10 * * * *',

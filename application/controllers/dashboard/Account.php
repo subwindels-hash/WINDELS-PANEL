@@ -208,9 +208,17 @@ class Account extends Auth_Controller {
         $this->render('Security', 'dashboard/account/security', 'dashboard/security', array(
             'keys'       => $keys,
             'mfa'        => $this->current_user->mfa_enabled,
-            // Whether a PIN exists, never the PIN itself — there is no code
-            // path that can recover it from the stored hash.
+            // Whether a PIN exists, never the PIN itself — the value only
+            // appears after the owner explicitly asks for it (action=show_pin)
+            // and only in their own session's flash.
             'pin_set'    => $this->pinservice->is_set($this->current_user),
+            // PINs set before the encrypted copy (users.pin_cipher) exists
+            // cannot be shown even to the owner; the flag drives the copy.
+            'pin_revealable' => $this->pinservice->is_set($this->current_user)
+                && !empty($this->current_user->pin_cipher),
+            // The just-revealed value, if the owner clicked "Show my PIN" on
+            // this session's last request. Cleared on the next read.
+            'pin_shown'  => $this->session->flashdata('pin_shown'),
             'pin_locked' => $this->pinservice->locked_for($this->current_user),
             // Automatic rotation: when the current PIN will next be replaced,
             // and whether the scheduled worker is even turned on.
@@ -220,8 +228,47 @@ class Account extends Auth_Controller {
         ));
     }
 
+    /**
+     * POST /dashboard/security (action=show_pin) — show the account's own
+     * security PIN.
+     *
+     * The owner already holds an authenticated session and the PIN travels in
+     * an AES-256-GCM envelope for exactly this question ("what is my PIN?"),
+     * so the reveal requires no second factor — the session IS the factor.
+     * The value lands in a one-read flash, the view renders it, and the audit
+     * log records that the owner viewed it.
+     */
+    private function pin_show() {
+        $this->load->library('PinService');
+        $res = $this->pinservice->reveal($this->current_user);
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error']);
+            return redirect('dashboard/security');
+        }
+
+        $this->Audit_log_model->record($this->current_user->id, 'security.pin_viewed_self',
+            'users', $this->current_user->public_id, null, array('self' => true),
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id);
+
+        // One-read flash: the next page load after the owner's own view is
+        // already clean, and no other user's session can ever hold it.
+        $this->session->set_flashdata('pin_shown', $res['pin']);
+        $this->session->set_flashdata('success',
+            'Your security PIN is shown below. It is visible only in your signed-in session.');
+
+        // The main dashboard also carries a PIN card; honour the return
+        // address it sends so the owner lands where they asked from.
+        if ($this->input->post('return_to', true) === 'dashboard') {
+            return redirect('dashboard');
+        }
+        return redirect('dashboard/security');
+    }
+
     private function security_update() {
         $action = $this->input->post('action', true);
+        if ($action === 'show_pin') {
+            return $this->pin_show();
+        }
         if ($action === 'change_password') {
             $this->form_validation->set_rules('current_password', 'Current password', 'required');
             $this->form_validation->set_rules('new_password', 'New password', 'required|min_length[8]');

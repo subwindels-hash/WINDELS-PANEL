@@ -274,37 +274,33 @@ button { font-family:inherit; cursor:pointer; }
   *, *::before, *::after { animation-duration:.001ms!important; transition-duration:.001ms!important; scroll-behavior:auto!important; }
 }
 
-/* Announcements — scrolling ticker, black text on white, every page */
+/* Announcements — static strip, black text on white, every page.
+   The marquee was removed at the operator's request ("stop moving"):
+   messages render in place, stacked when there is more than one, and
+   the strip's real height is published to :root (--ws-announce-h) by a
+   tiny inline script so the sticky offsets below it stay correct. */
 .ws-announce{
   background:#fff;color:#000;border-bottom:1px solid #e5e7eb;
-  height:var(--ws-announce-h);
+  min-height:var(--ws-announce-h);
   position:sticky;top:0;z-index:80;
   display:flex;align-items:center;overflow:hidden;
+  padding:.4rem 1rem;
 }
 .dark .ws-announce,.theme-dark .ws-announce{background:#fff;color:#000;border-bottom-color:#e5e7eb}
-.ws-announce-viewport{flex:1;height:100%;overflow:hidden;min-width:0}
-.ws-announce-track{
-  display:flex;align-items:center;width:max-content;height:100%;
-  animation:ws-marquee var(--ws-announce-duration,40s) linear infinite;
-}
-.ws-announce:hover .ws-announce-track,
-.ws-announce:focus-within .ws-announce-track{animation-play-state:paused}
+.ws-announce-viewport{flex:1;height:100%;overflow:hidden;min-width:0;
+  display:flex;align-items:center;justify-content:center}
+.ws-announce-stack{display:flex;flex-direction:column;align-items:center;gap:.15rem;min-width:0}
 /* `color:inherit`, not a fixed colour: the strip's text colour is an operator
    setting applied inline on .ws-announce, and a hard-coded #000 here meant a
-   white-on-navy banner rendered its scrolling messages in black — the setting
-   appeared to do nothing. The separator dot follows the same colour at reduced
-   opacity so it stays visible on any background. */
+   white-on-navy banner rendered its messages in black — the setting appeared
+   to do nothing. Each message keeps its own line; a single message centres
+   exactly as the old static mode did. */
 .ws-announce-item{
-  display:inline-flex;align-items:center;white-space:nowrap;
-  padding:0 2.75rem;font-size:.875rem;font-weight:500;color:inherit;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+  max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-size:.85rem;font-weight:500;color:inherit;line-height:1.4;
 }
-.ws-announce-item::after{
-  content:"•";margin-left:2.75rem;color:currentColor;opacity:.45;font-weight:700;
-}
-@keyframes ws-marquee{
-  from{transform:translateX(0)}
-  to{transform:translateX(-50%)}
-}
+.ws-announce-item::after{content:none}
 .ws-sticky-below-announce{top:var(--ws-announce-h)}
 @media (prefers-reduced-motion: reduce){
   .ws-announce-track{animation:none !important}

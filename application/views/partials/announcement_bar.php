@@ -87,39 +87,47 @@ if (!$items) {
 // they are safe in a style attribute; escaped again here on principle.
 $bg   = (string)$setting('announcement_bg_color', '#0b1b3a');
 $ink  = (string)$setting('announcement_text_color', '#ffffff');
-$speed = (int)$setting('announcement_speed_seconds', 40);
-if ($speed < 0)  $speed = 0;
-if ($speed > 600) $speed = 600;
 
-// 0 means "do not scroll": one centred message reads better than a marquee
-// when there is only one thing to say.
-$static = ($speed === 0 || count($items) === 1);
-$seconds = $speed > 0 ? max($speed, count($items) * 6) : 0;
+// The strip used to be a scrolling marquee; the operator asked for it to stop
+// moving, so it is now always static — every message renders, stacked, and
+// nothing scrolls across the top of the page. The speed setting is still read
+// (older installs and the settings screen write it) but deliberately does not
+// drive any motion: the bar has no animation, on any screen, for anyone.
+$speed   = (int)$setting('announcement_speed_seconds', 40);
+$seconds = 0;
+$static  = true;
 
 $style = 'background:'.htmlspecialchars($bg, ENT_QUOTES).';'
        . 'color:'.htmlspecialchars($ink, ENT_QUOTES).';'
-       . 'border-bottom-color:rgba(255,255,255,.16);'
-       . ($seconds ? '--ws-announce-duration:'.$seconds.'s;' : '');
+       . 'border-bottom-color:rgba(255,255,255,.16);';
 
 // AnnouncementText escapes every character it did not write itself, so the
 // output is placed unescaped on purpose — escaping it again would print the
 // anchor as text.
-$render_items = function () use ($items) {
-    foreach ($items as $text): ?>
-      <span class="ws-announce-item"><?=AnnouncementText::render($text)?></span>
-    <?php endforeach;
-};
 ?>
-<div class="ws-announce<?=$static ? ' is-static' : ''?>" role="region" aria-label="Announcements"
+<div class="ws-announce is-static" role="region" aria-label="Announcements"
      data-announce style="<?=$style?>">
   <div class="ws-announce-viewport">
-    <?php if ($static): ?>
-      <div class="ws-announce-static"><?=AnnouncementText::render($items[0])?></div>
-    <?php else: ?>
-      <div class="ws-announce-track">
-        <?php $render_items(); ?>
-        <?php $render_items(); ?>
-      </div>
-    <?php endif; ?>
+    <div class="ws-announce-stack">
+      <?php foreach ($items as $text): ?>
+        <span class="ws-announce-item"><?=AnnouncementText::render($text)?></span>
+      <?php endforeach; ?>
+    </div>
   </div>
 </div>
+<script>
+// The bar's height feeds the sticky offsets of everything below it
+// (--ws-announce-h). A single message is the classic 2.75rem, but stacked
+// messages make the strip taller — publish the real height to :root so the
+// sticky chrome stays exactly under it on every viewport.
+(function () {
+  var bar = document.querySelector('[data-announce]');
+  if (!bar) return;
+  function sync() {
+    document.documentElement.style.setProperty('--ws-announce-h', bar.offsetHeight + 'px');
+  }
+  sync();
+  window.addEventListener('resize', sync);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(sync);
+})();
+</script>

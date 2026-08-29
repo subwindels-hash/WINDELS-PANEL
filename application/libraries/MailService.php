@@ -116,13 +116,105 @@ class MailService {
             if (!empty($mail->body_text)) $this->ci->email->set_alt_message($mail->body_text);
 
             if (!$this->ci->email->send(false)) {
-                // print_debugger() is the only way CI3 surfaces the SMTP error.
-                return array('ok'=>false, 'error'=>strip_tags((string)$this->ci->email->print_debugger(array('headers'))));
+                // CI3's SMTP client records the whole conversation in its
+                // debug buffer — including the server's greeting banner, which
+                // is always the FIRST entry. Reporting "the first line" (the
+                // old behaviour) told the operator the mail server said hello,
+                // and nothing about why the send failed. Read the buffer back
+                // and surface the actual failure plus a cPanel-oriented hint.
+                $summary = $this->smtp_failure_summary();
+                return array(
+                    'ok'        => false,
+                    'transport' => $transport,
+                    'error'     => $summary['reason'],
+                    'hint'      => $summary['hint'],
+                );
             }
             return array('ok'=>true, 'transport'=>$transport);
         } catch (Exception $e) {
-            return array('ok'=>false, 'error'=>$e->getMessage());
+            return array('ok'=>false, 'transport'=>$transport, 'error'=>$e->getMessage());
         }
+    }
+
+    /**
+     * Turn CI3's debug buffer into an operator-actionable answer.
+     *
+     * Every SMTP exchange is appended to the buffer, so on failure it reads
+     * something like:
+     *
+     *   220-server315.web-hosting.com ESMTP Exim 4.99.5 #2 ...   ← banner
+     *   hello: 250-server315.web-hosting.com ...                 ← command echo
+     *   Failed to authenticate password. Response: 535 5.7.8 ... ← the failure
+     *
+     * The banner is NOT the error — it proves the connection opened. The real
+     * reason is the last entry that is not a 2xx/3xx exchange (banner, echoed
+     * command, or a DATA reply the server accepted).
+     *
+     * @return array{reason:string, hint:string}
+     */
+    public function smtp_failure_summary() {
+        $raw = (string) $this->ci->email->print_debugger(array());
+        $raw = str_ireplace(array('<br />', '<br>'), "\n", $raw);
+        $raw = strip_tags($raw);
+        $lines = preg_split('/\r\n|\r|\n/', $raw);
+
+        $reason = '';
+        foreach ((array) $lines as $line) {
+            $line = trim($line);
+            if ($line === '' || $this->is_smtp_exchange($line)) continue;
+            $reason = $line; // keep the last meaningful line
+        }
+        if ($reason === '') {
+            $reason = 'The SMTP server rejected the message without a usable explanation.';
+        }
+
+        // What the operator should actually check, mapped from the failure.
+        $lower = function_exists('mb_strtolower') ? mb_strtolower($reason) : strtolower($reason);
+        $hint  = '';
+        if (strpos($lower, 'authenticate password') !== false
+            || strpos($lower, 'smtp_auth_pw') !== false
+            || preg_match('/\b535\b/', $reason)) {
+            $hint = 'Authentication failed. Check VP_MAIL_USER / VP_MAIL_PASS in .env — on cPanel the username is the full '
+                .'email address, and if the account has two-step login on, generate an App Password '
+                .'(cPanel → Email Accounts → App Passwords) and use that instead of the account password.';
+        } elseif (strpos($lower, 'failed to send auth login') !== false
+            || strpos($lower, 'smtp_auth_un') !== false) {
+            $hint = 'The server rejected the AUTH LOGIN handshake. Try VP_MAIL_CRYPTO=ssl with VP_MAIL_PORT=465 '
+                .'(or tls with 587) in .env — some cPanel hosts only accept one of the two.';
+        } elseif (strpos($lower, 'starttls') !== false
+            || strpos($lower, 'unable to connect') !== false
+            || strpos($lower, 'error: #(') !== false
+            || strpos($lower, 'no_socket') !== false) {
+            $hint = 'Could not open a usable connection. Check VP_MAIL_HOST, VP_MAIL_PORT and VP_MAIL_CRYPTO in .env: '
+                .'cPanel usually offers 465/ssl or 587/tls on the mail host (the host in your cPanel banner, e.g. '
+                .'server315.web-hosting.com, or mail.yourdomain.com).';
+        } elseif (strpos($lower, 'hostname') !== false && strpos($lower, 'smtp') !== false) {
+            $hint = 'No SMTP host is configured — set VP_MAIL_HOST in .env (cPanel → Email Accounts shows the hostname).';
+        } elseif (preg_match('/\b[45]\d{2}\b/', $reason)
+            || strpos($lower, 'relay') !== false
+            || strpos($lower, 'sender') !== false
+            || strpos($lower, 'domain') !== false
+            || strpos($lower, 'not local') !== false) {
+            $hint = 'The server refused the message — usually because the From address (Settings → From address) is not '
+                .'on the same domain as the SMTP account. cPanel accounts can normally only relay mail for their own '
+                .'domain; use a From address on that domain or ask the host to allow the sender.';
+        }
+        return array('reason' => $reason, 'hint' => $hint);
+    }
+
+    /**
+     * True when a debug-buffer line is a successful exchange (server banner or
+     * a per-command echo such as "hello: 250-..."), not a failure. 4xx/5xx
+     * replies are failures even though they look like the same "220 ..." shape.
+     */
+    private function is_smtp_exchange($line) {
+        if (preg_match('/^(\d{3})[- ]/', $line, $m)) {
+            return (int) $m[1] < 400;
+        }
+        if (preg_match('/^[a-z_]+:\s+(\d{3})[- ]/i', $line, $m)) {
+            return (int) $m[1] < 400;
+        }
+        return false;
     }
 
     /**

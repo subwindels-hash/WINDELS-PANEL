@@ -19,6 +19,20 @@ class Dashboard extends Admin_Controller {
         // member opens, and the two windows are nested anyway.
         $revenue = $this->adminstats->revenue_windows(array(1, 30));
 
+        // Inbox widget: the staff inbox is a shared, read-only queue, so the
+        // landing shows its latest mail with an unread count. Gated in the
+        // view on settings.manage (the permission the Inbox screen itself
+        // needs) so a reports-only viewer gets no link to a forbidden screen.
+        $inbox_recent = array();
+        $inbox_unread = 0;
+        try {
+            $this->load->library('InboxService');
+            $inbox_recent = $this->inboxservice->for_admin('', 4, 0);
+            $inbox_unread = $this->inboxservice->count_admin('UNREAD');
+        } catch (Throwable $e) {
+            $inbox_recent = array();
+        }
+
         $this->load->view('layouts/app', array(
             'title'         => 'Admin',
             'nav_active'    => 'admin',
@@ -40,6 +54,8 @@ class Dashboard extends Admin_Controller {
             // happens to be logged in.
             'recent'        => $this->activityfeed->recent($permissions, 8),
             'domains'       => $this->adminstats->revenue_by_domain(30),
+            'inbox_recent'  => $inbox_recent,
+            'inbox_unread'  => $inbox_unread,
         ));
     }
 }

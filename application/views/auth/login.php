@@ -1,10 +1,10 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed'); ?>
 <h1 class="text-2xl font-bold tracking-tight">Log in to your account</h1>
-<p class="mt-1 text-sm text-slate-500">Enter the email or username you registered with.</p>
+<p class="mt-1 text-sm text-slate-500">Enter your email, username, or six-digit user ID (see Profile → Account).</p>
 
 <?=form_open('login', array('class' => 'mt-6 space-y-4', 'autocomplete' => 'on'))?>
   <div>
-    <label for="identifier" class="label">Email or username</label>
+    <label for="identifier" class="label">Email, username or user ID</label>
     <input id="identifier" name="identifier" type="text" class="input" autocomplete="username" required autofocus
            value="<?=htmlspecialchars(set_value('identifier'))?>">
     <?=form_error('identifier', '<p class="form-error">', '</p>')?>
