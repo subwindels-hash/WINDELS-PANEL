@@ -99,7 +99,26 @@ rather than touching `$_FILES` themselves.
 
 **Suite: 1378 tests, 16486 assertions, 0 failures, 1 skipped.**
 
-### End-to-end — `tools/devserver/support_check.mjs` (21 checks)
+### Auto-escalation — an unanswerable question becomes a ticket
+
+The recorded design of the assistant: it answers from the local knowledge
+base, and **anything outside that file becomes a ticket**. The engine's half
+is a flag — `SiteOperatorEngine::reply()` returns `unanswered: true` only
+when no intent, FAQ hit or page hit covered the question (a "closest page"
+pointer is a scored guess and counts as unanswered; a bare "take me
+somewhere" menu does not). The controller's half, in `Chat::message()`:
+
+- a **signed-in customer** whose question is unanswered gets a real support
+  ticket opened on the spot — the question verbatim as the body, a
+  `Site assistant:` subject, `source = 'assistant'` (migration 039) so staff
+  can filter the hand-offs — and the reply names the ticket and links to it;
+- a **repeat** unanswerable question within 24 hours joins the open ticket
+  instead of opening a duplicate (`TicketService::recent_assistant_ticket()`),
+  so a confused customer cannot open a pile of identical tickets;
+- a **visitor** has no account to hang a ticket on, so the visitor keeps the
+  contact-form hand-off; and an answerable question opens nothing.
+
+### End-to-end — `tools/devserver/support_check.mjs` (33 checks)
 
 Against the running panel: the assistant answers with real text; 18 questions
 are recorded under the `assistant` scope; **a customer can still sign in
@@ -109,11 +128,15 @@ itself still works. Then a real 1×1 PNG is uploaded with a new ticket over
 multipart HTTP and read back from the thread; a `.php` file declaring itself
 `image/png` is refused, stores nothing, and the customer is told why while
 their reply still posts; and a member of staff attaches a file the customer can
-then see.
+then see. Finally the escalation: a fresh customer's unanswerable question
+creates one `assistant`-tagged OPEN ticket whose body is the question, a
+second unanswerable question joins that same ticket, an answerable question
+opens nothing, and a visitor's unanswerable question opens nothing but is
+handed to the contact form.
 
 ```
 node tools/devserver/support_check.mjs --admin-password '…'
-21/21 checks passed
+33/33 checks passed
 ```
 
 Regressions all green: `smoke` 24/24, `journey` 38/38, `commerce_check` 24/24,
@@ -150,5 +173,8 @@ cache the answer from before it ran.
   sensitive than screenshots.
 - **The assistant is deliberately not an LLM.** It answers from a local
   knowledge map, so there is no prompt-injection surface and no third-party
-  data sharing — and equally, no ability to answer anything outside the map.
-  The cap and the wording are tuned for that.
+  data sharing. The flip side — it cannot answer anything outside the map —
+  is now a first-class path rather than a dead end: an unanswerable question
+  from a signed-in customer becomes a support ticket on the spot (see
+  Auto-escalation above), and the knowledge map itself grows by editing
+  `SiteOperatorKnowledge.php`, never by adding a model.

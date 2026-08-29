@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 38), roles,
+-- foreign keys, migration bookkeeping (version 39), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first-login accounts. No migration,
 -- seed or installer command has to run afterwards.
@@ -2293,6 +2293,15 @@ ON orders (created_at, status, charge, refunded_amount);
 CREATE INDEX idx_ptx_created
 ON provider_transactions (created_at, provider_id, status, latency_ms);
 
+-- ---------------------------------------------------------------------
+-- migration 039_ticket_source
+-- ---------------------------------------------------------------------
+
+ALTER TABLE tickets
+ADD COLUMN source VARCHAR(16) NOT NULL DEFAULT 'contact' COMMENT 'Who opened it: contact (the form) or assistant (auto-escalated unanswerable question)';
+
+CREATE INDEX idx_t_source_created ON tickets (source, created_at);
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -2307,7 +2316,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (38);
+INSERT INTO migrations (version) VALUES (39);
 
 -- ======================================================================
 -- CORE DATA

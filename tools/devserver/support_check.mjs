@@ -226,6 +226,91 @@ check('the staff file is stored against the staff message', !!staffAttachment,
 const customerView = await cust.get('/dashboard/tickets/' + ticket.public_id);
 check('and the customer can see it', staffAttachment && customerView.text.includes(staffAttachment.file_name));
 
+/* ================= 3 · unanswerable questions become tickets ============= */
+
+console.log('\n── A question outside the knowledge base becomes a ticket');
+
+// A fresh customer each run: the 24-hour dedupe window means a reused
+// account might already carry an open assistant ticket from a previous run.
+const uname = 'escalate' + String(Date.now()).slice(-8);
+const esc = new Client(BASE);
+const regPage = await esc.get('/register');
+const escReg = await esc.postForm('/register', {
+  username: uname, email: uname + '@example.test',
+  password: 'Escalate!1a', password_confirm: 'Escalate!1a',
+  confirm_password: 'Escalate!1a', terms: '1',
+}, { fromHtml: regPage.text });
+check('a fresh customer can register', /\/dashboard/.test(escReg.url), escReg.url);
+
+const escAssistant = await esc.get('/assistant');
+const escToken = meta(escAssistant.text, 'csrf-token');
+async function askEsc(message) {
+  const r = await esc.raw('/assistant/chat', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'X-CSRF-TOKEN': escToken },
+    body: JSON.stringify({ message }),
+  });
+  let b = {};
+  try { b = JSON.parse(r.text); } catch { /* reported below */ }
+  return { r, b };
+}
+
+const Q_OUT = 'What is the recommended vitamin D dosage for golden retrievers?';
+const escFirst = await askEsc(Q_OUT);
+check('the chat answers (and escalates) an unanswerable question',
+  escFirst.r.status === 200 && escFirst.b.success === true, escFirst.r.text.slice(0, 120));
+check('a ticket was created for the customer',
+  escFirst.b.data?.ticket && escFirst.b.data?.ticket_action === 'created',
+  JSON.stringify({ ticket: escFirst.b.data?.ticket, action: escFirst.b.data?.ticket_action }));
+check('the reply names the ticket and links to it',
+  typeof escFirst.b.data?.reply === 'string' && (escFirst.b.data?.reply || '').includes(escFirst.b.data?.ticket || '∅')
+    && (escFirst.b.data?.links || []).some((l) => l.href.endsWith('/dashboard/tickets/' + escFirst.b.data?.ticket)));
+
+const escUser = withDb((db) => db.prepare(`SELECT id FROM users WHERE username = ?`).get(uname));
+const escTicket = escUser ? withDb((db) => db.prepare(
+  `SELECT t.*, m.message FROM tickets t
+     JOIN ticket_messages m ON m.ticket_id = t.id AND m.is_staff = 0
+    WHERE t.user_id = ? ORDER BY t.id DESC LIMIT 1`).get(escUser.id)) : null;
+check('the ticket is stored, tagged as assistant-originated',
+  escTicket && escTicket.source === 'assistant' && escTicket.status === 'OPEN',
+  JSON.stringify(escTicket ? { source: escTicket.source, status: escTicket.status } : null));
+check('the customer\'s question is the ticket body',
+  !!escTicket && (escTicket.message || '').includes('golden retrievers')
+    && (escTicket.message || '').includes('site assistant'));
+check('the subject says where it came from',
+  !!escTicket && String(escTicket.subject).startsWith('Site assistant:'), escTicket?.subject);
+
+const repeat = await askEsc('How do I tune the carburetor on a 1998 Yamaha?');
+check('a second unanswerable question joins the open ticket, no duplicate',
+  repeat.b.data?.ticket === escFirst.b.data?.ticket && repeat.b.data?.ticket_action === 'existing',
+  JSON.stringify({ ticket: repeat.b.data?.ticket, action: repeat.b.data?.ticket_action }));
+const escCount = escUser ? withDb((db) => db.prepare(
+  `SELECT COUNT(*) n FROM tickets WHERE user_id = ?`).get(escUser.id).n) : 0;
+check('exactly one assistant ticket exists for the customer', escCount === 1, `count=${escCount}`);
+
+const answered = await askEsc('How does pricing work?');
+check('an answerable question does not open a ticket',
+  answered.b.data?.ticket === null && answered.b.data?.ticket_action === null,
+  JSON.stringify({ ticket: answered.b.data?.ticket, action: answered.b.data?.ticket_action }));
+
+// A visitor has no account to hang a ticket on: the contact form is the
+// hand-off, and nothing is created.
+withDb((db) => db.prepare(`DELETE FROM login_attempts WHERE scope = 'assistant'`).run());
+const anon2 = new Client(BASE);
+const anonPage = await anon2.get('/assistant');
+const anonAsk = await anon2.raw('/assistant/chat', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'X-CSRF-TOKEN': meta(anonPage.text, 'csrf-token') },
+  body: JSON.stringify({ message: Q_OUT }),
+});
+let anonBody = {};
+try { anonBody = JSON.parse(anonAsk.text); } catch { /* reported below */ }
+check('a visitor\'s unanswerable question opens no ticket',
+  anonAsk.status === 200 && anonBody.data?.ticket === null, anonAsk.text.slice(0, 120));
+check('and the visitor is handed to the contact form',
+  /contact form/.test(anonBody.data?.reply || '')
+    && (anonBody.data?.links || []).some((l) => l.href.endsWith('/contact')));
+
 /* -------------------------------- cleanup -------------------------------- */
 
 // The uploads are real files in the media library. Leaving them behind grows
@@ -248,6 +333,17 @@ withDb((db) => {
   db.prepare(`DELETE FROM ticket_messages WHERE ticket_id = ?`).run(ticket.id);
   db.prepare(`DELETE FROM tickets WHERE id = ?`).run(ticket.id);
   db.prepare(`DELETE FROM login_attempts`).run();
+});
+
+// The escalation fixture is a whole user (registration creates a wallet);
+// delete the chain explicitly so the next run starts from a clean slate.
+withDb((db) => {
+  if (!escUser) return;
+  db.prepare(`DELETE FROM ticket_messages WHERE ticket_id IN
+              (SELECT id FROM tickets WHERE user_id = ?)`).run(escUser.id);
+  db.prepare(`DELETE FROM tickets WHERE user_id = ?`).run(escUser.id);
+  db.prepare(`DELETE FROM wallets WHERE user_id = ?`).run(escUser.id);
+  db.prepare(`DELETE FROM users WHERE id = ?`).run(escUser.id);
 });
 
 const failed = results.filter((r) => !r.ok);
