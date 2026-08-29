@@ -255,8 +255,26 @@ $SYSTEM_CATALOGS = array('information_schema' => true, 'mysql' => true, 'perform
 foreach (array_keys($referenced_tables) as $t) {
     if (isset($SYSTEM_CATALOGS[$t])) continue;
     if (!isset($TABLES[$t])) {
-        err('table', implode(', ', array_keys($referenced_tables[$t])),
-            "code references table '{$t}' — not present in database/marvysocials.sql");
+        // A table the code probes with table_exists() before use is OPTIONAL
+        // by design (e.g. 'payouts' in AdminStats — a legacy table the stats
+        // page reads when an older schema still has it). Every referencing
+        // file carrying the guard means absence is handled: report as info,
+        // not as a deployment failure.
+        $unguarded = array();
+        foreach (array_keys($referenced_tables[$t]) as $rel) {
+            $base = preg_replace('/ \(raw SQL\)$/', '', $rel);
+            $code = @file_get_contents($ROOT . DIRECTORY_SEPARATOR . $base);
+            if ($code === false || !preg_match('/table_exists\(\s*[\'"]' . preg_quote($t, '/') . '[\'"]\s*\)/i', $code)) {
+                $unguarded[] = $rel;
+            }
+        }
+        if ($unguarded === array()) {
+            info('table', implode(', ', array_keys($referenced_tables[$t])),
+                "optional table '{$t}' (guarded by table_exists in every referencing file) is not in the schema");
+        } else {
+            err('table', implode(', ', $unguarded),
+                "code references table '{$t}' — not present in database/marvysocials.sql");
+        }
     }
 }
 

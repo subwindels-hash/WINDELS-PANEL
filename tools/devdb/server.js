@@ -493,6 +493,17 @@ function execute(sqlText, session) {
       continue;
     }
 
+    // MySQL's per-session flag; devdb keeps ONE shared SQLite handle, so the
+    // last value set wins for everyone (fine for a dev tool where the app is
+    // the only client). Without this, `migrate fresh` cannot drop tables:
+    // the DROPs would run with foreign key enforcement still live.
+    const fk = /^\s*SET\s+FOREIGN_KEY_CHECKS\s*=\s*(0|1)\s*;?\s*$/i.exec(chunk);
+    if (fk) {
+      db.exec(`PRAGMA foreign_keys = ${fk[1] === '1' ? 'ON' : 'OFF'}`);
+      results.push({ type: 'ok', affectedRows: 0, insertId: 0 });
+      continue;
+    }
+
     const statements = translate(chunk, registry);
     let last = { type: 'ok', affectedRows: 0, insertId: 0 };
 

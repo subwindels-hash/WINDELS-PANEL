@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 37), roles,
+-- foreign keys, migration bookkeeping (version 38), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first-login accounts. No migration,
 -- seed or installer command has to run afterwards.
@@ -2280,6 +2280,19 @@ CREATE TABLE IF NOT EXISTS inbox_messages (
   CONSTRAINT fk_inbox_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ---------------------------------------------------------------------
+-- migration 038_time_range_indexes
+-- ---------------------------------------------------------------------
+
+CREATE INDEX idx_stx_created
+ON service_transactions (created_at, status, amount, refunded_amount);
+
+CREATE INDEX idx_ord_created
+ON orders (created_at, status, charge, refunded_amount);
+
+CREATE INDEX idx_ptx_created
+ON provider_transactions (created_at, provider_id, status, latency_ms);
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -2294,7 +2307,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (37);
+INSERT INTO migrations (version) VALUES (38);
 
 -- ======================================================================
 -- CORE DATA

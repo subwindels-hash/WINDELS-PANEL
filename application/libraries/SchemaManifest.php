@@ -108,36 +108,14 @@ class SchemaManifest {
                     }
 
                     // column definition
-                    if (preg_match('/^`?([a-zA-Z0-9_]+)`?\s+([a-zA-Z]+(?:\s*\([^)]*\))?(?:\s+unsigned)?)(.*)$/i', $line, $c)) {
-                        $col  = $c[1];
-                        $type = strtolower(preg_replace('/\s+/', ' ', trim($c[3 - 1])));
-                        // fix: type may include size, e.g. varchar(64) / decimal(20,8) / enum(...)
-                        if (preg_match('/^([a-zA-Z]+\s*(?:\([^)]*\))?)(.*)$/is', trim(substr($line, strlen($c[1]))), $tt)) {
-                            $type = strtolower(preg_replace('/\s+/', ' ', trim($tt[1])));
-                            $rest = strtoupper(trim($tt[2]));
-                        } else {
-                            $rest = strtoupper($c[3]);
-                        }
-                        if (strpos($rest, 'UNSIGNED') !== false && strpos($type, 'unsigned') === false
-                            && preg_match('/^(tinyint|smallint|mediumint|int|bigint)/', $type)) {
-                            $type .= ' unsigned';
-                        }
-                        $coldef = array(
-                            'type'     => $type,
-                            'nullable' => !(strpos($rest, 'NOT NULL') !== false),
-                            'default'  => null,
-                            'has_default' => false,
-                        );
-                        if (preg_match('/DEFAULT\s+(\'[^\']*\'|"[^"]*"|CURRENT_TIMESTAMP|NULL|[-0-9.b()+e]+|b\'[01]\')/i', $rest, $d)) {
-                            $coldef['default'] = $d[1];
-                            $coldef['has_default'] = true;
-                        }
-                        if (strpos($rest, 'AUTO_INCREMENT') !== false) $coldef['auto'] = true;
-                        if (strpos($rest, 'PRIMARY KEY') !== false) $table['pk'] = array($col);
+                    $parsed = self::parse_column_line($line);
+                    if ($parsed !== null) {
+                        $col = $parsed['name'];
+                        $table['columns'][$col] = $parsed['def'];
+                        if (preg_match('/\bPRIMARY KEY\b/', strtoupper($line))) $table['pk'] = array($col);
                         // MySQL names an inline UNIQUE after the column itself
                         // (`name VARCHAR(64) NOT NULL UNIQUE` → index `name`).
-                        if (preg_match('/\bUNIQUE\b/', $rest)) $table['unique'][$col] = array($col);
-                        $table['columns'][$col] = $coldef;
+                        if (preg_match('/\bUNIQUE\b/', strtoupper($line))) $table['unique'][$col] = array($col);
                     }
                 }
                 $tables[$name] = $table;
@@ -145,20 +123,73 @@ class SchemaManifest {
         }
 
         /* ---- ALTER TABLE ... ADD CONSTRAINT (foreign keys) ---------------- */
-        if (preg_match_all('/ALTER TABLE\s+`?(\w+)`?\s+ADD CONSTRAINT\s+`?(\w+)`?\s+FOREIGN KEY\s*\(([^)]+)\)\s*REFERENCES\s+`?(\w+)`?\s*\(([^)]+)\)([^;]*);/si',
-            $sql, $m, PREG_SET_ORDER)) {
-            foreach ($m as $fk) {
-                if (!isset($tables[$fk[1]])) continue;
-                $clause = strtoupper($fk[6]);
-                $tables[$fk[1]]['fks'][$fk[2]] = array(
-                    'cols'      => self::col_list($fk[3]),
-                    'ref_table' => $fk[4],
-                    'ref_cols'  => self::col_list($fk[5]),
+        // Runs over the quote-aware statement scanner (a plain /.+?;/ regex
+        // would cut inside a COMMENT string containing a semicolon).
+        foreach (self::alter_statements($sql) as $a) {
+            list($name, $body) = $a;
+            if (!isset($tables[$name])) continue;
+            if (preg_match('/ADD CONSTRAINT\s+`?(\w+)`?\s+FOREIGN KEY\s*\(([^)]+)\)\s*REFERENCES\s+`?(\w+)`?\s*\(([^)]+)\)(.*)$/is', $body, $fk)) {
+                $clause = strtoupper($fk[5]);
+                $tables[$name]['fks'][$fk[1]] = array(
+                    'cols'      => self::col_list($fk[2]),
+                    'ref_table' => $fk[3],
+                    'ref_cols'  => self::col_list($fk[4]),
                     'on_delete' => preg_match('/ON DELETE\s+(RESTRICT|CASCADE|SET NULL|NO ACTION|SET DEFAULT)/i', $clause, $r) ? strtoupper($r[1]) : null,
                     'on_update' => preg_match('/ON UPDATE\s+(RESTRICT|CASCADE|SET NULL|NO ACTION|SET DEFAULT)/i', $clause, $r) ? strtoupper($r[1]) : null,
                 );
             }
         }
+
+        /* ---- ALTER TABLE ... ADD / MODIFY / DROP / CHANGE COLUMN ---------- */
+        // The generated schema applies every later change as ALTER TABLE
+        // statements (25+ of them across the migrations). Without folding
+        // these in, the manifest only knew the original CREATE TABLE shape
+        // and every verifier downstream (verify_database.php,
+        // deploy-verify.php) reported each added column as missing — 19
+        // phantom failures against a perfectly healthy schema.
+        foreach (self::alter_statements($sql) as $a) {
+            $name = $a[0];
+            if (!isset($tables[$name])) continue;
+
+                foreach (self::alter_clauses($a[1]) as $clause) {
+                    $clause = trim($clause);
+                    // Table-level clauses (ADD CONSTRAINT is the one that
+                    // matters: a naive "ADD <word>" match would parse it as a
+                    // column literally named CONSTRAINT).
+                    if ($clause === '' || preg_match('/^(?:ADD\s+)?(?:CONSTRAINT|INDEX|KEY|UNIQUE|PRIMARY)\b/i', $clause)) continue;
+
+                    if (preg_match('/^DROP\s+COLUMN\s+`?([a-zA-Z0-9_]+)`?$/i', $clause, $c)) {
+                        unset($tables[$name]['columns'][$c[1]]);
+                        continue;
+                    }
+                    if (preg_match('/^(?:CHANGE|CHANGE\s+COLUMN)\s+`?([a-zA-Z0-9_]+)`?\s+`?([a-zA-Z0-9_]+)`?\s+.+$/is', $clause, $c)) {
+                        $old = $c[1];
+                        $line = preg_replace('/^CHANGE\s+COLUMN\s+`?[a-zA-Z0-9_]+`?\s+/i', 'CHANGE ', $clause);
+                        $line = preg_replace('/^CHANGE\s+`?[a-zA-Z0-9_]+`?\s+/i', '', $line);
+                        if (isset($tables[$name]['columns'][$old])) {
+                            $tables[$name]['columns'][$c[2]] = $tables[$name]['columns'][$old];
+                            unset($tables[$name]['columns'][$old]);
+                        }
+                        $parsed = self::parse_column_line($line);
+                        if ($parsed !== null) $tables[$name]['columns'][$parsed['name']] = $parsed['def'];
+                        continue;
+                    }
+                    if (preg_match('/^(?:ADD|ADD\s+COLUMN|MODIFY|MODIFY\s+COLUMN)\s+`?([a-zA-Z0-9_]+)`?\s+.+$/is', $clause, $c)) {
+                        $line = preg_replace('/^(ADD|MODIFY)(\s+COLUMN)?\s+/i', '', $clause);
+                        $parsed = self::parse_column_line($line);
+                        if ($parsed === null) continue;
+                        if (stripos($clause, 'MODIFY') !== false && isset($tables[$name]['columns'][$parsed['name']])) {
+                            // Type/nullable/default change; keep AUTO_INCREMENT
+                            // and PK flags from the original definition.
+                            $old = $tables[$name]['columns'][$parsed['name']];
+                            foreach (array('auto') as $keep) {
+                                if (isset($old[$keep])) $parsed['def'][$keep] = $old[$keep];
+                            }
+                        }
+                        $tables[$name]['columns'][$parsed['name']] = $parsed['def'];
+                    }
+                }
+            }
 
         /* ---- seed tables ---------------------------------------------------- */
         $seeds = array();
@@ -167,6 +198,141 @@ class SchemaManifest {
         }
 
         return array('tables' => $tables, 'seeds' => $seeds, 'error' => null);
+    }
+
+    /**
+     * Extract every ALTER TABLE statement from a full SQL dump as
+     * array(array($table_name, $statement_body), ...).
+     *
+     * A statement ends at the next semicolon, but COMMENT strings in the
+     * generated schema regularly contain semicolons ("...for this customer
+     * on this coupon; unique with (coupon_id,user_id)") — a regex like
+     * /.+?;/ cut the statement inside that quote and silently dropped the
+     * ADD COLUMN clauses after it. This scanner walks the text tracking
+     * quote state (', ", ` with backslash and '' escapes) and parenthesis
+     * depth, and only terminates on a semicolon at depth 0 outside quotes.
+     *
+     * @return array
+     */
+    private static function alter_statements($sql) {
+        $out = array();
+        $len = strlen($sql);
+        $pos = 0;
+        while (($start = stripos($sql, 'ALTER TABLE', $pos)) !== false) {
+            $depth = 0;
+            $quote = null;
+            $end = null;
+            for ($i = $start; $i < $len; $i++) {
+                $ch = $sql[$i];
+                if ($quote !== null) {
+                    if ($ch === '\\' && $quote !== '`' && $i + 1 < $len) { $i++; }
+                    elseif ($ch === $quote) {
+                        if ($quote === "'" && $i + 1 < $len && $sql[$i + 1] === "'") { $i++; }
+                        else $quote = null;
+                    }
+                    continue;
+                }
+                if ($ch === "'" || $ch === '"' || $ch === '`') { $quote = $ch; continue; }
+                if ($ch === '(') { $depth++; continue; }
+                if ($ch === ')') { $depth = max(0, $depth - 1); continue; }
+                if ($ch === ';' && $depth === 0) { $end = $i; break; }
+            }
+            if ($end === null) break;
+            if (preg_match('/^ALTER TABLE\s+`?(\w+)`?\s*(.+);$/is', substr($sql, $start, $end - $start + 1), $a)) {
+                $out[] = array($a[1], $a[2]);
+            }
+            $pos = $end + 1;
+        }
+        return $out;
+    }
+
+    /**
+     * Split an ALTER TABLE body into its top-level comma-separated clauses.
+     *
+     * A clause like
+     *   ADD COLUMN rate decimal(20,8) NULL DEFAULT NULL COMMENT 'rate, updated',
+     * carries commas inside DECIMAL(...) and inside the COMMENT string, so a
+     * naive explode(',') corrupts both. This scanner tracks parenthesis
+     * depth and single/double-quote state (with backslash and '' escapes)
+     * and only breaks on commas at depth 0 outside quotes.
+     *
+     * @return array
+     */
+    private static function alter_clauses($body) {
+        $out = array();
+        $cur = '';
+        $depth = 0;
+        $quote = null; // active quote char, or null
+        $len = strlen($body);
+        for ($i = 0; $i < $len; $i++) {
+            $ch = $body[$i];
+            if ($quote !== null) {
+                $cur .= $ch;
+                if ($ch === '\\' && $quote !== '`' && $i + 1 < $len) {
+                    $cur .= $body[++$i];
+                } elseif ($ch === $quote) {
+                    if ($quote === "'" && $i + 1 < $len && $body[$i + 1] === "'") {
+                        $cur .= $body[++$i]; // '' escape inside single quotes
+                    } else {
+                        $quote = null;
+                    }
+                }
+                continue;
+            }
+            if ($ch === "'" || $ch === '"' || $ch === '`') {
+                $quote = $ch;
+                $cur .= $ch;
+                continue;
+            }
+            if ($ch === '(') $depth++;
+            elseif ($ch === ')') $depth = max(0, $depth - 1);
+            elseif ($ch === ',' && $depth === 0) {
+                $out[] = $cur;
+                $cur = '';
+                continue;
+            }
+            $cur .= $ch;
+        }
+        $out[] = $cur;
+        return $out;
+    }
+
+    /**
+     * Parse one column definition line ("name TYPE [NOT] NULL [DEFAULT x] ...")
+     * into name + coldef. Returns null when the line is not a column
+     * definition (table-level keys and constraints are handled by the caller).
+     *
+     * @return array|null array('name'=>string,'def'=>array)
+     */
+    private static function parse_column_line($line) {
+        $line = trim(rtrim(trim($line), ','));
+        if (!preg_match('/^`?([a-zA-Z0-9_]+)`?\s+([a-zA-Z]+(?:\s*\([^)]*\))?(?:\s+unsigned)?)(.*)$/is', $line, $c)) {
+            return null;
+        }
+        $col  = $c[1];
+        $type = strtolower(preg_replace('/\s+/', ' ', trim($c[2])));
+        if (preg_match('/^([a-zA-Z]+\s*(?:\([^)]*\))?)(.*)$/is', trim(substr($line, strlen($col))), $tt)) {
+            $type = strtolower(preg_replace('/\s+/', ' ', trim($tt[1])));
+            $rest = strtoupper(trim($tt[2]));
+        } else {
+            $rest = strtoupper($c[3]);
+        }
+        if (strpos($rest, 'UNSIGNED') !== false && strpos($type, 'unsigned') === false
+            && preg_match('/^(tinyint|smallint|mediumint|int|bigint)/', $type)) {
+            $type .= ' unsigned';
+        }
+        $coldef = array(
+            'type'     => $type,
+            'nullable' => strpos($rest, 'NOT NULL') === false,
+            'default'  => null,
+            'has_default' => false,
+        );
+        if (preg_match("/DEFAULT\s+('[^']*'|\"[^\"]*\"|CURRENT_TIMESTAMP|NULL|[-0-9.b()+e]+|b'[01]')/i", $rest, $d)) {
+            $coldef['default'] = $d[1];
+            $coldef['has_default'] = true;
+        }
+        if (strpos($rest, 'AUTO_INCREMENT') !== false) $coldef['auto'] = true;
+        return array('name' => $col, 'def' => $coldef);
     }
 
     /** "a, b, c" (optionally backticked) → array('a','b','c'); strips length hints like (10). */
