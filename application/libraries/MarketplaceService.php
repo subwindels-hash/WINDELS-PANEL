@@ -519,6 +519,24 @@ class MarketplaceService {
         if (!in_array($order->status, array('PAID', 'DELIVERED', 'DISPUTED', 'PARTIALLY_REFUNDED'), true)) {
             return $this->err('This order cannot be refunded', 'BAD_STATE');
         }
+        // A physical parcel that is not yet delivered cannot be part-refunded.
+        // A partial refund is compensation for goods the buyer keeps; in
+        // transit there are no goods to keep — and allowing it would leave
+        // the order uncloseable: only fully paid orders can be recorded
+        // delivered, so a part-refunded shipment could never be marked so,
+        // and the escrow remainder would ride the abandonment sweep back to
+        // the buyer who is about to receive the parcel. Refund in full to
+        // cancel the shipment, or part-refund after delivery as usual. The
+        // same applies to a RETURNED parcel, which is with fulfilment staff,
+        // not the buyer.
+        if ($this->requires_shipment($order)) {
+            $shipment = $this->ci->Shop_order_shipment_model->for_order($order->id);
+            if (!$shipment || strtoupper((string)$shipment->status) !== 'DELIVERED') {
+                return $this->err(
+                    'This physical order is still with the carrier — refund it in full to cancel the shipment, or wait for delivery',
+                    'SHIPMENT_IN_TRANSIT');
+            }
+        }
 
         $amount = $this->money($amount);
         if (bccomp($amount, '0', 8) <= 0) {

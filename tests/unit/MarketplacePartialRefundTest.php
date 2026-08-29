@@ -22,6 +22,12 @@ require_once dirname(__DIR__).'/_support/IntegrationHarness.php';
  * pay twice, always tell the reporting tables) and the product rules second
  * (a part refund is compensation, not a reversal: the buyer keeps their goods
  * and the shelf only gets back the units actually returned).
+ *
+ * The physical fixtures deliver the shipment before the part refund: an
+ * in-transit parcel cannot be part-refunded at all (doing so would strand the
+ * order, since a part-refunded shipment can never be recorded delivered), and
+ * that refusal is pinned by PhysicalShippingTest. The scenarios here — dead
+ * keys, a scratched surface, a chipped handle — are all post-delivery anyway.
  */
 class MarketplacePartialRefundTest extends TestCase
 {
@@ -165,6 +171,8 @@ class MarketplacePartialRefundTest extends TestCase
         $bought  = $this->buy($app, $buyer, $listing, 5);
         $order   = $this->order_of($app, $bought['order']->public_id);
         $after_purchase = $this->balance($app, $buyer);
+        $this->deliver_physical($app, $order);   // the scenarios are all post-delivery
+        $order = $this->order_of($app, $order->public_id);
 
         $res = $app->marketplaceservice->refund_partial($order, '2000', null, 'Two keys were dead', 0);
 
@@ -193,6 +201,8 @@ class MarketplacePartialRefundTest extends TestCase
         $listing = $this->listing($app, false, 5);
         $bought  = $this->buy($app, $buyer, $listing, 3);
         $order   = $this->order_of($app, $bought['order']->public_id);
+        $this->deliver_physical($app, $order);   // the scenarios are all post-delivery
+        $order = $this->order_of($app, $order->public_id);
 
         $app->marketplaceservice->refund_partial($order, '750', null, 'Arrived scratched', 0);
 
@@ -208,6 +218,8 @@ class MarketplacePartialRefundTest extends TestCase
         $listing = $this->listing($app, false, 5);
         $order   = $this->order_of($app, $this->buy($app, $buyer, $listing, 2)['order']->public_id);
         $before  = $this->balance($app, $buyer);
+        $this->deliver_physical($app, $order);   // the scenarios are all post-delivery
+        $order = $this->order_of($app, $order->public_id);
 
         $res = $app->marketplaceservice->refund_partial($order, '5000', null, 'fat finger', 0);
 
@@ -224,6 +236,8 @@ class MarketplacePartialRefundTest extends TestCase
         list($app, $buyer) = $this->app();
         $listing = $this->listing($app, false, 5);
         $order   = $this->order_of($app, $this->buy($app, $buyer, $listing, 3)['order']->public_id);
+        $this->deliver_physical($app, $order);   // the scenarios are all post-delivery
+        $order = $this->order_of($app, $order->public_id);
 
         $this->assertTrue($app->marketplaceservice->refund_partial(
             $order, '1000', null, 'first adjustment', 0)['ok']);
@@ -241,6 +255,8 @@ class MarketplacePartialRefundTest extends TestCase
         list($app, $buyer) = $this->app();
         $listing = $this->listing($app, false, 5);
         $order   = $this->order_of($app, $this->buy($app, $buyer, $listing, 1)['order']->public_id);
+        $this->deliver_physical($app, $order);   // the scenarios are all post-delivery
+        $order = $this->order_of($app, $order->public_id);
 
         foreach (array('0', '-100', '') as $amount) {
             $res = $app->marketplaceservice->refund_partial($order, $amount, null, 'nope', 0);
@@ -256,6 +272,8 @@ class MarketplacePartialRefundTest extends TestCase
         $listing = $this->listing($app, false, 5);
         $order   = $this->order_of($app, $this->buy($app, $buyer, $listing, 2)['order']->public_id);
         $stock   = $this->stock($app, $listing);
+        $this->deliver_physical($app, $order);   // the scenarios are all post-delivery
+        $order = $this->order_of($app, $order->public_id);
 
         $res = $app->marketplaceservice->refund_partial($order, '500', null, 'one back', 9);
 
@@ -335,8 +353,11 @@ class MarketplacePartialRefundTest extends TestCase
         $listing = $this->listing($app, false, 5);
         $before  = $this->balance($app, $buyer);
         $order   = $this->order_of($app, $this->buy($app, $buyer, $listing, 4)['order']->public_id);
+        $this->deliver_physical($app, $order);   // the scenarios are all post-delivery
+        $order = $this->order_of($app, $order->public_id);
 
-        $app->marketplaceservice->refund_partial($order, '1500', null, 'damaged', 0);
+        $this->assertTrue($app->marketplaceservice->refund_partial(
+            $order, '1500', null, 'damaged', 0)['ok']);
         $app->marketplaceservice->refund($this->order_of($app, $order->public_id), null, 'the rest');
 
         $this->assertSame($before, $this->balance($app, $buyer),
@@ -352,6 +373,8 @@ class MarketplacePartialRefundTest extends TestCase
         $listing = $this->listing($app, false, 5);
         $order   = $this->order_of($app, $this->buy($app, $buyer, $listing, 4)['order']->public_id);
         $this->assertSame(1, $this->stock($app, $listing), 'four of five went out');
+        $this->deliver_physical($app, $order);   // the scenarios are all post-delivery
+        $order = $this->order_of($app, $order->public_id);
 
         $app->marketplaceservice->refund_partial($order, '1000', null, 'one came back', 1);
         $this->assertSame(2, $this->stock($app, $listing));
@@ -368,6 +391,8 @@ class MarketplacePartialRefundTest extends TestCase
         list($app, $buyer) = $this->app();
         $listing = $this->listing($app, false, 5);
         $order   = $this->order_of($app, $this->buy($app, $buyer, $listing, 2)['order']->public_id);
+        $this->deliver_physical($app, $order);   // the scenarios are all post-delivery
+        $order = $this->order_of($app, $order->public_id);
 
         $app->marketplaceservice->refund_partial($order, '500', null, 'Chipped handle', 0);
 
@@ -389,6 +414,8 @@ class MarketplacePartialRefundTest extends TestCase
         $order   = $this->order_of($app, $this->buy($app, $buyer, $listing, 3)['order']->public_id);
 
         $this->assertSame('3250.00000000', $app->marketplaceservice->refundable($order));
+        $this->deliver_physical($app, $order);   // the scenarios are all post-delivery
+        $order = $this->order_of($app, $order->public_id);
         $app->marketplaceservice->refund_partial($order, '1200', null, 'adjustment', 0);
         $this->assertSame('2050.00000000',
             $app->marketplaceservice->refundable($this->order_of($app, $order->public_id)));

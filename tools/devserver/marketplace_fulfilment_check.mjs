@@ -33,7 +33,11 @@ const argv = process.argv.slice(2);
 const arg = (name, def) => { const i = argv.indexOf(name); return i === -1 ? def : argv[i + 1]; };
 const BASE = arg('--base', 'http://127.0.0.1:8080');
 const DB_PATH = arg('--db', 'storage/devdb/marvy.sqlite');
-const ADMIN_PASSWORD = arg('--admin-password', 'Demo!cabcd50b');
+const ADMIN_PASSWORD = arg('--admin-password', process.env.DEMO_PASSWORD || null);
+if (!ADMIN_PASSWORD) {
+  console.error('Pass --admin-password or set DEMO_PASSWORD in .env (the seeder prints the demo password once).');
+  process.exit(2);
+}
 const CUSTOMER_PASSWORD = arg('--customer-password', ADMIN_PASSWORD);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -84,6 +88,13 @@ const fx = withDb((db) => {
        download_limit, link_ttl_hours, created_at, updated_at)
      VALUES (?, ?, ?, 'ebook.pdf', 'application/pdf', 4096, 5, 24, datetime('now'), datetime('now'))`)
     .run(('DGPE2E' + stamp).slice(0, 26).padEnd(26, '0'), listing.id, key);
+
+  // The seed gives the demo user 250; this check buys a 1,500 ebook. In a
+  // verify_all.sh run earlier checks happened to top the wallet up, which
+  // masked the dependency — fund it here so the check stands alone on a
+  // fresh database. (Dev-only shortcut, the same one
+  // physical_order_refund_check uses.)
+  db.prepare(`UPDATE wallets SET balance = '15000.00000000' WHERE user_id = ?`).run(user.id);
 
   return { userId: user.id, listing, listingPublic };
 });

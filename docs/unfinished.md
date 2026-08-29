@@ -13,8 +13,10 @@ module 23 ([module-partial-refunds.md](module-partial-refunds.md)), and the
 commission overpayment module 23 itself left open by module 24
 ([module-commission-resync.md](module-commission-resync.md)), and item 1 by
 module 36 ([module-coupon-domains.md](module-coupon-domains.md)), and item 2
-by module 37 ([module-multi-currency-wallets.md](module-multi-currency-wallets.md)), and item 16
-by the portable skip-branch test added in this session.
+by module 37 ([module-multi-currency-wallets.md](module-multi-currency-wallets.md)), item 16
+by the portable skip-branch test added in this session, and item 4 by the
+physical-shipping escrow audit in this session
+([module-physical-shipping-escrow.md](module-physical-shipping-escrow.md)).
 Closed items stay in the table below, struck through, so the list reads as a
 record rather than a moving target.
 
@@ -37,7 +39,7 @@ open, and things this sandbox cannot prove.
 | ~~1~~ | ~~**Coupons — non-shop domains**~~ | **Closed (module 36).** One code now works on every purchase surface — SMM orders, the five VTU tabs, numbers, identity, gift cards and the shop — through the same `CouponService::quote()` rules and the module-18 slot reservation, with the per-customer limit enforced **across** domains. Migration 034 stamps each redemption with a `domain` and the order/transaction `public_id` as `reference`. The reseller API deliberately still cannot redeem coupons (a recorded product decision). |
 | ~~2~~ | ~~**Multi-currency wallets**~~ | **Closed (module 37).** A wallet may hold any enabled foreign currency — chosen once, while empty, by the customer or staff, frozen forever after the first movement. Conversion happens at the single ledger boundary (LedgerService, the only wallet writer), so every purchase domain supports a foreign wallet with **no engine changes**; each conversion writes its own four-legged double entry through an `fx:CODE` translation account so each currency's books balance independently. The refund-rate policy is enforced in the ledger: a refund replays the rate **pinned on the charge**, so FX drift can never make a refund create or destroy money. Gateway deposits *denominated* in a foreign currency remain C-category work. |
 | ~~3~~ | ~~**Marketplace partial refunds**~~ | **Closed (module 23).** `refund_partial()` returns part of an order's money with a cumulative ceiling, optional restock, the goods left in place, and the figure written to both `marketplace_orders` and `service_transactions` so revenue stops overstating. Per-line refunds across a multi-order basket are still per order. |
-| 4 | **Physical shipping flow** | Exists and passes `shop_check` / `physical_product_check`, but was never re-audited against the escrow rules in module 11. |
+| ~~4~~ | ~~**Physical shipping flow**~~ | **Closed (this session, [module-physical-shipping-escrow.md](module-physical-shipping-escrow.md)).** Re-audited line by line against the module 11 escrow rules: purchase, the shipment state machine, release, refund and the sweep all hold. The audit found one real defect — a **part refund of a physical order in transit left the order uncloseable** (a part-refunded order can never be recorded delivered, so its escrow remainder rode the abandonment sweep back to a buyer who still receives the parcel: goods AND full money). `refund_partial()` now refuses any shipment-bound order whose parcel is not `DELIVERED` (`SHIPMENT_IN_TRANSIT`), pointing staff at the two honest options; a full refund stays available in transit, and the same part refund stands after delivery. Pinned by a new unit test, ten corrected money tests, and 14 new end-to-end checks (`physical_order_refund_check` 38/38). Two adjacent defects fixed along the way: four checks with hardcoded demo passwords (a README violation), and `marketplace_fulfilment_check` silently depending on other stages to top up its wallet. |
 | ~~5~~ | ~~**Cron scheduling (write side)**~~ | **Partly closed (module 22).** A job can be paused and resumed from the panel, with a required reason, a named consequence, an audited trail and a 24-hour expiry that resumes it automatically. A "Run now" button runs any job once from the screen through the same `CronRegistry` worker and `JobRunner` exclusive lock as the crontab tick (POST-only, `settings.manage`, paused jobs refused, every run recorded and audited). Installing and editing schedules is still a crontab paste. |
 | ~~6~~ | ~~**Announcement bar links**~~ | **Closed (module 21).** A line may carry `[label](target)`; the anchor is built, never pasted through, and only site paths, http(s) and mailto are accepted. Raw HTML renders as visible text. |
 | 7 | **Contact map — first-party render** | The map is a third-party iframe (OpenStreetMap / Google). It leaks the visitor's IP to that origin, which an EU operator must disclose. |
@@ -79,3 +81,5 @@ open, and things this sandbox cannot prove.
 4. ~~**13**~~ — done, module 18.
 5. ~~**9**~~ — done, module 19.
 6. ~~**1 / 2**~~ — done, modules 36 and 37.
+7. ~~**16**~~ — done, this session (portable skip-branch test).
+8. ~~**4**~~ — done, this session (physical-shipping escrow audit).
