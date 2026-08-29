@@ -1,6 +1,6 @@
 # Unfinished work — MarvySocials
 
-*As of 2026-08-28, branch `arena/01a04558-windels-panel`.*
+*As of 2026-08-29, branch `arena/01a04b8d-windels-panel`.*
 
 **Progress:** items 11 and 12 are **closed** by module 17
 ([module-private-attachments.md](module-private-attachments.md)) and item 13 by
@@ -13,7 +13,8 @@ module 23 ([module-partial-refunds.md](module-partial-refunds.md)), and the
 commission overpayment module 23 itself left open by module 24
 ([module-commission-resync.md](module-commission-resync.md)), and item 1 by
 module 36 ([module-coupon-domains.md](module-coupon-domains.md)), and item 2
-by module 37 ([module-multi-currency-wallets.md](module-multi-currency-wallets.md)).
+by module 37 ([module-multi-currency-wallets.md](module-multi-currency-wallets.md)), and item 16
+by the portable skip-branch test added in this session.
 Closed items stay in the table below, struck through, so the list reads as a
 record rather than a moving target.
 
@@ -53,7 +54,7 @@ open, and things this sandbox cannot prove.
 | ~~13~~ | ~~**Per-customer coupon race**~~ | **Closed (module 18).** Migration 030 adds `redemption_slot` and a UNIQUE index over `(coupon_id, user_id, redemption_slot)`; the slot is reserved before any charge and released if the checkout does not complete. Proved by two simultaneous `/checkout/place` requests: exactly one redemption. |
 | ~~14~~ | ~~**Admin dashboard query cost**~~ | **Closed (module 20).** 31 queries → 20: the status GROUP BY is memoised and carries "today" and "stuck", two nested revenue windows cost one pass per table instead of eight queries, `users` and `tickets` are each scanned once. Held at 22 by `perf_check` under the 12,000-order load fixture. |
 | 15 | **No index review under load** | SQLite's planner is not MySQL's, so no `EXPLAIN` work has been done on the real engine. |
-| 16 | **`testAJobCannotOverlapItself`** | The suite's single skipped test — `flock` semantics under the PHP-wasm runtime. Predates this work. |
+| ~~16~~ | ~~**`testAJobCannotOverlapItself`**~~ | **Closed (this session).** The skip was load-bearing, not lazy: the aliasing was re-probed on the current build (two `fopen()` handles on one lock file — the second `flock(LOCK_EX|LOCK_NB)` returns `true` under emscripten, `false` on a kernel), so the *primitive* still cannot be asserted under wasm, and the visible platform skip stays. What the lock exists **for** now is pinned on every runtime by a new portable test, `testAnUnavailableLockIsSkippedWithoutRunning`: a directory placed where the lock file should be makes `fopen()` fail on every POSIX kernel and in the wasm filesystem alike, driving the exact skip branch a held lock would — skipped reported, work not run, no `RUNNING` row left behind. The suite is 1603 tests, 0 failures, and its one remaining skip is documented in the test itself, with a cross-reference to the portable coverage. |
 
 ## C. Cannot be finished in this environment (no credentials / no services)
 
