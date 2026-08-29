@@ -80,6 +80,22 @@ listingsPage = await a.get('/admin/marketplace?tab=listings');
 const physicalId = listingIdByTitle(listingsPage.text, physicalTitle);
 check('found the new physical listing id', !!physicalId);
 
+console.log('\n── Shop · admin completes the physical fulfilment details');
+// A physical listing is deliberately NOT sellable until staff complete its
+// SKU screen (module 18) — CartService flags such lines as
+// `physical_details_missing` and ShopCheckoutService::validate() refuses to
+// charge them. So an end-to-end purchase must finish that step through the
+// same screen a real operator uses.
+const physicalEditPage = await a.get(`/admin/marketplace/listings/${physicalId}/edit`);
+check('the physical listing edit page offers the SKU screen',
+  physicalEditPage.text.includes(`/admin/marketplace/listings/${physicalId}/physical`));
+const physicalDetails = await a.postForm(`/admin/marketplace/listings/${physicalId}/physical`, {
+  sku: `E2E-SHOP-${stamp}`, weight_grams: '250', length_cm: '20', width_cm: '10', height_cm: '5',
+  requires_shipping: '1',
+}, { fromHtml: physicalEditPage.text });
+check('physical listing completes with a SKU before sale',
+  physicalDetails.status === 200 && /Shipping details saved/.test(physicalDetails.text));
+
 console.log('\n── Shop · admin uploads a digital file');
 const editPage = await a.get(`/admin/marketplace/listings/${digitalId}/edit`);
 const token = /name="csrf_marvy" value="([^"]+)"/.exec(editPage.text)?.[1];

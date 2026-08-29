@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 36), roles,
+-- foreign keys, migration bookkeeping (version 37), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first-login accounts. No migration,
 -- seed or installer command has to run afterwards.
@@ -2254,6 +2254,32 @@ ALTER TABLE marketplace_orders
 ADD COLUMN shipping_cost DECIMAL(20,8) NOT NULL DEFAULT 0
 COMMENT 'Shipping charge included in gross_amount; base currency';
 
+-- ---------------------------------------------------------------------
+-- migration 037_inbox
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS inbox_messages (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  public_id CHAR(26) NOT NULL UNIQUE,
+  owner_type VARCHAR(8) NOT NULL COMMENT 'ADMIN = the staff inbox (owner_id NULL, shared by all staff); USER = one customers inbox',
+  owner_id BIGINT UNSIGNED NULL COMMENT 'users.id when owner_type is USER',
+  to_email VARCHAR(255) NOT NULL COMMENT 'the address the mail was addressed to (lowercased) — the routing key',
+  from_email VARCHAR(255) NULL,
+  from_name VARCHAR(190) NULL,
+  subject VARCHAR(255) NOT NULL DEFAULT '',
+  body_text MEDIUMTEXT NOT NULL COMMENT 'plain-text body; when the sender sent only HTML, the stripped tags of it',
+  body_html MEDIUMTEXT NULL COMMENT 'raw HTML part when the sender provided one — reference data, rendered escaped',
+  message_id VARCHAR(255) NULL COMMENT 'RFC 822 Message-Id, sender-provided',
+  dedupe_key VARCHAR(64) NOT NULL UNIQUE COMMENT 'sha256 of the Message-Id, or of to+from+subject+date when the sender omitted one — a re-fetched message can never be stored twice',
+  received_at DATETIME NULL COMMENT 'the Date header normalized to UTC; NULL when the header is missing or unparseable',
+  is_read TINYINT(1) NOT NULL DEFAULT 0,
+  read_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_inbox_owner (owner_type, owner_id, is_read, id),
+  INDEX idx_inbox_to (to_email, id),
+  CONSTRAINT fk_inbox_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -2268,7 +2294,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (36);
+INSERT INTO migrations (version) VALUES (37);
 
 -- ======================================================================
 -- CORE DATA

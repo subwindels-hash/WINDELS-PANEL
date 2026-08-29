@@ -159,7 +159,7 @@ $healthy = (int)($health['HEALTHY'] ?? 0);
     <?php foreach ($inbox_recent as $m): ?>
       <li class="row justify-between" style="gap:.75rem;padding:.5rem 0;border-bottom:1px solid var(--slate-100)">
         <a class="text-sm min-w-0" href="<?=site_url('admin/inbox/'.$m->public_id)?>" style="text-decoration:none;color:inherit">
-          <span style="width:8px;height:8px;border-radius:50%;background:<?=$m->is_read?'var(--slate-300)':'var(--brand-500)?>"></span>
+          <span style="width:8px;height:8px;border-radius:50%;background:<?=$m->is_read?'var(--slate-300)':'var(--brand-500)'?>"></span>
           <?=htmlspecialchars((string)($m->from_name ?: ($m->from_email ?: 'Unknown sender')))?>
           <span class="muted">— <?=htmlspecialchars((string)$m->subject)?></span>
         </a>

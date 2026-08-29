@@ -256,9 +256,12 @@ class AdminPanelTest extends TestCase
             // an explicitly guarded read-only support session, and resets
             // credentials (reset only — a PIN or password can never be read).
             // wallet_currency sets what an empty wallet may hold (module 37).
+            // mfa_disable is the operator's out when a customer loses their
+            // authenticator; email_verify vouches for an address the
+            // confirmation mail never reached.
             'Users.php'    => array('status','role','price_group','adjust','wallet_currency','impersonate',
-                                    'pin_reset','pin_reveal','pin_unlock','force_logout',
-                                    'revoke_keys','password_reset'),
+                                    'pin_reset','pin_reveal','pin_unlock','mfa_disable','email_verify',
+                                    'force_logout','revoke_keys','password_reset'),
             // Operations refunds through the schedulers' own cancel paths.
             'Operations.php' => array('refill_request','cancel','dripfeed_action','subscription_action'),
         );

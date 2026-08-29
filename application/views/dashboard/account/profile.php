@@ -159,7 +159,7 @@ $initial   = strtoupper(substr($current_user->username ?? 'U', 0, 1));
 </div>
 
 <?php if (!empty($current_user->user_code)): ?>
-<script>
+<script <?=csp_nonce_attr()?>
 (function () {
   var btn = document.getElementById('ws-user-code-copy');
   var val = document.getElementById('ws-user-code');

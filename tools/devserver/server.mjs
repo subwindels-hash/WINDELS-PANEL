@@ -71,7 +71,10 @@ function isDenied(pathname) {
   const clean = pathname.replace(/\\/g, '/');
   if (/(^|\/)\.[^/]/.test(clean)) return true;               // .env, .git, .htpasswd
   if (/\.(sql|sqlite|zip|gz|log)$/i.test(clean)) return true;  // dumps and archives
-  if (/^\/(application|system|vendor|storage|tools|tests)(\/|$)/i.test(clean)) return true;
+  // Same list as the shipped .htaccess and the nginx configs — docs/ holds
+  // the security audit trail, database/ the schema, cron/ the worker entry
+  // points; none of them is a document the panel should publish.
+  if (/^\/(application|system|vendor|storage|tools|tests|docs|database|cron)(\/|$)/i.test(clean)) return true;
   return false;
 }
 

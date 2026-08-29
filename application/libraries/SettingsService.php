@@ -107,19 +107,19 @@ class SettingsService {
             'mail_from_name' => array('text', 'email', 'From name',
                 'The sender name shown in the inbox. Defaults to the site name.', ''),
             'inbox_enabled' => array('bool', 'email', 'Receive mail in the dashboard inboxes',
-                'On, a scheduled worker pulls new messages from the configured mailbox (VP_INBOX_* in '\
-                .'.env, defaulting to the SMTP account, port 995 over SSL) every two minutes. Mail '\
-                .'addressed to the admin address below lands on the Admin → Inbox screen; mail '\
-                .'addressed to a customer lands in their dashboard inbox. Off stops the polling; '\
+                'On, a scheduled worker pulls new messages from the configured mailbox (VP_INBOX_* in '
+                .'.env, defaulting to the SMTP account, port 995 over SSL) every two minutes. Mail '
+                .'addressed to the admin address below lands on the Admin → Inbox screen; mail '
+                .'addressed to a customer lands in their dashboard inbox. Off stops the polling; '
                 .'messages already stored stay put.', true),
             'inbox_admin_email' => array('text', 'email', 'Admin inbox address',
-                'The address the staff inbox is for. Leave empty to use the mailbox account itself '\
-                .'(VP_INBOX_USER / VP_MAIL_USER), then the From address above. Anything not addressed '\
-                .'to a registered customer lands here as the catch-all, so the mailbox never fills up '\
+                'The address the staff inbox is for. Leave empty to use the mailbox account itself '
+                .'(VP_INBOX_USER / VP_MAIL_USER), then the From address above. Anything not addressed '
+                .'to a registered customer lands here as the catch-all, so the mailbox never fills up '
                 .'with mail the panel can no longer see.', ''),
             'inbox_user_delivery' => array('bool', 'email', 'Deliver customer mail to their inbox',
-                'On, mail addressed to a registered customers email address lands in that customers '\
-                .'dashboard inbox instead of the admin catch-all. Turn off to keep every message on the '\
+                'On, mail addressed to a registered customers email address lands in that customers '
+                .'dashboard inbox instead of the admin catch-all. Turn off to keep every message on the '
                 .'admin screen (useful while the mailbox is new).', true),
             'notification_emails_enabled' => array('bool', 'general', 'Send notification emails',
                 'Off keeps the in-app inbox working but stops outbound email for order, deposit and '

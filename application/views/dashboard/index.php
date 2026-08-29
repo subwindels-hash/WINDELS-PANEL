@@ -77,7 +77,7 @@ $name = htmlspecialchars($current_user->username ?? 'there');
 </section>
 
 <?php if (!empty($current_user->user_code)): ?>
-<script>
+<script <?=csp_nonce_attr()?>
 (function () {
   var btn = document.getElementById('ws-userid-copy');
   var val = document.getElementById('ws-userid-value');
@@ -101,7 +101,7 @@ $name = htmlspecialchars($current_user->username ?? 'there');
 <?php endif; ?>
 
 <?php if (!empty($pin_shown)): ?>
-<script>
+<script <?=csp_nonce_attr()?>
 (function () {
   var btn = document.getElementById('ws-pin-copy');
   var val = document.getElementById('ws-pin-value');
@@ -208,7 +208,7 @@ $name = htmlspecialchars($current_user->username ?? 'there');
     <?php foreach ($inbox_recent as $m): ?>
       <li class="row justify-between" style="gap:.75rem;padding:.5rem 0;border-bottom:1px solid var(--slate-100)">
         <a class="text-sm min-w-0" href="<?=site_url('dashboard/inbox/'.$m->public_id)?>" style="text-decoration:none;color:inherit">
-          <span style="width:8px;height:8px;border-radius:50%;background:<?=$m->is_read?'var(--slate-300)':'var(--brand-500)?>"></span>
+          <span style="width:8px;height:8px;border-radius:50%;background:<?=$m->is_read?'var(--slate-300)':'var(--brand-500)'?>"></span>
           <?=htmlspecialchars((string)($m->from_name ?: ($m->from_email ?: 'Unknown sender')))?>
           <span class="muted">— <?=htmlspecialchars((string)$m->subject)?></span>
         </a>
