@@ -20,6 +20,7 @@ const require = createRequire(import.meta.url);
 const argv = process.argv.slice(2);
 const arg = (name, def) => { const i = argv.indexOf(name); return i === -1 ? def : argv[i + 1]; };
 const BASE = arg('--base', 'http://127.0.0.1:8080');
+const DB_PATH = arg('--db', 'storage/devdb/marvy.sqlite');
 const adminPassword = process.env.DEMO_PASSWORD || arg('--admin-password', null);
 if (!adminPassword) {
   console.error('Usage: node tools/devserver/physical_order_refund_check.mjs --admin-password <pw>');
@@ -34,7 +35,7 @@ function check(label, ok, detail = '') {
 
 const stamp = Date.now().toString().slice(-8);
 const { DatabaseSync } = require('node:sqlite');
-const dbPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../storage/devdb/marvy.sqlite');
+const dbPath = path.resolve(process.cwd(), DB_PATH);
 function withDb(fn) {
   const db = new DatabaseSync(dbPath);
   try { return fn(db); } finally { db.close(); }
@@ -65,6 +66,23 @@ function listingIdByTitle(html, t) {
 let listingsPage = await a.get('/admin/marketplace?tab=listings');
 const listingId = listingIdByTitle(listingsPage.text, title);
 check('physical listing created', !!listingId);
+
+// Checkout deliberately refuses a PHYSICAL listing with no package metadata;
+// attach the same server-side row the admin shipping-details form would have
+// created so this refund check reaches the shipment screen, not a validation
+// redirect.
+if (listingId) {
+  withDb((db) => {
+    const listing = db.prepare('SELECT id FROM marketplace_listings WHERE public_id = ?').get(listingId);
+    if (listing) {
+      db.prepare(`INSERT OR IGNORE INTO physical_products
+        (public_id, listing_id, sku, weight_grams, length_cm, width_cm, height_cm,
+         requires_shipping, created_at, updated_at)
+        VALUES (?, ?, ?, 500, '20.00', '15.00', '8.00', 1, datetime('now'), datetime('now'))`)
+        .run(('E2EREFPP' + stamp).slice(0, 26).padEnd(26, '0'), listing.id, `E2E-REF-${stamp}`);
+    }
+  });
+}
 
 withDb((db) => {
   db.exec(`INSERT OR IGNORE INTO shipping_methods (public_id, name, carrier, price, currency, estimated_days_min, estimated_days_max, is_active, sorting, created_at, updated_at)

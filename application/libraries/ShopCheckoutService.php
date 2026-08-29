@@ -1,5 +1,6 @@
 <?php
 defined('BASEPATH') OR exit('No direct script access allowed');
+require_once __DIR__.'/ShopShippingAllocation.php';
 
 /**
  * ShopCheckoutService — converts a cart into real marketplace orders.
@@ -15,10 +16,11 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *     underlying per-listing purchase() call still charges a server-computed
  *     amount, never a client-submitted total;
  *   - collect a shipping address/method once and attach it to every physical
- *     line's resulting order;
- *   - stop the whole checkout (refunding nothing, since nothing has charged
- *     yet) if any line is no longer valid, rather than silently completing a
- *     different cart than the customer looked at.
+ *     line's resulting order, while allocating the carrier fee to the first
+ *     physical line so shipping is charged exactly once per checkout;
+ *   - stop the whole checkout if any line is no longer valid, and compensate
+ *     any earlier line charges if a later independent order fails, rather than
+ *     silently completing a different cart or charging a retry twice.
  *
  * Digital and gift-card lines fulfil through their own existing systems
  * (secure download issuance, GiftcardService) exactly as a direct purchase
@@ -32,7 +34,7 @@ class ShopCheckoutService {
         $this->ci =& get_instance();
         $this->ci->load->model(array(
             'Cart_model', 'Cart_item_model', 'Marketplace_listing_model', 'Marketplace_order_model',
-            'Coupon_model', 'Shipping_address_model', 'Shipping_method_model', 'Shop_order_shipment_model',
+            'Coupon_model', 'Shipping_address_model', 'Shipping_method_model',
         ));
         $this->ci->load->library(array('MarketplaceService', 'CartService', 'ShopDeliveryService'));
     }
@@ -49,8 +51,65 @@ class ShopCheckoutService {
         foreach ($view['lines'] as $line) {
             if ($line['unavailable']) $errors[] = $line['item']->title.' is no longer available.';
             elseif ($line['out_of_stock']) $errors[] = $line['item']->title.' does not have enough stock.';
+            elseif (!empty($line['physical_details_missing'])) {
+                $errors[] = $line['item']->title.' is not ready for physical fulfilment. Ask staff to finish its shipping details.';
+            }
         }
         if ($errors) return $this->err('CART_CHANGED', implode(' ', $errors));
+        return array('ok' => true, 'view' => $view);
+    }
+
+    /**
+     * Quote the cart for the checkout screen. Shipping is charged exactly
+     * once per checkout even though checkout intentionally creates one
+     * marketplace order per cart line. The selected method is always looked up
+     * from the active server-side catalogue; a browser can never submit a
+     * cheaper price.
+     */
+    public function quote($user_id, array $input = array()) {
+        $check = $this->validate($user_id);
+        if (empty($check['ok'])) return $check;
+        $view = $check['view'];
+        $shipping_method = null;
+        $shipping_cost = '0.00000000';
+
+        if (!empty($view['has_physical'])) {
+            $selected_method = $input['shipping_method'] ?? null;
+            if ($selected_method !== null && $selected_method !== '' && !is_scalar($selected_method)) {
+                return $this->err('BAD_SHIPPING_METHOD', 'Choose one shipping method.');
+            }
+            if ($selected_method !== null && $selected_method !== '') {
+                $shipping_method = $this->ci->Shipping_method_model->find_active_public(
+                    (string)$selected_method
+                );
+                if (!$shipping_method) {
+                    return $this->err('BAD_SHIPPING_METHOD', 'That shipping method is no longer available.');
+                }
+            } else {
+                $methods = $this->ci->Shipping_method_model->active_for_currency(marvy_base_currency());
+                $shipping_method = $methods ? $methods[0] : null;
+                if (!$shipping_method) {
+                    return $this->err('NO_SHIPPING_METHOD', 'No shipping methods are available for physical items yet.');
+                }
+            }
+            if (strtoupper((string)$shipping_method->currency) !== strtoupper((string)marvy_base_currency())) {
+                return $this->err('SHIPPING_CURRENCY_MISMATCH', 'The selected shipping method is not available in the panel currency.');
+            }
+            // A checkout has one destination and one selected carrier quote.
+            // Allocate that quote to the first physical order below; the
+            // remaining physical order rows retain the method/address for
+            // fulfilment but carry a zero allocation. This prevents a cart
+            // with three physical lines from charging the same carrier fee
+            // three times.
+            $shipping_cost = $this->money($shipping_method->price);
+            if (bccomp($shipping_cost, '0', 8) < 0) {
+                return $this->err('BAD_SHIPPING_METHOD', 'The selected shipping method has an invalid price.');
+            }
+        }
+
+        $view['shipping_method'] = $shipping_method;
+        $view['shipping_cost'] = $shipping_cost;
+        $view['total'] = bcadd($view['total'], $shipping_cost, 8);
         return array('ok' => true, 'view' => $view);
     }
 
@@ -63,24 +122,27 @@ class ShopCheckoutService {
      */
     public function checkout($user, array $input) {
         $user_id = is_object($user) ? (int)$user->id : (int)$user;
-        $check = $this->validate($user_id);
-        if (empty($check['ok'])) return $check;
-        $view = $check['view'];
+        $quoted = $this->quote($user_id, $input);
+        if (empty($quoted['ok'])) return $quoted;
+        $view = $quoted['view'];
 
         $shipping_address_id = null;
-        $shipping_method = null;
-        if ($view['has_physical']) {
+        $shipping_method = $view['shipping_method'] ?? null;
+        if (!empty($view['has_physical'])) {
             $addr = $this->resolve_shipping_address($user_id, $input);
             if (empty($addr['ok'])) return $addr;
             $shipping_address_id = $addr['address']->id;
-
-            if (!empty($input['shipping_method'])) {
-                $shipping_method = $this->ci->Shipping_method_model->find_public($input['shipping_method']);
-            }
         }
 
         $orders = array();
-        $idem_root = $input['idempotency_key'] ?? bin2hex(random_bytes(16));
+        $raw_idem = $input['idempotency_key'] ?? null;
+        $provided_idem = is_scalar($raw_idem) ? trim((string)$raw_idem) : '';
+        // Store only a bounded, user-scoped digest in each line's unique
+        // transaction key. This keeps a browser-supplied token from becoming
+        // SQL data of arbitrary length or injecting the line separator.
+        $idem_root = $provided_idem === ''
+            ? bin2hex(random_bytes(16))
+            : substr(hash('sha256', $provided_idem), 0, 48);
 
         // Take the coupon slot BEFORE charging anything.
         //
@@ -102,6 +164,9 @@ class ShopCheckoutService {
             }
         }
 
+        $shipping_allocated = false;
+        $new_orders = array();
+        $reservation_attached = false;
         foreach ($view['lines'] as $line) {
             $item = $line['item'];
             // A coupon discount is allocated to each line in proportion to its
@@ -113,62 +178,78 @@ class ShopCheckoutService {
                 $line_discount = bcmul($view['discount'], $share, 8);
             }
 
+            $needs_shipping = !empty($line['requires_shipping']);
+            $allocate_shipping = $needs_shipping && !$shipping_allocated;
+            if ($needs_shipping) $shipping_allocated = true;
             $res = $this->ci->marketplaceservice->purchase($user, array(
                 'listing' => $item->listing_public_id,
                 'quantity' => (int)$item->quantity,
                 'discount' => $line_discount,
+                'shipping_address_id' => $needs_shipping ? $shipping_address_id : null,
+                'shipping_method_id' => $needs_shipping && $shipping_method ? $shipping_method->id : null,
+                // This object can only be created by server-side PHP; a
+                // scalar posted by a browser cannot waive the carrier fee.
+                // MarketplaceService still resolves the active method and
+                // computes its amount; later lines receive a zero allocation
+                // from that same method.
+                'shipping_allocation' => $needs_shipping
+                    ? ($allocate_shipping ? ShopShippingAllocation::first() : ShopShippingAllocation::subsequent())
+                    : null,
                 'idempotency_key' => 'shop:'.$user_id.':'.$idem_root.':'.$item->listing_id,
-                'source' => $input['source'] ?? 'WEB',
+                'source' => isset($input['source']) && is_scalar($input['source'])
+                    ? (string)$input['source'] : 'WEB',
             ));
 
             if (empty($res['ok'])) {
-                // Nothing was charged for THIS line. If no line at all got
-                // through, the coupon was never actually used: give the slot
-                // back rather than burning the customer's only redemption on
-                // an order that does not exist.
-                if ($reservation && !$orders) {
-                    $this->ci->Coupon_model->release_redemption(
-                        $reservation['id'], (int)$view['coupon']->id);
-                    $reservation = null;
-                }
-                // Nothing charges twice: every earlier line in this loop was
-                // its own independent, already-committed TransactionEngine
-                // charge (exactly like buying each one separately), so a later
-                // line failing (e.g. it sold out mid-checkout) does not roll
-                // those back — it stops the remaining lines and reports
-                // clearly which line failed, the same way a real checkout
-                // that partially succeeds must behave rather than silently
-                // losing track of what was actually charged.
-                return array(
-                    'ok' => false,
-                    'code' => $res['code'] ?? 'CHECKOUT_FAILED',
-                    'error' => 'Could not complete "'.$item->title.'": '.($res['error'] ?? 'unknown error'),
-                    'orders' => $orders,
+                return $this->checkout_failure($res, $item, $orders, $new_orders, $reservation, $view);
+            }
+
+            $order = $res['order'] ?? null;
+            if (!$order) {
+                return $this->checkout_failure(
+                    array('code' => 'CHECKOUT_FAILED', 'error' => 'The order receipt was not created'),
+                    $item, $orders, $new_orders, $reservation, $view
                 );
             }
-
-            $order = $res['order'];
+            $is_duplicate = !empty($res['duplicate']);
+            // TransactionEngine deliberately resolves every idempotency retry
+            // to its original row. A previous attempt that was refunded or
+            // cancelled must not make a later retry look like a successful
+            // checkout and clear the cart without a new order.
+            if ($is_duplicate && in_array((string)$order->status, array('REFUNDED', 'CANCELLED'), true)) {
+                return $this->checkout_failure(
+                    array('code' => 'PREVIOUS_CHECKOUT_FAILED', 'error' => 'This checkout attempt was already cancelled. Start checkout again.'),
+                    $item, $orders, $new_orders, $reservation, $view
+                );
+            }
             $orders[] = $order;
 
-            if (!empty($res['duplicate'])) continue; // already fulfilled by an earlier identical attempt
+            if ($is_duplicate) continue; // already fulfilled by an earlier identical attempt
 
-            if ($item->product_type === 'PHYSICAL' && $shipping_address_id) {
-                $this->ci->Shop_order_shipment_model->create(array(
-                    'marketplace_order_id' => $order->id,
-                    'shipping_address_id'  => $shipping_address_id,
-                    'shipping_method_id'   => $shipping_method ? $shipping_method->id : null,
-                    'shipping_cost'        => $shipping_method ? $shipping_method->price : '0.00000000',
-                    'status'               => 'PENDING',
-                ));
-            }
+            $new_orders[] = $order;
+
+            // MarketplaceService creates the shipment inside its paid-order
+            // dispatch. Keeping that write beside the stock/order transition
+            // means a failed shipment insert refunds automatically instead of
+            // leaving a charged physical order with no fulfilment record.
 
             // The reservation is completed — not created — once checkout has
-            // actually charged something, against the first order it produced.
-            if ($reservation && count($orders) === 1) {
+            // actually charged something, against the first newly-created order.
+            if ($reservation && !$reservation_attached) {
                 $this->ci->Coupon_model->attach_redemption(
                     $reservation['id'], $order->id, $view['discount']
                 );
+                $reservation_attached = true;
             }
+        }
+
+        // A replay where every line was already completed has no newly-created
+        // order to own this invocation's coupon reservation. Do not leak that
+        // temporary slot into the customer's usage count.
+        if ($reservation && !$reservation_attached) {
+            $this->ci->Coupon_model->release_redemption(
+                $reservation['id'], !empty($view['coupon']) ? (int)$view['coupon']->id : null
+            );
         }
 
         // The cart is only cleared once every line has genuinely settled —
@@ -182,19 +263,62 @@ class ShopCheckoutService {
 
     /* ------------------------------------------------------------------ */
 
+    /**
+     * Roll back orders created by this checkout when a later line fails.
+     * Each MarketplaceService charge is independently committed, so without
+     * this compensating path a cart retry could charge the successful prefix
+     * again. Idempotent orders from an earlier attempt are deliberately left
+     * alone; only rows created during this invocation are refunded.
+     */
+    private function checkout_failure(array $failure, $item, array $orders, array $new_orders,
+                                      $reservation, array $view) {
+        for ($i = count($new_orders) - 1; $i >= 0; $i--) {
+            $fresh = $this->ci->Marketplace_order_model->find_id($new_orders[$i]->id);
+            if (!$fresh || !in_array((string)$fresh->status, array('PAID', 'DELIVERED', 'DISPUTED', 'PARTIALLY_REFUNDED'), true)) {
+                continue;
+            }
+            $rolled = $this->ci->marketplaceservice->refund(
+                $fresh, null, 'Checkout did not complete; compensating rollback'
+            );
+            if (empty($rolled['ok'])) {
+                // The original failure is still returned to the customer, but
+                // make the stranded-money condition visible to operations.
+                log_message('error', 'Shop checkout rollback could not refund order '.$fresh->public_id);
+            }
+        }
+        if ($reservation) {
+            $this->ci->Coupon_model->release_redemption(
+                $reservation['id'], !empty($view['coupon']) ? (int)$view['coupon']->id : null
+            );
+        }
+        return array(
+            'ok' => false,
+            'code' => $failure['code'] ?? 'CHECKOUT_FAILED',
+            'error' => 'Could not complete "'.$item->title.'": '.($failure['error'] ?? 'unknown error'),
+            'orders' => $orders,
+        );
+    }
+
     private function resolve_shipping_address($user_id, array $input) {
-        if (!empty($input['shipping_address_id'])) {
-            $addr = $this->ci->Shipping_address_model->find_public_for_user($input['shipping_address_id'], $user_id);
+        $raw_selected = $input['shipping_address_id'] ?? null;
+        if ($raw_selected !== null && $raw_selected !== '' && !is_scalar($raw_selected)) {
+            return $this->err('BAD_ADDRESS', 'Choose one shipping address.');
+        }
+        $selected = trim((string)$raw_selected);
+        if ($selected !== '') {
+            $addr = $this->ci->Shipping_address_model->find_public_for_user($selected, $user_id);
             if ($addr) return array('ok' => true, 'address' => $addr);
+            return $this->err('BAD_ADDRESS', 'Choose one of your saved shipping addresses.');
         }
         // A new address was submitted inline on the checkout form.
-        $full_name = trim((string)($input['full_name'] ?? ''));
-        $phone = trim((string)($input['phone'] ?? ''));
-        $line1 = trim((string)($input['line1'] ?? ''));
-        $city = trim((string)($input['city'] ?? ''));
-        $country = strtoupper(trim((string)($input['country_code'] ?? '')));
+        $full_name = trim($this->input_string($input, 'full_name'));
+        $phone = trim($this->input_string($input, 'phone'));
+        $line1 = trim($this->input_string($input, 'line1'));
+        $city = trim($this->input_string($input, 'city'));
+        $country = strtoupper(trim($this->input_string($input, 'country_code')));
 
-        if ($full_name === '' || $phone === '' || $line1 === '' || $city === '' || strlen($country) !== 2) {
+        if ($full_name === '' || $phone === '' || $line1 === '' || $city === ''
+            || !preg_match('/^[A-Z]{2}$/', $country)) {
             return $this->err('NO_ADDRESS', 'A shipping address is required for the physical item(s) in your cart.');
         }
 
@@ -203,14 +327,25 @@ class ShopCheckoutService {
             'full_name' => mb_substr($full_name, 0, 160),
             'phone' => mb_substr($phone, 0, 32),
             'line1' => mb_substr($line1, 0, 255),
-            'line2' => mb_substr((string)($input['line2'] ?? ''), 0, 255) ?: null,
+            'line2' => mb_substr($this->input_string($input, 'line2'), 0, 255) ?: null,
             'city' => mb_substr($city, 0, 120),
-            'state' => mb_substr((string)($input['state'] ?? ''), 0, 120) ?: null,
-            'postal_code' => mb_substr((string)($input['postal_code'] ?? ''), 0, 32) ?: null,
+            'state' => mb_substr($this->input_string($input, 'state'), 0, 120) ?: null,
+            'postal_code' => mb_substr($this->input_string($input, 'postal_code'), 0, 32) ?: null,
             'country_code' => $country,
             'is_default' => !empty($input['save_address']) ? 1 : 0,
         ));
-        return array('ok' => true, 'address' => $this->ci->Shipping_address_model->find_by_id($id));
+        $address = $id ? $this->ci->Shipping_address_model->find_by_id($id) : null;
+        if (!$address) return $this->err('ADDRESS_FAILED', 'The shipping address could not be saved. Please try again.');
+        return array('ok' => true, 'address' => $address);
+    }
+
+    private function input_string(array $input, $key, $default = '') {
+        $value = $input[$key] ?? $default;
+        return is_scalar($value) ? (string)$value : (string)$default;
+    }
+
+    private function money($value) {
+        return number_format((float)$value, 8, '.', '');
     }
 
     private function err($code, $message) {

@@ -20,7 +20,7 @@ class Shop extends Admin_Controller {
     public function __construct() {
         parent::__construct();
         $this->require_perm('marketplace.view');
-        $this->load->library(array('DashboardStats', 'ShopDeliveryService', 'CouponService'));
+        $this->load->library(array('DashboardStats', 'ShopDeliveryService', 'CouponService', 'ShopShippingService'));
         $this->load->model(array(
             'Digital_delivery_model', 'Shop_order_shipment_model',
             'Shipping_method_model', 'Coupon_model', 'Product_review_model',
@@ -83,7 +83,7 @@ class Shop extends Admin_Controller {
         if (!$shipment) show_404();
         $this->render('Shipment '.$shipment->public_id, 'admin/shop/shipment_detail', 'admin/shop', array(
             'shipment' => $shipment,
-            'statuses' => Shop_order_shipment_model::STATUSES,
+            'statuses' => $this->shopshippingservice->statuses_for($shipment->status),
         ));
     }
 
@@ -93,25 +93,23 @@ class Shop extends Admin_Controller {
         $shipment = $this->Shop_order_shipment_model->find_public($public_id);
         if (!$shipment) show_404();
 
-        $status = strtoupper((string)$this->input->post('status', true));
-        if (!in_array($status, Shop_order_shipment_model::STATUSES, true)) {
-            $this->session->set_flashdata('error', 'Choose a valid shipment status.');
+        $before = array('status' => $shipment->status);
+        $res = $this->shopshippingservice->update($public_id, array(
+            'status' => $this->input->post('status', true),
+            'carrier' => $this->input->post('carrier', true),
+            'tracking_number' => $this->input->post('tracking_number', true),
+            'tracking_url' => $this->input->post('tracking_url', true),
+        ), $this->current_user->id);
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error']);
             return redirect('admin/shop/shipments/'.$public_id);
         }
 
-        $extra = array();
-        $tracking = trim((string)$this->input->post('tracking_number', true));
-        $carrier = trim((string)$this->input->post('carrier', true));
-        if ($tracking !== '') $extra['tracking_number'] = mb_substr($tracking, 0, 120);
-        if ($carrier !== '') $extra['carrier'] = mb_substr($carrier, 0, 80);
-        if ($status === 'SHIPPED' && empty($shipment->shipped_at)) $extra['shipped_at'] = gmdate('Y-m-d H:i:s');
-        if ($status === 'DELIVERED' && empty($shipment->delivered_at)) $extra['delivered_at'] = gmdate('Y-m-d H:i:s');
-
-        $before = array('status' => $shipment->status);
-        $this->Shop_order_shipment_model->update_status($shipment->id, $status, $extra);
         $this->Audit_log_model->record(
             $this->current_user->id, 'shop.shipment.updated', 'shop_order_shipments', $public_id,
-            $before, array_merge(array('status' => $status), $extra),
+            $before, array('status' => $res['shipment']->status,
+                           'tracking_number' => $res['shipment']->tracking_number,
+                           'tracking_url' => $res['shipment']->tracking_url),
             $this->input->ip_address(), $this->input->user_agent(), $this->request_id
         );
 
@@ -135,26 +133,19 @@ class Shop extends Admin_Controller {
         $shipment = $this->Shop_order_shipment_model->find_public($public_id);
         if (!$shipment) show_404();
 
-        $this->load->library('MarketplaceService');
-        $this->load->model('Marketplace_order_model');
-        $order = $this->Marketplace_order_model->find_id($shipment->marketplace_order_id);
-        if (!$order) {
-            $this->session->set_flashdata('error', 'The order behind this shipment could not be found.');
-            return redirect('admin/shop/shipments/'.$public_id);
-        }
-
         $reason = trim((string)$this->input->post('reason', true));
-        $res = $this->marketplaceservice->refund($order, $this->current_user->id, $reason);
+        $res = $this->shopshippingservice->refund($public_id, $this->current_user->id, $reason);
         if (empty($res['ok'])) {
             $this->session->set_flashdata('error', $res['error'] ?? 'Could not refund this order.');
         } else {
-            $this->Shop_order_shipment_model->update_status($shipment->id, 'CANCELLED', array());
             $this->Audit_log_model->record(
                 $this->current_user->id, 'shop.shipment.refunded', 'shop_order_shipments', $public_id,
                 array('order_status' => $shipment->order_status), array('order_status' => 'REFUNDED'),
                 $this->input->ip_address(), $this->input->user_agent(), $this->request_id
             );
-            $this->session->set_flashdata('success', 'Order refunded from escrow and the shipment marked cancelled.');
+            $message = 'Order refunded from escrow and the shipment marked cancelled.';
+            if (!empty($res['shipment_warning'])) $message .= ' '.$res['shipment_warning'];
+            $this->session->set_flashdata('success', $message);
         }
         redirect('admin/shop/shipments/'.$public_id);
     }
@@ -176,15 +167,34 @@ class Shop extends Admin_Controller {
             $this->session->set_flashdata('error', 'A shipping method needs a name.');
             return redirect('admin/shop/shipping-methods');
         }
-        $this->Shipping_method_model->create(array(
+        $price_raw = trim((string)$this->input->post('price', true));
+        if (!preg_match('/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,8})?$/', $price_raw)) {
+            $this->session->set_flashdata('error', 'Shipping price must be a non-negative decimal.');
+            return redirect('admin/shop/shipping-methods');
+        }
+        $min_raw = trim((string)$this->input->post('estimated_days_min', true));
+        $max_raw = trim((string)$this->input->post('estimated_days_max', true));
+        $min_days = $min_raw === '' ? null : (preg_match('/^[0-9]+$/', $min_raw) ? (int)$min_raw : -1);
+        $max_days = $max_raw === '' ? null : (preg_match('/^[0-9]+$/', $max_raw) ? (int)$max_raw : -1);
+        if ($min_days === -1 || $max_days === -1
+            || ($min_days !== null && $max_days !== null && $max_days < $min_days)) {
+            $this->session->set_flashdata('error', 'Enter a valid delivery-day range.');
+            return redirect('admin/shop/shipping-methods');
+        }
+        $id = $this->Shipping_method_model->create(array(
             'name' => mb_substr($name, 0, 120),
             'carrier' => mb_substr((string)$this->input->post('carrier', true), 0, 80) ?: null,
-            'price' => number_format((float)$this->input->post('price'), 8, '.', ''),
+            'price' => $this->money($price_raw),
             'currency' => marvy_base_currency(),
-            'estimated_days_min' => $this->input->post('estimated_days_min') !== '' ? (int)$this->input->post('estimated_days_min') : null,
-            'estimated_days_max' => $this->input->post('estimated_days_max') !== '' ? (int)$this->input->post('estimated_days_max') : null,
+            'estimated_days_min' => $min_days,
+            'estimated_days_max' => $max_days,
             'is_active' => 1,
         ));
+        $this->Audit_log_model->record(
+            $this->current_user->id, 'shop.shipping_method.created', 'shipping_method', (string)$id,
+            null, array('name' => mb_substr($name, 0, 120), 'price' => $this->money($price_raw), 'currency' => marvy_base_currency()),
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
         $this->session->set_flashdata('success', 'Shipping method added.');
         redirect('admin/shop/shipping-methods');
     }
@@ -194,7 +204,13 @@ class Shop extends Admin_Controller {
         $this->guard('marketplace.manage');
         $method = $this->Shipping_method_model->find_public($public_id);
         if (!$method) show_404();
-        $this->Shipping_method_model->update_fields($method->id, array('is_active' => (int)$method->is_active === 1 ? 0 : 1));
+        $active = (int)$method->is_active === 1 ? 0 : 1;
+        $this->Shipping_method_model->update_fields($method->id, array('is_active' => $active));
+        $this->Audit_log_model->record(
+            $this->current_user->id, 'shop.shipping_method.status', 'shipping_method', $public_id,
+            array('is_active' => (int)$method->is_active), array('is_active' => $active),
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
         redirect('admin/shop/shipping-methods');
     }
 
@@ -275,6 +291,10 @@ class Shop extends Admin_Controller {
             ->limit($limit, $offset)->get()->result();
         $total = (int)$this->db->count_all('digital_deliveries');
         return array('rows' => $rows, 'total' => $total);
+    }
+
+    private function money($value) {
+        return number_format((float)$value, 8, '.', '');
     }
 
     private function guard($perm) {

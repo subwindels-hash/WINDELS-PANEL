@@ -22,6 +22,7 @@ $csrf = '<input type="hidden" name="'.htmlspecialchars($this->security->get_csrf
               <a href="<?=site_url('shop/product/'.$item->listing_public_id)?>"><?=htmlspecialchars($item->title)?></a>
               <?php if ($line['unavailable']): ?><div class="text-xs" style="color:var(--danger-600)">No longer available</div><?php endif; ?>
               <?php if ($line['out_of_stock']): ?><div class="text-xs" style="color:var(--danger-600)">Not enough stock — reduce quantity</div><?php endif; ?>
+              <?php if (!empty($line['physical_details_missing'])): ?><div class="text-xs" style="color:var(--danger-600)">Shipping details are not ready yet — staff must finish this listing.</div><?php endif; ?>
             </td>
             <td class="text-right mono"><?=marvy_money($line['unit_price'], $item->currency)?></td>
             <td>

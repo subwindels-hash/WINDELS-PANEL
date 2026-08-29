@@ -2,7 +2,7 @@
 $s = $shipment;
 $csrf = '<input type="hidden" name="'.htmlspecialchars($this->security->get_csrf_token_name()).'" value="'.htmlspecialchars($this->security->get_csrf_hash()).'">';
 $can_resolve = in_array('*', $permissions ?? array(), true) || in_array('marketplace.resolve', $permissions ?? array(), true);
-$refundable = in_array((string)$s->order_status, array('PAID', 'DELIVERED', 'DISPUTED'), true) && empty($s->order_released_at);
+$refundable = in_array((string)$s->order_status, array('PAID', 'DELIVERED', 'DISPUTED', 'PARTIALLY_REFUNDED'), true) && empty($s->order_released_at);
 ?>
 <div class="row justify-between mb-4">
   <div>
@@ -23,6 +23,8 @@ $refundable = in_array((string)$s->order_status, array('PAID', 'DELIVERED', 'DIS
       <?=htmlspecialchars($s->city)?><?php if ($s->state): ?>, <?=htmlspecialchars($s->state)?><?php endif; ?> <?=htmlspecialchars((string)$s->postal_code)?><br>
       <?=htmlspecialchars($s->country_code)?></p>
     <p class="text-sm muted">Product: <?=htmlspecialchars((string)$s->listing_title)?></p>
+    <?php if ($s->physical_sku): ?><p class="text-sm muted">SKU: <span class="mono"><?=htmlspecialchars($s->physical_sku)?></span><?php if ($s->weight_grams !== null): ?> · <?=number_format((int)$s->weight_grams)?> g<?php endif; ?><?php if ($s->length_cm !== null && $s->width_cm !== null && $s->height_cm !== null): ?> · <?=htmlspecialchars($s->length_cm)?> × <?=htmlspecialchars($s->width_cm)?> × <?=htmlspecialchars($s->height_cm)?> cm<?php endif; ?></p><?php endif; ?>
+    <?php if ($s->shipping_method_name): ?><p class="text-sm muted">Method: <?=htmlspecialchars($s->shipping_method_name)?><?php if ($s->shipping_cost !== null): ?> · <?=marvy_money($s->shipping_cost)?><?php endif; ?></p><?php endif; ?>
   </div>
   <div class="card" style="flex:1;min-width:20rem">
     <h3 class="card-title">Update status</h3>
@@ -37,6 +39,10 @@ $refundable = in_array((string)$s->order_status, array('PAID', 'DELIVERED', 'DIS
         <input class="input" name="carrier" value="<?=htmlspecialchars((string)$s->carrier)?>"></label>
       <label class="field"><span class="label">Tracking number</span>
         <input class="input mono" name="tracking_number" value="<?=htmlspecialchars((string)$s->tracking_number)?>"></label>
+      <label class="field"><span class="label">Tracking URL (optional)</span>
+        <input class="input" type="url" name="tracking_url" maxlength="500" value="<?=htmlspecialchars((string)$s->tracking_url)?>" placeholder="https://carrier.example/track/…"></label>
+      <?php if ($s->shipped_at): ?><p class="text-xs muted mb-0">Shipped at <?=htmlspecialchars($s->shipped_at)?> UTC.</p><?php endif; ?>
+      <?php if ($s->delivered_at): ?><p class="text-xs muted mb-0">Delivered at <?=htmlspecialchars($s->delivered_at)?> UTC.</p><?php endif; ?>
       <button class="btn btn-primary" type="submit">Save</button>
     </form>
   </div>

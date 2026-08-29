@@ -17,7 +17,8 @@ class Marketplace extends Auth_Controller {
         $this->load->library(array('MarketplaceService', 'DashboardStats'));
         $this->load->model(array(
             'Marketplace_listing_model', 'Marketplace_order_model',
-            'Marketplace_category_model', 'Wallet_model', 'Setting_model'
+            'Marketplace_category_model', 'Wallet_model', 'Setting_model',
+            'Shop_order_shipment_model'
         ));
         // 'orders' stays reachable even when the module is switched off, so a
         // customer's existing escrow/order history and downloads never
@@ -60,6 +61,27 @@ class Marketplace extends Auth_Controller {
 
     public function buy($public_id) {
         $this->post_only();
+        $listing = $this->Marketplace_listing_model->find_public($public_id, true);
+        if (!$listing) show_404();
+
+        // Physical purchases need an address and a carrier quote, neither of
+        // which belongs on the one-click marketplace form. Put the requested
+        // quantity in the real cart and send the buyer through checkout rather
+        // than creating a paid order with no shipment record.
+        if (strtoupper((string)$listing->product_type) === 'PHYSICAL') {
+            $this->load->library('CartService');
+            $res = $this->cartservice->add(
+                $this->current_user->id, $public_id,
+                (int)$this->input->post('quantity', true)
+            );
+            if (empty($res['ok'])) {
+                $this->session->set_flashdata('error', $res['error']);
+                return redirect('dashboard/marketplace/'.$public_id);
+            }
+            $this->session->set_flashdata('success', 'Item added to your cart. Enter shipping details to continue.');
+            return redirect('checkout');
+        }
+
         $res = $this->marketplaceservice->purchase($this->current_user, array(
             'listing' => $public_id,
             // Quantity is the ONLY customer-chosen number; the price is looked
@@ -144,6 +166,7 @@ class Marketplace extends Auth_Controller {
     private function render_order($order, $plain) {
         $this->view('order', 'Marketplace order', array(
             'order' => $order,
+            'shipment' => $this->Shop_order_shipment_model->for_order($order->id),
             'events' => $this->Marketplace_order_model->events($order->id),
             'plain' => $plain,
             'is_buyer' => true,

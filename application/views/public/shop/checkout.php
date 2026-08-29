@@ -9,6 +9,7 @@ $u = $current_user;
 
     <form method="post" action="<?=site_url('checkout/place')?>">
       <?=$csrf?>
+      <input type="hidden" name="idempotency_key" value="<?=htmlspecialchars((string)$checkout_token)?>">
       <div style="display:grid;grid-template-columns:minmax(0,1.4fr) minmax(280px,1fr);gap:1.5rem">
         <div class="stack">
           <div class="card">
@@ -45,18 +46,19 @@ $u = $current_user;
               <label class="field mb-0"><span class="label">Country code (e.g. NG, US)</span><input class="input" name="country_code" maxlength="2" style="text-transform:uppercase"></label>
             </div>
             <label class="row mt-2" style="gap:.5rem;align-items:center">
-              <input type="checkbox" name="save_address" value="1"><span class="text-sm">Save this address for next time</span>
+              <input type="checkbox" name="save_address" value="1"><span class="text-sm">Make this address my default for next time</span>
             </label>
           </div>
 
           <?php if (!empty($shipping_methods)): ?>
           <div class="card">
             <h3 class="card-title">Shipping method</h3>
-            <?php foreach ($shipping_methods as $m): ?>
+            <p class="text-xs muted mb-3">One carrier quote is charged for this checkout, even when it contains several physical items.</p>
+            <?php foreach ($shipping_methods as $i => $m): ?>
               <label class="row mb-2" style="gap:.5rem;align-items:flex-start">
-                <input type="radio" name="shipping_method" value="<?=htmlspecialchars($m->public_id)?>" <?=$loop_first ?? false ? 'checked' : ''?>>
+                <input type="radio" name="shipping_method" value="<?=htmlspecialchars($m->public_id)?>" <?=($shipping_method && $shipping_method->public_id === $m->public_id) || (!$shipping_method && $i === 0) ? 'checked' : ''?>>
                 <span><strong><?=htmlspecialchars($m->name)?></strong> — <?=marvy_money($m->price, $m->currency)?>
-                  <?php if ($m->estimated_days_min): ?><span class="text-xs muted"> (<?=(int)$m->estimated_days_min?>-<?=(int)$m->estimated_days_max?> days)</span><?php endif; ?>
+                  <?php if ($m->estimated_days_min !== null): ?><span class="text-xs muted"> (<?=(int)$m->estimated_days_min?>-<?=(int)$m->estimated_days_max?> days)</span><?php endif; ?>
                 </span>
               </label>
             <?php endforeach; ?>
@@ -82,6 +84,9 @@ $u = $current_user;
           <div class="row justify-between"><span class="muted">Subtotal</span><span class="mono"><?=marvy_money($subtotal, $currency)?></span></div>
           <?php if (bccomp($discount, '0', 8) > 0): ?>
           <div class="row justify-between"><span class="muted">Discount</span><span class="mono">−<?=marvy_money($discount, $currency)?></span></div>
+          <?php endif; ?>
+          <?php if (bccomp($shipping_cost ?? '0', '0', 8) > 0): ?>
+          <div class="row justify-between"><span class="muted">Shipping</span><span class="mono"><?=marvy_money($shipping_cost, $currency)?></span></div>
           <?php endif; ?>
           <div class="row justify-between mt-2" style="border-top:1px dashed var(--slate-200);padding-top:.5rem">
             <strong>Total</strong><strong class="mono" style="font-size:1.2rem"><?=marvy_money($total, $currency)?></strong>

@@ -109,7 +109,7 @@ class Marketplace_order_model extends MY_Model {
     private function list_projection() {
         $columns = array(
             'id', 'public_id', 'service_transaction_id', 'listing_id',
-            'buyer_id', 'quantity', 'unit_price', 'gross_amount',
+            'buyer_id', 'quantity', 'unit_price', 'gross_amount', 'shipping_cost',
             'status', 'delivered_at',
             'release_due_at', 'released_at',
             'dispute_reason', 'disputed_at', 'resolved_at', 'resolved_by',

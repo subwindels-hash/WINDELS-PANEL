@@ -76,6 +76,9 @@ node tools/devserver/service_recovery_check.mjs --admin-password <pw> # stuck VT
 node tools/devserver/security_check.mjs       --admin-password <pw>   # IDOR, CSRF, privilege escalation, live RBAC matrix
 node tools/devserver/support_check.mjs        --admin-password <pw>   # assistant limits, ticket attachments
 node tools/devserver/marketplace_fulfilment_check.mjs --admin-password <pw> # escrow, refunds, download revocation
+node tools/devserver/physical_product_check.mjs --admin-password <pw>      # SKU/package details and physical-listing validation
+node tools/devserver/physical_shipping_check.mjs --password <pw> --admin-password <pw> # browser checkout, carrier quote, shipment delivery
+node tools/devserver/physical_order_refund_check.mjs --admin-password <pw> # shipment-screen refund and audit trail
 node tools/devserver/seed_load.mjs                              # a year of trading, for measurement (--clean removes it)
 node tools/devserver/perf_check.mjs           --admin-password <pw>   # query cost of every heavy screen under that load
 node tools/devserver/deployment_check.mjs                       # extract the zip, import the SQL, boot it, sign in

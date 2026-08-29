@@ -18,7 +18,7 @@ class Marketplace extends Admin_Controller {
         $this->load->library(array('MarketplaceService', 'DashboardStats', 'MediaService'));
         $this->load->model(array(
             'Marketplace_listing_model',
-            'Marketplace_order_model', 'Marketplace_category_model', 'Audit_log_model'
+            'Marketplace_order_model', 'Marketplace_category_model', 'Shop_order_shipment_model', 'Audit_log_model'
         ));
     }
 
@@ -101,16 +101,36 @@ class Marketplace extends Admin_Controller {
             return redirect('admin/marketplace/listings/'.$public_id.'/edit');
         }
 
-        $to_int_or_null = function ($v) { $v = trim((string)$v); return $v === '' ? null : max(0, (int)$v); };
-        $to_dec_or_null = function ($v) { $v = trim((string)$v); return $v === '' ? null : number_format(max(0, (float)$v), 2, '.', ''); };
+        $to_int_or_null = function ($v) {
+            $v = trim((string)$v);
+            if ($v === '') return null;
+            if (!preg_match('/^[0-9]+$/', $v) || (int)$v > 4294967295) return false;
+            return (int)$v;
+        };
+        $to_dec_or_null = function ($v) {
+            $v = trim((string)$v);
+            if ($v === '') return null;
+            if (!preg_match('/^[0-9]+(?:\.[0-9]{1,2})?$/', $v)) return false;
+            $parts = explode('.', $v, 2);
+            if (strlen(ltrim($parts[0], '0')) > 6) return false;
+            return number_format((float)$v, 2, '.', '');
+        };
+        $weight = $to_int_or_null($this->input->post('weight_grams', true));
+        $length = $to_dec_or_null($this->input->post('length_cm', true));
+        $width = $to_dec_or_null($this->input->post('width_cm', true));
+        $height = $to_dec_or_null($this->input->post('height_cm', true));
+        if ($weight === false || $length === false || $width === false || $height === false) {
+            $this->session->set_flashdata('error', 'Weight and dimensions must be non-negative numbers with at most two decimals.');
+            return redirect('admin/marketplace/listings/'.$public_id.'/edit');
+        }
 
         $before = $this->Physical_product_model->for_listing($listing->id);
         $this->Physical_product_model->upsert_for_listing($listing->id, array(
             'sku'               => $sku,
-            'weight_grams'      => $to_int_or_null($this->input->post('weight_grams', true)),
-            'length_cm'         => $to_dec_or_null($this->input->post('length_cm', true)),
-            'width_cm'          => $to_dec_or_null($this->input->post('width_cm', true)),
-            'height_cm'         => $to_dec_or_null($this->input->post('height_cm', true)),
+            'weight_grams'      => $weight,
+            'length_cm'          => $length,
+            'width_cm'           => $width,
+            'height_cm'          => $height,
             'requires_shipping' => $this->input->post('requires_shipping') ? 1 : 0,
         ));
 
@@ -325,6 +345,11 @@ class Marketplace extends Admin_Controller {
     public function deliver($public_id) {
         $this->post_only();
         $this->require_perm('marketplace.manage');
+        $order = $this->Marketplace_order_model->find_public($public_id);
+        if ($order && ($shipment = $this->Shop_order_shipment_model->for_order($order->id))) {
+            $this->session->set_flashdata('error', 'Physical orders are managed from their shipment record.');
+            return redirect('admin/shop/shipments/'.$shipment->public_id);
+        }
         $res = $this->marketplaceservice->deliver(
             $this->current_user, $public_id, $this->input->post('delivery', false), true
         );
@@ -417,6 +442,7 @@ class Marketplace extends Admin_Controller {
     private function render_order($order, $plain) {
         $this->view('order', 'Marketplace order', array(
             'order' => $order,
+            'shipment' => $this->Shop_order_shipment_model->for_order($order->id),
             'events' => $this->Marketplace_order_model->events($order->id),
             'plain' => $plain,
             // What is still returnable, computed once by the service that

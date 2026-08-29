@@ -40,6 +40,7 @@ class CartService {
         $subtotal = '0.00000000';
         $lines = array();
         $has_physical = false;
+        $shipping_line_count = 0;
         $currency = marvy_base_currency();
 
         foreach ($items as $item) {
@@ -47,7 +48,21 @@ class CartService {
             $unit_price = $this->effective_price($item);
             $line_total = $unavailable ? '0.00000000' : bcmul($unit_price, (string)$item->quantity, 8);
             if (!$unavailable) $subtotal = bcadd($subtotal, $line_total, 8);
-            if ($item->product_type === 'PHYSICAL') $has_physical = true;
+
+            $is_physical = strtoupper((string)$item->product_type) === 'PHYSICAL';
+            // A missing physical row is deliberately not treated as a free
+            // pickup. The admin form promises that a physical listing has a
+            // SKU before it is sold; checkout reports the incomplete row and
+            // refuses to charge it in ShopCheckoutService::validate().
+            $physical_details_missing = $is_physical
+                && (empty($item->physical_product_id) || trim((string)($item->physical_sku ?? '')) === '');
+            $requires_shipping = $is_physical
+                && !$physical_details_missing
+                && (int)($item->requires_shipping ?? 1) === 1;
+            if ($requires_shipping) {
+                $has_physical = true;
+                $shipping_line_count++;
+            }
 
             $lines[] = array(
                 'item' => $item,
@@ -55,6 +70,9 @@ class CartService {
                 'line_total' => $line_total,
                 'unavailable' => $unavailable,
                 'out_of_stock' => $item->stock !== null && (int)$item->stock < (int)$item->quantity,
+                'is_physical' => $is_physical,
+                'requires_shipping' => $requires_shipping,
+                'physical_details_missing' => $physical_details_missing,
             );
         }
 
@@ -90,6 +108,7 @@ class CartService {
             'total' => $total,
             'currency' => $currency,
             'has_physical' => $has_physical,
+            'shipping_line_count' => $shipping_line_count,
             'count' => count($lines),
         );
     }

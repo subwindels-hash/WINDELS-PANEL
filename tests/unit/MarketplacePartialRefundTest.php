@@ -49,11 +49,30 @@ class MarketplacePartialRefundTest extends TestCase
         $buyer = $app->register('pbuyer', 'pbuyer@x.test');
         $app->credit($buyer, $balance);
         $app->library(array('LedgerService', 'TransactionEngine', 'MarketplaceService',
-                            'ShopDeliveryService'));
+                            'ShopDeliveryService', 'ShopShippingService'));
         $app->model(array('Service_transaction_model', 'Marketplace_order_model',
                           'Marketplace_listing_model', 'Digital_delivery_model',
-                          'Digital_product_model', 'Wallet_model', 'Setting_model',
+                          'Digital_product_model', 'Physical_product_model',
+                          'Shipping_address_model', 'Shipping_method_model',
+                          'Shop_order_shipment_model', 'Wallet_model', 'Setting_model',
                           'Service_transaction_status_history_model'));
+        $app->db->insert('shipping_methods', array(
+            'public_id' => 'SHP'.str_pad((string)random_int(1, 999999), 23, '0', STR_PAD_LEFT),
+            'name' => 'Standard', 'carrier' => 'Acme', 'price' => '250.00000000',
+            'currency' => 'NGN', 'estimated_days_min' => 2, 'estimated_days_max' => 5,
+            'is_active' => 1, 'sorting' => 0, 'created_at' => gmdate('Y-m-d H:i:s'),
+            'updated_at' => gmdate('Y-m-d H:i:s'),
+        ));
+        $method = $app->db->where('id', $app->db->insert_id())->get('shipping_methods')->row();
+        $app->db->insert('shipping_addresses', array(
+            'public_id' => 'SAD'.str_pad((string)random_int(1, 999999), 23, '0', STR_PAD_LEFT),
+            'user_id' => $buyer->id, 'full_name' => 'Buyer', 'phone' => '08000000000',
+            'line1' => '1 Test Street', 'line2' => null, 'city' => 'Abuja', 'state' => 'FCT',
+            'postal_code' => '900001', 'country_code' => 'NG', 'is_default' => 1,
+            'created_at' => gmdate('Y-m-d H:i:s'), 'updated_at' => gmdate('Y-m-d H:i:s'),
+        ));
+        $address = $app->db->where('id', $app->db->insert_id())->get('shipping_addresses')->row();
+        $app->__physical_checkout = array('address' => $address, 'method' => $method);
         return array($app, $buyer);
     }
 
@@ -83,15 +102,39 @@ class MarketplacePartialRefundTest extends TestCase
                 'download_limit' => 5, 'link_ttl_hours' => 24,
                 'created_at' => $now, 'updated_at' => $now,
             ));
+        } else {
+            $app->db->insert('physical_products', array(
+                'public_id' => 'PPR'.str_pad((string)random_int(1, 999999), 23, '0', STR_PAD_LEFT),
+                'listing_id' => $listing->id, 'sku' => 'MUG-'.random_int(1, 999999),
+                'weight_grams' => 350, 'length_cm' => '12.00', 'width_cm' => '10.00',
+                'height_cm' => '10.00', 'requires_shipping' => 1,
+                'created_at' => $now, 'updated_at' => $now,
+            ));
         }
         return $listing;
     }
 
     private function buy($app, $buyer, $listing, $quantity = 1)
     {
-        return $app->marketplaceservice->purchase($buyer, array(
-            'listing' => $listing->public_id, 'quantity' => $quantity,
-        ));
+        $input = array('listing' => $listing->public_id, 'quantity' => $quantity);
+        if (strtoupper((string)$listing->product_type) === 'PHYSICAL') {
+            $input['shipping_address_id'] = $app->__physical_checkout['address']->id;
+            $input['shipping_method_id'] = $app->__physical_checkout['method']->id;
+        }
+        return $app->marketplaceservice->purchase($buyer, $input);
+    }
+
+    private function deliver_physical($app, $order)
+    {
+        $shipment = $app->db->where('marketplace_order_id', $order->id)
+            ->get('shop_order_shipments')->row();
+        $this->assertNotNull($shipment);
+        $this->assertTrue($app->shopshippingservice->update($shipment->public_id, array(
+            'status' => 'SHIPPED', 'carrier' => 'Acme', 'tracking_number' => 'ABC123',
+        ), null)['ok']);
+        return $app->shopshippingservice->update($shipment->public_id, array(
+            'status' => 'DELIVERED', 'carrier' => 'Acme', 'tracking_number' => 'ABC123',
+        ), null);
     }
 
     private function order_of($app, $public_id)
@@ -127,7 +170,7 @@ class MarketplacePartialRefundTest extends TestCase
 
         $this->assertTrue($res['ok'], $res['error'] ?? '');
         $this->assertSame('2000.00000000', $res['refunded']);
-        $this->assertSame('3000.00000000', $res['remaining'], 'three licences are still paid for');
+        $this->assertSame('3250.00000000', $res['remaining'], 'three licences and the quoted shipping fee are still paid for');
 
         $row = $this->order_of($app, $order->public_id);
         $this->assertSame('PARTIALLY_REFUNDED', $row->status,
@@ -171,7 +214,7 @@ class MarketplacePartialRefundTest extends TestCase
         $this->assertFalse($res['ok']);
         $this->assertSame('OVER_REFUND', $res['code']);
         $this->assertSame($before, $this->balance($app, $buyer), 'nothing may move on a refusal');
-        $this->assertStringContainsString('2000.00000000', $res['error'],
+        $this->assertStringContainsString('2250.00000000', $res['error'],
             'the operator is told what IS refundable rather than guessing again');
     }
 
@@ -227,7 +270,7 @@ class MarketplacePartialRefundTest extends TestCase
         list($app, $buyer) = $this->app();
         $listing = $this->listing($app, false, 5);
         $order   = $this->order_of($app, $this->buy($app, $buyer, $listing, 1)['order']->public_id);
-        $app->marketplaceservice->deliver(null, $order->public_id, 'Tracking: ABC', true);
+        $this->assertTrue($this->deliver_physical($app, $order)['ok']);
         $app->marketplaceservice->release($this->order_of($app, $order->public_id), 'ADMIN', null);
 
         $res = $app->marketplaceservice->refund_partial(
@@ -298,7 +341,7 @@ class MarketplacePartialRefundTest extends TestCase
 
         $this->assertSame($before, $this->balance($app, $buyer),
             'the buyer ends up exactly where they started, not better off');
-        $this->assertSame('4000.00000000',
+        $this->assertSame('4250.00000000',
             (string)$this->order_of($app, $order->public_id)->refunded_amount);
     }
 
@@ -345,9 +388,9 @@ class MarketplacePartialRefundTest extends TestCase
         $listing = $this->listing($app, false, 5);
         $order   = $this->order_of($app, $this->buy($app, $buyer, $listing, 3)['order']->public_id);
 
-        $this->assertSame('3000.00000000', $app->marketplaceservice->refundable($order));
+        $this->assertSame('3250.00000000', $app->marketplaceservice->refundable($order));
         $app->marketplaceservice->refund_partial($order, '1200', null, 'adjustment', 0);
-        $this->assertSame('1800.00000000',
+        $this->assertSame('2050.00000000',
             $app->marketplaceservice->refundable($this->order_of($app, $order->public_id)));
     }
 

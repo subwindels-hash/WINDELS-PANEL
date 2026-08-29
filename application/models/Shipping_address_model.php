@@ -22,6 +22,12 @@ class Shipping_address_model extends MY_Model {
             ->get($this->table)->row();
     }
 
+    /** Internal order paths use the numeric FK but still enforce ownership. */
+    public function find_for_user($id, $user_id) {
+        return $this->db->where('id', (int)$id)->where('user_id', (int)$user_id)
+            ->get($this->table)->row();
+    }
+
     public function create(array $data) {
         $data['public_id'] = $this->new_public_id();
         $data['created_at'] = $this->now_utc();
