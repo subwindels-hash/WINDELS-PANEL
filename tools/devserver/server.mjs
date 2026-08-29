@@ -21,7 +21,7 @@ import { PHPRequestHandler } from '@php-wasm/universal';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function parseArgs(argv) {
-  const out = { port: 8080, host: '0.0.0.0', workers: 3, root: null, maxRequests: 400 };
+  const out = { port: 8080, host: '0.0.0.0', workers: 1, root: null, maxRequests: 400 };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--port') out.port = parseInt(argv[++i], 10);
     else if (argv[i] === '--host') out.host = argv[++i];
@@ -71,7 +71,10 @@ function isDenied(pathname) {
   const clean = pathname.replace(/\\/g, '/');
   if (/(^|\/)\.[^/]/.test(clean)) return true;               // .env, .git, .htpasswd
   if (/\.(sql|sqlite|zip|gz|log)$/i.test(clean)) return true;  // dumps and archives
-  if (/^\/(application|system|vendor|storage|tools|tests)(\/|$)/i.test(clean)) return true;
+  // Same list as the shipped .htaccess and the nginx configs — docs/ holds
+  // the security audit trail, database/ the schema, cron/ the worker entry
+  // points; none of them is a document the panel should publish.
+  if (/^\/(application|system|vendor|storage|tools|tests|docs|database|cron)(\/|$)/i.test(clean)) return true;
   return false;
 }
 
@@ -131,13 +134,29 @@ function createHandler() {
 /**
  * The PHP pool, recycled after a bounded number of requests.
  *
- * Each wasm runtime holds open file descriptors, and this build leaks a few
- * per request. After a few hundred — one long end-to-end run — the process
- * hits "No file descriptors available" and every route starts answering 500,
- * which looks exactly like the application breaking and has cost several
- * debugging sessions. PHP-FPM solves the same class of problem with
- * pm.max_requests; so does this. The old handler stays alive until its
- * in-flight requests finish, then goes away with its descriptors.
+ * Two failure modes, two mitigations:
+ *
+ * 1. Leaked file descriptors. Each wasm runtime holds open fds, and this
+ *    build leaks a few per request. After a few hundred — one long end-to-end
+ *    run — the process hits "No file descriptors available" and every route
+ *    starts answering 500, which looks exactly like the application breaking
+ *    and has cost several debugging sessions. PHP-FPM solves the same class
+ *    of problem with pm.max_requests; so does this (below). The old handler
+ *    stays alive until its in-flight requests finish, then goes away with its
+ *    descriptors.
+ *
+ * 2. Session-lock self-deadlock. Every wasm request shares the main thread
+ *    (asyncify). CI's file session handler takes flock(LOCK_EX) on the
+ *    session file as a synchronous syscall; if two requests ever overlap on
+ *    one session, the second flock blocks the main thread while the first
+ *    request (holding the lock) can never resume — an unrecoverable
+ *    self-deadlock that turns the server into a black hole (observed in
+ *    production of the dev box: main thread stuck in locks_lock_inode_wait
+ *    with two open fds on one session file). The default is therefore ONE
+ *    PHP instance: requests are strictly serialised, so a lock is always
+ *    released before the next request starts. `--workers N` (N > 1) is
+ *    available for people who accept that risk; it is a dev speed dial, not
+ *    a production claim.
  */
 let handler = createHandler();
 let servedSinceRecycle = 0;
@@ -199,6 +218,13 @@ const server = http.createServer(async (req, res) => {
 
   const body = await readBody(req);
 
+  // Watchdog: a wasm request that never completes wedges its PHP instance
+  // forever — the pool serialises through one semaphore per instance, so a
+  // few such requests brick the whole server into a black hole (every later
+  // request times out; only a process restart recovers it). Time each
+  // request, 504 the client, and rebuild the pool so development continues.
+  const REQUEST_TIMEOUT_MS = 120000;
+  let watchdog = null;
   try {
     const headers = {};
     for (const [k, v] of Object.entries(req.headers)) {
@@ -207,12 +233,21 @@ const server = http.createServer(async (req, res) => {
 
     cookiePassthrough.current = headers.cookie || '';
     const pool = handler;                 // the instance this request belongs to
-    const response = await pool.request({
-      url: req.url,
-      method: req.method,
-      headers,
-      body: body.length ? new Uint8Array(body) : undefined,
-    });
+    const response = await Promise.race([
+      pool.request({
+        url: req.url,
+        method: req.method,
+        headers,
+        body: body.length ? new Uint8Array(body) : undefined,
+      }),
+      new Promise((_, reject) => {
+        watchdog = setTimeout(
+          () => reject(new Error('php request never completed — wasm worker wedged, recycling pool')),
+          REQUEST_TIMEOUT_MS
+        );
+      }),
+    ]);
+    if (watchdog) clearTimeout(watchdog);
 
     const outHeaders = {};
     for (const [k, v] of Object.entries(response.headers || {})) {
@@ -224,11 +259,25 @@ const server = http.createServer(async (req, res) => {
     if (response.errors) process.stderr.write(String(response.errors));
     noteRequestServed();
   } catch (err) {
+    const wedged = /wasm worker wedged/.test(String(err?.message || err));
     console.error('[devserver]', req.method, req.url, err?.message || err);
-    const detail = err?.response
-      ? new TextDecoder().decode(err.response.bytes)
-      : String(err?.stack || err?.message || err);
-    res.writeHead(500, { 'content-type': 'text/html; charset=utf-8' });
+    if (wedged) {
+      // The pool this request was in may hold a wedged instance; a few of
+      // these and the old pool serves nothing but 504s. Rebuild it so the
+      // next request lands on a healthy worker. The ghost request keeps
+      // consuming the discarded pool's one instance, which is now orphaned.
+      handler = createHandler();
+      servedSinceRecycle = 0;
+      console.log('[devserver] pool recycled after a wedged wasm request');
+    }
+    const detail = wedged
+      ? '504 — the PHP worker wedged on this request; the dev server recycled its pool. Retry the action.'
+      : (err?.response
+        ? new TextDecoder().decode(err.response.bytes)
+        : String(err?.stack || err?.message || err));
+    if (!res.headersSent) {
+      res.writeHead(wedged ? 504 : 500, { 'content-type': wedged ? 'text/plain; charset=utf-8' : 'text/html; charset=utf-8' });
+    }
     res.end(detail);
   }
 });

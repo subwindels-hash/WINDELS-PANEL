@@ -9,9 +9,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadNodeRuntime, createNodeFsMountHandler, withNetworking } from '@php-wasm/node';
 import { PHP } from '@php-wasm/universal';
+import { loadDotEnv } from './env.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
+
+// The PHP seeder pins demo credentials with getenv('DEMO_PASSWORD'), which
+// only sees the OS environment — so surface .env before the wasm runtime is
+// created. Without this, a seeded admin password is a random string that no
+// end-to-end check can know.
+loadDotEnv();
 
 const args = process.argv.slice(2);
 

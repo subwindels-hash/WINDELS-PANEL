@@ -101,43 +101,24 @@ $value = function ($key) use ($form) {
       <?php
         // Operator-controlled contact block (Admin → Settings → Contact page).
         //
-        // Two embeds, chosen by what the operator typed, because both have to
-        // work with no API key and no billing account:
-        //
-        //   · "latitude,longitude" → OpenStreetMap. Exact pin, no key, and no
-        //     third-party cookie dropped on a visitor who only wanted an
-        //     address.
-        //   · anything else (a street address, a place name) → Google Maps in
-        //     its keyless `output=embed` mode, which is the only embed that
-        //     geocodes free text without an account.
-        //
-        // Either way the operator gets a working map by typing one field.
-        $cd = $contact_details ?? array();
-        $map_enabled = !empty($cd['map_enabled']);
+        // The map is first-party: ContactMapService resolves the operator's
+        // query on the server ("lat,lng" locally, free text with one cached
+        // geocode) and the nine OSM tiles around the point are fetched by
+        // the server and served from THIS origin at /contact/map/tile/…
+        // A visitor on this page makes no request to any third party; the
+        // "Open in maps" button is the single, user-initiated exception.
+        // When the query cannot be resolved (no outbound route, an unknown
+        // place) the map box is omitted entirely and the printed details
+        // stand in for it — no broken image, nothing to disclose.
+        $cd  = $contact_details ?? array();
+        $map = $map_context ?? array('enabled' => false, 'resolved' => false,
+                                     'map_key' => null, 'tiles' => null,
+                                     'marker' => null, 'search' => null);
         $address = trim((string)($cd['address'] ?? ''));
         $phone   = trim((string)($cd['phone'] ?? ''));
         $hours   = trim((string)($cd['hours'] ?? ''));
-        $embed = $search = '';
-        if ($map_enabled) {
-            $query = (string)$cd['map_query'];
-            $zoom  = (int)($cd['map_zoom'] ?? 15);
-            if (preg_match('/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/', $query, $m)) {
-                $lat = (float)$m[1]; $lng = (float)$m[2];
-                // A degree window that roughly matches the requested zoom, so
-                // "17" really does look like a street and "12" like a city.
-                $span = max(0.0015, 0.35 / pow(2, max(0, $zoom - 9)));
-                $embed = 'https://www.openstreetmap.org/export/embed.html?bbox='
-                       . rawurlencode(($lng - $span).','.($lat - $span).','.($lng + $span).','.($lat + $span))
-                       . '&layer=mapnik&marker='.rawurlencode($lat.','.$lng);
-                $search = 'https://www.openstreetmap.org/?mlat='.rawurlencode((string)$lat)
-                        . '&mlon='.rawurlencode((string)$lng).'#map='.$zoom.'/'.$lat.'/'.$lng;
-            } else {
-                $embed  = 'https://maps.google.com/maps?q='.rawurlencode($query).'&z='.$zoom.'&output=embed';
-                $search = 'https://www.google.com/maps/search/?api=1&query='.rawurlencode($query);
-            }
-        }
       ?>
-      <?php if ($map_enabled || $address !== '' || $phone !== '' || $hours !== ''): ?>
+      <?php if (!empty($map['resolved']) || $address !== '' || $phone !== '' || $hours !== ''): ?>
       <div class="card mt-6">
         <h2 class="card-title">Find us</h2>
         <div class="grid grid-2" style="gap:1.25rem;align-items:start">
@@ -156,19 +137,26 @@ $value = function ($key) use ($form) {
               <h3 class="text-sm font-semibold mb-1 mt-3">Support hours</h3>
               <p class="muted" style="margin-top:0"><?=htmlspecialchars($hours)?></p>
             <?php endif; ?>
-            <?php if ($map_enabled): ?>
+            <?php if (!empty($map['search'])): ?>
               <p class="mt-3 mb-0">
-                <a class="btn btn-secondary btn-sm" href="<?=htmlspecialchars($search)?>"
+                <a class="btn btn-secondary btn-sm" href="<?=htmlspecialchars($map['search'])?>"
                    target="_blank" rel="noopener noreferrer">Open in maps</a>
               </p>
             <?php endif; ?>
           </div>
-          <?php if ($map_enabled): ?>
-            <div class="ws-map" data-map-query="<?=htmlspecialchars((string)$cd['map_query'])?>"
-                 data-map-zoom="<?=(int)($cd['map_zoom'] ?? 15)?>">
-              <iframe title="Map showing our location" loading="lazy" referrerpolicy="no-referrer"
-                      src="<?=htmlspecialchars($embed)?>"
-                      style="border:0;width:100%;height:100%"></iframe>
+          <?php if (!empty($map['resolved']) && is_array($map['tiles'])): ?>
+            <div class="ws-map ws-map-grid" role="img"
+                 aria-label="Map showing our location at <?=htmlspecialchars((string)($cd['map_query'] ?? 'our address'))?>">
+              <?php foreach ($map['tiles'] as $idx => $tile):
+                    $i = $idx % 3; $j = intdiv($idx, 3); ?>
+                <img class="ws-map-tile" src="<?=htmlspecialchars($tile)?>" alt=""
+                     loading="lazy" width="256" height="256" decoding="async"
+                     style="grid-column:<?= $i + 1 ?>;grid-row:<?= $j + 1 ?>">
+              <?php endforeach; ?>
+              <?php if (!empty($map['marker'])): ?>
+                <span class="ws-map-pin" aria-hidden="true"
+                      style="left:<?=htmlspecialchars($map['marker']['left']) ?>%;top:<?=htmlspecialchars($map['marker']['top']) ?>%"></span>
+              <?php endif; ?>
             </div>
           <?php endif; ?>
         </div>

@@ -34,7 +34,7 @@
   <ul class="mt-3 stack" style="gap:.25rem">
     <?php foreach ($rows as $m): ?>
     <li class="ws-inbox-item row <?=$m->is_read?'is-read':''?>" style="gap:.75rem;padding:.85rem 1rem">
-      <span style="width:8px;height:8px;border-radius:50%;background:<?=$m->is_read?'var(--slate-300)':'var(--brand-500)?>"></span>
+      <span style="width:8px;height:8px;border-radius:50%;background:<?=$m->is_read?'var(--slate-300)':'var(--brand-500)'?>"></span>
       <a class="flex-1 min-w-0" href="<?=site_url('admin/inbox/'.$m->public_id)?>" style="text-decoration:none">
         <div class="row justify-between" style="gap:.75rem">
           <span class="font-medium text-sm truncate" style="color:inherit">

@@ -28,7 +28,10 @@ class CronWorkersTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (glob(sys_get_temp_dir().'/marvy-test-locks/*.lock') as $f) @unlink($f);
+        foreach (glob(sys_get_temp_dir().'/marvy-test-locks/*.lock') as $f) {
+            @rmdir($f);   // a directory left by testAnUnavailableLockIsSkippedWithoutRunning
+            @unlink($f);  // or a held lock file
+        }
     }
 
     /* ============================== JobRunner ============================= */
@@ -77,20 +80,29 @@ class CronWorkersTest extends TestCase
             // share an open file description within one process, so the second
             // acquire() succeeds there and the primitive the test names cannot
             // be expressed — not because JobRunner's logic differs (it is the
-            // same code), but because the emulated syscall does. The runtime
-            // is honest about being a shim: sapi is 'wasm', uname reports
+            // same code), but because the emulated syscall does. The aliasing
+            // was re-probed against the current build (2026-08-29, PHP 8.2
+            // wasm: two fopen() handles on one lock file, second
+            // flock(LOCK_EX|LOCK_NB) returns true where a kernel returns
+            // false), so the skip is still load-bearing. The runtime is
+            // honest about being a shim: sapi is 'wasm', uname reports
             // Emscripten/wasm32, and no production cron or web worker ever
             // runs on it (README: PHP-FPM/CLI + MySQL + Redis). The skip keeps
             // the suite's contract intact — red must mean a real regression —
             // instead of leaving a permanently-failing test that trains
             // reviewers to ignore red. On native PHP (developer machines and
             // GitHub Actions, where the full suite runs against real MySQL)
-            // every assertion below executes unchanged.
+            // every assertion below executes unchanged. What the primitive
+            // exists FOR — acquire failure ⇒ skipped, not run, not recorded —
+            // is pinned on every runtime by
+            // testAnUnavailableLockIsSkippedWithoutRunning below.
             $this->markTestSkipped(
                 'flock(LOCK_EX|LOCK_NB) aliasing under emscripten makes the '
                 .'mutual-exclusion primitive unexpressible in this runtime; '
                 .'native PHP asserts it on every CI run. This is a platform '
-                .'skip, not a pass: the count stays visible.'
+                .'skip, not a pass: the count stays visible. The skip '
+                .'behaviour itself is covered on all runtimes by '
+                .'testAnUnavailableLockIsSkippedWithoutRunning.'
             );
         }
         $this->fresh();
@@ -110,6 +122,40 @@ class CronWorkersTest extends TestCase
         });
 
         $this->assertFalse($inner_ran, 'an overlapping run must not execute the work');
+    }
+
+    public function testAnUnavailableLockIsSkippedWithoutRunning()
+    {
+        // Runtime-portable pin of the overlap guarantee's consequence.
+        //
+        // The flock() primitive itself cannot be exercised under emscripten
+        // (testAJobCannotOverlapItself says why), but the contract the lock
+        // exists for — "could not take the lock ⇒ skip, do not run, do not
+        // leave a RUNNING row" — is expressible on every runtime: make the
+        // lock path unopenable by putting a DIRECTORY where the lock file
+        // should be. fopen() on a directory fails on every POSIX kernel and
+        // in the wasm filesystem alike (probed 2026-08-29), so this test
+        // drives the exact skip branch a held lock would trigger, wherever
+        // the suite runs.
+        $ci = $this->fresh();
+        $dir = sys_get_temp_dir().'/marvy-test-locks';
+        if (!is_dir($dir)) mkdir($dir, 0775, true);
+        $lockPath = $dir.'/unopenable.lock';
+        if (is_dir($lockPath)) rmdir($lockPath);
+        mkdir($lockPath, 0775, true);
+
+        $ran = false;
+        $runner = new JobRunner();
+        $res = $runner->run('unopenable', function () use (&$ran) {
+            $ran = true;
+            return array();
+        });
+
+        $this->assertTrue($res['ok'], 'a skipped run is a healthy outcome, not an error');
+        $this->assertTrue(!empty($res['skipped']), 'the run must be reported skipped');
+        $this->assertFalse($ran, 'work must not execute when the lock cannot be taken');
+        $this->assertSame(0, $ci->inserts['job_runs'] ?? 0,
+            'a skipped run must not leave a RUNNING row in job_runs');
     }
 
     public function testTheLockIsReleasedAfterAFailedRun()

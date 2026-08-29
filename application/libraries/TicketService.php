@@ -55,6 +55,7 @@ class TicketService {
             'status'      => 'OPEN',
             'priority'    => in_array(($input['priority'] ?? ''), array('LOW','MEDIUM','HIGH'), true) ? $input['priority'] : 'MEDIUM',
             'department'  => $input['department'] ?? 'orders',
+            'source'      => in_array(($input['source'] ?? ''), array('contact','assistant'), true) ? $input['source'] : 'contact',
             'order_id'    => $order ? $order->id : null,
             'created_at'  => gmdate('Y-m-d H:i:s'),
             'updated_at'  => gmdate('Y-m-d H:i:s'),
@@ -65,6 +66,31 @@ class TicketService {
         if ($this->ci->db->trans_status() === false)
             return array('ok'=>false,'error'=>'Could not create ticket','code'=>'PERSIST_FAILED');
         return array('ok'=>true,'ticket'=>$this->ci->Ticket_model->find_by_id($ticket->id));
+    }
+
+    /**
+     * The customer's most recent assistant-escalated ticket that staff have
+     * not closed, within the window.
+     *
+     * The assistant auto-opens a ticket for every question the knowledge
+     * base cannot answer. Without this guard, a customer who types the same
+     * unclear question three times in an hour opens three identical tickets
+     * — and staff triage the pile. A single open escalation within the
+     * window is the queue the new question joins; the chat points there
+     * instead of creating another row.
+     *
+     * @return object|null the ticket row (has public_id) or null
+     */
+    public function recent_assistant_ticket($user, $within_hours = 24) {
+        $since = gmdate('Y-m-d H:i:s', time() - max(1, (int)$within_hours) * 3600);
+        $row = $this->ci->db->query(
+            'SELECT * FROM tickets
+              WHERE user_id = ? AND source = \'assistant\'
+                AND status <> \'CLOSED\' AND created_at >= ?
+              ORDER BY created_at DESC, id DESC LIMIT 1',
+            array($user->id, $since)
+        )->row();
+        return $row ?: null;
     }
 
     /**

@@ -88,34 +88,50 @@ if (!$items) {
 $bg   = (string)$setting('announcement_bg_color', '#0b1b3a');
 $ink  = (string)$setting('announcement_text_color', '#ffffff');
 
-// The strip used to be a scrolling marquee; the operator asked for it to stop
-// moving, so it is now always static — every message renders, stacked, and
-// nothing scrolls across the top of the page. The speed setting is still read
-// (older installs and the settings screen write it) but deliberately does not
-// drive any motion: the bar has no animation, on any screen, for anyone.
-$speed   = (int)$setting('announcement_speed_seconds', 40);
-$seconds = 0;
-$static  = true;
+// The speed setting is the motion switch (Admin → Settings → Branding):
+// 0 keeps the bar static and centred, any positive value scrolls the
+// messages across in that many seconds. A single message is always static —
+// marching one line around the screen says nothing, it only moves.
+$speed  = (int)$setting('announcement_speed_seconds', 40);
+$static = (count($items) === 1) || $speed <= 0;
 
 $style = 'background:'.htmlspecialchars($bg, ENT_QUOTES).';'
        . 'color:'.htmlspecialchars($ink, ENT_QUOTES).';'
        . 'border-bottom-color:rgba(255,255,255,.16);';
+if (!$static) {
+    // The duration rides on the container as a custom property so the
+    // stylesheet owns the animation and the operator's number is the only
+    // thing that changes per install.
+    $style .= ' --ws-announce-speed:'.$speed.'s;';
+}
 
 // AnnouncementText escapes every character it did not write itself, so the
 // output is placed unescaped on purpose — escaping it again would print the
 // anchor as text.
 ?>
-<div class="ws-announce is-static" role="region" aria-label="Announcements"
+<div class="ws-announce<?= $static ? ' is-static' : ''?>" role="region" aria-label="Announcements"
      data-announce style="<?=$style?>">
   <div class="ws-announce-viewport">
-    <div class="ws-announce-stack">
-      <?php foreach ($items as $text): ?>
-        <span class="ws-announce-item"><?=AnnouncementText::render($text)?></span>
-      <?php endforeach; ?>
-    </div>
+    <?php if ($static && count($items) === 1): ?>
+      <span class="ws-announce-item"><?=AnnouncementText::render($items[0])?></span>
+    <?php elseif ($static): ?>
+      <div class="ws-announce-stack">
+        <?php foreach ($items as $text): ?>
+          <span class="ws-announce-item"><?=AnnouncementText::render($text)?></span>
+        <?php endforeach; ?>
+      </div>
+    <?php else: ?>
+      <div class="ws-announce-track">
+        <?php foreach (array(0, 1) as $copy): ?>
+          <?php foreach ($items as $text): ?>
+            <span class="ws-announce-item"<?= $copy ? ' aria-hidden="true"' : ''?>><?=AnnouncementText::render($text)?></span>
+          <?php endforeach; ?>
+        <?php endforeach; ?>
+      </div>
+    <?php endif; ?>
   </div>
 </div>
-<script>
+<script <?=csp_nonce_attr()?>
 // The bar's height feeds the sticky offsets of everything below it
 // (--ws-announce-h). A single message is the classic 2.75rem, but stacked
 // messages make the strip taller — publish the real height to :root so the

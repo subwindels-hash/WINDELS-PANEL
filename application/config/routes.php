@@ -58,6 +58,10 @@ $route['blog/(:any)'] = 'blog/post/$1';
 // $route['contact']['post'] on top of a string value is a fatal in PHP 8.
 $route['contact']['get']  = 'home/contact';
 $route['contact']['post'] = 'home/contact_submit';
+// First-party contact-map tile. The grid reference is 24 hex chars derived
+// from the operator's configured map (not raw coordinates), and the cell is
+// one of the nine around it — see ContactMapService.
+$route['contact/map/tile/([a-f0-9]{24})/([0-2])/([0-2])'] = 'home/map_tile/$1/$2/$3';
 $route['design-system'] = 'home/styleguide';
 $route['terms'] = 'home/terms';
 $route['privacy'] = 'home/privacy';

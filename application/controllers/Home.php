@@ -169,8 +169,53 @@ class Home extends Public_Controller {
                 // operator-controlled (Admin → Settings → Contact page), so a
                 // business with no public address simply switches it off.
                 'contact_details' => $this->contact_details(),
+                // The first-party map context (tiles from this origin, or
+                // nothing at all) — see ContactMapService.
+                'map_context'     => $this->map_context(),
             ), $data),
         ));
+    }
+
+    /**
+     * One cached map tile for the contact page, served from this origin.
+     *
+     * The grid reference (24 hex digits) identifies the map the operator
+     * configured, not a coordinate, so the endpoint can only ever hand out
+     * the nine tiles around that address — it is not a tile proxy.
+     */
+    public function map_tile($map_key, $i, $j){
+        if (!preg_match('/^[a-f0-9]{24}$/', (string)$map_key)
+            || (int)$i < 0 || (int)$i > 2 || (int)$j < 0 || (int)$j > 2) {
+            show_404();
+            return;
+        }
+        $this->load->library('ContactMapService');
+        $bytes = $this->contactmapservice->tile((string)$map_key, (int)$i, (int)$j);
+        if ($bytes === null) { show_404(); return; }
+        // One-argument set_header(): the two-argument form treats the second
+        // argument as the *replace* flag, so the value would be lost.
+        $this->output
+            ->set_content_type('image/png', null)
+            ->set_header('Cache-Control: public, max-age=2592000')
+            ->set_header('X-Robots-Tag: noindex')
+            ->set_header('Content-Length: '.strlen($bytes))
+            ->set_output($bytes);
+    }
+
+    /**
+     * Contact map context, or a safe default: a map that cannot be rendered
+     * must never take the contact page down with it.
+     */
+    private function map_context() {
+        $none = array('enabled' => false, 'resolved' => false, 'map_key' => null,
+                      'tiles' => null, 'marker' => null, 'search' => null);
+        try {
+            $this->load->library('ContactMapService');
+            return $this->contactmapservice->view_context($this->contact_details());
+        } catch (Throwable $e) {
+            log_message('error', 'contact map unavailable: '.$e->getMessage());
+            return $none;
+        }
     }
 
     /**

@@ -445,11 +445,11 @@ class Users extends Admin_Controller {
     }
 
     /**
-     * POST /admin/customers/:id/password-reset — send a reset link.
+     * POST /admin/customers/:id/force-logout — revoke every refresh token.
      *
-     * Deliberately issues the customer's own reset flow rather than setting a
-     * password the operator would then know. Staff never handle a customer
-     * credential.
+     * A stolen session is a live breach, not a nuisance: the customer may
+     * still be holding a valid refresh token on a device the operator cannot
+     * see, and this is the only way to end it from the panel.
      */
     public function force_logout($public_id) {
         $user = $this->guard($public_id, 'users.edit');
@@ -459,6 +459,13 @@ class Users extends Admin_Controller {
         $this->done($user, 'Refresh tokens revoked. The customer must sign in again on other devices.');
     }
 
+    /**
+     * POST /admin/customers/:id/revoke-keys — revoke every reseller API key.
+     *
+     * A leaked key is a leaked checkout: it can place orders on the customer's
+     * balance until it is gone, and there is no per-key kill switch from the
+     * panel, so the whole set goes.
+     */
     public function revoke_keys($public_id) {
         $user = $this->guard($public_id, 'users.edit');
         $res = $this->useradminservice->revoke_api_keys($this->current_user, $user);
@@ -467,6 +474,13 @@ class Users extends Admin_Controller {
         $this->done($user, 'All API keys for this account have been revoked.');
     }
 
+    /**
+     * POST /admin/customers/:id/password-reset — send a reset link.
+     *
+     * Deliberately issues the customer's own reset flow rather than setting a
+     * password the operator would then know. Staff never handle a customer
+     * credential.
+     */
     public function password_reset($public_id) {
         $user = $this->guard($public_id, 'users.edit');
 

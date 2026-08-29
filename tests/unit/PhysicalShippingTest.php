@@ -229,4 +229,44 @@ class PhysicalShippingTest extends TestCase
         $this->assertSame('DISPUTED', $app->db->where('id', $order->id)->get('marketplace_orders')->row()->status);
         $this->assertNull($app->db->where('id', $order->id)->get('marketplace_orders')->row()->release_due_at);
     }
+
+    public function testAnInTransitPhysicalOrderCannotBePartRefunded()
+    {
+        // A partial refund is compensation for goods the buyer keeps. While
+        // the parcel is with the carrier there is nothing to keep — and
+        // allowing it would strand the order: a part-refunded order can
+        // never be recorded delivered, so its escrow remainder would ride
+        // the abandonment sweep back to the buyer who still receives the
+        // parcel (goods AND full money). Refusing in transit leaves the two
+        // honest options: refund in full (cancels the shipment) or wait for
+        // delivery, after which the part refund stands.
+        list($app, $buyer) = $this->app();
+        $listing = $this->listing($app);
+        $purchase = $app->marketplaceservice->purchase($buyer, $this->purchase_input($app, $listing, $buyer));
+        $this->assertTrue($purchase['ok'], $purchase['error'] ?? '');
+        $order = $this->order($app, $purchase);
+        $shipment = $app->db->where('marketplace_order_id', $order->id)->get('shop_order_shipments')->row();
+        $before = $app->balance($buyer);
+
+        $refused = $app->marketplaceservice->refund_partial($order, '500.00000000', 7, 'agreed discount');
+        $this->assertFalse($refused['ok']);
+        $this->assertSame('SHIPMENT_IN_TRANSIT', $refused['code']);
+        $this->assertSame($before, $app->balance($buyer), 'no money may move for a refused part refund');
+        $this->assertSame('PAID', $this->order($app, $purchase)->status);
+        $this->assertSame('PENDING', $app->db->where('id', $shipment->id)->get('shop_order_shipments')->row()->status);
+
+        // The exit: once the parcel is delivered the same part refund stands,
+        // because the buyer now keeps the goods it is being compensated for.
+        $app->shopshippingservice->update($shipment->public_id, array(
+            'status' => 'SHIPPED', 'carrier' => 'Acme', 'tracking_number' => 'ABC123',
+        ), 7);
+        $delivered = $app->shopshippingservice->update($shipment->public_id, array('status' => 'DELIVERED'), 7);
+        $this->assertTrue($delivered['ok'], $delivered['error'] ?? '');
+
+        $order = $this->order($app, $purchase);
+        $allowed = $app->marketplaceservice->refund_partial($order, '500.00000000', 7, 'agreed discount');
+        $this->assertTrue($allowed['ok'], $allowed['error'] ?? '');
+        $this->assertSame('PARTIALLY_REFUNDED', $this->order($app, $purchase)->status);
+        $this->assertSame('500.00000000', (string)$allowed['refunded']);
+    }
 }

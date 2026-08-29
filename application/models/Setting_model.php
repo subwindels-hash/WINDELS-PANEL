@@ -74,20 +74,46 @@ class Setting_model extends MY_Model {
      * Checked through table_exists() rather than by catching the failure: with
      * db_debug on (development) CI3 renders its own error page and exits, so a
      * try/catch around the query would never run.
+     *
+     * The probe goes through the CI super-object, not $this->db: CI 3.1.13's
+     * CI_Model hands the database out through __get() magic only, and
+     * isset($this->db) never calls __get (only __isset() would, and it is not
+     * defined), so a property probe on the model is ALWAYS false — it looked
+     * like "no database" on every request and the guard below could never see
+     * the schema. The super-object is where Loader::database() puts the real
+     * $CI->db property (or '' when the connect failed), the same probe
+     * marvy_load_database() uses.
      */
     private function settings_table_exists() {
         if (self::$table_present !== NULL) return self::$table_present;
+
+        $db = NULL;
+        if (function_exists('get_instance')) {
+            $ci =& get_instance();
+            if (isset($ci->db) && is_object($ci->db)) $db = $ci->db;
+        }
+
+        // No database at all — the pre-migration install, or a failed connect.
+        // "Table absent" is the honest answer here: the settings map is empty,
+        // the callers' defaults apply, and public pages keep degrading when
+        // MySQL does not answer (MY_Controller::$db_ready). A dead database
+        // must not turn the first page of a fresh install into a database
+        // error page — that is exactly what this guard exists for (see all()).
+        if (!is_object($db)) {
+            return self::$table_present = FALSE;
+        }
+
         // Only a driver that can positively report the table is missing may
         // suppress the read. Anything else — a driver without table_exists(),
         // a probe that throws — is treated as "present" so the normal query
         // still runs and reports its own error. Failing open here matters:
         // this guard exists for the pre-migration install, not to silently
         // swallow settings on a working database.
-        if (!isset($this->db) || !is_object($this->db) || !method_exists($this->db, 'table_exists')) {
+        if (!method_exists($db, 'table_exists')) {
             return self::$table_present = TRUE;
         }
         try {
-            return self::$table_present = (bool) $this->db->table_exists($this->table);
+            return self::$table_present = (bool) $db->table_exists($this->table);
         } catch (Throwable $e) {
             return self::$table_present = TRUE;
         }

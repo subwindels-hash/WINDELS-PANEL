@@ -50,6 +50,20 @@ class Migrate extends Cron_Controller {
         }
         $this->db->query('SET FOREIGN_KEY_CHECKS=1');
         $this->line('Dropped. Re-running migrations ...');
+        // The Migration library's constructor created the bookkeeping table
+        // before the drop, and version() reads its current version without a
+        // table-exists guard — so rebuild it exactly as the constructor does,
+        // and clear the driver's data_cache memo (filled by the drop loop's
+        // list_tables()) so the rebuilt table is what every lookup sees.
+        $this->db->data_cache = array();
+        $migration_table = $this->config->item('migration_table') ?: 'migrations';
+        if (!$this->db->table_exists($migration_table)) {
+            $this->dbforge->add_field(array(
+                'version' => array('type' => 'BIGINT', 'constraint' => 20),
+            ));
+            $this->dbforge->create_table($migration_table, TRUE);
+            $this->db->insert($migration_table, array('version' => 0));
+        }
         $this->latest();
     }
 

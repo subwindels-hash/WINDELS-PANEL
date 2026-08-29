@@ -32,7 +32,10 @@ class SiteOperatorEngine {
     /**
      * @param string $message
      * @param array  $history  list of {role: user|assistant, content: string}
-     * @return array{ok:bool,intent:string,reply:string,links:array,suggestions:array,honest:bool,error?:string}
+     * @return array{ok:bool,intent:string,reply:string,links:array,suggestions:array,honest:bool,unanswered:bool,error?:string}
+     *         unanswered is true only when nothing in the knowledge base
+     *         covered the question — the caller's cue that a signed-in
+     *         customer's question may deserve a support ticket.
      */
     public function reply($message, array $history = array()) {
         $text = trim((string)$message);
@@ -209,6 +212,8 @@ class SiteOperatorEngine {
                         'The best match is '.$page['title'].': '.$page['summary'],
                         array(array('label' => $page['title'], 'href' => $page['path'])));
                 }
+                // A bare "take me somewhere" is a menu, not an unanswerable
+                // question — no escalation.
                 return $this->ok('navigate',
                     'I can open Services, Pricing, FAQ, Contact, Sign up, Login, or the legal pages. Which do you need?',
                     $this->nav('services', 'pricing', 'faq', 'register'));
@@ -226,18 +231,28 @@ class SiteOperatorEngine {
 
         $page = $this->best_page($normalized);
         if ($page && ($page['_score'] ?? 0) >= 0.4) {
-            return $this->ok('unknown',
+            // A "closest page" pointer is a scored guess, not an answer from
+            // the knowledge base — the question still counts as unanswered.
+            $out = $this->ok('unknown',
                 'I am not sure I understood that. The closest page is '.$page['title'].' — '.$page['summary'].' I can also help with services, pricing, registration, login, FAQs, privacy and terms.',
                 array(array('label' => $page['title'], 'href' => $page['path'])),
                 SiteOperatorKnowledge::suggested_questions()
             );
+            $out['unanswered'] = true;
+            return $out;
         }
 
-        return $this->ok('unknown',
+        // Nothing in the knowledge base covered this. `unanswered` tells the
+        // caller that a signed-in customer's question may deserve a support
+        // ticket; the page-pointer branch above is a (scored) guess from the
+        // page index and does not set it.
+        $out = $this->ok('unknown',
             'I am not sure I understood that. I can help with '.SiteOperatorKnowledge::site_name().' services, pricing, account registration, login, FAQs, privacy, terms, and navigating the website. What would you like to know?',
             $this->nav('services', 'pricing', 'faq', 'register'),
             SiteOperatorKnowledge::suggested_questions()
         );
+        $out['unanswered'] = true;
+        return $out;
     }
 
     private function courtesy_reply($normalized) {
@@ -539,6 +554,7 @@ class SiteOperatorEngine {
             'links' => $links,
             'suggestions' => array_slice($suggestions, 0, 6),
             'honest' => true,
+            'unanswered' => false,
         );
     }
 
@@ -550,6 +566,7 @@ class SiteOperatorEngine {
             'links' => array(),
             'suggestions' => SiteOperatorKnowledge::suggested_questions(),
             'honest' => true,
+            'unanswered' => false,
             'error' => $code,
         );
     }

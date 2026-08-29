@@ -645,7 +645,7 @@ class SmmServiceAdminService {
         }
         $before = get_object_vars($service);
         $this->ci->db->where('id', $service->id)->delete('services');
-        $this->ci->db->where('service_id', $service->id)->delete('service_price'); // remove pricing
+        $this->ci->db->where('service_id', $service->id)->delete('service_prices'); // remove pricing
         $this->audit('service.deleted', $service, $before, null);
         return array('ok' => true, 'before' => $before, 'service' => null, 'warnings' => array());
     }

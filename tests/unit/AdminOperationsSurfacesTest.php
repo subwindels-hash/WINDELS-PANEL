@@ -133,6 +133,10 @@ class AdminOperationsSurfacesTest extends TestCase
 
     /* ============================= contact map =========================== */
 
+    /**
+     * The operator chooses the place; the browser only ever sees tiles from
+     * its own origin (ContactMapService fetches and caches them server-side).
+     */
     public function testTheContactMapIsEntirelyOperatorControlled()
     {
         $settings = file_get_contents(self::$root.'/application/libraries/SettingsService.php');
@@ -143,26 +147,34 @@ class AdminOperationsSurfacesTest extends TestCase
 
         $view = file_get_contents(self::$root.'/application/views/public/contact.php');
         $this->assertStringContainsString('contact_details', $view);
-        $this->assertStringContainsString('openstreetmap.org/export/embed.html', $view,
-            'coordinates get a keyless OpenStreetMap embed');
-        $this->assertStringContainsString('output=embed', $view,
-            'a typed address gets the keyless Google embed, which geocodes free text');
+        $this->assertStringContainsString('ws-map-tile', $view,
+            'the map is a first-party grid of tiles served from this origin');
+        $this->assertStringNotContainsString('<iframe', $view,
+            'no third-party embed may come back');
+        $this->assertStringNotContainsString('output=embed', $view);
+
+        $service = file_get_contents(self::$root.'/application/libraries/ContactMapService.php');
+        $this->assertStringContainsString('tile.openstreetmap.org', $service,
+            'the server (not the visitor) fetches the OSM tiles');
+        $this->assertStringContainsString('nominatim.openstreetmap.org', $service,
+            'free text is geocoded server-side, keyless');
     }
 
-    /** No map configured must mean no iframe and no relaxed policy. */
+    /** No map configured must mean no map markup, and the frame policy stays strict. */
     public function testTheMapIsOffUntilAnOperatorTurnsItOn()
     {
         $settings = file_get_contents(self::$root.'/application/libraries/SettingsService.php');
         $this->assertMatchesRegularExpression(
-            "/'contact_map_enabled' => array\('bool', 'contact',[^)]*?, false\)/s", $settings,
+            "/'contact_map_enabled' => array\('bool', 'contact',\s*'[^;]{0,400}?false\),/s", $settings,
             'the map ships off: most panels have no public address');
 
         $controller = file_get_contents(self::$root.'/application/core/MY_Controller.php');
-        $this->assertStringContainsString('map_frame_src', $controller);
-        $this->assertMatchesRegularExpression('/frame-src[^"]*openstreetmap/', $controller);
-        // The allowance has to be conditional, or every install carries it.
-        $this->assertMatchesRegularExpression('/contact_map_enabled[\s\S]{0,200}return null;/', $controller,
-            'an install without a map keeps a policy that forbids every iframe');
+        // The panel has no iframes at all (the contact map was the last one),
+        // so the CSP says same-origin frames only, unconditionally.
+        $this->assertStringContainsString("frame-src 'self'", $controller);
+        $this->assertStringNotContainsString('map_frame_src', $controller,
+            'the conditional third-party frame allowance is gone with the iframe');
+        $this->assertStringNotContainsString('openstreetmap', $controller);
     }
 
     public function testTheContactPageStillWorksWithNoMapConfigured()

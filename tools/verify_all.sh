@@ -90,7 +90,7 @@ else
 
   bold "4. End-to-end · the panel as a browser sees it"
   for check in smoke journey page_audit link_crawl image_audit responsive_check \
-               ux_separation_check content_check; do
+               ux_separation_check content_check contact_map_check; do
     stage "${check}" node "tools/devserver/${check}.mjs" \
       --admin-password "${ADMIN_PASSWORD}" --password "${ADMIN_PASSWORD}"
   done

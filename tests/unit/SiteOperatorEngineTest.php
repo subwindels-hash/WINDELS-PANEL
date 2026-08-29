@@ -89,6 +89,50 @@ class SiteOperatorEngineTest extends TestCase
         $this->assertStringNotContainsString('I have placed', $r['reply']);
     }
 
+    /**
+     * The recorded design: the assistant answers from the local knowledge
+     * base, and anything outside that file becomes a ticket. The engine's
+     * half of that contract is the `unanswered` flag — true only when no
+     * intent, FAQ hit or page hit covered the question.
+     */
+    public function testUnanswerableQuestionIsFlagged()
+    {
+        // Both unknown variants are unanswerable: the "closest page" pointer
+        // is a scored guess, not an answer from the knowledge base.
+        $pointered = $this->engine->reply('What is the weather on Mars tomorrow?');
+        $this->assertTrue($pointered['ok']);
+        $this->assertSame('unknown', $pointered['intent']);
+        $this->assertTrue($pointered['unanswered'], 'a page guess is not an answer');
+
+        $bare = $this->engine->reply('zzz qqq xccv blorpt frobnicate');
+        $this->assertTrue($bare['ok']);
+        $this->assertSame('unknown', $bare['intent']);
+        $this->assertTrue($bare['unanswered']);
+    }
+
+    public function testAnsweredQuestionsAreNotFlagged()
+    {
+        foreach (array('How does pricing work?', 'How do I contact support?',
+                       'What services do you offer?', 'How do I create an account?') as $q) {
+            $r = $this->engine->reply($q);
+            $this->assertTrue($r['ok'], $q);
+            $this->assertFalse($r['unanswered'], $q.' must not be escalated');
+        }
+    }
+
+    public function testTheEscalationPathIsInTheChatController()
+    {
+        // The engine only flags; the Chat controller is where a signed-in
+        // customer's unanswerable question becomes a real ticket.
+        $src = file_get_contents(self::$root.'/application/controllers/Chat.php');
+        $this->assertStringContainsString("recent_assistant_ticket", $src);
+        $this->assertStringContainsString("'source'     => 'assistant'", $src);
+        $this->assertStringContainsString("ticket_action", $src);
+        $svc = file_get_contents(self::$root.'/application/libraries/TicketService.php');
+        $this->assertStringContainsString('function recent_assistant_ticket', $svc);
+        $this->assertStringContainsString("'source'", $svc);
+    }
+
     public function testKnowledgeHasNoLoremIpsum()
     {
         $blob = json_encode(SiteOperatorKnowledge::faqs()).json_encode(SiteOperatorKnowledge::product_areas());

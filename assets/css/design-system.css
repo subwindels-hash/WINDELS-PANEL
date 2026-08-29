@@ -290,6 +290,18 @@ button { font-family:inherit; cursor:pointer; }
 .ws-announce-viewport{flex:1;height:100%;overflow:hidden;min-width:0;
   display:flex;align-items:center;justify-content:center}
 .ws-announce-stack{display:flex;flex-direction:column;align-items:center;gap:.15rem;min-width:0}
+/* Scrolling mode (speed > 0, more than one message): the items are laid out
+   in a track that is duplicated once and marched left by 50% — one exact
+   loop, no jump at the seam. The duration is the operator's
+   announcement_speed_seconds, published as --ws-announce-speed on the
+   container. Hover and keyboard focus pause it so a moving link can be
+   clicked and read; reduced-motion users keep the static, centred layout. */
+.ws-announce-track{display:flex;align-items:center;width:max-content;
+  animation:ws-announce-marquee var(--ws-announce-speed,40s) linear infinite}
+.ws-announce-track .ws-announce-item{margin-right:3rem}
+.ws-announce-viewport:hover .ws-announce-track,
+.ws-announce-viewport:focus-within .ws-announce-track{animation-play-state:paused}
+@keyframes ws-announce-marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 /* `color:inherit`, not a fixed colour: the strip's text colour is an operator
    setting applied inline on .ws-announce, and a hard-coded #000 here meant a
    white-on-navy banner rendered its messages in black — the setting appeared
@@ -1015,12 +1027,25 @@ button { font-family:inherit; cursor:pointer; }
 .ws-announce-link:hover,.ws-announce-link:focus-visible{ text-decoration-thickness:2px; }
 .ws-announce-link:focus-visible{ outline:2px solid currentColor; outline-offset:2px; border-radius:2px; }
 
-/* Contact-page map. Fixed aspect so the card does not jump while the iframe
-   loads, and a placeholder tint so an embed blocked by a corporate proxy
-   still looks deliberate rather than broken. */
+/* Contact-page map. FIRST-PARTY: a 3×3 grid of OSM tiles served from this
+   origin at /contact/map/tile/… (ContactMapService), with the pin placed by
+   the server. No iframe, no third-party request from the visitor's browser.
+   Fixed square aspect so the grid never distorts and the card does not jump
+   while tiles load; the placeholder tint shows through any tile that has not
+   been cached yet. */
 .ws-map{
-  position:relative; width:100%; aspect-ratio:4/3; min-height:260px;
+  position:relative; width:100%; aspect-ratio:1/1; min-height:240px;
   border-radius:var(--radius-lg); overflow:hidden;
   background:var(--slate-100); border:1px solid var(--color-border);
 }
-@media(max-width:880px){ .ws-map{ aspect-ratio:16/10; min-height:220px; } }
+.ws-map-grid{ display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); }
+.ws-map-tile{ display:block; width:100%; height:100%; object-fit:fill; }
+/* A teardrop pin whose tip sits on the requested point (top:0 + the
+   translate below put the bottom tip there). */
+.ws-map-pin{ position:absolute; width:20px; height:20px; transform:translate(-50%,-100%); }
+.ws-map-pin::before{
+  content:""; position:absolute; inset:0;
+  border-radius:50% 50% 50% 0; transform:rotate(-45deg);
+  background:var(--brand-600); border:2px solid #fff;
+  box-shadow:0 1px 4px rgba(15,23,42,.45);
+}

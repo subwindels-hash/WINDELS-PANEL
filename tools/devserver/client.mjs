@@ -4,7 +4,15 @@
  * DEV TOOLING ONLY. A browser-ish client: cookie jar, redirect following and
  * CSRF token extraction, so the tests drive the real application the way a
  * browser does rather than poking controllers directly.
+ *
+ * Importing this module also bootstraps `process.env` from the repository
+ * `.env` (see env.mjs), so `process.env.DEMO_PASSWORD` — which every check
+ * resolves before its fallback — is whatever the current database was
+ * seeded with, on any machine.
  */
+import { loadDotEnv } from './env.mjs';
+
+loadDotEnv();
 
 const ERROR_MARKERS = [
   'A Database Error Occurred',

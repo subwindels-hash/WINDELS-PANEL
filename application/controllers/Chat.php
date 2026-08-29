@@ -65,15 +65,85 @@ class Chat extends Public_Controller {
             return;
         }
 
+        // Auto-escalation — the recorded design of this assistant: it answers
+        // from the local knowledge base, and anything outside that file
+        // becomes a ticket. A signed-in customer whose question the engine
+        // could not answer gets a support ticket opened on the spot (one per
+        // customer per 24 hours — repeats join the open ticket instead). A
+        // visitor has no account to hang a ticket on, so the visitor keeps
+        // the contact-form hand-off.
+        $links = $result['links'];
+        $reply = $result['reply'];
+        $ticket = null;
+        $ticket_action = null;
+
+        if (!empty($result['unanswered'])) {
+            $user = $this->current_user();
+            if ($user) {
+                $this->load->library('TicketService');
+                $ticket = $this->ticketservice->recent_assistant_ticket($user, 24);
+                if ($ticket) {
+                    $ticket_action = 'existing';
+                } else {
+                    $open = $this->ticketservice->open($user, array(
+                        'subject'    => $this->assistant_subject($message),
+                        'message'    => $this->assistant_ticket_body($message),
+                        'department' => 'other',
+                        'priority'   => 'MEDIUM',
+                        'source'     => 'assistant',
+                    ));
+                    if (!empty($open['ok'])) {
+                        $ticket = $open['ticket'];
+                        $ticket_action = 'created';
+                    } else {
+                        log_message('error', 'assistant escalation failed for user '.$user->id.': '.($open['code'] ?? 'UNKNOWN'));
+                    }
+                }
+            }
+
+            if ($ticket) {
+                $reply = $ticket_action === 'created'
+                    ? 'I could not answer that from the site knowledge, so I opened a support ticket with your question — ticket '.$ticket->public_id.'. Staff will reply there; you can follow it from Your tickets.'
+                    : 'I could not answer that from the site knowledge. That question is already with support — ticket '.$ticket->public_id.' — so I did not open a duplicate. Follow it from Your tickets.';
+                array_unshift($links, array(
+                    'label' => 'Ticket '.$ticket->public_id,
+                    'href'  => 'dashboard/tickets/'.$ticket->public_id,
+                ));
+            } else {
+                $reply .= ' If you want a person on this, the contact form takes it up as a support message.';
+                if (!in_array('contact', array_column($links, 'href'), true)) {
+                    $links[] = array('label' => 'Contact', 'href' => 'contact');
+                }
+            }
+        }
+
         $this->json_success(array(
-            'reply' => $result['reply'],
+            'reply' => $reply,
             'intent' => $result['intent'],
-            'links' => $this->absolutize_links($result['links']),
+            'links' => $this->absolutize_links($links),
             'suggestions' => $result['suggestions'],
+            'ticket' => $ticket ? $ticket->public_id : null,
+            'ticket_action' => $ticket_action,
             'disclaimer' => ($result['intent'] === 'capabilities' || $result['intent'] === 'welcome')
                 ? SiteOperatorKnowledge::assistant_disclaimer()
                 : null,
         ));
+    }
+
+    /** Ticket subject: where it came from plus the question, kept short. */
+    private function assistant_subject($message) {
+        $q = preg_replace('/\s+/', ' ', trim((string)$message));
+        if (function_exists('mb_substr') && mb_strlen($q) > 80) {
+            $q = mb_substr($q, 0, 80).'…';
+        }
+        return $q === '' ? 'Site assistant question' : 'Site assistant: '.$q;
+    }
+
+    /** The ticket body: the question verbatim, plus how it got here. */
+    private function assistant_ticket_body($message) {
+        return trim((string)$message)."
+
+— Sent through the site assistant, which could not answer from the site knowledge base and opened this ticket automatically.";
     }
 
     public function welcome() {

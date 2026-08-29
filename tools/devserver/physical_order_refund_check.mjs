@@ -175,6 +175,81 @@ const auditPage = await a.get('/admin/audit-logs');
 check('the audit log records the marketplace order refund', /marketplace\.order\.refund/.test(auditPage.text));
 check('the audit log records the shipment-level refund entry', /shop\.shipment\.refunded/.test(auditPage.text));
 
+/* ------------------------------------------------------------------------
+ * A part refund is compensation for goods the buyer keeps — so while the
+ * parcel is still with the carrier it must be refused (an in-transit part
+ * refund would strand the order: a part-refunded order can never be
+ * recorded delivered, and its escrow remainder would ride the abandonment
+ * sweep back to the buyer who still receives the parcel). After delivery
+ * the same part refund stands.
+ * ---------------------------------------------------------------------- */
+console.log('\n── Part refund: refused while the parcel is in transit, allowed after delivery');
+productPage = await c.get(`/shop/product/${listingId}`);
+addRes = await c.postForm('/cart/add', { listing: listingId, quantity: '1', redirect_to: 'cart' }, { fromHtml: productPage.text });
+checkoutPage = await c.get('/checkout');
+place = await c.postForm('/checkout/place', {
+  full_name: 'Refund Tester', phone: '08000000002', line1: '2 Refund Street', city: 'Abuja',
+  state: 'FCT', postal_code: '900002', country_code: 'NG',
+  shipping_method: `E2EREFUNDSHIP${stamp}`,
+}, { fromHtml: checkoutPage.text });
+check('second physical order placed (still in transit)', place.status === 200);
+
+const secondOrder = withDb((db) => db.prepare(
+  'SELECT id, public_id, status FROM marketplace_orders WHERE buyer_id = ? ORDER BY id DESC LIMIT 1').get(userId));
+check('the second order row is PAID with a shipment',
+  secondOrder && secondOrder.status === 'PAID');
+const secondShipment = withDb((db) => db.prepare(
+  'SELECT public_id, status FROM shop_order_shipments WHERE marketplace_order_id = ?').get(secondOrder.id));
+check('the second shipment exists and is PENDING',
+  secondShipment && secondShipment.status === 'PENDING');
+
+const walletBeforePart = withDb((db) => db.prepare('SELECT balance FROM wallets WHERE user_id = ?').get(userId)).balance;
+let orderPage = await a.get(`/admin/marketplace/orders/${secondOrder.public_id}`);
+check('the admin order page offers the part-refund resolution',
+  orderPage.status === 200 && /Refund part of it/.test(orderPage.text));
+
+const partRefused = await a.postForm(`/admin/marketplace/orders/${secondOrder.public_id}/resolve`, {
+  resolution: 'PARTIAL_REFUND', amount: '1000', restock: '0',
+  reason: 'agreed discount while the parcel is in transit',
+}, { fromHtml: orderPage.text });
+check('the in-transit part refund is refused, with the reason on screen',
+  /still with the carrier/i.test(partRefused.text), partRefused.url);
+check('the refusal points at the two honest options',
+  /refund it in full/i.test(partRefused.text) && /wait for delivery/i.test(partRefused.text));
+check('no money moved for the refused part refund',
+  withDb((db) => db.prepare('SELECT balance FROM wallets WHERE user_id = ?').get(userId)).balance === walletBeforePart);
+check('the order is still PAID, not part-refunded',
+  withDb((db) => db.prepare('SELECT status FROM marketplace_orders WHERE id = ?').get(secondOrder.id)).status === 'PAID');
+
+let shipmentPage = await a.get(`/admin/shop/shipments/${secondShipment.public_id}`);
+const shipped = await a.postForm(`/admin/shop/shipments/${secondShipment.public_id}/status`, {
+  status: 'SHIPPED', carrier: 'DHL', tracking_number: `E2E-PART-${stamp}`,
+}, { fromHtml: shipmentPage.text });
+check('the shipment can be marked SHIPPED', shipped.status === 200);
+shipmentPage = await a.get(`/admin/shop/shipments/${secondShipment.public_id}`);
+const deliveredRes = await a.postForm(`/admin/shop/shipments/${secondShipment.public_id}/status`, {
+  status: 'DELIVERED', carrier: 'DHL', tracking_number: `E2E-PART-${stamp}`,
+}, { fromHtml: shipmentPage.text });
+check('the shipment can be marked DELIVERED', deliveredRes.status === 200);
+check('delivery moved the escrow order to DELIVERED with a release deadline',
+  (() => { const r = withDb((db) => db.prepare('SELECT status, release_due_at FROM marketplace_orders WHERE id = ?').get(secondOrder.id));
+           return r.status === 'DELIVERED' && !!r.release_due_at; })());
+
+orderPage = await a.get(`/admin/marketplace/orders/${secondOrder.public_id}`);
+const partAllowed = await a.postForm(`/admin/marketplace/orders/${secondOrder.public_id}/resolve`, {
+  resolution: 'PARTIAL_REFUND', amount: '1000', restock: '0',
+  reason: 'agreed discount — the parcel arrived scratched',
+}, { fromHtml: orderPage.text });
+check('after delivery the same part refund succeeds',
+  /Refunded 1000\.00000000 to the buyer/i.test(partAllowed.text), partAllowed.url);
+check('the buyer was actually credited',
+  parseFloat(withDb((db) => db.prepare('SELECT balance FROM wallets WHERE user_id = ?').get(userId)).balance)
+    === parseFloat(walletBeforePart) + 1000);
+const afterPart = withDb((db) => db.prepare(
+  'SELECT status, refunded_amount FROM marketplace_orders WHERE id = ?').get(secondOrder.id));
+check('the order is PARTIALLY_REFUNDED for exactly the part',
+  afterPart.status === 'PARTIALLY_REFUNDED' && afterPart.refunded_amount === '1000.00000000');
+
 const passed = results.filter(r => r.ok).length;
 console.log(`\n${passed}/${results.length} checks passed`);
 if (passed !== results.length) {

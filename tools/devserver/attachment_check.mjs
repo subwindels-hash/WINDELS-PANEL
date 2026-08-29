@@ -35,7 +35,11 @@ const argv = process.argv.slice(2);
 const arg = (name, def) => { const i = argv.indexOf(name); return i === -1 ? def : argv[i + 1]; };
 const BASE = arg('--base', 'http://127.0.0.1:8080');
 const DB_PATH = arg('--db', 'storage/devdb/marvy.sqlite');
-const ADMIN_PASSWORD = arg('--admin-password', 'Demo!cabcd50b');
+const ADMIN_PASSWORD = arg('--admin-password', process.env.DEMO_PASSWORD || null);
+if (!ADMIN_PASSWORD) {
+  console.error('Pass --admin-password or set DEMO_PASSWORD in .env (the seeder prints the demo password once).');
+  process.exit(2);
+}
 const CUSTOMER_PASSWORD = arg('--customer-password', ADMIN_PASSWORD);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
