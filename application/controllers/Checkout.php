@@ -23,7 +23,7 @@ class Checkout extends Auth_Controller {
 
     /** GET /checkout */
     public function index() {
-        $check = $this->shopcheckoutservice->validate($this->current_user->id);
+        $check = $this->shopcheckoutservice->quote($this->current_user->id);
         if (empty($check['ok'])) {
             $this->session->set_flashdata('error', $check['error']);
             return redirect('cart');
@@ -31,8 +31,10 @@ class Checkout extends Auth_Controller {
 
         $this->render('Checkout', 'public/shop/checkout', array_merge($check['view'], array(
             'wallet' => $this->Wallet_model->for_user($this->current_user->id),
+            'current_user' => $this->current_user,
             'addresses' => $this->Shipping_address_model->for_user($this->current_user->id, self::ADDRESS_PER_PAGE),
-            'shipping_methods' => $this->Shipping_method_model->active(),
+            'shipping_methods' => $this->Shipping_method_model->active_for_currency(marvy_base_currency()),
+            'checkout_token' => bin2hex(random_bytes(16)),
         )));
     }
 

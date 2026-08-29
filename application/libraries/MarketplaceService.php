@@ -1,5 +1,6 @@
 <?php
 defined('BASEPATH') OR exit('No direct script access allowed');
+require_once __DIR__.'/ShopShippingAllocation.php';
 
 /**
  * MarketplaceService — platform-operated digital goods with buyer escrow.
@@ -32,6 +33,8 @@ class MarketplaceService {
             'Marketplace_category_model',
             'Service_transaction_model',
             'Wallet_model', 'Audit_log_model', 'Setting_model',
+            'Physical_product_model', 'Shipping_address_model',
+            'Shipping_method_model', 'Shop_order_shipment_model',
         ));
         $this->ci->load->library(array(
             'TransactionEngine', 'LedgerService', 'EncryptionService'
@@ -131,15 +134,28 @@ class MarketplaceService {
             return $this->err('The marketplace is currently unavailable.', 'FEATURE_DISABLED');
         }
         $buyer_id = $this->user_id($user);
-        $listing = $this->ci->Marketplace_listing_model->find_public((string)($input['listing'] ?? ''), true);
+        $raw_listing = $input['listing'] ?? '';
+        if (!is_scalar($raw_listing)) return $this->err('That listing is not available', 'NO_LISTING');
+        $listing = $this->ci->Marketplace_listing_model->find_public((string)$raw_listing, true);
         if (!$listing) return $this->err('That listing is not available', 'NO_LISTING');
-        $quantity = (int)($input['quantity'] ?? 1);
+        $raw_quantity = $input['quantity'] ?? 1;
+        if (!is_scalar($raw_quantity)) return $this->err('Choose a valid quantity', 'BAD_QUANTITY');
+        $quantity = (int)$raw_quantity;
         if ($quantity < 1 || $quantity > self::MAX_QUANTITY) {
             return $this->err('Choose a valid quantity', 'BAD_QUANTITY');
         }
         if ($listing->stock !== null && (int)$listing->stock < $quantity) {
             return $this->err('There is not enough stock', 'OUT_OF_STOCK');
         }
+
+        // A physical listing is not a normal "buy now" line: its address and
+        // carrier quote must be bound to the same charge that opens escrow.
+        // Resolve both from server-side rows before the wallet is touched. A
+        // missing physical-product row is treated as not sellable rather than
+        // silently creating a shipment with no SKU or package data.
+        $shipping = $this->shipping_context($buyer_id, $listing, $input);
+        if (empty($shipping['ok'])) return $shipping;
+        $shipping_cost = $shipping['cost'];
 
         // The customer pays the server's price — never a submitted one — and a
         // live promotion undercuts the list price. Selling is platform-side,
@@ -149,10 +165,17 @@ class MarketplaceService {
         // Optional per-line discount (e.g. a coupon applied at cart checkout,
         // ShopCheckoutService). Never negative and never larger than the line
         // itself — a caller cannot make a line's charge go below zero.
-        $discount = isset($input['discount']) ? (string)$input['discount'] : '0';
-        if (bccomp($discount, '0', 8) < 0) $discount = '0';
+        $raw_discount = $input['discount'] ?? '0';
+        $discount = is_scalar($raw_discount) ? trim((string)$raw_discount) : '0';
+        if ($discount !== '' && !preg_match('/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]{1,8})?$/', $discount)) {
+            return $this->err('Invalid line discount', 'BAD_DISCOUNT');
+        }
+        if ($discount === '' || bccomp($discount, '0', 8) < 0) $discount = '0';
         if (bccomp($discount, $line_amount, 8) > 0) $discount = $line_amount;
-        $gross = $this->money(bcsub($line_amount, $discount, 8));
+        // Coupons discount the product line, not the carrier's separately
+        // quoted fee. The universal transaction and the marketplace order
+        // therefore agree on the exact amount the buyer paid.
+        $gross = $this->money(bcadd(bcsub($line_amount, $discount, 8), $shipping_cost, 8));
         $order_model = $this->ci->Marketplace_order_model;
         $listing_model = $this->ci->Marketplace_listing_model;
         $order_id = null;
@@ -169,9 +192,11 @@ class MarketplaceService {
                 'listing' => $listing->public_id,
                 'title' => $listing->title,
                 'quantity' => $quantity,
+                'shipping_cost' => $shipping_cost,
+                'shipping_method_id' => $shipping['method_id'],
             ),
             'detail' => function ($transaction_id) use ($listing, $buyer_id, $quantity, $gross,
-                                                         $order_model, &$order_id, $unit_price) {
+                                                         $shipping_cost, $order_model, &$order_id, $unit_price) {
                 $order_id = $order_model->create(array(
                     'public_id' => marvy_public_id(),
                     'service_transaction_id' => $transaction_id,
@@ -180,12 +205,14 @@ class MarketplaceService {
                     'quantity' => $quantity,
                     'unit_price' => $unit_price,
                     'gross_amount' => $gross,
+                    'shipping_cost' => $shipping_cost,
                     'status' => 'PENDING',
                     'created_at' => gmdate('Y-m-d H:i:s'),
                     'updated_at' => gmdate('Y-m-d H:i:s'),
                 ));
             },
-            'dispatch' => function ($transaction) use ($listing, $quantity, $order_model, $listing_model) {
+            'dispatch' => function ($transaction) use ($listing, $quantity, $order_model, $listing_model,
+                                                        $shipping, $shipping_cost) {
                 if (!$listing_model->decrement_stock($listing->id, $quantity)) {
                     $order = $order_model->find_by_transaction($transaction->id);
                     if ($order && $order_model->transition($order->id, 'PENDING', 'CANCELLED')) {
@@ -202,6 +229,33 @@ class MarketplaceService {
                     return array('ok' => false, 'error' => 'Could not open marketplace escrow');
                 }
                 $order_model->record_event($order->id, $order->buyer_id, 'PURCHASED', 'PENDING', 'PAID');
+
+                // A physical shipment is part of the paid-order dispatch, not
+                // an afterthought in the cart controller. If its insert fails,
+                // return false so TransactionEngine refunds the charge and the
+                // stock/order rollback below leaves no paid order without a
+                // carrier record.
+                if (!empty($shipping['required'])) {
+                    try {
+                        $shipment_id = $this->ci->Shop_order_shipment_model->create(array(
+                            'marketplace_order_id' => $order->id,
+                            'shipping_address_id' => $shipping['address_id'],
+                            'shipping_method_id' => $shipping['method_id'],
+                            'shipping_cost' => $shipping_cost,
+                            'status' => 'PENDING',
+                        ));
+                        if (!$shipment_id) throw new RuntimeException('shipment insert returned no id');
+                    } catch (Throwable $e) {
+                        $order_model->transition($order->id, 'PAID', 'CANCELLED');
+                        $order_model->record_event(
+                            $order->id, $order->buyer_id, 'CANCELLED', 'PAID', 'CANCELLED',
+                            'Shipping record could not be created'
+                        );
+                        $listing_model->restore_stock($listing->id, $quantity);
+                        log_message('error', 'Marketplace shipment creation failed: '.$e->getMessage());
+                        return array('ok' => false, 'error' => 'Could not create the shipment for this order');
+                    }
+                }
 
                 // Automatic fulfilment for DIGITAL listings that carry an
                 // uploaded file: secure download access is granted the
@@ -265,6 +319,9 @@ class MarketplaceService {
         $order = $this->ci->Marketplace_order_model->find_public($public_id);
         if (!$order) return $this->err('Order not found', 'NOT_FOUND');
         if ($order->status !== 'PAID') return $this->err('This order cannot be delivered now', 'BAD_STATE');
+        if ($this->requires_shipment($order)) {
+            return $this->err('Physical orders must be delivered through shipment tracking', 'USE_SHIPMENT_FLOW');
+        }
         $delivery = trim((string)$delivery);
         if (mb_strlen($delivery) < 3 || mb_strlen($delivery) > 20000) {
             return $this->err('Delivery must be between 3 and 20,000 characters', 'BAD_DELIVERY');
@@ -347,6 +404,12 @@ class MarketplaceService {
         }
         if (!in_array($order->status, $allowed, true)) {
             return $this->err('This order cannot be released', 'BAD_STATE');
+        }
+        if ($this->requires_shipment($order)) {
+            $shipment = $this->ci->Shop_order_shipment_model->for_order($order->id);
+            if (!$shipment || strtoupper((string)$shipment->status) !== 'DELIVERED') {
+                return $this->err('A physical order can only be released after its shipment is delivered', 'SHIPMENT_NOT_DELIVERED');
+            }
         }
 
         if (!$this->ci->db->trans_begin()) return $this->err('Escrow transaction could not start', 'DB_ERROR');
@@ -626,6 +689,18 @@ class MarketplaceService {
             return $this->err('Escrow refund could not be completed', 'DB_ERROR');
         }
 
+        // A physical refund also closes the carrier record. This is repeated
+        // defensively by ShopShippingService's shipment screen, but keeping
+        // the invariant here prevents the older Marketplace → Resolve →
+        // Refund entry point from leaving a paid-looking shipment behind.
+        if ($this->requires_shipment($order)) {
+            $shipment = $this->ci->Shop_order_shipment_model->for_order($order->id);
+            if ($shipment && !$this->ci->Shop_order_shipment_model->cancel_after_refund($shipment->id)
+                && $shipment->status !== 'CANCELLED') {
+                log_message('error', 'Refunded marketplace order '.$order->public_id.' but its shipment could not be cancelled');
+            }
+        }
+
         // The money is back; the goods must go with it. A digital order that
         // kept its download after a refund gave the buyer the file for free —
         // and left it in "My Downloads" for ever, where nobody would look.
@@ -706,6 +781,81 @@ class MarketplaceService {
             else $failed[$pid] = $res['error'] ?? 'unknown error';
         }
         return array('ok' => true, 'applied' => count($ok), 'failed' => $failed);
+    }
+
+    /** Whether this order is bound to a carrier-managed physical shipment. */
+    private function requires_shipment($order) {
+        $listing = $this->ci->Marketplace_listing_model->find_id($order->listing_id);
+        if (!$listing || strtoupper((string)$listing->product_type) !== 'PHYSICAL') return false;
+        $physical = $this->ci->Physical_product_model->for_listing($listing->id);
+        // A malformed physical order must not fall back to the digital
+        // fulfilment endpoint. Missing package metadata is therefore treated
+        // as requiring the shipment flow; normal purchases are rejected much
+        // earlier by shipping_context().
+        return !$physical || (int)$physical->requires_shipping === 1;
+    }
+
+    /**
+     * Resolve the physical fulfilment context before charging.
+     *
+     * Prices and foreign-wallet conversion belong to TransactionEngine/
+     * LedgerService; this method only binds the carrier quote and the
+     * customer-owned address to the order. The method is re-read by numeric
+     * id and must still be active, so a stale checkout cannot make the panel
+     * honour a disabled or changed shipping option.
+     */
+    private function shipping_context($buyer_id, $listing, array $input) {
+        $empty = array(
+            'ok' => true, 'required' => false, 'address_id' => null,
+            'method_id' => null, 'cost' => '0.00000000',
+        );
+        if (strtoupper((string)$listing->product_type) !== 'PHYSICAL') return $empty;
+
+        $physical = $this->ci->Physical_product_model->for_listing($listing->id);
+        if (!$physical || trim((string)($physical->sku ?? '')) === '') {
+            return $this->err('This physical listing is not ready for fulfilment', 'PHYSICAL_DETAILS_REQUIRED');
+        }
+        if ((int)$physical->requires_shipping !== 1) return $empty;
+
+        $raw_address_id = $input['shipping_address_id'] ?? 0;
+        $raw_method_id = $input['shipping_method_id'] ?? 0;
+        if (!is_scalar($raw_address_id) || !is_scalar($raw_method_id)) {
+            return $this->err('A shipping address and method are required for this item', 'SHIPPING_REQUIRED');
+        }
+        $address_id = (int)$raw_address_id;
+        $method_id = (int)$raw_method_id;
+        if ($address_id <= 0 || $method_id <= 0) {
+            return $this->err('A shipping address and method are required for this item', 'SHIPPING_REQUIRED');
+        }
+
+        $address = $this->ci->Shipping_address_model->find_for_user($address_id, $buyer_id);
+        if (!$address) return $this->err('Choose one of your saved shipping addresses', 'BAD_ADDRESS');
+        $method = $this->ci->Shipping_method_model->find_active($method_id);
+        if (!$method) return $this->err('That shipping method is no longer available', 'BAD_SHIPPING_METHOD');
+        if (strtoupper((string)$method->currency) !== strtoupper((string)marvy_base_currency())) {
+            return $this->err('That shipping method is not available in the panel currency', 'SHIPPING_CURRENCY_MISMATCH');
+        }
+
+        $cost = $this->money($method->price);
+        if (bccomp($cost, '0', 8) < 0) {
+            return $this->err('That shipping method has an invalid price', 'BAD_SHIPPING_METHOD');
+        }
+        // The checkout orchestrator can allocate one active-method quote to
+        // the first physical line when a cart becomes several marketplace
+        // orders. It never submits a price; this service still resolves and
+        // validates the method above, then honours only its internal PHP
+        // allocation object. A scalar `shipping_charge` from a browser is
+        // ignored, so direct callers cannot underpay by posting false.
+        $allocation = $input['shipping_allocation'] ?? null;
+        if ($allocation instanceof ShopShippingAllocation && !$allocation->is_chargeable()) {
+            $cost = '0.00000000';
+        }
+        return array(
+            'ok' => true, 'required' => true,
+            'address_id' => (int)$address->id,
+            'method_id' => (int)$method->id,
+            'cost' => $cost,
+        );
     }
 
     /**

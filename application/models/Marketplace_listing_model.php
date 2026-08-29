@@ -42,13 +42,17 @@ class Marketplace_listing_model extends MY_Model {
         return $this->db
             ->where('status', 'ACTIVE')
             ->where('is_featured', 1)
+            ->where("(marketplace_listings.product_type <> 'PHYSICAL' OR EXISTS (SELECT 1 FROM physical_products WHERE physical_products.listing_id = marketplace_listings.id AND physical_products.sku <> ''))", null, false)
             ->order_by('created_at', 'DESC')
             ->limit((int)$limit)->get($this->table)->result();
     }
 
     private function catalogue_filters(array $filters) {
         $this->db->from($this->table)
-            ->where('status', 'ACTIVE');
+            ->where('status', 'ACTIVE')
+            // An incomplete physical row may remain visible to staff while it
+            // is being prepared, but must not appear on a customer shelf.
+            ->where("(marketplace_listings.product_type <> 'PHYSICAL' OR EXISTS (SELECT 1 FROM physical_products WHERE physical_products.listing_id = marketplace_listings.id AND physical_products.sku <> ''))", null, false);
         if (!empty($filters['category'])) {
             $this->db->where('category', $filters['category']);
         }

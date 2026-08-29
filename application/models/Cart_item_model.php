@@ -11,9 +11,12 @@ class Cart_item_model extends MY_Model {
                     .'marketplace_listings.price AS current_price, marketplace_listings.promo_price, '
                     .'marketplace_listings.currency, marketplace_listings.stock, '
                     .'marketplace_listings.status AS listing_status, marketplace_listings.product_type, '
-                    .'marketplace_listings.public_id AS listing_public_id', false)
+                    .'marketplace_listings.public_id AS listing_public_id, '
+                    .'physical_products.id AS physical_product_id, physical_products.sku AS physical_sku, '
+                    .'physical_products.requires_shipping AS requires_shipping', false)
             ->from($this->table)
             ->join('marketplace_listings', 'marketplace_listings.id = cart_items.listing_id', 'left')
+            ->join('physical_products', 'physical_products.listing_id = marketplace_listings.id', 'left')
             ->where('cart_items.cart_id', (int)$cart_id)
             ->order_by('cart_items.created_at', 'ASC')
             ->get()->result();

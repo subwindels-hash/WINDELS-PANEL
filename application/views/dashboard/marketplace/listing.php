@@ -28,7 +28,7 @@ $effective_price = $on_sale ? $listing->promo_price : $listing->price;
       <input type="hidden" name="form_token" value="<?=htmlspecialchars(uniqid('mp', true))?>">
       <label class="label" for="quantity">Quantity</label>
       <input class="input mb-4" id="quantity" type="number" name="quantity" value="1" min="1" max="<?=min(100, $listing->stock === null ? 100 : (int)$listing->stock)?>" required>
-      <button class="btn btn-primary" type="submit">Pay from wallet</button>
+      <button class="btn btn-primary" type="submit"><?=($listing->product_type === 'PHYSICAL' ? 'Add to cart and choose shipping' : 'Pay from wallet')?></button>
     </form>
     <?php endif; ?>
     <hr class="my-4">

@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 35), roles,
+-- foreign keys, migration bookkeeping (version 36), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first-login accounts. No migration,
 -- seed or installer command has to run afterwards.
@@ -2246,6 +2246,14 @@ ALTER TABLE wallet_transactions
 ADD COLUMN fx_rate DECIMAL(20,8) NULL COMMENT 'Pinned rate for a converted movement: units of the wallet currency per 1 unit of base. NULL when no conversion happened',
 ADD COLUMN base_amount DECIMAL(20,8) NULL COMMENT 'The base-currency value this movement represented at fx_rate. NULL when no conversion happened';
 
+-- ---------------------------------------------------------------------
+-- migration 036_physical_shipping
+-- ---------------------------------------------------------------------
+
+ALTER TABLE marketplace_orders
+ADD COLUMN shipping_cost DECIMAL(20,8) NOT NULL DEFAULT 0
+COMMENT 'Shipping charge included in gross_amount; base currency';
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -2260,7 +2268,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (35);
+INSERT INTO migrations (version) VALUES (36);
 
 -- ======================================================================
 -- CORE DATA

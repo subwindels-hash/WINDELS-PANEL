@@ -33,7 +33,9 @@ $badge = function ($s) {
         <td class="text-xs"><?=htmlspecialchars((string)$s->username)?></td>
         <td class="text-xs"><?=htmlspecialchars((string)$s->listing_title)?></td>
         <td><span class="badge <?=$badge($s->status)?>"><?=htmlspecialchars($s->status)?></span></td>
-        <td class="text-xs mono"><?=htmlspecialchars((string)($s->tracking_number ?: '—'))?></td>
+        <td class="text-xs mono">
+          <?php if ($s->tracking_url): ?><a href="<?=htmlspecialchars($s->tracking_url)?>" rel="noopener noreferrer" target="_blank"><?=htmlspecialchars((string)($s->tracking_number ?: 'Track'))?></a><?php else: ?><?=htmlspecialchars((string)($s->tracking_number ?: '—'))?><?php endif; ?>
+        </td>
         <td><a class="btn btn-ghost btn-sm" href="<?=site_url('admin/shop/shipments/'.$s->public_id)?>">Manage →</a></td>
       </tr>
     <?php endforeach; ?>
