@@ -54,6 +54,7 @@ class Dashboard extends Admin_Controller {
             // happens to be logged in.
             'recent'        => $this->activityfeed->recent($permissions, 8),
             'domains'       => $this->adminstats->revenue_by_domain(30),
+            'report_fresh'  => $this->adminstats->report_freshness(),
             'inbox_recent'  => $inbox_recent,
             'inbox_unread'  => $inbox_unread,
         ));

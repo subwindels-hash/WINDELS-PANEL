@@ -368,6 +368,98 @@ class System extends Admin_Controller {
         redirect('admin/cron');
     }
 
+    /**
+     * POST /admin/cron/catchup — run every overdue job, in one click.
+     *
+     * The crontab is still how the panel is kept running; no browser button can
+     * replace the schedule. But when a crontab has been missing or its PHP path
+     * was wrong, the panel knows exactly which jobs fell behind (the same
+     * `late` / `never` verdict shown on the screen) and an operator should not
+     * have to click "Run now" twenty times while they fix the crontab. This runs
+     * each of those jobs through the exact harness a scheduled tick uses —
+     * CronRegistry worker, JobRunner exclusive lock, job_runs record, audit
+     * entry — so it can never overlap a real tick or double-apply anything.
+     */
+    public function cron_catchup() {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm('settings.manage');
+
+        $this->load->library(array('JobRunner', 'CronRegistry', 'CronControlService'));
+        $schedules = (array)$this->config->item('cron');
+        $runs = $this->db->order_by('started_at', 'DESC')->limit(500)->get('job_runs')->result();
+        $controls = $this->croncontrolservice->all();
+
+        $latest = array();
+        foreach ($runs as $row) {
+            if (!isset($latest[$row->job])) $latest[$row->job] = $row;
+        }
+
+        $due = array();
+        foreach ($schedules as $job => $schedule) {
+            $control = $controls[$job] ?? null;
+            if ($control && (int)$control->is_paused === 1) continue;
+            if (!$this->cronregistry->has($job)) continue;
+
+            $last = $latest[$job] ?? null;
+            $age = $last ? max(0, (int)round((time() - strtotime($last->started_at.' UTC')) / 60)) : null;
+            $state = SystemAdminService::job_state((string)$schedule, $last, $age);
+            if ($state === 'late' || $state === 'never') $due[] = $job;
+        }
+
+        if (!$due) {
+            $this->session->set_flashdata('info', 'No overdue jobs to catch up — the schedule is healthy.');
+            return redirect('admin/cron');
+        }
+
+        $ok = $skipped = $failed = 0;
+        $details = array();
+        foreach ($due as $job) {
+            // Re-check at the last moment; a pause landed while the list was
+            // being built must not be worked around.
+            if ($this->croncontrolservice->is_paused($job)) {
+                $this->jobrunner->record_skip($job, 'catch-up refused: paused');
+                $skipped++;
+                continue;
+            }
+            $worker = $this->cronregistry->worker($job);
+            if ($worker === null) {
+                $failed++;
+                continue;
+            }
+
+            if (isset($this->db) && is_object($this->db)) {
+                $this->db->db_debug = false;
+            }
+            if (function_exists('set_time_limit')) @set_time_limit(0);
+            @ignore_user_abort(true);
+
+            $result = $this->jobrunner->run($job, $worker);
+            $this->audit('cron.catchup', 'job_runs', $job, null, array(
+                'status'    => !empty($result['ok']) ? (empty($result['skipped']) ? 'SUCCESS' : 'SKIPPED') : 'FAILED',
+                'message'   => (string)($result['message'] ?? ($result['error'] ?? '')),
+                'triggered' => 'admin-catchup',
+            ));
+
+            if (!empty($result['skipped'])) {
+                $skipped++;
+                $details[] = $job.' skipped (already running)';
+            } elseif (empty($result['ok'])) {
+                $failed++;
+                $details[] = $job.' FAILED — '.($result['error'] ?? 'unknown error');
+            } else {
+                $ok++;
+                $details[] = $job.' ok — '.($result['message'] ?? 'done');
+            }
+        }
+
+        $this->session->set_flashdata(
+            $failed ? 'warning' : 'success',
+            sprintf('Catch-up finished: %d ok, %d skipped, %d failed. %s',
+                $ok, $skipped, $failed, implode('; ', $details))
+        );
+        redirect('admin/cron');
+    }
+
     /** GET /admin/api-logs */
     public function api_logs() {
         $this->require_perm('api.manage');

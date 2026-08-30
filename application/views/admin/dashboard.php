@@ -27,6 +27,9 @@ $healthy = (int)($health['HEALTHY'] ?? 0);
     <div class="muted text-sm">Net revenue · 30 days</div>
     <div class="text-2xl font-bold"><?=marvy_money($month['net'])?></div>
     <div class="hint"><?=number_format((int)$month['orders'])?> orders</div>
+    <?php if (!empty($report_fresh)): ?>
+      <div class="hint text-xs">as of <?=htmlspecialchars(date('M j, Y H:i', strtotime($report_fresh)))?> UTC</div>
+    <?php endif; ?>
   </div>
   <div class="card">
     <div class="muted text-sm">Customers</div>

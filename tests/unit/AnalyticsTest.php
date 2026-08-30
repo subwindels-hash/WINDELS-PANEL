@@ -66,7 +66,7 @@ class AnalyticsTest extends TestCase
     {
         static $n = 0;
         $n++;
-        $app->db->insert('service_transactions', array_merge(array(
+        $data = array_merge(array(
             'public_id'       => 'STX'.str_pad((string)$n, 23, '0', STR_PAD_LEFT),
             'user_id'         => $user->id,
             'service_domain'  => 'VTU',
@@ -78,7 +78,13 @@ class AnalyticsTest extends TestCase
             'currency'        => 'NGN',
             'source'          => 'WEB',
             'created_at'      => gmdate('Y-m-d H:i:s'),
-        ), $o));
+        ), $o);
+        // Revenue reports window on updated_at (when the sale/refund/status
+        // last changed). A fixture that names a historic created_at must carry
+        // the same updated_at, or the backend default (now) drags a ten-day-old
+        // sale into today's window and makes the windowing test meaningless.
+        if (!isset($data['updated_at'])) $data['updated_at'] = $data['created_at'];
+        $app->db->insert('service_transactions', $data);
         return $app->db->insert_id();
     }
 
@@ -87,7 +93,7 @@ class AnalyticsTest extends TestCase
     {
         static $n = 0;
         $n++;
-        $app->db->insert('orders', array_merge(array(
+        $data = array_merge(array(
             'public_id'       => 'ORD'.str_pad((string)$n, 23, '0', STR_PAD_LEFT),
             'user_id'         => $user->id,
             'service_id'      => 1,
@@ -101,7 +107,11 @@ class AnalyticsTest extends TestCase
             'link'            => 'https://x.test/a',
             'source'          => 'WEB',
             'created_at'      => gmdate('Y-m-d H:i:s'),
-        ), $o));
+        ), $o);
+        // See the note in service(): keep updated_at aligned with created_at
+        // unless the fixture is deliberately simulating a later update.
+        if (!isset($data['updated_at'])) $data['updated_at'] = $data['created_at'];
+        $app->db->insert('orders', $data);
         return $app->db->insert_id();
     }
 
@@ -152,6 +162,47 @@ class AnalyticsTest extends TestCase
 
         $this->assertSame('1000.00000000', $app->adminstats->revenue(1)['gross']);
         $this->assertSame('10999.00000000', $app->adminstats->revenue(30)['gross']);
+    }
+
+    /**
+     * The reports refresh on the last update, not the day of first creation.
+     *
+     * A pending order created ten days ago and delivered (or refunded) today
+     * has not shown up in "today" on this page before, because the windows
+     * were keyed off created_at. The row's updated_at is what the panel shows
+     * as its freshness, and is also what the revenue window must use — this is
+     * the "every update shows a report" contract.
+     */
+    public function testAHistoricSaleMovesIntoTheWindowWhenItIsUpdated()
+    {
+        list($app, $user) = $this->app();
+        $this->order($app, $user, array(
+            'status'     => 'PENDING',
+            'created_at' => gmdate('Y-m-d H:i:s', strtotime('-10 days')),
+            'updated_at' => gmdate('Y-m-d H:i:s', strtotime('-10 days')),
+        ));
+
+        $this->assertSame('0.00000000', $app->adminstats->revenue(1)['gross'],
+            'a pending sale is not revenue, whenever it was updated');
+        $this->assertSame('0.00000000', $app->adminstats->revenue(1)['net']);
+
+        // Now the provider / worker completes it today. The only thing that
+        // changes is the status and its updated_at timestamp.
+        $app->db->where('user_id', $user->id)->update('orders', array(
+            'status'     => 'COMPLETED',
+            'updated_at' => gmdate('Y-m-d H:i:s'),
+        ));
+        // This is a page-load boundary: a real HTTP request constructs fresh
+        // AdminStats, and the memo is deliberately per-request. The test reuses
+        // one instance, so drop its answer instead of asserting a stale one.
+        $app->adminstats->flush();
+
+        $this->assertSame('2000.00000000', $app->adminstats->revenue(1)['gross'],
+            'the sale has to land in the window in which it was updated');
+        $this->assertSame(1, $app->adminstats->revenue(1)['orders']);
+        $this->assertSame($app->adminstats->revenue(1)['net'],
+            $app->adminstats->revenue_series(14)[gmdate('Y-m-d')]['net'],
+            'the card and the chart bucket it on the same update date');
     }
 
     public function testRevenueIsZeroRatherThanEmptyOnAQuietDay()

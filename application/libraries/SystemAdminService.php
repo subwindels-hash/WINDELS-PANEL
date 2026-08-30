@@ -97,16 +97,44 @@ class SystemAdminService {
     /**
      * The crontab an operator can paste, built from the same schedule table
      * the application reads — so it cannot drift from what the panel expects.
+     *
+     * Two things historically made a pasted crontab silently do nothing, and
+     * the screen could not see either because it only printed the entries:
+     *
+     *   - cron runs with a minimal PATH, so bare `php` is frequently "command
+     *     not found" on cPanel even though PHP works over HTTP;
+     *   - `MYPANEL=/home/USER/public_html` was a placeholder the operator had
+     *     to remember to replace, so a paste would run against a path that
+     *     does not exist and cd(1) would fail before index.php was reached.
+     *
+     * The generated block now carries a PATH that covers the common PHP
+     * locations, a `PHP=` line the operator can override with `which php` (the
+     * app also honours `VP_CRON_PHP` / `CRON_PHP`), and the real document root
+     * from Env instead of a guess.
      */
     public static function crontab_lines(array $schedules) {
+        require_once APPPATH.'core/Env.php';
+        $root = rtrim((string)Env::root(), '/');
+        $root = $root !== '' ? $root : '/home/USER/public_html';
+        $php = trim((string)(Env::get('CRON_PHP') ?: ''));
+        $php = $php !== '' ? $php : 'php';
+        // cPanel commonly keeps CLI PHP out of the default cron PATH. These
+        // are the locations used by easypanel/LiteSpeed/cPanel; hitting PHP 8.2
+        // specifically (or any path `which php` reports) stays a one-line edit
+        // in PHP= below.
         $lines = array(
             '# MarvySocials background jobs — paste into: crontab -e',
-            '# Replace /home/USER/public_html with your document root.',
-            'MYPANEL=/home/USER/public_html',
+            '# Both lines below are the parts that usually stop a crontab from',
+            '# running: the PHP binary must be on the cron PATH, and MYPANEL must',
+            '# point at the real document root.',
+            'PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/php/bin:/opt/cpanel/ea-php82/root/usr/bin',
+            '# If cron still cannot find `php`, run `which php` and put that path in PHP=.',
+            'PHP='.$php,
+            'MYPANEL='.$root,
             '',
         );
         foreach ($schedules as $job => $expr) {
-            $lines[] = sprintf('%-16s cd $MYPANEL && php index.php cron %s', $expr, $job);
+            $lines[] = sprintf('%-16s cd $MYPANEL && "$PHP" index.php cron %s', $expr, $job);
         }
         return $lines;
     }

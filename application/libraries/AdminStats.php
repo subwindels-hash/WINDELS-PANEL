@@ -152,13 +152,13 @@ class AdminStats {
 
         $db = $this->ci->db;
         foreach ($since as $days => $from) {
-            $window = "created_at >= '".$from."'";
+            $window = "updated_at >= '".$from."'";
             $db->select("COALESCE(SUM(CASE WHEN {$window} AND status IN ({$in}) THEN 1 ELSE 0 END),0) AS n_{$days}", false)
                ->select("COALESCE(SUM(CASE WHEN {$window} AND status IN ({$in}) THEN {$money_column} ELSE 0 END),0) AS gross_{$days}", false)
                ->select("COALESCE(SUM(CASE WHEN {$window} AND status IN ({$in}) THEN refunded_amount ELSE 0 END),0) AS refunded_{$days}", false)
                ->select("COALESCE(SUM(CASE WHEN {$window} AND status NOT IN ({$in}) THEN 1 ELSE 0 END),0) AS unearned_{$days}", false);
         }
-        $row = $db->where('created_at >=', $oldest)->get($table)->row();
+        $row = $db->where('updated_at >=', $oldest)->get($table)->row();
 
         $out = array();
         foreach (array_keys($since) as $days) {
@@ -205,7 +205,7 @@ class AdminStats {
             ->select('COALESCE(SUM(refunded_amount),0) AS refunded', false)
             ->select('COALESCE(SUM(provider_charge),0) AS cost', false)
             ->select('COALESCE(SUM(CASE WHEN provider_charge IS NOT NULL THEN 1 ELSE 0 END),0) AS costed', false)
-            ->where('created_at >=', $since)
+            ->where('updated_at >=', $since)
             ->where_in('status', self::$earned['orders'])
             ->get('orders')->row();
         if ((int)($smm->n ?? 0) > 0) $out['SMM'] = $this->shape($smm);
@@ -217,7 +217,7 @@ class AdminStats {
             ->select('COALESCE(SUM(refunded_amount),0) AS refunded', false)
             ->select('COALESCE(SUM(provider_cost),0) AS cost', false)
             ->select('COALESCE(SUM(CASE WHEN provider_cost IS NOT NULL THEN 1 ELSE 0 END),0) AS costed', false)
-            ->where('created_at >=', $since)
+            ->where('updated_at >=', $since)
             ->where_in('status', self::$earned['service_transactions'])
             ->group_by('service_domain')
             ->get('service_transactions')->result();
@@ -381,9 +381,13 @@ class AdminStats {
      * cannot use one either way) but keeps the range scan in the WHERE, and
      * returns at most one row per day per table.
      *
-     * `SUBSTR(created_at, 1, 10)` rather than `DATE()`: both MySQL and the
+     * `SUBSTR(updated_at, 1, 10)` rather than `DATE()`: both MySQL and the
      * SQLite-backed dev database implement it identically for a DATETIME
      * column, and the values are UTC in both, matching the keys built below.
+     * `updated_at` is the report date, not `created_at`: a sale (or refund)
+     * that happened today must increment today's bar even when the order row
+     * was created days ago. This is what keeps the report fresh after every
+     * status/refund update.
      *
      * It also applies the same earned-status filter as the cards above it. A
      * chart that counted cancelled orders while the summary did not would have
@@ -405,11 +409,11 @@ class AdminStats {
         foreach ($sources as $source) {
             list($table, $column, $statuses) = $source;
             $rows = $this->ci->db
-                ->select('SUBSTR(created_at, 1, 10) AS day', false)
+                ->select('SUBSTR(updated_at, 1, 10) AS day', false)
                 ->select('COUNT(*) AS sales', false)
                 ->select('COALESCE(SUM('.$column.'),0) AS gross', false)
                 ->select('COALESCE(SUM(refunded_amount),0) AS refunded', false)
-                ->where('created_at >=', $since)
+                ->where('updated_at >=', $since)
                 ->where_in('status', $statuses)
                 ->group_by('day', false)
                 ->get($table)->result();
@@ -617,6 +621,33 @@ class AdminStats {
             'customers_active'  => (int)($row->customers_active ?? 0),
             'customers_new_30d' => (int)($row->customers_new_30d ?? 0),
         );
+    }
+
+    /**
+     * The newest write in either revenue table.
+     *
+     * The reports are computed live, so there is no cache to expire — this
+     * timestamp is the answer to "is this report showing the latest update?"
+     * without having to inspect the database. Order status changes, refunds,
+     * partial refunds and new purchases all touch `updated_at` on the row, so
+     * the freshest value across both tables is the freshness the report has.
+     *
+     * @return string|null UTC datetime, or NULL when both tables are empty
+     */
+    public function report_freshness() {
+        if (isset($this->memo['report_freshness'])) return $this->memo['report_freshness'];
+        $fresh = null;
+        foreach (array('orders', 'service_transactions') as $table) {
+            if (!$this->ci->db->table_exists($table)) continue;
+            $row = $this->ci->db
+                ->select('COALESCE(MAX(updated_at), MAX(created_at)) AS ts', false)
+                ->get($table)->row();
+            $ts = $row && !empty($row->ts) ? (string)$row->ts : null;
+            if ($ts !== null && ($fresh === null || strtotime($ts) > strtotime($fresh))) {
+                $fresh = $ts;
+            }
+        }
+        return $this->memo['report_freshness'] = $fresh;
     }
 
     /** Provider health summary. */

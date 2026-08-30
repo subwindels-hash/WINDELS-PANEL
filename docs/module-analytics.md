@@ -99,10 +99,20 @@ sees a smaller total than last month needs to know it is honesty, not data loss.
 
 ### The chart is one grouped query per table, with the same filter
 
-`revenue_series()` now groups in SQL on `SUBSTR(created_at, 1, 10)` — identical
+`revenue_series()` now groups in SQL on `SUBSTR(updated_at, 1, 10)` — identical
 in MySQL and in the SQLite-backed dev database, and UTC in both, matching the
 keys the series is built from. At most one row per day per table comes back
 instead of every sale.
+
+The window column is deliberately `updated_at`, not `created_at`. A pending
+order created ten days ago is not revenue; when it is delivered (or refunded)
+today the sale has to land in *today's* report. Using the creation date would
+page a genuinely fresh update onto an old bar (or, once the creation date
+falls outside the range, drop it from the report entirely). `revenue()` and
+`revenue_by_domain()` window on the same column, so the cards, the breakdown
+and the chart cannot disagree about what "updated in this range" means; the
+summary also exposes `report_freshness()`, the newest `updated_at` across both
+revenue tables, so the page itself says how current the figures are.
 
 ### Delivery health covers SMM
 
