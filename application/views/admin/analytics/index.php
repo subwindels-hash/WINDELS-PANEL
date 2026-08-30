@@ -23,6 +23,13 @@ $has_series = bccomp($peak, '0', 8) > 0;
   <div>
     <h2 class="mb-0" style="font-size:1.4rem;font-weight:600">Analytics</h2>
     <p class="muted text-sm">Every domain the panel sells, last <?=(int)$days?> days</p>
+    <?php if (!empty($report_fresh)): ?>
+      <p class="hint text-xs mt-1">
+        Reports are computed live and shown here as of
+        <strong><?=htmlspecialchars(date('M j, Y H:i', strtotime($report_fresh)))?> UTC</strong>
+        (the newest sale/refund/status update in the revenue tables).
+      </p>
+    <?php endif; ?>
   </div>
   <div class="row" style="gap:.35rem">
     <?php foreach ($ranges as $r): ?>

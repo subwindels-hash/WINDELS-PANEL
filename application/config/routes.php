@@ -430,6 +430,9 @@ $route['admin/cron/resume'] = 'admin/system/cron_resume';
 // Run one job now: same harness, same lock as the crontab tick (POST-only,
 // settings.manage) — the browser-side answer to "did the cron even install?".
 $route['admin/cron/run'] = 'admin/system/cron_run';
+// Catch up every overdue / never-run job in one click (POST-only,
+// settings.manage). Same harness and lock as a tick; see System::cron_catchup().
+$route['admin/cron/catchup'] = 'admin/system/cron_catchup';
 $route['admin/api-logs'] = 'admin/system/api_logs';
 $route['admin/refunds'] = 'admin/orders/refunds';
 $route['admin/blacklist'] = 'admin/system/blacklist';

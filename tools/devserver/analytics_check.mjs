@@ -68,14 +68,17 @@ const EARNED_SERVICES = "('SUCCESSFUL','PROCESSING','REFUNDED')";
 function expectedRevenue(days) {
   return withDb((db) => {
     const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 19).replace('T', ' ');
+    // The panels report revenue "as of" the last update to the row, not the
+    // day it was first created: a pending order completed (or refunded) today
+    // must move into today's report.
     const o = db.prepare(`SELECT COUNT(*) n, COALESCE(SUM(charge),0) g, COALESCE(SUM(refunded_amount),0) r
-                            FROM orders WHERE created_at >= ? AND status IN ${EARNED_ORDERS}`).get(since);
+                            FROM orders WHERE updated_at >= ? AND status IN ${EARNED_ORDERS}`).get(since);
     const s = db.prepare(`SELECT COUNT(*) n, COALESCE(SUM(amount),0) g, COALESCE(SUM(refunded_amount),0) r
-                            FROM service_transactions WHERE created_at >= ? AND status IN ${EARNED_SERVICES}`).get(since);
+                            FROM service_transactions WHERE updated_at >= ? AND status IN ${EARNED_SERVICES}`).get(since);
     const un = db.prepare(`SELECT COUNT(*) n FROM orders
-                            WHERE created_at >= ? AND status NOT IN ${EARNED_ORDERS}`).get(since).n
+                            WHERE updated_at >= ? AND status NOT IN ${EARNED_ORDERS}`).get(since).n
              + db.prepare(`SELECT COUNT(*) n FROM service_transactions
-                            WHERE created_at >= ? AND status NOT IN ${EARNED_SERVICES}`).get(since).n;
+                            WHERE updated_at >= ? AND status NOT IN ${EARNED_SERVICES}`).get(since).n;
     const gross = Number(o.g) + Number(s.g);
     const refunded = Number(o.r) + Number(s.r);
     return { sales: o.n + s.n, gross, refunded, net: gross - refunded, unearned: un };
@@ -148,9 +151,9 @@ console.log('\n── Analytics · the chart and the cards agree');
 const todayExpected = withDb((db) => {
   const day = new Date().toISOString().slice(0, 10);
   const o = db.prepare(`SELECT COALESCE(SUM(charge),0) g, COALESCE(SUM(refunded_amount),0) r, COUNT(*) n
-                          FROM orders WHERE SUBSTR(created_at,1,10) = ? AND status IN ${EARNED_ORDERS}`).get(day);
+                          FROM orders WHERE SUBSTR(updated_at,1,10) = ? AND status IN ${EARNED_ORDERS}`).get(day);
   const s = db.prepare(`SELECT COALESCE(SUM(amount),0) g, COALESCE(SUM(refunded_amount),0) r, COUNT(*) n
-                          FROM service_transactions WHERE SUBSTR(created_at,1,10) = ? AND status IN ${EARNED_SERVICES}`).get(day);
+                          FROM service_transactions WHERE SUBSTR(updated_at,1,10) = ? AND status IN ${EARNED_SERVICES}`).get(day);
   return { day, net: Number(o.g) - Number(o.r) + Number(s.g) - Number(s.r), sales: o.n + s.n };
 });
 const barTitle = new RegExp(`title="${todayExpected.day} — ([^"]+?) from (\\d+) sale`).exec(page.text);

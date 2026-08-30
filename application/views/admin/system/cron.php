@@ -46,6 +46,27 @@ $ago = function ($minutes) {
   </div>
 </div>
 
+<?php if ($can_control && ($overdue || $never)): ?>
+  <div class="card mb-4" style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;justify-content:space-between">
+    <div>
+      <h3 class="text-sm font-semibold mb-1">Catch up the work that fell behind</h3>
+      <p class="muted text-sm mb-0">
+        Runs every <strong>overdue</strong> or <strong>never-run</strong> job once, through the same
+        harness and exclusive lock as a scheduled tick. Use it while you repair the crontab below —
+        it cannot replace the schedule, but it gets the panel current instead of leaving customers
+        waiting for a job that has not run.
+      </p>
+    </div>
+    <form method="post" action="<?=site_url('admin/cron/catchup')?>">
+      <?=$csrf()?>
+      <button class="btn btn-secondary" type="submit"
+        data-confirm="Run every overdue cron job now? Each one runs exactly as a scheduled tick would, under the same exclusive lock.">
+        ▶ Catch up overdue jobs
+      </button>
+    </form>
+  </div>
+<?php endif; ?>
+
 <?php if ($paused): ?>
   <div class="alert alert-warning mb-4">
     <strong><?=$paused?> job<?=$paused === 1 ? ' is' : 's are'?> paused.</strong>

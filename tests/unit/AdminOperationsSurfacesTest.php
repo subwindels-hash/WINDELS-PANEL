@@ -62,8 +62,8 @@ class AdminOperationsSurfacesTest extends TestCase
         preg_match_all("~<form[^>]*action=\"<\?=site_url\('([^']+)'\)\?>\"~i", $view, $m);
         $targets = array_values(array_unique($m[1]));
         sort($targets);
-        $this->assertSame(array('admin/cron/pause', 'admin/cron/resume', 'admin/cron/run'), $targets,
-            'the cron screen must not post anywhere else');
+        $this->assertSame(array('admin/cron/catchup', 'admin/cron/pause', 'admin/cron/resume', 'admin/cron/run'),
+            $targets, 'the cron screen must only post to pause, resume, run and catch-up');
 
         $this->assertStringNotContainsString('cron/delete', $view);
 
@@ -126,9 +126,21 @@ class AdminOperationsSurfacesTest extends TestCase
             'email_queue'  => '*/5 * * * *',
         ));
         $text = implode("\n", $lines);
-        $this->assertStringContainsString('php index.php cron order_status', $text);
+        // The job names and expressions still come from the real schedule table.
+        $this->assertStringContainsString('cron order_status', $text);
         $this->assertStringContainsString('*/5 * * * *', $text);
-        $this->assertStringContainsString('MYPANEL=', $text, 'the operator has to know what to replace');
+        // The two things that actually stop a pasted crontab must be present and
+        // derived, not placeholders the operator has to remember to replace:
+        // the real document root and an overridable PHP binary that cron's
+        // minimal PATH can reach.
+        $this->assertStringContainsString('PATH=/', $text, 'cron has a minimal PATH; php must be reachable');
+        $this->assertStringContainsString('PHP=', $text, 'an overridable PHP binary, e.g. `which php`');
+        $this->assertStringContainsString('MYPANEL='.rtrim((string)Env::root(), '/'), $text,
+            'MYPANEL must be the real document root, not a placeholder');
+        $this->assertStringContainsString('"$PHP" index.php cron', $text,
+            'the line must invoke the resolved PHP binary, not a bare php that cron cannot always find');
+        $this->assertStringNotContainsString('/home/USER/public_html', $text,
+            'the placeholder root must not ship in an installable crontab');
     }
 
     /* ============================= contact map =========================== */

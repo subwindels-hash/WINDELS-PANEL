@@ -51,6 +51,7 @@ class Analytics extends Admin_Controller {
             'health'       => $this->adminstats->domain_health(),
             'providers'    => $this->adminstats->provider_performance(min($days, 30)),
             'series'       => $this->adminstats->revenue_series(14),
+            'report_fresh' => $this->adminstats->report_freshness(),
         ));
     }
 

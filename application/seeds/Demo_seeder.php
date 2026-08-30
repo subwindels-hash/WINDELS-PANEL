@@ -375,9 +375,16 @@ class Demo_seeder extends Seeder {
         foreach ($accounts as $a) {
             list($username,$email,$role,$first,$last) = $a;
             $group = ($username === 'reseller' && $reseller_group) ? $reseller_group->id : ($default_group ? $default_group->id : NULL);
-            $ids[$username] = $this->upsert('users', array('email'=>$email), array(
+            // Match on username, not email. The SQL bootstrap imports the same
+            // demo accounts with @example.com addresses; matching by email
+            // missed them, tried to INSERT another row with the same username,
+            // and the whole transaction rolled back on the UNIQUE constraint.
+            // Keying on username finds those rows and updates them to the
+            // demo addresses/passwords, which keeps `seed demo` idempotent on
+            // top of either the SQL dump or an empty database.
+            $ids[$username] = $this->upsert('users', array('username'=>$username), array(
                 'public_id'         => $this->pid(),
-                'username'          => $username,
+                'email'             => $email,
                 'password_hash'     => $this->hash_password($this->password),
                 'first_name'        => $first,
                 'last_name'         => $last,
@@ -521,6 +528,7 @@ class Demo_seeder extends Seeder {
                 'submitted_at'        => ($status === 'PENDING') ? NULL : $this->now(),
                 'completed_at'        => ($status === 'COMPLETED') ? $this->now() : NULL,
                 'created_at'          => gmdate('Y-m-d H:i:s', time() - (86400 * ($i + 1))),
+                'updated_at'          => gmdate('Y-m-d H:i:s', time() - (86400 * ($i + 1))),
             ));
             if (!is_int($order_id) || $order_id === 0) continue;
 

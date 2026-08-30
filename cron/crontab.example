@@ -1,43 +1,52 @@
 # =============================================================================
 # MarvySocials — example crontab for background jobs
 # =============================================================================
-# Copy to the www user's crontab and adjust the PATH to your document root:
+# Copy to the www user's crontab and adjust PATH/PHP/MYPANEL, then paste:
 #
 #     crontab -u www-data -e        # then paste the lines below
 #     crontab -u www-data -l        # verify
 #
-# Replace /var/www/marvysocials with the real document root (where index.php lives).
-# Each job takes an exclusive lock (JobRunner/flock), so overlapping ticks are safe.
-# Run `php index.php cron` (no job) to list jobs with their configured schedule.
+# The three variables below are the reason a crontab "looks installed" and yet
+# never runs:
+#   - cron runs with a minimal PATH, so bare `php` is "command not found" on
+#     cPanel even though PHP works over HTTP;
+#   - MYPANEL must be the real document root (where index.php lives).
+# Run `which php` on the server and put that path in PHP= if the default below
+# is wrong. The panel also honours VP_CRON_PHP in .env for the generated block
+# shown on Admin -> System -> Cron jobs.
+# Each job takes an exclusive lock (JobRunner/flock), so overlapping ticks are
+# safe. Run `php index.php cron` (no job) to list jobs with their schedule.
 # -----------------------------------------------------------------------------
 
-PATH=/usr/local/bin:/usr/bin:/bin
+PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/php/bin:/opt/cpanel/ea-php82/root/usr/bin
+# If cron cannot find php, run `which php` on the server and put its path here.
+PHP=php
 MYPANEL=/var/www/marvysocials
 
 # --- order / fulfilment status polling (frequent) ------------------------------
-*/3  * * * *  cd $MYPANEL && php index.php cron order_status
-*/5  * * * *  cd $MYPANEL && php index.php cron vtu_status
-*/5  * * * *  cd $MYPANEL && php index.php cron numbers_status
-*/5  * * * *  cd $MYPANEL && php index.php cron refill_status
-*/5  * * * *  cd $MYPANEL && php index.php cron dripfeed
-*/15 * * * *  cd $MYPANEL && php index.php cron giftcard_codes
-*/10 * * * *  cd $MYPANEL && php index.php cron service_recovery   # refunds purchases no worker can settle (no provider reference / vendor stopped answering)
-*/5  * * * *  cd $MYPANEL && php index.php cron payment_reconciliation  # asks each gateway about deposits whose callback never arrived
-*/5  * * * *  cd $MYPANEL && php index.php cron email_queue
-*/2  * * * *  cd $MYPANEL && php index.php cron inbox_poll      # pull new mail from the SMTP account into the dashboard inboxes
-*/10 * * * *  cd $MYPANEL && php index.php cron provider_health
-*/10 * * * *  cd $MYPANEL && php index.php cron earnings_release   # releases held referral earnings once the holding period elapses
-*/5  * * * *  cd $MYPANEL && php index.php cron fundsvera_expire   # expires unpaid FundsVera checkout sessions
+*/3  * * * *  cd $MYPANEL && "$PHP" index.php cron order_status
+*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron vtu_status
+*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron numbers_status
+*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron refill_status
+*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron dripfeed
+*/15 * * * *  cd $MYPANEL && "$PHP" index.php cron giftcard_codes
+*/10 * * * *  cd $MYPANEL && "$PHP" index.php cron service_recovery   # refunds purchases no worker can settle (no provider reference / vendor stopped answering)
+*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron payment_reconciliation  # asks each gateway about deposits whose callback never arrived
+*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron email_queue
+*/2  * * * *  cd $MYPANEL && "$PHP" index.php cron inbox_poll      # pull new mail from the SMTP account into the dashboard inboxes
+*/10 * * * *  cd $MYPANEL && "$PHP" index.php cron provider_health
+*/10 * * * *  cd $MYPANEL && "$PHP" index.php cron earnings_release   # releases held referral earnings once the holding period elapses
+*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron fundsvera_expire   # expires unpaid FundsVera checkout sessions
 
 # --- every 30 minutes --------------------------------------------------------
-*/30 * * * *  cd $MYPANEL && php index.php cron marketplace_release
-*/30 * * * *  cd $MYPANEL && php index.php cron provider_sync
+*/30 * * * *  cd $MYPANEL && "$PHP" index.php cron marketplace_release
+*/30 * * * *  cd $MYPANEL && "$PHP" index.php cron provider_sync
 
 # --- hourly ------------------------------------------------------------------
-0    * * * *  cd $MYPANEL && php index.php cron subscriptions
-0    * * * *  cd $MYPANEL && php index.php cron pin_rotation        # auto-rotate security PINs (24h window)
+0    * * * *  cd $MYPANEL && "$PHP" index.php cron subscriptions
+0    * * * *  cd $MYPANEL && "$PHP" index.php cron pin_rotation        # auto-rotate security PINs (24h window)
 
 # --- daily --------------------------------------------------------------------
-13   3 * * *  cd $MYPANEL && php index.php cron identity_purge
-27   4 * * *  cd $MYPANEL && php index.php cron analytics
-41   5 * * *  cd $MYPANEL && php index.php cron affiliate_payouts
+13   3 * * *  cd $MYPANEL && "$PHP" index.php cron identity_purge
+27   4 * * *  cd $MYPANEL && "$PHP" index.php cron analytics
+41   5 * * *  cd $MYPANEL && "$PHP" index.php cron affiliate_payouts

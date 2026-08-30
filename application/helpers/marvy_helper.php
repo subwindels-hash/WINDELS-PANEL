@@ -369,11 +369,18 @@ if (!function_exists('marvy_load_database')) {
         return true;
     }
 
-    /** Cheap TCP/auth probe so we never let CI's mysqli driver emit warnings. */
+    /**
+     * Cheap TCP/auth probe so we never let CI's mysqli driver emit warnings.
+     *
+     * The auth half only runs for the mysqli driver. With PDO the application
+     * connects through CI's PDO driver, so doing the probe through mysqli would
+     * fail every install that configured PDO (often because the PHP binary has
+     * no mysqli extension at all) and make a reachable database look down.
+     * For PDO we still verify the port is listening, then let the real driver
+     * own authentication and its own connection errors.
+     */
     function marvy_db_reachable() {
-        if (!function_exists('mysqli_init')) {
-            return false;
-        }
+        $driver = strtolower((string)(function_exists('env_str') ? env_str('DB_DRIVER', 'mysqli') : 'mysqli'));
         $host = (string)(function_exists('env_str') ? env_str('DB_HOST', 'localhost') : 'localhost');
         $port = (int)(getenv('DB_PORT') ?: 3306);
         $user = (string)(getenv('DB_USER') ?: '');
@@ -387,6 +394,18 @@ if (!function_exists('marvy_load_database')) {
             return false;
         }
         fclose($probe);
+
+        // PDO: the TCP probe is enough at this layer. Let the configured PDO
+        // driver perform authentication so a missing mysqli extension (or a
+        // mysqli function that was not compiled into the runtime) cannot make
+        // an otherwise-healthy PDO connection appear unavailable.
+        if (stripos($driver, 'pdo') === 0) {
+            return true;
+        }
+
+        if (!function_exists('mysqli_init')) {
+            return false;
+        }
 
         $mysqli = mysqli_init();
         if (!$mysqli) {
