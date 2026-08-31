@@ -48,7 +48,23 @@ $canonical_url = site_url($canonical);
 <?php $this->load->view('partials/icons_meta'); ?>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap">
+<?php
+// Load web fonts WITHOUT blocking first paint or the window load event.
+// A render-blocking <link rel="stylesheet"> to an external host (Google
+// Fonts) makes the whole tab sit in a "loading" state — and show a blank or
+// unstyled page — until that request finishes or times out. For visitors
+// behind a firewall / network where fonts.googleapis.com is slow or
+// unreachable (common on some mobile networks and in parts of the world),
+// that timeout is long enough to look exactly like "the site never loads".
+// media="print" + onload swap fetches the sheet at low priority and only
+// applies it once it arrives, so the page renders immediately with the
+// system-font fallback in tailwind.css and upgrades to Inter/Fraunces when
+// (and if) the font host answers. <noscript> keeps the fonts for non-JS
+// browsers; if JS is on but Google is not, the fallback stack simply stays.
+$font_href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap';
+?>
+<link rel="stylesheet" href="<?=htmlspecialchars($font_href, ENT_QUOTES, 'UTF-8')?>" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="<?=htmlspecialchars($font_href, ENT_QUOTES, 'UTF-8')?>"></noscript>
 <meta name="csrf-name" content="<?=htmlspecialchars($this->security->get_csrf_token_name())?>">
 <meta name="csrf-token" content="<?=htmlspecialchars($this->security->get_csrf_hash())?>">
 <meta name="csrf-endpoint" content="<?=htmlspecialchars(site_url('csrf'))?>">
