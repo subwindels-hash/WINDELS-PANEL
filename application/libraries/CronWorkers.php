@@ -912,6 +912,10 @@ class CronWorkers {
 
         $res = $gateway->verify($reference);
         if (empty($res['ok'])) {
+            // "The provider has no status endpoint" is not an outage: treating
+            // it as unreachable would hold every deposit open for ever. Hand
+            // it back as NO_VERIFIER so the age-out rule keeps working.
+            if (!empty($res['unsupported'])) return $none;
             // "Could not reach" must never become "expired": treat every
             // provider-side error as unknown and try again next tick.
             return array('status' => 'UNREACHABLE', 'provider_tx_id' => null,

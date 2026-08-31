@@ -129,3 +129,30 @@
   </div>
   <?php endif; ?>
 </div>
+
+<?php if (!empty($active_deposit) && $active_deposit->status === 'PENDING'): ?>
+<script <?=csp_nonce_attr()?>>
+// A pending deposit used to sit on screen until a manual refresh even after
+// the webhook had credited it. Poll the status endpoint and reload the page
+// the moment it stops being PENDING — bounded so a forgotten tab cannot poll
+// for ever.
+(function () {
+  var ref = <?=json_encode(($active_deposit->internal_reference ?: $active_deposit->public_id))?>;
+  var url = <?=json_encode(site_url('api/payments/'.($active_deposit->internal_reference ?: $active_deposit->public_id)))?>;
+  var started = Date.now(), ticks = 0;
+  function stop() { clearInterval(timer); }
+  function check() {
+    ticks++;
+    if (Date.now() - started > 30 * 60 * 1000) { stop(); return; }
+    fetch(url, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (body) {
+        var status = body && body.success && body.data ? String(body.data.status) : '';
+        if (status && status !== 'PENDING') { stop(); location.reload(); }
+      })
+      .catch(function () { /* transient — try again next tick */ });
+  }
+  var timer = setInterval(check, 10000);
+})();
+</script>
+<?php endif; ?>
