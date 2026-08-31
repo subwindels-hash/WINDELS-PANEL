@@ -272,6 +272,7 @@ moves it (the cron log at `storage/logs/cron.log` shows each run).
 | --- | --- |
 | "The panel is not configured yet" page | This is the panel naming what is missing — follow the `.env` keys it lists (copied from `.env.example`) and reload. It appears on purpose before `.env` is written or while `VP_ENCRYPTION_KEY` is unset/placeholder. |
 | Blank page / HTTP 500 | Open `deploy-verify.php` — it names the failing layer. Most often: wrong PHP version (`Select PHP Version` → 8.1+) or a mistyped `.env` line. |
+| Page loads but only the announcement bar shows — empty body, tab keeps working | The HTML after that strip is being parsed as script text, which happens when an inline `<script …>` start tag is missing its closing `>`. It is a markup fault, not a server fault: `/health/live` returns `{"status":"ok"}` and `deploy-verify.php` reports READY while the page is blank. Re-upload `application-deployment.zip` (or at minimum `application/views/partials/announcement_bar.php`) from a current build. |
 | "Database connection failed" | `VP_DB_*` values don't match Step 2 (prefix missing?), or user not added to DB with ALL PRIVILEGES. |
 | Login works but sessions drop | `storage/cache/sessions` not writable (File Manager → select → *Permissions* → `755`, or `775`/`777` if the host runs PHP as another user) — or switch to database sessions: `VP_SESSION_DRIVER=database` (uses the shipped `user_sessions` table). |
 | phpMyAdmin: file too large | Upload `marvysocials.sql.zip` instead; phpMyAdmin decompresses it. |

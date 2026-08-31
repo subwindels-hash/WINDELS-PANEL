@@ -131,7 +131,7 @@ if (!$static) {
     <?php endif; ?>
   </div>
 </div>
-<script <?=csp_nonce_attr()?>
+<script <?=csp_nonce_attr()?>>
 // The bar's height feeds the sticky offsets of everything below it
 // (--ws-announce-h). A single message is the classic 2.75rem, but stacked
 // messages make the strip taller — publish the real height to :root so the

@@ -77,7 +77,7 @@ $name = htmlspecialchars($current_user->username ?? 'there');
 </section>
 
 <?php if (!empty($current_user->user_code)): ?>
-<script <?=csp_nonce_attr()?>
+<script <?=csp_nonce_attr()?>>
 (function () {
   var btn = document.getElementById('ws-userid-copy');
   var val = document.getElementById('ws-userid-value');
@@ -101,7 +101,7 @@ $name = htmlspecialchars($current_user->username ?? 'there');
 <?php endif; ?>
 
 <?php if (!empty($pin_shown)): ?>
-<script <?=csp_nonce_attr()?>
+<script <?=csp_nonce_attr()?>>
 (function () {
   var btn = document.getElementById('ws-pin-copy');
   var val = document.getElementById('ws-pin-value');

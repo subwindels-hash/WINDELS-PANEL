@@ -7,8 +7,8 @@
     "build:css": "tailwindcss -i ./assets/css/app.css -o ./assets/css/tailwind.css --minified",
     "watch:css": "tailwindcss -i ./assets/css/app.css -o ./assets/css/tailwind.css --watch",
     "build": "npm run build:css",
-    "test:js": "node tests/js/chatbot.open.test.mjs && node tests/js/skiplink.test.mjs && node tests/js/behaviours.test.mjs && node tests/js/provider-picker.test.mjs",
-    "test": "node tests/js/chatbot.open.test.mjs && node tests/js/skiplink.test.mjs && node tests/js/behaviours.test.mjs"
+    "test:js": "node tests/js/inline-script-tags.test.mjs && node tests/js/chatbot.open.test.mjs && node tests/js/skiplink.test.mjs && node tests/js/behaviours.test.mjs && node tests/js/provider-picker.test.mjs",
+    "test": "node tests/js/inline-script-tags.test.mjs && node tests/js/chatbot.open.test.mjs && node tests/js/skiplink.test.mjs && node tests/js/behaviours.test.mjs"
   },
   "devDependencies": {
     "jsdom": "^24.1.3",

@@ -96,7 +96,7 @@
       <?php endif; ?>
 
       <?php if (!empty($pin_shown)): ?>
-      <script <?=csp_nonce_attr()?>
+      <script <?=csp_nonce_attr()?>>
       (function () {
         var btn = document.getElementById('ws-pin-copy');
         var val = document.getElementById('ws-pin-value');
