@@ -39,11 +39,14 @@ define('ENVIRONMENT',
    (!empty($_SERVER['APP_ENV']) ? $_SERVER['APP_ENV'] :
     (getenv('CI_ENV') ?: (getenv('APP_ENV') ?: 'production'))));
 
-// Configuration problems (an unset encryption key, an unreadable .env) are
-// thrown while the config files are being parsed — before CodeIgniter has an
-// error handler of its own, which used to make them a blank white page. Turn
-// them into a page that names the file to fix; CI3 replaces this handler with
-// its own as soon as it boots.
+// Configuration problems (an unset encryption key, an unreadable .env) used
+// to be thrown while the config files were being parsed and became a blank
+// white page. This handler covers only the pre-framework boot (Env.php, the
+// system-path probe): CodeIgniter.php replaces it with its own at its line
+// 140, *before* Config parses application/config/config.php — so config.php
+// itself renders boot refusals via Env::render_boot_error() rather than
+// throwing through a handler that, with display_errors off, would only log
+// and exit.
 set_exception_handler(function ($e) {
     Env::render_boot_error($e, ENVIRONMENT);
 });
