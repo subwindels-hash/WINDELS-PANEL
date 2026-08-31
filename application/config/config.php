@@ -49,7 +49,19 @@ $config['cache_query_string'] = FALSE;
 // production with an unset or example key, and supplies a clearly-labelled
 // development key otherwise.
 require_once APPPATH.'libraries/EncryptionService.php';
-$config['encryption_key'] = EncryptionService::resolve_key();
+// The refusal is a Throwable leaving config parsing — and by the time this
+// file runs, CodeIgniter.php:140 has already replaced the boot exception
+// handler index.php installed with its own. That handler only logs and exits
+// when display_errors is off, so a freshly uploaded panel whose .env has not
+// been written yet answered with a BLANK 500 — no page, no hint, and the
+// operator assumes the upload broke. Render the configuration page here,
+// while it can still reach the browser, instead of throwing through a
+// handler that cannot.
+try {
+    $config['encryption_key'] = EncryptionService::resolve_key();
+} catch (Throwable $boot_refusal) {
+    Env::render_boot_error($boot_refusal, defined('ENVIRONMENT') ? ENVIRONMENT : 'production');
+}
 // Sessions default to files on disk: shared hosting has no Redis, and a
 // session driver that cannot connect is a login screen that never logs anyone
 // in. Set VP_SESSION_DRIVER=redis (or database) where the infrastructure is

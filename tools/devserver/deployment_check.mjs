@@ -108,6 +108,42 @@ check('roles, permissions and payment methods are seeded',
   `roles=${rows('roles')} perms=${rows('permissions')} methods=${rows('payment_methods')}`);
 fresh.close();
 
+/* ------------- 2b · first visit BEFORE .env exists (regression) ---------- */
+
+// The most common fresh-upload state is "extracted, not configured yet".
+// That first visit used to be a zero-byte HTTP 500 — a blank white page with
+// no hint — because the encryption-key refusal threw through CodeIgniter's
+// own exception handler (installed before Config parses, and with
+// display_errors off it only logs and exits). An operator who saw it assumed
+// the upload itself had failed. The panel must instead answer with its
+// configuration page that names the .env keys to set.
+console.log('\n── Opening the site before .env is written (the very first visit)');
+const RAW_PORT = WEB_PORT + 1;
+const rawWeb = spawn('node', [path.join(ROOT, 'tools/devserver/server.mjs'),
+  '--port', String(RAW_PORT), '--host', '127.0.0.1', '--root', account, '--workers', '1'],
+  { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+children.push(rawWeb);
+let rawLog = '';
+rawWeb.stdout.on('data', (d) => { rawLog += d; });
+rawWeb.stderr.on('data', (d) => { rawLog += d; });
+check('the unconfigured site is listening', await waitForPort(RAW_PORT), rawLog.slice(-400));
+await new Promise((r) => setTimeout(r, 2000));
+
+let first;
+try {
+  first = await new Client(`http://127.0.0.1:${RAW_PORT}`).get('/');
+} catch (e) {
+  console.log('   note    the unconfigured request failed: ' + e.message + '\n' + rawLog.slice(-600));
+  first = { status: 0, text: '' };
+}
+check('the first visit is not a blank page',
+  first.text.trim().length > 200,
+  `status=${first.status} bytes=${first.text.length}`);
+check('it explains that .env must be written',
+  first.status === 503 && /panel is not configured/i.test(first.text) && /\.env|ENCRYPTION_KEY/i.test(first.text),
+  `status=${first.status} ${first.text.slice(0, 120)}`);
+try { rawWeb.kill('SIGKILL'); } catch { /* gone */ }
+
 /* ----------------------------- 3 · write .env ---------------------------- */
 
 console.log('\n── Writing .env the way an operator would in File Manager');
