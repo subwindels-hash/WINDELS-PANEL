@@ -22,6 +22,9 @@ class PaymentsTest extends TestCase
         }
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         if (!function_exists('marvy_public_id')) require_once self::$root.'/application/helpers/marvy_helper.php';
+        // The Fundsvera gateway builds its redirect URL with site_url(); the
+        // suite runs without a booted CI config, so a fixed stub stands in.
+        if (!function_exists('site_url')) eval('function site_url($p=""){ return "http://panel.test/".$p; }');
         require_once self::$root.'/application/libraries/GatewayInterface.php';
         require_once self::$root.'/application/libraries/HostedGateway.php';
         require_once self::$root.'/application/libraries/ManualGateway.php';
@@ -246,6 +249,282 @@ class PaymentsTest extends TestCase
             'a replay of an already-credited event must stay idempotent');
     }
 
+    /* --------------------------- fundsvera -------------------------- */
+
+    /**
+     * The webhook success vocabulary must be broad and case-insensitive.
+     *
+     * Matching only the exact string 'SUCCESSFUL' was the second half of the
+     * stuck-Processing bug: a signed webhook carrying "SUCCESS" (or "success",
+     * or "COMPLETED") verified, matched the deposit, and was then thrown away
+     * as "still pending" — the customer had paid and nothing would ever
+     * credit.
+     */
+    public function testFundsveraWebhookStatusesAreRecognisedWhateverTheCasing()
+    {
+        $ci = $this->fresh();
+        $ci->Fundsvera_checkout_model = new PayFakeCheckoutModel();
+        $gateway = $this->fundsvera_gateway();
+
+        foreach (array('SUCCESSFUL', 'success', 'COMPLETED', 'Paid', 'SETTLED', 'approved') as $raw) {
+            $event = $gateway->parse_event($this->fundsvera_body(array('transaction_status' => $raw)));
+            $this->assertSame('SUCCESS', $event['status'],
+                'a webhook reporting "'.$raw.'" is a completed payment');
+        }
+        foreach (array('FAILED', 'failed', 'Reversed', 'refunded', 'CANCELLED') as $raw) {
+            $event = $gateway->parse_event($this->fundsvera_body(array('transaction_status' => $raw)));
+            $this->assertSame('FAILED', $event['status'],
+                'a webhook reporting "'.$raw.'" must not wait for ever');
+        }
+        foreach (array('PENDING', '', 'something-unexpected') as $raw) {
+            $event = $gateway->parse_event($this->fundsvera_body(array('transaction_status' => $raw)));
+            $this->assertSame('PENDING', $event['status']);
+        }
+    }
+
+    /** `status` is the shorthand spelling their payloads sometimes use. */
+    public function testFundsveraWebhookFallsBackToTheStatusField()
+    {
+        $ci = $this->fresh();
+        $ci->Fundsvera_checkout_model = new PayFakeCheckoutModel();
+        $event = $this->fundsvera_gateway()->parse_event($this->fundsvera_body(array(
+            'transaction_status' => null,
+            'status'             => 'SUCCESSFUL',
+        )));
+        $this->assertSame('SUCCESS', $event['status']);
+    }
+
+    /**
+     * The whole path that used to strand the customer: a signed Fundsvera
+     * webhook arrives for a PENDING deposit, matches its checkout row, and
+     * must credit the wallet exactly once — with a replay crediting nothing.
+     */
+    public function testFundsveraWebhookCreditsTheDepositExactlyOnce()
+    {
+        $ci = $this->fresh();
+        $checkout = new PayFakeCheckoutModel(); // by_request_id resolves to tx id 42
+        $ci->Fundsvera_checkout_model = $checkout;
+
+        putenv('FUNDSVERA_WEBHOOK_SECRET=fv-webhook-secret');
+        try {
+            $svc = new PaymentService();
+            $body = $this->fundsvera_body(array(
+                'trx_ref'            => 'FVTRX0001',
+                'request_id'         => 'MVS-PAY00000000000000001',
+                'transaction_status' => 'SUCCESSFUL',
+                'amount_paid'        => '1000',
+            ));
+            $sig = hash_hmac('sha256', $body, 'fv-webhook-secret');
+
+            $first = $svc->record_webhook('fundsvera', $body, array('X-FUNDSVERA-SIGNATURE' => $sig));
+            $this->assertTrue($first['ok'], json_encode($first));
+            $this->assertSame(1, $ci->ledger_credits, 'the paid deposit must credit once');
+            $this->assertSame('SUCCESS', $ci->tx->status);
+
+            // A redelivery of the same event is a duplicate, not a second credit.
+            $second = $svc->record_webhook('fundsvera', $body, array('X-FUNDSVERA-SIGNATURE' => $sig));
+            $this->assertTrue(!empty($second['already_seen']));
+            $this->assertSame(1, $ci->ledger_credits);
+
+            // The checkout row closed as PAID with the provider's reference.
+            $this->assertSame('PAID', $checkout->results[0]['status']);
+            $this->assertSame('FVTRX0001', $checkout->results[0]['trx_ref']);
+        } finally {
+            putenv('FUNDSVERA_WEBHOOK_SECRET');
+        }
+    }
+
+    /** A failed-payment webhook must not credit, and must close the checkout. */
+    public function testFundsveraFailedWebhookClosesTheCheckoutWithoutCrediting()
+    {
+        $ci = $this->fresh();
+        $checkout = new PayFakeCheckoutModel();
+        $ci->Fundsvera_checkout_model = $checkout;
+
+        $event = $this->fundsvera_gateway()->parse_event($this->fundsvera_body(array(
+            'trx_ref'            => 'FVTRX0002',
+            'request_id'         => 'MVS-PAY00000000000000001',
+            'transaction_status' => 'FAILED',
+        )));
+
+        $this->assertSame('FAILED', $event['status']);
+        $this->assertSame(0, $ci->ledger_credits);
+        $this->assertSame('FAILED', $checkout->results[0]['status']);
+    }
+
+    /**
+     * Reconciliation's server-side safety net: when the webhook never
+     * arrives, verify() asks the provider what happened.
+     */
+    public function testFundsveraVerifyReadsTheProviderStatus()
+    {
+        putenv('FUNDSVERA_PUBLIC_KEY=pk-test');
+        putenv('FUNDSVERA_SECRET_KEY=sk-test');
+        putenv('FUNDSVERA_ENABLED=1');
+        try {
+            $http = new PayFakeHttp(array(
+                array('http_code' => 200, 'body' => json_encode(array(
+                    'request_id'         => 'MVS-PAY00000000000000001',
+                    'trx_ref'            => 'FVTRX0009',
+                    'transaction_status' => 'SUCCESSFUL',
+                    'amount_paid'        => '1000',
+                )), 'request_id' => 'r'),
+            ));
+            $gateway = new FundsveraGateway(null, $http);
+            $res = $gateway->verify('MVS-PAY00000000000000001');
+
+            $this->assertTrue($res['ok']);
+            $this->assertSame('SUCCESS', $res['status']);
+            $this->assertSame('1000', $res['amount']);
+            $this->assertSame('FVTRX0009', $res['provider_tx_id']);
+            $this->assertStringContainsString('/transaction/MVS-PAY00000000000000001', $http->calls[0]['url']);
+            $this->assertSame('GET', $http->calls[0]['method']);
+        } finally {
+            putenv('FUNDSVERA_PUBLIC_KEY'); putenv('FUNDSVERA_SECRET_KEY'); putenv('FUNDSVERA_ENABLED');
+        }
+    }
+
+    /** Unknown-but-configured references read as still pending, not as errors. */
+    public function testFundsveraVerifyTreatsAnUnknownReferenceAsStillPending()
+    {
+        putenv('FUNDSVERA_PUBLIC_KEY=pk-test');
+        putenv('FUNDSVERA_SECRET_KEY=sk-test');
+        try {
+            $http = new PayFakeHttp(array(
+                array('http_code' => 404, 'body' => '', 'request_id' => 'r'),
+                array('http_code' => 404, 'body' => '', 'request_id' => 'r'),
+            ));
+            $res = (new FundsveraGateway(null, $http))->verify('MVS-UNKNOWN0000000001');
+
+            $this->assertTrue($res['ok']);
+            $this->assertSame('PENDING', $res['status'],
+                'an unknown reference is an unconfirmed payment, not an outage');
+        } finally {
+            putenv('FUNDSVERA_PUBLIC_KEY'); putenv('FUNDSVERA_SECRET_KEY');
+        }
+    }
+
+    /** A provider transport failure must read as unreachable, not pending. */
+    public function testFundsveraVerifyReportsTransportFailureAsUnreachable()
+    {
+        putenv('FUNDSVERA_PUBLIC_KEY=pk-test');
+        putenv('FUNDSVERA_SECRET_KEY=sk-test');
+        try {
+            $http = new PayFakeHttp(array(
+                array('http_code' => 0, 'body' => null, 'error' => 'connection timed out', 'request_id' => 'r'),
+            ));
+            $res = (new FundsveraGateway(null, $http))->verify('MVS-PAY00000000000000001');
+
+            $this->assertFalse($res['ok']);
+            $this->assertArrayNotHasKey('status', $res,
+                'no answer must not become a guessed one');
+        } finally {
+            putenv('FUNDSVERA_PUBLIC_KEY'); putenv('FUNDSVERA_SECRET_KEY');
+        }
+    }
+
+    /** Without credentials, reconciliation must skip Fundsvera, not stall it. */
+    public function testFundsveraVerifyWithoutConfigIsUnsupportedNotUnreachable()
+    {
+        putenv('FUNDSVERA_PUBLIC_KEY');
+        putenv('FUNDSVERA_SECRET_KEY');
+        $res = (new FundsveraGateway(null, new PayFakeHttp(array())))->verify('MVS-PAY00000000000000001');
+
+        $this->assertFalse($res['ok']);
+        $this->assertTrue(!empty($res['unsupported']),
+            'the cron maps unsupported to NO_VERIFIER so the age-out rule keeps working');
+    }
+
+    /**
+     * Initiation is a synchronous call the customer waits on: one bounded
+     * attempt, no retry ladder. Three 15-second retries plus backoff held the
+     * "Processing…" button for over a minute whenever the provider was slow —
+     * the visible half of "it does not work".
+     */
+    public function testFundsveraInitiationFailsFastInsteadOfHanging()
+    {
+        putenv('FUNDSVERA_PUBLIC_KEY=pk-test');
+        putenv('FUNDSVERA_SECRET_KEY=sk-test');
+        putenv('FUNDSVERA_ENABLED=1');
+        try {
+            $http = new PayFakeHttp(array(
+                array('http_code' => 200, 'body' => json_encode(array(
+                    'trx_ref'        => 'FVTRX0010',
+                    'account_number' => '9021234567',
+                    'account_name'   => 'MVS/Maria customer',
+                    'bank_name'      => 'Palmpay',
+                    'checkout_url'   => 'https://fundsvera.co/pay/abc',
+                )), 'request_id' => 'r'),
+            ));
+            $gateway = new FundsveraGateway(null, $http);
+            $tx = (object)array(
+                'id' => 42, 'public_id' => 'PAY000000000000000001', 'user_id' => 7,
+                'internal_reference' => 'MVS-PAY00000000000000001',
+                'amount' => '1000.00000000', 'currency' => 'NGN',
+            );
+            $user = (object)array(
+                'id' => 7, 'email' => 'maria@example.com', 'first_name' => 'Maria',
+                'last_name' => 'Ngozi', 'username' => 'maria', 'phone' => '08031234567',
+            );
+            $res = $gateway->initiate($tx, $user);
+
+            $this->assertTrue($res['ok'], json_encode($res));
+            $this->assertCount(1, $http->calls, 'one attempt, not a retry ladder');
+            $this->assertLessThanOrEqual(15, (int)$http->calls[0]['options']['timeout'],
+                'the customer is waiting on this call');
+            $this->assertSame('https://fundsvera.co/pay/abc', $res['redirect_url']);
+
+            // The source must pin the client to no internal retries.
+            $src = file_get_contents(self::$root.'/application/libraries/FundsveraGateway.php');
+            $this->assertStringContainsString("'max_retries' => 0", $src);
+        } finally {
+            putenv('FUNDSVERA_PUBLIC_KEY'); putenv('FUNDSVERA_SECRET_KEY'); putenv('FUNDSVERA_ENABLED');
+        }
+    }
+
+    /** Reconciliation must leave Fundsvera deposits to the age-out rule... */
+    public function testReconciliationTreatsAnUnsupportedVerifierAsNoVerifier()
+    {
+        $src = file_get_contents(self::$root.'/application/libraries/CronWorkers.php');
+        $this->assertStringContainsString("res['unsupported']", $src);
+        $this->assertStringContainsString('return $none;', $src,
+            'unsupported must fall through to NO_VERIFIER, not UNREACHABLE');
+    }
+
+    /** Signatures may arrive prefixed with their algorithm. */
+    public function testFundsveraSignatureAcceptsAPrefixedDigest()
+    {
+        putenv('FUNDSVERA_WEBHOOK_SECRET=fv-webhook-secret');
+        try {
+            $gateway = $this->fundsvera_gateway();
+            $body = '{"trx_ref":"FV1"}';
+            $sig = hash_hmac('sha256', $body, 'fv-webhook-secret');
+            $this->assertTrue($gateway->verify_webhook($body, array('X-FUNDSVERA-SIGNATURE' => $sig)));
+            $this->assertTrue($gateway->verify_webhook($body, array('X-FUNDSVERA-SIGNATURE' => 'sha256='.$sig)),
+                'an "sha256="-prefixed digest is still the digest');
+            $this->assertFalse($gateway->verify_webhook($body, array('X-FUNDSVERA-SIGNATURE' => strrev($sig))));
+        } finally {
+            putenv('FUNDSVERA_WEBHOOK_SECRET');
+        }
+    }
+
+    private function fundsvera_gateway() {
+        return new FundsveraGateway(null, new PayFakeHttp(array()));
+    }
+
+    private function fundsvera_body(array $over = array()) {
+        return json_encode(array_merge(array(
+            'trx_ref'            => 'FVTRX0001',
+            'request_id'         => 'MVS-PAY00000000000000001',
+            'trx_type'           => 'Bank Transfer',
+            'transaction_status' => 'SUCCESSFUL',
+            'amount_paid'        => '1000',
+            'settlement_amount'  => '985',
+            'fee'                => '15',
+            'customer'           => array('email' => 'maria@example.com', 'virtual_account_no' => null),
+        ), $over), JSON_UNESCAPED_SLASHES);
+    }
+
     /* ---------------------------- source ---------------------------- */
 
     public function testWalletControllerPostsToPaymentService()
@@ -458,4 +737,89 @@ class PayWhFakeResult {
     private $row;
     public function __construct($row) { $this->row = $row; }
     public function row() { return $this->row === null ? null : (object)$this->row; }
+}
+
+/**
+ * Scripted stand-in for SecureHttpClient: records what went on the wire
+ * (method, URL, headers, per-call options) and answers from the script.
+ * An unscripted call throws so a test that triggers an unexpected provider
+ * request fails loudly instead of silently.
+ */
+class PayFakeHttp
+{
+    public $calls = array();
+    private $script;
+
+    public function __construct(array $script) { $this->script = $script; }
+
+    public function get($url, $headers = array(), $options = array())
+    {
+        return $this->push('GET', $url, null, $headers, $options);
+    }
+
+    public function post($url, $data = null, $headers = array(), $options = array())
+    {
+        return $this->push('POST', $url, $data, $headers, $options);
+    }
+
+    private function push($method, $url, $data, $headers, $options)
+    {
+        if (!$this->script) {
+            throw new RuntimeException('PayFakeHttp: unscripted '.$method.' '.$url);
+        }
+        $this->calls[] = array(
+            'method' => $method, 'url' => $url, 'data' => $data,
+            'headers' => $headers, 'options' => $options,
+        );
+        return array_shift($this->script);
+    }
+}
+
+/**
+ * Stand-in for Fundsvera_checkout_model: resolves one known checkout row
+ * (payment_transaction_id 42, expected 1000) and records record_result calls
+ * so tests can assert what the webhook wrote.
+ */
+class PayFakeCheckoutModel
+{
+    public $results = array();
+    public $row;
+
+    public function __construct($row = null)
+    {
+        $this->row = $row ?: (object)array(
+            'id'                     => 5,
+            'payment_transaction_id' => 42,
+            'user_id'                => 7,
+            'request_id'             => 'MVS-PAY00000000000000001',
+            'trx_ref'                => null,
+            'expected_amount'        => '1000.00000000',
+            'status'                 => 'PENDING',
+        );
+    }
+
+    public $opened = array();
+
+    public function open(array $data)
+    {
+        $this->opened[] = $data;
+        $this->row = (object)array_merge((array)$this->row, $data);
+        return 5;
+    }
+
+    public function by_request_id($request_id)
+    {
+        return ($this->row && $this->row->request_id === $request_id) ? $this->row : null;
+    }
+
+    public function by_trx_ref($trx_ref)
+    {
+        return null;
+    }
+
+    public function record_result($id, array $data)
+    {
+        $this->results[] = $data;
+        return true;
+    }
 }

@@ -66,6 +66,21 @@ class MY_Controller extends CI_Controller {
         $this->enforce_demo_mode();
 
         $this->capture_referral();
+
+        // Background jobs that run themselves (see CronScheduler): every web
+        // request — and /health/live, which uptime monitors ping — schedules a
+        // post-response heartbeat that runs whatever the schedule says is due.
+        // This is what makes deposits reconcile and orders settle on a host
+        // where the crontab was never installed. The throttle means at most
+        // one request per minute actually does anything.
+        if (!$this->input->is_cli_request() && $this->db_ready) {
+            try {
+                $this->load->library('CronScheduler');
+                CronScheduler::register($this->db_ready);
+            } catch (Throwable $e) {
+                log_message('error', 'cron autotick registration failed: '.$e->getMessage());
+            }
+        }
     }
 
     /**

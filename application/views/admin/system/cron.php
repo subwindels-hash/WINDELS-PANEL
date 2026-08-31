@@ -76,11 +76,19 @@ $ago = function ($minutes) {
   </div>
 <?php endif; ?>
 
+<?php
+// The auto-run heartbeat answers the headline question on hosts where the
+// crontab was never installed: something IS running the jobs. It rides on
+// site traffic (and /health/live, which uptime monitors ping), so a working
+// crontab is still the better arrangement on a quiet site.
+$autorun = isset($autorun) && is_array($autorun) ? $autorun : array('enabled' => false, 'tick_age_minutes' => null);
+?>
 <?php if ($never === count($jobs) && count($jobs) > 0): ?>
-  <div class="alert alert-danger mb-4">
+  <div class="alert <?=$autorun['enabled'] ? 'alert-warning' : 'alert-danger'?> mb-4">
     <strong>No cron job has ever run on this installation.</strong>
     Orders will not settle, deposits will not reconcile and no email will be sent until the
     crontab below is installed. On cPanel: <em>Advanced → Cron Jobs</em>.
+    <?=$autorun['enabled'] ? 'Until then, background work still runs automatically with site traffic (see Auto-run below) — the crontab simply makes it punctual.' : ''?>
     <?php if ($can_control): ?>
       You can also press <em>Run now</em> on any job below to run it once immediately —
       a quick way to confirm the jobs themselves work while you set the crontab up.
@@ -90,10 +98,34 @@ $ago = function ($minutes) {
   <div class="alert alert-warning mb-4">
     <?php if ($failing): ?><strong><?=$failing?> job(s) failing.</strong> <?php endif; ?>
     <?php if ($overdue): ?><strong><?=$overdue?> job(s) overdue</strong> — they have not run for far
-      longer than their schedule allows, which usually means the crontab is not installed or the
-      PHP path in it is wrong.<?php endif; ?>
+      longer than their schedule allows, which usually means the crontab is not installed and
+      the site has had no traffic to auto-run them.<?php endif; ?>
   </div>
 <?php endif; ?>
+
+<div class="card mb-4" style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;justify-content:space-between">
+  <div>
+    <h3 class="text-sm font-semibold mb-1">Auto-run</h3>
+    <p class="muted text-sm mb-0">
+      Background jobs run themselves with site traffic — no crontab required. Any page load
+      (or an uptime monitor pinging <span class="mono">/health/live</span>) runs whatever is
+      due, a few minutes behind at most on an active panel.
+      <?php if (!$autorun['enabled']): ?>
+        <strong>Currently turned off</strong> (CRON_AUTORUN env or the cron_autorun_enabled setting) —
+        the crontab below is then the only scheduler.
+      <?php elseif ($autorun['tick_age_minutes'] === null): ?>
+        No auto tick recorded yet — it fires with the next request, a minute or more after the last one.
+      <?php else: ?>
+        Last auto tick <?=htmlspecialchars($ago($autorun['tick_age_minutes']))?>.
+      <?php endif; ?>
+      The crontab below stays the recommended arrangement for quiet sites: it runs on schedule
+      whether anyone visits or not.
+    </p>
+  </div>
+  <span class="badge <?=$autorun['enabled'] ? 'badge-success badge-dot' : 'badge-default'?>">
+    <?=$autorun['enabled'] ? 'On' : 'Off'?>
+  </span>
+</div>
 
 <div class="card mb-4">
   <div class="overflow-x-auto">

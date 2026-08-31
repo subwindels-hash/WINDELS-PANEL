@@ -424,7 +424,7 @@ Sandbox vs production endpoints are chosen by the base URL env var.
 |---|---|---|---|
 | SMM panels (any JAP-format API) | `StandardSmmAdapter` | n/a — the vendor decides | per-provider `api_url`/`api_key` (Admin → Providers) |
 | VTU: airtime/data/cable/electricity/education | `VtpassAdapter` | `sandbox.vtpass.com` → `vtpass.com` | `VTPASS_*` |
-| Virtual numbers / OTP | `FiveSimAdapter` | `FIVESIM_BASE_URL` | `FIVESIM_API_KEY`, `FIVESIM_RATE_TO_BASE` |
+| Virtual numbers / OTP | `FiveSimAdapter` | `FIVESIM_BASE_URL` (current 5sim protocol, `https://5sim.net/v1` only — the deprecated API1/`handler_api` protocol is refused) | `FIVESIM_API_KEY` (the dashboard key "API key for 5sim protocol", **not** the one labelled Deprecated API), `FIVESIM_RATE_TO_BASE` |
 | KYC / identity (NIN, BVN) | `DojahAdapter` | `sandbox.dojah.io` → `api.dojah.io` | `DOJAH_*` (billable per lookup) |
 | Gift cards | `ReloadlyAdapter` | `giftcards-sandbox.reloadly.com` → `giftcards.reloadly.com` | `RELOADLY_*` (OAuth2, token cached, audience pinned to base URL) |
 | Card/bank payments | Paystack, Stripe, Flutterwave, Razorpay, PayPal, CoinPayments, manual bank transfer | per-gateway dashboard keys | `*_SECRET_KEY`, webhook secrets — idempotent, signature-verified |

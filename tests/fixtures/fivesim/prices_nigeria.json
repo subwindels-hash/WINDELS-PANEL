@@ -1,0 +1,15 @@
+{
+  "nigeria": {
+    "whatsapp": {
+      "any": {"cost": 21, "count": 812, "rate": 99.99},
+      "mtn": {"cost": 20, "count": 300, "rate": 99.99},
+      "glo": {"cost": 19, "count": 0, "rate": 99.99}
+    },
+    "telegram": {
+      "any": {"cost": 25, "count": 415, "rate": 99.99}
+    },
+    "facebook": {
+      "any": {"cost": 18, "count": 133, "rate": 99.99}
+    }
+  }
+}

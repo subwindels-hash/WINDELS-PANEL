@@ -10,8 +10,34 @@ require_once __DIR__.'/NumberProviderInterface.php';
 /**
  * FiveSimAdapter — live virtual-number / OTP integration with 5sim (§10, §14).
  *
- * Built against https://5sim.net/docs. Four properties of that API shape this
- * class, and each one is a money bug if it is got wrong:
+ * **Protocol: the current 5sim API ("5SIM protocol"), not the deprecated one.**
+ * 5sim issue two dashboard keys: the API key for the *5sim protocol* — the one
+ * this adapter is built for, documented at https://5sim.net/docs — and the
+ * *API1 protocol (deprecated)* key for the legacy `handler_api.php`
+ * compatibility API. The two are not interchangeable: a deprecated key against
+ * these endpoints (or these endpoints called with API1 action semantics) fails
+ * with rejected credentials. Three things in the adapter keep us on the
+ * current protocol:
+ *
+ *  1. The credential always comes from the environment first
+ *     (`FIVESIM_API_KEY`, or its portable `VP_FIVESIM_API_KEY` spelling) — the
+ *     key an operator rotates in production — and falls back to the encrypted
+ *     `providers.api_key_encrypted` column. It is a Bearer token on the wire
+ *     and is never logged, never cached, and never rendered to any client.
+ *
+ *  2. The base URL is pinned to the current API: an https URL on
+ *     `5sim.net` whose path is empty or `/v1`. The constructor refuses
+ *     `handler_api.php` / `stubs/` URLs (the deprecated API1 protocol) and any
+ *     non-5sim host, so a misconfigured provider row cannot quietly put
+ *     customer traffic on the deprecated API.
+ *
+ *  3. Every call is a GET under `/v1` (`guest/countries`, `guest/prices`,
+ *     `guest/products/{country}/{operator}`, `user/profile`,
+ *     `user/buy/activation/...`, `user/check|finish|cancel|ban/{id}`), exactly
+ *     the current documentation's surface.
+ *
+ * Four properties of the current API shape this class, and each one is a money
+ * bug if it is got wrong:
  *
  *  1. **Errors are plain text, not JSON, and often arrive with HTTP 200.**
  *     `no free phones`, `not enough user balance`, `order not found` come back
@@ -36,12 +62,26 @@ require_once __DIR__.'/NumberProviderInterface.php';
  *     an SMS has arrived (`order has sms`), and `ban` costs vendor rating.
  *     NumberService picks; this adapter just reports what the vendor said.
  *
- * Auth is a bearer token — genuinely, here — in `providers.api_key_encrypted`.
- * Nothing throws for a vendor-side rejection.
+ * Auth is a bearer token — genuinely, here. Nothing throws for a vendor-side
+ * rejection; the constructor throws only for a provider row pointed at the
+ * wrong (deprecated) API, before any customer money can move.
  */
 class FiveSimAdapter implements NumberProviderInterface {
 
     const BASE_URL = 'https://5sim.net/v1';
+
+    /** The only host the current 5sim API is served from. */
+    const API_HOST = '5sim.net';
+
+    /**
+     * Test/ops override for log_message. When callable it receives
+     * ($level, $message) instead of the CI log, so a test (or a cron wrapper)
+     * can capture what the adapter logged. Log lines carry the endpoint, the
+     * HTTP status and mapped, safe errors — never the bearer token, never a
+     * response body, never a customer's number beyond what the vendor path
+     * already contains (nothing: ids only).
+     */
+    public static $log_sink = null;
 
     /** Vendor order status → our reservation vocabulary. */
     private static $state_map = array(
@@ -71,6 +111,8 @@ class FiveSimAdapter implements NumberProviderInterface {
         'order expired'         => 'That reservation has already expired',
         'order has sms'         => 'That reservation already received a code',
         'hosting order'         => 'That reservation is a rental, not an activation',
+        'bandwidth limit'       => 'The vendor is rate-limiting us — retry shortly',
+        'too many requests'     => 'The vendor is rate-limiting us — retry shortly',
     );
 
     /** Our country codes → 5sim country slugs. */
@@ -97,13 +139,21 @@ class FiveSimAdapter implements NumberProviderInterface {
     private $product_map;
     private $rate_to_base;
 
+    /**
+     * @param object $provider_row row from `providers`
+     * @param object $http         SecureHttpClient or a test double
+     * @throws RuntimeException when api_url points at the deprecated API1
+     *                          protocol (handler_api.php / stubs) or at any
+     *                          host other than 5sim.net — fail before money
+     *                          moves, not on the vendor's answer.
+     */
     public function __construct($provider_row, $http = null) {
         $this->provider = $provider_row;
         $timeout = isset($provider_row->timeout_ms) ? $provider_row->timeout_ms / 1000 : 20;
         $this->http = $http ?: new SecureHttpClient(array('timeout' => $timeout));
 
-        $url = isset($provider_row->api_url) ? rtrim((string)$provider_row->api_url, '/') : '';
-        $this->base = $url !== '' ? $url : self::BASE_URL;
+        $url = isset($provider_row->api_url) ? trim((string)$provider_row->api_url) : '';
+        $this->base = $url !== '' ? self::current_protocol_base($url) : self::BASE_URL;
 
         $cfg = $this->config_blob();
         $this->country_map = array_merge(self::$countries, $this->upper_keys($cfg['countries'] ?? array()));
@@ -115,6 +165,55 @@ class FiveSimAdapter implements NumberProviderInterface {
             ? (string)$cfg['rate_to_base'] : null;
     }
 
+    /**
+     * Pin a stored base URL to the current 5sim protocol.
+     *
+     * Accepts `https://5sim.net`, `https://5sim.net/` and
+     * `https://5sim.net/v1` (normalised to the /v1 form). Everything else is
+     * named and refused:
+     *
+     *  - `handler_api.php` or a `/stubs/` path — that is the **deprecated
+     *    API1 protocol**, whose key is a different dashboard credential; the
+     *    panel must never talk to it;
+     *  - any other host — the current API is served from 5sim.net only;
+     *  - plain http — the vendor serves TLS only, and the bearer token must
+     *    not cross the wire in the clear;
+     *  - any other path — there is no `/v2` and no mirror.
+     *
+     * @return string the normalised base URL, trailing slash trimmed
+     */
+    public static function current_protocol_base($url) {
+        $parts = parse_url(trim((string)$url));
+        $host  = strtolower((string)($parts['host'] ?? ''));
+        if ($host !== self::API_HOST && $host !== 'www.'.self::API_HOST) {
+            throw new RuntimeException(
+                'The 5sim provider URL must be https://'.self::API_HOST.'/v1 (the current '
+                .'5sim protocol). Refused host: '.($host !== '' ? $host : '(none)').'.');
+        }
+        if (strtolower((string)($parts['scheme'] ?? '')) !== 'https') {
+            throw new RuntimeException(
+                'The 5sim provider URL must be https — the bearer API key must not '
+                .'cross plain http.');
+        }
+        if (isset($parts['user']) || isset($parts['pass'])) {
+            throw new RuntimeException('The 5sim provider URL must not embed credentials.');
+        }
+
+        $path = rtrim((string)($parts['path'] ?? ''), '/');
+        if (strpos($path, 'handler_api') !== false || stripos($path, '/stubs') !== false) {
+            throw new RuntimeException(
+                'The 5sim provider URL points at the deprecated API1 protocol '
+                .'(handler_api.php). Configure the API key for the 5sim protocol and the '
+                .'https://'.self::API_HOST.'/v1 base URL instead.');
+        }
+        if ($path !== '' && strtolower($path) !== '/v1') {
+            throw new RuntimeException(
+                'The 5sim provider URL must be https://'.self::API_HOST.'/v1 (the current '
+                .'5sim protocol). Refused path: '.$path.'.');
+        }
+        return 'https://'.self::API_HOST.'/v1';
+    }
+
     /* ----------------------------- reservation ---------------------------- */
 
     /**
@@ -123,6 +222,11 @@ class FiveSimAdapter implements NumberProviderInterface {
      * `maxPrice` is only honoured by 5sim when the operator is `any`, so
      * sending it alongside a pinned operator would be silently ignored — a
      * spend cap that does not cap. It is therefore only sent when it can work.
+     *
+     * The buy request deliberately carries **no** other query parameters: the
+     * current API's `ref` parameter is a referral code, not a client order
+     * reference, and our own linkage (transaction ↔ provider order id) lives in
+     * `provider_transactions`, not in a misused vendor field.
      */
     public function reserve(array $p) {
         $country  = $this->country_slug($p['country'] ?? '');
@@ -137,7 +241,6 @@ class FiveSimAdapter implements NumberProviderInterface {
               .rawurlencode($operator).'/'.rawurlencode($product);
 
         $query = array();
-        if (!empty($p['reference'])) $query['ref'] = substr((string)$p['reference'], 0, 64);
         if (isset($p['max_price']) && $p['max_price'] !== null && $operator === 'any') {
             $query['maxPrice'] = $this->to_vendor_price($p['max_price']);
         }
@@ -145,32 +248,137 @@ class FiveSimAdapter implements NumberProviderInterface {
             return $v !== null && $v !== '';
         }));
 
-        $res = $this->call($path);
+        $res = $this->call('reserve', $path);
         if (empty($res['ok'])) return array('ok' => false, 'error' => $res['error']);
 
         return $this->reservation($res['data']);
     }
 
     public function status($reference) {
-        return $this->order_call('/user/check/', $reference);
+        return $this->order_call('status', '/user/check/', $reference);
     }
 
     public function finish($reference) {
-        return $this->order_call('/user/finish/', $reference);
+        return $this->order_call('finish', '/user/finish/', $reference);
     }
 
     public function cancel($reference) {
-        return $this->order_call('/user/cancel/', $reference);
+        return $this->order_call('cancel', '/user/cancel/', $reference);
     }
 
     public function ban($reference) {
-        return $this->order_call('/user/ban/', $reference);
+        return $this->order_call('ban', '/user/ban/', $reference);
     }
 
     /* ------------------------------ catalogue ----------------------------- */
 
     /**
-     * Vendor price list for one country.
+     * Countries and operators the vendor currently carries (current API:
+     * `GET /guest/countries` — the same response powers both, because 5sim
+     * has no separate operators endpoint; operators are listed per country).
+     *
+     * @return array{ok:bool,countries?:array,country_codes?:array,error?:string}
+     *               countries: vendor slug => operator[]
+     *               country_codes: our ISO code => vendor slug, for the subset
+     *               the panel names
+     */
+    public function countries() {
+        $res = $this->call('countries', '/guest/countries');
+        if (empty($res['ok'])) return array('ok' => false, 'error' => $res['error']);
+        if (!is_array($res['data'])) {
+            return array('ok' => false, 'error' => 'The vendor returned an unusable country list');
+        }
+
+        $countries = array();
+        foreach ($res['data'] as $slug => $operators) {
+            if (!is_string($slug) || $slug === '') continue;
+            $countries[$slug] = is_array($operators) ? array_values($operators) : array();
+        }
+        return array(
+            'ok'            => true,
+            'countries'     => $countries,
+            'country_codes' => $this->country_map,
+        );
+    }
+
+    /**
+     * The operators 5sim carries for one country (ours or a vendor slug).
+     *
+     * @return array{ok:bool,operators?:string[],error?:string}
+     */
+    public function operators($country) {
+        $slug = $this->country_slug($country);
+        if ($slug === '') return array('ok' => false, 'error' => 'Unknown country '.$country);
+
+        $res = $this->countries();
+        if (empty($res['ok'])) return array('ok' => false, 'error' => $res['error']);
+        if (!isset($res['countries'][$slug])) {
+            return array('ok' => false, 'error' => 'The vendor does not carry that country');
+        }
+        return array('ok' => true, 'operators' => $res['countries'][$slug]);
+    }
+
+    /**
+     * Vendor prices and availability (current API: `GET /guest/prices`).
+     *
+     * This is the number-domain counterpart of an SMM price list: what each
+     * (product, operator) costs and how many numbers are behind it, before the
+     * panel commits to anything. Filters are all optional; country is the one
+     * the catalogue sync always wants.
+     *
+     * @param string $country  our country code (or a vendor slug)
+     * @param string $product  our service code (or a vendor product slug)
+     * @param string $operator vendor operator, or 'any'
+     * @return array{ok:bool,prices?:array[],error?:string} rows of
+     *               {service, provider_product, operator, cost, cost_vendor, stock}
+     */
+    public function prices($country, $product = null, $operator = null) {
+        $slug = $this->country_slug($country);
+        if ($slug === '') return array('ok' => false, 'error' => 'Unknown country '.$country);
+
+        $query = array('country' => $slug);
+        if ($product !== null && trim((string)$product) !== '') {
+            $query['product'] = $this->product_slug((string)$product);
+        }
+        if ($operator !== null && trim((string)$operator) !== '') {
+            $query['operator'] = (string)$operator;
+        }
+
+        $res = $this->call('prices', '/guest/prices?'.http_build_query($query));
+        if (empty($res['ok'])) return array('ok' => false, 'error' => $res['error']);
+        if (!is_array($res['data'])) {
+            return array('ok' => false, 'error' => 'The vendor returned an unusable price list');
+        }
+
+        // The answer nests country → product → operator → {cost, count, rate};
+        // with a country filter the outer key is that country alone. Rows are
+        // flattened so a caller never re-walks the vendor's shape.
+        $reverse = array_flip($this->product_map);
+        $out = array();
+        foreach ($res['data'] as $country_key => $products) {
+            if (!is_array($products)) continue;
+            foreach ($products as $product_slug => $operators) {
+                if (!is_array($operators)) continue;
+                foreach ($operators as $operator_slug => $info) {
+                    if (!is_array($info)) continue;
+                    $vendor_cost = isset($info['cost']) ? (string)$info['cost'] : null;
+                    $out[] = array(
+                        'service'          => $reverse[(string)$product_slug] ?? strtoupper((string)$product_slug),
+                        'provider_product' => (string)$product_slug,
+                        'operator'         => (string)$operator_slug,
+                        'cost'             => $this->to_base($vendor_cost),
+                        'cost_vendor'      => $vendor_cost,
+                        'stock'            => isset($info['count']) ? (int)$info['count'] : null,
+                    );
+                }
+            }
+        }
+        return array('ok' => true, 'prices' => $out);
+    }
+
+    /**
+     * Vendor price list for one country (current API:
+     * `GET /guest/products/{country}/{operator}`).
      *
      * 5sim answers a map keyed by product slug, so the shape has to be
      * inverted into rows and mapped back onto our service codes. A product
@@ -181,7 +389,7 @@ class FiveSimAdapter implements NumberProviderInterface {
         $slug = $this->country_slug($country);
         if ($slug === '') return array('ok' => false, 'error' => 'Unknown country '.$country);
 
-        $res = $this->call('/guest/products/'.rawurlencode($slug).'/any');
+        $res = $this->call('products', '/guest/products/'.rawurlencode($slug).'/any');
         if (empty($res['ok'])) return array('ok' => false, 'error' => $res['error']);
         if (!is_array($res['data'])) {
             return array('ok' => false, 'error' => 'The vendor returned an unusable price list');
@@ -210,7 +418,7 @@ class FiveSimAdapter implements NumberProviderInterface {
     }
 
     public function balance() {
-        $res = $this->call('/user/profile');
+        $res = $this->call('balance', '/user/profile');
         if (empty($res['ok'])) return array('ok' => false, 'error' => $res['error']);
 
         $data = $res['data'];
@@ -233,12 +441,12 @@ class FiveSimAdapter implements NumberProviderInterface {
     /* ------------------------------ internals ----------------------------- */
 
     /** finish/cancel/ban/check all return the same order object. */
-    private function order_call($prefix, $reference) {
+    private function order_call($action, $prefix, $reference) {
         $reference = trim((string)$reference);
         if ($reference === '') {
             return array('ok' => false, 'error' => 'No vendor reference to act on');
         }
-        $res = $this->call($prefix.rawurlencode($reference));
+        $res = $this->call($action, $prefix.rawurlencode($reference));
         if (empty($res['ok'])) {
             return array('ok' => false, 'error' => $res['error'], 'reference' => $reference);
         }
@@ -360,7 +568,24 @@ class FiveSimAdapter implements NumberProviderInterface {
         return array();
     }
 
+    /**
+     * The bearer credential, from the environment first.
+     *
+     * Production rotates the key by editing the environment
+     * (`FIVESIM_API_KEY`, or the portable `VP_FIVESIM_API_KEY` spelling that
+     * Env also exposes under the plain name) — the encrypted
+     * `providers.api_key_encrypted` column is the fallback for hosts with no
+     * env access, not the primary. Either way the key exists only here, on the
+     * server, inside the Authorization header.
+     *
+     * @return string '' when nothing is configured (call() refuses to fire)
+     */
     private function token() {
+        foreach (array('FIVESIM_API_KEY', 'VP_FIVESIM_API_KEY') as $name) {
+            $value = getenv($name);
+            if ($value !== false && trim((string)$value) !== '') return trim((string)$value);
+        }
+
         if (empty($this->provider->api_key_encrypted)) return '';
         $ci =& get_instance();
         $ci->load->library('EncryptionService');
@@ -373,26 +598,46 @@ class FiveSimAdapter implements NumberProviderInterface {
     }
 
     /**
-     * One HTTP call. Every 5sim endpoint is a GET.
+     * One HTTP call. Every current-protocol endpoint is a GET with the bearer
+     * token in the Authorization header — never in the URL, so request logs
+     * (ours and any intermediate's) never see the key.
      *
+     * @param string $action short label for the log line (reserve, status, …)
+     * @param string $path   endpoint path beginning with /
      * @return array{ok:bool,data?:array,error?:string}
      */
-    private function call($path) {
+    private function call($action, $path) {
+        $token = $this->token();
+        if ($token === '') {
+            self::log('error', '5sim '.$action.': no API key configured — set FIVESIM_API_KEY '
+                .'(the current-protocol key) in the environment or the provider record');
+            return array('ok' => false,
+                'error' => 'The virtual-number vendor is not configured — contact support');
+        }
+
         $url = $this->base.'/'.ltrim($path, '/');
-        $headers = array('Authorization: Bearer '.$this->token(), 'Accept: application/json');
+        $headers = array('Authorization: Bearer '.$token, 'Accept: application/json');
 
         try {
             $res = $this->http->get($url, $headers);
         } catch (Exception $e) {
-            log_message('error', '5sim transport error: '.$e->getMessage());
+            self::log('error', '5sim '.$action.' transport error: '.$e->getMessage());
             return array('ok' => false, 'error' => 'Vendor unreachable');
         }
 
         $http_code = isset($res['http_code']) ? (int)$res['http_code'] : 0;
         $body = isset($res['body']) ? trim((string)$res['body']) : '';
+        // The endpoint (path only, no query, no token) and the status are safe
+        // and useful; the body is not logged because vendor errors are
+        // customer-reachable and the mapped message already carries the gist.
+        self::log($http_code >= 400 || $http_code === 0 ? 'error' : 'debug',
+            '5sim '.$action.' GET '.parse_url($url, PHP_URL_PATH).' -> HTTP '.$http_code);
 
         if ($http_code === 401 || $http_code === 403) {
             return array('ok' => false, 'error' => 'The vendor rejected our credentials');
+        }
+        if ($http_code === 429) {
+            return array('ok' => false, 'error' => self::$errors['bandwidth limit']);
         }
         if ($http_code === 0 || $http_code >= 500) {
             return array('ok' => false, 'error' => 'The vendor did not respond'
@@ -402,7 +647,10 @@ class FiveSimAdapter implements NumberProviderInterface {
         // The documented failure mode: a plain-text reason, frequently with a
         // 200. Check this before decoding, or every rejection reads as success.
         $plain = $this->plain_error($body);
-        if ($plain !== null) return array('ok' => false, 'error' => $plain);
+        if ($plain !== null) {
+            if ($http_code >= 400) self::log('error', '5sim '.$action.' rejected: '.$plain);
+            return array('ok' => false, 'error' => $plain);
+        }
 
         $data = json_decode($body, true);
         if (!is_array($data)) {
@@ -429,5 +677,14 @@ class FiveSimAdapter implements NumberProviderInterface {
         $key = strtolower(trim((string)$raw));
         if (isset(self::$errors[$key])) return self::$errors[$key];
         return mb_substr(trim((string)$raw), 0, 160);
+    }
+
+    /** log_message, or the test/ops sink when one is installed. */
+    private static function log($level, $message) {
+        if (is_callable(self::$log_sink)) {
+            call_user_func(self::$log_sink, $level, $message);
+            return;
+        }
+        log_message($level, $message);
     }
 }

@@ -524,9 +524,34 @@ class ProviderSyncService {
             $services[strtoupper($s->code)] = $s;
         }
 
+        // Ask the vendor once which countries it actually carries (current
+        // protocol: GET /guest/countries). A panel country the vendor has
+        // dropped is then a local skip instead of a doomed HTTP call per
+        // country — and the sync record says so, instead of a row of
+        // identical "bad country" errors. If the list itself cannot be
+        // fetched, sync the old way; the per-country products() call still
+        // guards itself.
+        $vendor_countries = null;
+        $vendor_country_codes = array();
+        if (method_exists($adapter, 'countries')) {
+            $list = $adapter->countries();
+            if (!empty($list['ok']) && !empty($list['countries'])) {
+                $vendor_countries = $list['countries'];
+                $vendor_country_codes = $list['country_codes'] ?? array();
+            }
+        }
+
         $inserted = 0; $updated = 0; $skipped = 0; $errors = array();
         foreach ($this->ci->Number_country_model->active() as $country) {
             try {
+                if ($vendor_countries !== null) {
+                    $slug = strtolower($vendor_country_codes[strtoupper($country->code)] ?? $country->code);
+                    if (!isset($vendor_countries[$slug])) {
+                        $skipped++;
+                        $errors[] = $country->code.': not carried by the vendor';
+                        continue;
+                    }
+                }
                 $res = $adapter->products($country->code);
             } catch (Exception $e) {
                 $skipped++;

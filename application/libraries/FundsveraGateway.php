@@ -53,12 +53,42 @@ class FundsveraGateway implements GatewayInterface {
     /** Currently the only bank code their virtual-account API accepts. */
     const VIRTUAL_ACCOUNT_BANK_CODE = '100033';
 
+    /**
+     * Transaction-status lookup paths, tried in order by verify().
+     *
+     * Fundsvera's published surface names secured-checkout and
+     * create-virtual-account; a status endpoint is how every comparable
+     * Nigerian collections API answers "did reference X pay?". verify() probes
+     * both spellings and, when the provider answers 404 to both, reports the
+     * lookup as *unsupported* rather than unreachable — so reconciliation
+     * falls back to the age-out rule instead of holding every deposit open
+     * for ever. If Fundsvera confirms an exact path, change it here.
+     */
+    const STATUS_LOOKUP_PATH = '/transaction/';
+    const STATUS_QUERY_PATH  = '/transaction-status';
+
+    /**
+     * Webhook statuses that mean the money arrived (case-insensitive), and
+     * those that mean it never will. Everything else is "still processing".
+     *
+     * Matching only the exact string 'SUCCESSFUL' here is how a paid deposit
+     * ends up stuck in Processing for ever: the signed webhook arrives, the
+     * amount matches, and the panel throws the credit away over vocabulary.
+     */
+    const SUCCESS_STATUSES = array('successful', 'success', 'completed', 'paid',
+                                   'approved', 'settled');
+    const FAILED_STATUSES  = array('failed', 'reversed', 'refunded', 'cancelled',
+                                   'canceled', 'expired', 'declined', 'abandoned');
+
     private $ci;
     private $method;
+    private $http;
 
-    public function __construct($method_row = null) {
+    public function __construct($method_row = null, $http = null) {
         $this->ci =& get_instance();
         $this->method = $method_row;
+        // Injectable for tests; built lazily in production (see http()).
+        $this->http = $http;
     }
 
     /* ------------------------------------------------------------------ */
@@ -279,11 +309,30 @@ class FundsveraGateway implements GatewayInterface {
         $presented = $this->header_value($headers, self::SIGNATURE_HEADER);
         if ($presented === null || $presented === '') return false;
 
+        // Some providers prefix the digest with its algorithm ("sha256=…");
+        // stripping an alnum prefix costs nothing and unblocks those.
+        $presented = trim($presented);
+        if (strpos($presented, '=') !== false) {
+            $parts = explode('=', $presented, 2);
+            if (ctype_alnum($parts[0])) $presented = $parts[1];
+        }
+
         $expected = hash_hmac('sha256', (string)$raw_body, $secret);
 
         // hash_equals is timing-safe but throws on non-strings and compares
         // length first; both operands are hex digests here.
-        return hash_equals($expected, trim($presented));
+        $ok = hash_equals($expected, $presented);
+        if (!$ok) {
+            // Name the source, never the value: an operator whose webhook was
+            // rotated in one place but not the other needs exactly this hint.
+            $env = getenv('FUNDSVERA_WEBHOOK_SECRET');
+            $source = ($env !== false && trim((string)$env) !== '') ? 'FUNDSVERA_WEBHOOK_SECRET env'
+                : (getenv('FUNDSVERA_SECRET_KEY') !== false ? 'FUNDSVERA_SECRET_KEY env'
+                : 'the fundsvera_webhook_secret/fundsvera_secret_key settings');
+            log_message('error', 'fundsvera: webhook signature rejected — verified against '.$source
+                .'. Rotate both sides to the same secret.');
+        }
+        return $ok;
     }
 
     /**
@@ -302,8 +351,21 @@ class FundsveraGateway implements GatewayInterface {
 
         $trx_ref    = isset($data['trx_ref']) ? (string)$data['trx_ref'] : '';
         $request_id = isset($data['request_id']) ? (string)$data['request_id'] : '';
-        $tx_status  = strtoupper((string)($data['transaction_status'] ?? ''));
+        // `transaction_status` is the documented field; `status` is the
+        // shorthand their examples sometimes use. Case-insensitive on
+        // purpose: webhooks have been seen in both upper and lower case, and
+        // a paid deposit must not be dropped over letter casing.
+        $tx_status  = strtolower(trim((string)($data['transaction_status']
+            ?? ($data['status'] ?? ''))));
         $amount     = isset($data['amount_paid']) ? (string)$data['amount_paid'] : null;
+
+        if (in_array($tx_status, self::SUCCESS_STATUSES, true)) {
+            $status = 'SUCCESS';
+        } elseif (in_array($tx_status, self::FAILED_STATUSES, true)) {
+            $status = 'FAILED';
+        } else {
+            $status = 'PENDING';
+        }
 
         $event = array(
             // Fall back to request_id so a virtual-account credit (which has no
@@ -311,7 +373,7 @@ class FundsveraGateway implements GatewayInterface {
             'event_id'       => $trx_ref !== '' ? $trx_ref : ($request_id !== '' ? $request_id : null),
             'type'           => 'fundsvera.'.strtolower((string)($data['trx_type'] ?? 'payment')),
             'provider_tx_id' => $trx_ref !== '' ? $trx_ref : null,
-            'status'         => $tx_status === 'SUCCESSFUL' ? 'SUCCESS' : 'PENDING',
+            'status'         => $status,
             'amount'         => $amount,
             'currency'       => 'NGN',
             'metadata'       => array(
@@ -326,7 +388,7 @@ class FundsveraGateway implements GatewayInterface {
         // Resolve the transaction ourselves. PaymentService prefers an
         // adapter-supplied id precisely because the adapter knows how its own
         // references map to our rows.
-        $resolved = $this->resolve_transaction($request_id, $trx_ref, $data);
+        $resolved = $this->resolve_transaction($request_id, $trx_ref, $data, $status);
         if ($resolved) {
             $event['metadata']['payment_transaction_id'] = (int)$resolved['transaction_id'];
             if (!empty($resolved['underpaid'])) {
@@ -343,6 +405,102 @@ class FundsveraGateway implements GatewayInterface {
     }
 
     /* ------------------------------------------------------------------ */
+    /* Reconciliation                                                      */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * Ask Fundsvera directly what happened to one deposit.
+     *
+     * This is the webhook's safety net: when the callback never arrives (the
+     * URL was never registered in the dashboard, the signature was rotated,
+     * or their delivery simply failed), payment_reconciliation calls this for
+     * every pending deposit and credits the ones the provider says paid —
+     * instead of leaving the customer in Processing until the deposit
+     * expires days later.
+     *
+     * Two documented-style lookups are tried, because the provider's status
+     * endpoint spelling has not been confirmable from here: a REST-ish
+     * `GET /transaction/{ref}`, then `POST /transaction-status` with the
+     * request id. When both answer 404 the provider has no such endpoint and
+     * the result says `unsupported` — which reconciliation treats as "no
+     * verifier", leaving the existing age-out rule in charge — rather than
+     * as an outage, which would hold every deposit open for ever.
+     *
+     * @param string $reference our request_id / internal reference, or a
+     *                          provider trx_ref learned from a webhook
+     * @return array{ok:bool,status?:string,amount?:string,provider_tx_id?:string,
+     *               unsupported?:bool,error?:string}
+     */
+    public function verify($reference) {
+        $reference = trim((string)$reference);
+        if ($reference === '') {
+            return array('ok' => false, 'error' => 'No reference to verify');
+        }
+        $cfg = $this->config();
+        if (!$this->is_configured()) {
+            return array('ok' => false, 'unsupported' => true, 'error' => 'Fundsvera is not configured');
+        }
+
+        // The provider's own trx_ref (if a webhook or a checkout row told us)
+        // is the better lookup key; our request_id is the fallback.
+        $refs = array($reference);
+        $row = $this->checkout_row($reference);
+        if ($row) {
+            foreach (array($row->trx_ref ?? null, $row->request_id ?? null) as $extra) {
+                $extra = trim((string)$extra);
+                if ($extra !== '' && !in_array($extra, $refs, true)) $refs[] = $extra;
+            }
+        }
+
+        foreach ($refs as $ref) {
+            // 1. GET /transaction/{ref}
+            $res = $this->get($cfg['base_url'].self::STATUS_LOOKUP_PATH.rawurlencode($ref), $cfg);
+            $code = (int)($res['http_code'] ?? 0);
+            if ($code === 404) {
+                // 2. POST /transaction-status {request_id}
+                $res = $this->post_status_query($cfg, $ref);
+                $code = (int)($res['http_code'] ?? 0);
+            }
+
+            if ($code === 404) continue; // unknown reference — try the next one
+            if ($code === 0) {
+                return array('ok' => false, 'error' => 'Could not reach the payment provider');
+            }
+            if ($code < 200 || $code >= 300) {
+                // A 401/403 here is a configuration problem, not an outage —
+                // but reconciliation treats any non-answer as UNREACHABLE and
+                // retries, which is the safe direction for both.
+                return array('ok' => false,
+                    'error' => 'The payment provider rejected the status lookup (HTTP '.$code.')');
+            }
+
+            $body = json_decode((string)($res['body'] ?? ''), true);
+            if (!is_array($body)) {
+                return array('ok' => false, 'error' => 'The provider returned an unusable status response');
+            }
+
+            $tx = isset($body['data']) && is_array($body['data']) ? $body['data'] : $body;
+            $status = $this->normalise_status((string)($tx['transaction_status'] ?? ($tx['status'] ?? '')));
+            $amount = isset($tx['amount_paid']) ? (string)$tx['amount_paid']
+                : (isset($tx['amount']) ? (string)$tx['amount'] : null);
+
+            return array(
+                'ok'             => true,
+                'status'         => $status,
+                'amount'         => $amount,
+                'provider_tx_id' => isset($tx['trx_ref']) ? (string)$tx['trx_ref']
+                    : (isset($tx['id']) ? (string)$tx['id'] : $ref),
+                'detail'         => (string)($tx['transaction_status'] ?? ($tx['status'] ?? '')),
+            );
+        }
+
+        // Every reference 404'd. Either the payment does not exist yet (the
+        // normal answer moments after initiation) or the endpoint spelling is
+        // wrong — indistinguishable from here, so PENDING rather than a guess.
+        return array('ok' => true, 'status' => 'PENDING', 'provider_tx_id' => null, 'amount' => null);
+    }
+
+    /* ------------------------------------------------------------------ */
     /* Internals                                                           */
     /* ------------------------------------------------------------------ */
 
@@ -351,20 +509,25 @@ class FundsveraGateway implements GatewayInterface {
      *
      * @return array{transaction_id:int, underpaid:bool}|null
      */
-    private function resolve_transaction($request_id, $trx_ref, array $data) {
+    private function resolve_transaction($request_id, $trx_ref, array $data, $status = 'SUCCESS') {
         $this->ci->load->model('Fundsvera_checkout_model');
 
-        $row = null;
-        if ($request_id !== '') {
-            $row = $this->ci->Fundsvera_checkout_model->by_request_id($request_id);
-        }
-        if (!$row && $trx_ref !== '') {
-            $row = $this->ci->Fundsvera_checkout_model->by_trx_ref($trx_ref);
-        }
+        $row = $this->checkout_row($request_id, $trx_ref);
 
         if ($row) {
             $paid = isset($data['amount_paid']) ? (string)$data['amount_paid'] : '0';
             $underpaid = bccomp($paid, (string)$row->expected_amount, 8) < 0;
+
+            // A terminal failure closes the checkout row too, so support sees
+            // FAILED rather than a PENDING row that hides the real outcome.
+            if ($status === 'FAILED') {
+                $this->ci->Fundsvera_checkout_model->record_result($row->id, array(
+                    'status'      => 'FAILED',
+                    'amount_paid' => $paid,
+                    'trx_ref'     => $trx_ref !== '' ? $trx_ref : $row->trx_ref,
+                ));
+                return array('transaction_id' => (int)$row->payment_transaction_id, 'underpaid' => false);
+            }
 
             $this->ci->Fundsvera_checkout_model->record_result($row->id, array(
                 'status'            => $underpaid ? 'FAILED' : 'PAID',
@@ -388,6 +551,46 @@ class FundsveraGateway implements GatewayInterface {
         return null;
     }
 
+    /** The checkout row a webhook or reference belongs to, or null. */
+    private function checkout_row($request_id, $trx_ref = null) {
+        $this->ci->load->model('Fundsvera_checkout_model');
+
+        $row = null;
+        if ($request_id !== null && trim((string)$request_id) !== '') {
+            $row = $this->ci->Fundsvera_checkout_model->by_request_id(trim((string)$request_id));
+        }
+        if (!$row && $trx_ref !== null && trim((string)$trx_ref) !== '') {
+            $row = $this->ci->Fundsvera_checkout_model->by_trx_ref(trim((string)$trx_ref));
+        }
+        return $row;
+    }
+
+    /** POST /transaction-status with the request id (verify()'s second probe). */
+    private function post_status_query($cfg, $ref) {
+        try {
+            return $this->http()->post(
+                $cfg['base_url'].self::STATUS_QUERY_PATH,
+                json_encode(array('request_id' => $ref), JSON_UNESCAPED_SLASHES),
+                array(
+                    'Authorization: Bearer '.$cfg['secret_key'],
+                    'Public-Key: '.$cfg['public_key'],
+                    'Content-Type: application/json',
+                    'Accept: application/json',
+                )
+            );
+        } catch (Exception $e) {
+            return array('http_code' => 0, 'body' => null, 'error' => $e->getMessage());
+        }
+    }
+
+    /** Webhook/status vocabulary → SUCCESS | FAILED | PENDING. */
+    private function normalise_status($raw) {
+        $value = strtolower(trim((string)$raw));
+        if (in_array($value, self::SUCCESS_STATUSES, true)) return 'SUCCESS';
+        if (in_array($value, self::FAILED_STATUSES, true))  return 'FAILED';
+        return 'PENDING';
+    }
+
     /**
      * A request_id that satisfies "unique per business, >= 20 characters".
      *
@@ -405,11 +608,19 @@ class FundsveraGateway implements GatewayInterface {
         return substr($base, 0, 64);
     }
 
-    /** Signed POST to the provider. */
+    /**
+     * Signed POST to the provider.
+     *
+     * Uses a **dedicated, fail-fast client**: the customer is sitting on a
+     * "Processing…" button for the duration of this call, and the shared
+     * client's retry ladder (3 retries plus backoff on a 15-second timeout)
+     * held the page for over a minute before answering — which reads to the
+     * customer as a broken site. Initiation moves no money, so a single
+     * bounded attempt with a clear, retryable error is the honest behaviour;
+     * the webhook, not this call, is what credits anyone.
+     */
     private function post($path, array $payload, array $cfg) {
-        $this->ci->load->library('SecureHttpClient');
-
-        $res = $this->ci->securehttpclient->post(
+        $res = $this->http()->post(
             $cfg['base_url'].$path,
             json_encode($payload, JSON_UNESCAPED_SLASHES),
             array(
@@ -427,18 +638,54 @@ class FundsveraGateway implements GatewayInterface {
             log_message('error', 'fundsvera: '.$path.' unreachable: '.($res['error'] ?? 'unknown'));
             return array('ok' => false, 'error' => 'Could not reach the payment provider. Try again shortly.');
         }
-        if ($code !== 200 || !is_array($body)) {
+        // Log the status, never the payload: bodies carry customer emails and
+        // account numbers, and the log is not where those belong.
+        log_message($code >= 400 ? 'error' : 'debug',
+            'fundsvera: POST '.$path.' -> HTTP '.$code);
+
+        if ($code < 200 || $code >= 300 || !is_array($body)) {
             // Surface the provider's own message: "Duplicate request ID" and
             // "amount greater than or equal to 100" are actionable, and hiding
             // them behind a generic error makes support impossible.
             $message = is_array($body) && !empty($body['message'])
                 ? (string)$body['message']
                 : 'The payment provider rejected the request (HTTP '.$code.').';
-            log_message('error', 'fundsvera: '.$path.' http='.$code.' msg='.$message);
             return array('ok' => false, 'error' => $message);
         }
 
         return array('ok' => true, 'body' => $body);
+    }
+
+    /** Signed GET, on the same fail-fast terms as post(). */
+    private function get($url, array $cfg) {
+        try {
+            return $this->http()->get($url, array(
+                'Authorization: Bearer '.$cfg['secret_key'],
+                'Public-Key: '.$cfg['public_key'],
+                'Accept: application/json',
+            ));
+        } catch (Exception $e) {
+            return array('http_code' => 0, 'body' => null, 'error' => $e->getMessage());
+        }
+    }
+
+    /**
+     * The HTTP client for provider calls.
+     *
+     * A dedicated instance rather than the shared library one: initiation is
+     * synchronous and user-facing, so it gets a tight timeout and **no**
+     * internal retries. Every second of a retry ladder here is a customer
+     * staring at "Processing…".
+     */
+    private function http() {
+        if ($this->http) return $this->http;
+        $this->ci->load->library('SecureHttpClient');
+        $this->http = new SecureHttpClient(array(
+            'timeout' => 12,
+            'connect_timeout' => 4,
+            'max_retries' => 0,
+        ));
+        return $this->http;
     }
 
     /** Case-insensitive header lookup — PHP and proxies disagree on casing. */

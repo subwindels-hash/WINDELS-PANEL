@@ -53,6 +53,19 @@ await a.get('/admin/login');
 const login = await a.postForm('/admin/login', { identifier: 'admin', password: adminPassword });
 check('admin signed in', /\/admin/.test(login.url) && !/login/.test(login.url));
 
+/* Module 37 made a foreign-currency wallet a legal state (chosen once,
+   while empty, frozen after the first movement), and currency_wallet_check
+   legitimately opens a USD wallet — so "every wallet is NGN" is NOT the
+   invariant any more. The property currency administration must actually
+   preserve is: rates, activation and display defaults never REWRITE
+   anyone's denomination. Snapshot the census before any mutation, compare
+   at the end. */
+const denominationsBefore = withDb((db) => db.prepare(
+  'SELECT currency, COUNT(*) AS n FROM wallets GROUP BY currency ORDER BY currency'
+).all());
+check('there is wallet data to protect', denominationsBefore.length > 0,
+  `${denominationsBefore.length} denomination(s)`);
+
 console.log('\n── Currencies · page and base currency');
 let p = await a.get('/admin/currencies');
 check('currencies page loads', p.status === 200);
@@ -131,11 +144,13 @@ for (const expected of ['currency.active_changed', 'currency.default_display_cha
   check(`audit log contains ${expected}`, auditActions.includes(expected));
 }
 
-console.log('\n── Currencies · existing NGN-denominated data is untouched');
-const wallets = withDb((db) => db.prepare(
-  "SELECT DISTINCT currency FROM wallets"
-).all()).map((r) => r.currency);
-check('wallets remain denominated in NGN', wallets.length > 0 && wallets.every((c) => c === 'NGN'), `found: ${wallets.join(',')}`);
+console.log('\n── Currencies · existing wallet denominations are untouched');
+const denominationsAfter = withDb((db) => db.prepare(
+  'SELECT currency, COUNT(*) AS n FROM wallets GROUP BY currency ORDER BY currency'
+).all());
+check('currency administration rewrote no wallet denomination',
+  JSON.stringify(denominationsBefore) === JSON.stringify(denominationsAfter),
+  `before: ${JSON.stringify(denominationsBefore)} after: ${JSON.stringify(denominationsAfter)}`);
 const ngnRow = withDb((db) => db.prepare("SELECT is_base, exchange_rate FROM currencies WHERE code = 'NGN'").get());
 check('NGN is still the base currency at exchange_rate 1.0', ngnRow && ngnRow.is_base === 1 && ngnRow.exchange_rate === '1.00000000');
 

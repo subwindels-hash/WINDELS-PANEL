@@ -159,6 +159,11 @@ class Cron extends Cron_Controller {
 
     /** Recent run history, for "did the cron actually run?" */
     public function status() {
+        // The DB loads defensively in the base controller: a host where MySQL
+        // is down (or not yet configured) must print a one-line answer, not a
+        // fatal on a null property — this is the exact command an operator
+        // runs to find out whether cron works at all.
+        $this->require_db('cannot show run history');
         $rows = $this->db->order_by('started_at', 'DESC')->limit(20)->get('job_runs')->result();
         if (!$rows) { echo "No cron runs recorded yet.\n"; return; }
         printf("%-24s %-9s %-20s %8s %6s  %s\n", 'JOB', 'STATUS', 'STARTED', 'MS', 'DONE', 'MESSAGE');
@@ -174,6 +179,25 @@ class Cron extends Cron_Controller {
     /* ------------------------------ plumbing ----------------------------- */
 
     /**
+     * Refuse to run when the database is genuinely unreachable.
+     *
+     * The framework autoloads the database connection, and a dead MySQL
+     * leaves `$this->db` set with an empty `conn_id` — an isset() guard then
+     * passes and the first query dies inside the driver with an opaque
+     * "errorInfo() on bool". `marvy_load_database()` (same helper the base
+     * controller and the heartbeat use) probes the server first and answers
+     * honestly, so the operator gets one actionable line and a non-zero exit
+     * instead.
+     */
+    private function require_db($what) {
+        if (!marvy_load_database() || empty($this->db->conn_id)) {
+            fwrite(STDERR, "Database unavailable — {$what}.\n"
+                ."Check the DB_* settings or DB_DSN in .env, then run: php index.php deploy check\n");
+            exit(1);
+        }
+    }
+
+    /**
      * Run a job under the lock/record harness and print a one-line summary.
      *
      * The work is resolved from CronRegistry, which is the same map the admin
@@ -181,6 +205,8 @@ class Cron extends Cron_Controller {
      * doors into it.
      */
     private function execute($job) {
+        $this->require_db('cannot run '.$job);
+
         $worker = $this->cronregistry->worker($job);
         if ($worker === null) {
             fwrite(STDERR, "Unknown cron job: {$job}\n");

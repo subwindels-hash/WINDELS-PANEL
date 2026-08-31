@@ -650,6 +650,210 @@ class NumbersTest extends TestCase
             'without a rate the float stays in the vendor currency, labelled as such');
     }
 
+    /* ================== the current 5sim protocol (key #1) ============== */
+
+    /**
+     * 5sim issue two dashboard keys: "API key for 5sim protocol" (the current
+     * API this adapter speaks) and "API key for 5sim protocol (Deprecated
+     * API)" — the legacy API1/handler_api protocol. The environment is the
+     * canonical place the current-protocol key lives, and it must win over a
+     * stale key in the provider row: production rotates the credential by
+     * editing the environment, without a database write.
+     */
+    public function testCredentialsComeFromTheEnvironmentFirst()
+    {
+        putenv('FIVESIM_API_KEY=env-protocol-key-1');
+        try {
+            list($adapter, $http) = $this->adapter(
+                array(self::ok(self::fixture('buy_activation.json'))),
+                array('api_key_encrypted' => 'stale-deprecated-key-2'));
+            $adapter->reserve(array('country' => 'NG', 'service' => 'WHATSAPP'));
+
+            $this->assertContains('Authorization: Bearer env-protocol-key-1', $http->calls[0]['headers'],
+                'the environment key is the one that goes on the wire');
+            $this->assertNotContains('Authorization: Bearer stale-deprecated-key-2', $http->calls[0]['headers']);
+        } finally {
+            putenv('FIVESIM_API_KEY');
+        }
+    }
+
+    /** The portable VP_ spelling resolves to the same credential. */
+    public function testThePortableEnvSpellingIsHonouredToo()
+    {
+        putenv('VP_FIVESIM_API_KEY=portable-key');
+        try {
+            list($adapter, $http) = $this->adapter(
+                array(self::ok(self::fixture('buy_activation.json'))),
+                array('api_key_encrypted' => ''));
+            $adapter->reserve(array('country' => 'NG', 'service' => 'WHATSAPP'));
+
+            $this->assertContains('Authorization: Bearer portable-key', $http->calls[0]['headers']);
+        } finally {
+            putenv('VP_FIVESIM_API_KEY');
+        }
+    }
+
+    /** No key anywhere: refuse before spending a request, with a say-why error. */
+    public function testAMissingKeyFailsBeforeCallingTheVendor()
+    {
+        list($adapter, $http) = $this->adapter(array(), array('api_key_encrypted' => ''));
+        $res = $adapter->reserve(array('country' => 'NG', 'service' => 'WHATSAPP'));
+
+        $this->assertFalse($res['ok']);
+        $this->assertStringContainsString('not configured', $res['error']);
+        $this->assertCount(0, $http->calls, 'no credential, no request');
+    }
+
+    /**
+     * The current API's buy `ref` parameter is a referral code, not a client
+     * order reference. Our transaction id belongs in provider_transactions,
+     * not in a misused vendor field.
+     */
+    public function testTheBuyCallDoesNotMisuseTheReferralField()
+    {
+        list($adapter, $http) = $this->adapter(array(self::ok(self::fixture('buy_activation.json'))));
+        $adapter->reserve(array('country' => 'NG', 'service' => 'WHATSAPP',
+                                'reference' => 'TXN0000000000000001'));
+
+        $path = $http->calls[0]['path'];
+        $this->assertStringNotContainsString('ref=', $path,
+            'ref is a referral parameter in the current protocol');
+        $this->assertStringContainsString('/user/buy/activation/nigeria/any/whatsapp', $path);
+    }
+
+    /** Countries and operators come from the current guest endpoint. */
+    public function testCountriesAndOperatorsComeFromTheCurrentEndpoint()
+    {
+        list($adapter, $http) = $this->adapter(array(self::ok(self::fixture('countries.json'))));
+        $res = $adapter->countries();
+
+        $this->assertSame('GET', $http->calls[0]['method']);
+        $this->assertStringContainsString('/guest/countries', $http->calls[0]['path']);
+        $this->assertTrue($res['ok']);
+        $this->assertSame(array('any', 'mtn', 'glo', 'airtel', '9mobile'),
+            $res['countries']['nigeria']);
+        $this->assertSame('nigeria', $res['country_codes']['NG'],
+            'our ISO codes are mapped to the vendor slugs');
+    }
+
+    public function testOperatorsAreReadFromTheCountryList()
+    {
+        list($adapter, $http) = $this->adapter(array(self::ok(self::fixture('countries.json'))));
+        $res = $adapter->operators('NG');
+
+        $this->assertTrue($res['ok']);
+        $this->assertContains('mtn', $res['operators']);
+        $this->assertStringContainsString('/guest/countries', $http->calls[0]['path'],
+            '5sim has no separate operators endpoint; the country list is the source');
+    }
+
+    /** Availability and prices ride the current /guest/prices endpoint. */
+    public function testPricesUseTheCurrentPricesEndpointAndFlattenTheRows()
+    {
+        list($adapter, $http) = $this->adapter(array(self::ok(self::fixture('prices_nigeria.json'))));
+        $res = $adapter->prices('NG');
+
+        $this->assertSame('GET', $http->calls[0]['method']);
+        $this->assertStringContainsString('/guest/prices?', $http->calls[0]['path']);
+        $this->assertStringContainsString('country=nigeria', $http->calls[0]['path']);
+        $this->assertTrue($res['ok']);
+
+        $by_key = array();
+        foreach ($res['prices'] as $row) $by_key[$row['provider_product'].'/'.$row['operator']] = $row;
+        $this->assertSame('21', $by_key['whatsapp/any']['cost_vendor']);
+        $this->assertSame(812, $by_key['whatsapp/any']['stock']);
+        $this->assertSame('WHATSAPP', $by_key['whatsapp/any']['service']);
+        $this->assertSame(0, $by_key['whatsapp/glo']['stock'],
+            'a sold-out operator is visible as zero, not missing');
+    }
+
+    public function testPricesFiltersNarrowTheRequest()
+    {
+        list($adapter, $http) = $this->adapter(array(self::ok(self::fixture('prices_nigeria.json'))));
+        $adapter->prices('NG', 'WHATSAPP', 'mtn');
+
+        $path = $http->calls[0]['path'];
+        $this->assertStringContainsString('country=nigeria', $path);
+        $this->assertStringContainsString('product=whatsapp', $path,
+            'our service code must be translated to the vendor slug');
+        $this->assertStringContainsString('operator=mtn', $path);
+    }
+
+    /**
+     * The deprecation guard. A provider row pointed at the API1 compatibility
+     * protocol (handler_api.php under /stubs) — or at any host other than
+     * 5sim.net — is refused in the constructor, before a single customer
+     * request can be routed to the deprecated API.
+     */
+    public function testTheAdapterRefusesTheDeprecatedApi1Protocol()
+    {
+        foreach (array(
+            'https://5sim.net/stubs/handler_api.php',
+            'https://5sim.net/stubs/handler_api.php?api_key=x&action=getBalance',
+            'https://api1.other-vendor.example/v1',
+        ) as $bad_url) {
+            try {
+                new FiveSimAdapter($this->provider(array('api_url' => $bad_url)));
+                $this->fail('constructing with '.$bad_url.' must throw');
+            } catch (RuntimeException $e) {
+                $this->assertStringContainsStringIgnoringCase(
+                    in_array($bad_url, array('https://api1.other-vendor.example/v1'), true) ? 'host' : 'deprecated',
+                    $e->getMessage());
+            }
+        }
+    }
+
+    /** A bare 5sim.net URL is normalised onto the current /v1 base. */
+    public function testABareVendorUrlIsNormalisedOntoTheCurrentApi()
+    {
+        list($adapter, $http) = $this->adapter(
+            array(self::ok(self::fixture('products_nigeria.json'))),
+            array('api_url' => 'https://5sim.net'));
+        $res = $adapter->products('NG');
+
+        $this->assertTrue($res['ok']);
+        $this->assertStringContainsString('/guest/products/nigeria/any', $http->calls[0]['path']);
+    }
+
+    /** A 429 is a rate limit, not an unusable response. */
+    public function testARateLimitedVendorIsReportedAsRateLimiting()
+    {
+        list($adapter,) = $this->adapter(array(array('http_code' => 429, 'body' => '', 'request_id' => 'r')));
+        $res = $adapter->status('1101889666');
+
+        $this->assertFalse($res['ok']);
+        $this->assertStringContainsString('rate-limiting', $res['error']);
+    }
+
+    /**
+     * The bearer token must never appear in a log line. The log carries the
+     * action, the endpoint path and the HTTP status — nothing that a log
+     * reader, a crash dump or a shared log sink could weaponise.
+     */
+    public function testLogsNeverContainTheApiToken()
+    {
+        $lines = array();
+        FiveSimAdapter::$log_sink = function ($level, $message) use (&$lines) {
+            $lines[] = $level.' '.$message;
+        };
+        try {
+            list($adapter,) = $this->adapter(array(
+                array('http_code' => 401, 'body' => '', 'request_id' => 'r'),
+                self::ok(self::fixture('buy_activation.json')),
+            ));
+            $adapter->balance();
+            $adapter->reserve(array('country' => 'NG', 'service' => 'WHATSAPP'));
+        } finally {
+            FiveSimAdapter::$log_sink = null;
+        }
+
+        $this->assertNotEmpty($lines, 'the adapter must log its vendor calls');
+        foreach ($lines as $line) {
+            $this->assertStringNotContainsString('test-bearer-token', $line);
+            $this->assertStringNotContainsString('Bearer', $line);
+        }
+    }
+
     /* ========================= registry + wiring ======================== */
 
     public function testTheRegistryBuildsNumberAdaptersForTheirOwnFamily()
