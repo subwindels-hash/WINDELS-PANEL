@@ -195,6 +195,11 @@ class System extends Admin_Controller {
         $this->require_perm('audit.view');
 
         $this->load->library('CronControlService');
+        // The heartbeat state, for the "is anything actually running?" answer:
+        // on a host with no crontab, auto-run is what is doing the work.
+        if (!class_exists('CronScheduler', false)) {
+            require_once APPPATH.'libraries/CronScheduler.php';
+        }
         $schedules = (array)$this->config->item('cron');
         $runs = $this->db->order_by('started_at', 'DESC')->limit(200)->get('job_runs')->result();
         $controls = $this->croncontrolservice->all();
@@ -246,6 +251,7 @@ class System extends Admin_Controller {
             'can_control' => $this->auth->can('settings.manage'),
             'max_pause_hours' => CronControlService::MAX_HOURS,
             'crontab' => SystemAdminService::crontab_lines($schedules),
+            'autorun' => CronScheduler::state(),
             'page_description' => 'What background work is scheduled, when it last ran, and the crontab to install.',
         ));
     }

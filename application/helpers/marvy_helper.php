@@ -381,11 +381,30 @@ if (!function_exists('marvy_load_database')) {
      */
     function marvy_db_reachable() {
         $driver = strtolower((string)(function_exists('env_str') ? env_str('DB_DRIVER', 'mysqli') : 'mysqli'));
-        $host = (string)(function_exists('env_str') ? env_str('DB_HOST', 'localhost') : 'localhost');
-        $port = (int)(getenv('DB_PORT') ?: 3306);
+        $host = (string)(function_exists('env_str') ? env_str('DB_HOST', '') : '');
+        $port = (int)(getenv('DB_PORT') ?: 0);
         $user = (string)(getenv('DB_USER') ?: '');
         $pass = (string)(getenv('DB_PASSWORD') ?: '');
         $name = (string)(getenv('DB_NAME') ?: '');
+        // A deployment may carry its connection in a single PDO DSN
+        // (VP_DB_DSN=mysql:host=…;port=…;dbname=…) instead of the discrete
+        // host/port/name keys — the dev database and socket-based cPanel
+        // setups do exactly that. Pull the endpoint out of the DSN so the
+        // probe (and everything it guards, `cron status` included) still
+        // recognises the server as configured.
+        $dsn = (string)(function_exists('env_str') ? env_str('DB_DSN', '') : '');
+        if ($dsn !== '' && stripos($dsn, 'mysql:') === 0 && ($host === '' || $name === '' || $port === 0)) {
+            foreach (preg_split('/[;]/', $dsn) as $bit) {
+                $kv = explode('=', $bit, 2);
+                if (count($kv) !== 2) continue;
+                $key = strtolower(trim($kv[0]));
+                $value = trim($kv[1]);
+                if ($key === 'host' && $host === '') $host = $value;
+                elseif ($key === 'port' && $port === 0) $port = (int)$value;
+                elseif ($key === 'dbname' && $name === '') $name = $value;
+            }
+        }
+        if (!$port) $port = 3306;
         if ($host === '' || $name === '') {
             return false;
         }

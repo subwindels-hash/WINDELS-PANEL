@@ -1,6 +1,12 @@
 # =============================================================================
 # MarvySocials — example crontab for background jobs
 # =============================================================================
+# AUTO-RUN FIRST: the panel already runs due jobs by itself with site traffic
+# (see Admin -> System -> Cron jobs -> Auto-run). Any page load — or an uptime
+# monitor pinging /health/live — triggers a post-response tick. The crontab
+# below is the recommended upgrade for quiet sites: it runs on schedule even
+# when nobody is visiting. Install it and the auto-run simply idles.
+#
 # Copy to the www user's crontab and adjust PATH/PHP/MYPANEL, then paste:
 #
 #     crontab -u www-data -e        # then paste the lines below
@@ -12,10 +18,12 @@
 #     cPanel even though PHP works over HTTP;
 #   - MYPANEL must be the real document root (where index.php lives).
 # Run `which php` on the server and put that path in PHP= if the default below
-# is wrong. The panel also honours VP_CRON_PHP in .env for the generated block
-# shown on Admin -> System -> Cron jobs.
+# is wrong. The panel also honours CRON_PHP (or VP_CRON_PHP) in .env for the
+# generated block shown on Admin -> System -> Cron jobs.
 # Each job takes an exclusive lock (JobRunner/flock), so overlapping ticks are
-# safe. Run `php index.php cron` (no job) to list jobs with their schedule.
+# safe. Schedules mirror application/config/marvy.php ($config['cron']) — that
+# screen is the source of truth if they ever differ. To turn the auto-run off
+# once the crontab is in, set CRON_AUTORUN=0 in .env.
 # -----------------------------------------------------------------------------
 
 PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/php/bin:/opt/cpanel/ea-php82/root/usr/bin
@@ -23,30 +31,36 @@ PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/php/bin:/opt/cpanel/ea-php82/root/u
 PHP=php
 MYPANEL=/var/www/marvysocials
 
-# --- order / fulfilment status polling (frequent) ------------------------------
-*/3  * * * *  cd $MYPANEL && "$PHP" index.php cron order_status
-*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron vtu_status
-*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron numbers_status
-*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron refill_status
-*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron dripfeed
-*/15 * * * *  cd $MYPANEL && "$PHP" index.php cron giftcard_codes
-*/10 * * * *  cd $MYPANEL && "$PHP" index.php cron service_recovery   # refunds purchases no worker can settle (no provider reference / vendor stopped answering)
-*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron payment_reconciliation  # asks each gateway about deposits whose callback never arrived
-*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron email_queue
+# --- every minute ------------------------------------------------------------
+*    * * * *  cd $MYPANEL && "$PHP" index.php cron dripfeed
+*    * * * *  cd $MYPANEL && "$PHP" index.php cron numbers_status
+
+# --- every 2 minutes ----------------------------------------------------------
+*/2  * * * *  cd $MYPANEL && "$PHP" index.php cron vtu_status
+*/2  * * * *  cd $MYPANEL && "$PHP" index.php cron giftcard_codes
+*/2  * * * *  cd $MYPANEL && "$PHP" index.php cron order_status
 */2  * * * *  cd $MYPANEL && "$PHP" index.php cron inbox_poll      # pull new mail from the SMTP account into the dashboard inboxes
-*/10 * * * *  cd $MYPANEL && "$PHP" index.php cron provider_health
-*/10 * * * *  cd $MYPANEL && "$PHP" index.php cron earnings_release   # releases held referral earnings once the holding period elapses
+
+# --- every 5 minutes ----------------------------------------------------------
+*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron marketplace_release
+*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron subscriptions
+*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron provider_health
+*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron refill_status
+*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron payment_reconciliation  # asks each gateway about deposits whose callback never arrived
 */5  * * * *  cd $MYPANEL && "$PHP" index.php cron fundsvera_expire   # expires unpaid FundsVera checkout sessions
+*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron email_queue
 
-# --- every 30 minutes --------------------------------------------------------
-*/30 * * * *  cd $MYPANEL && "$PHP" index.php cron marketplace_release
-*/30 * * * *  cd $MYPANEL && "$PHP" index.php cron provider_sync
+# --- every 10 minutes ---------------------------------------------------------
+*/10 * * * *  cd $MYPANEL && "$PHP" index.php cron service_recovery   # refunds purchases no worker can settle (no provider reference / vendor stopped answering)
+*/10 * * * *  cd $MYPANEL && "$PHP" index.php cron earnings_release   # releases held referral earnings once the holding period elapses
+*/10 * * * *  cd $MYPANEL && "$PHP" index.php cron affiliate_payouts  # pays referral commissions past their hold window
 
-# --- hourly ------------------------------------------------------------------
-0    * * * *  cd $MYPANEL && "$PHP" index.php cron subscriptions
-0    * * * *  cd $MYPANEL && "$PHP" index.php cron pin_rotation        # auto-rotate security PINs (24h window)
+# --- every 15 minutes ---------------------------------------------------------
+*/15 * * * *  cd $MYPANEL && "$PHP" index.php cron pin_rotation        # auto-rotate security PINs (24h window)
 
-# --- daily --------------------------------------------------------------------
-13   3 * * *  cd $MYPANEL && "$PHP" index.php cron identity_purge
-27   4 * * *  cd $MYPANEL && "$PHP" index.php cron analytics
-41   5 * * *  cd $MYPANEL && "$PHP" index.php cron affiliate_payouts
+# --- hourly -------------------------------------------------------------------
+0    * * * *  cd $MYPANEL && "$PHP" index.php cron analytics           # prune high-volume logs
+*/60 * * * *  cd $MYPANEL && "$PHP" index.php cron provider_sync       # refresh vendor catalogues/prices
+
+# --- daily (UTC) ----------------------------------------------------------------
+30   3 * * *  cd $MYPANEL && "$PHP" index.php cron identity_purge      # scrub identity results past retention
