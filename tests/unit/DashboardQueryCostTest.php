@@ -60,7 +60,7 @@ class DashboardQueryCostTest extends TestCase
     {
         static $n = 0;
         $n++;
-        $app->db->insert('orders', array_merge(array(
+        $data = array_merge(array(
             'public_id'       => 'ORDQ'.str_pad((string)$n, 22, '0', STR_PAD_LEFT),
             'user_id'         => $user->id,
             'service_id'      => 1,
@@ -74,14 +74,21 @@ class DashboardQueryCostTest extends TestCase
             'link'            => 'https://x.test/a',
             'source'          => 'WEB',
             'created_at'      => gmdate('Y-m-d H:i:s'),
-        ), $o));
+        ), $o);
+        // Revenue reports window on updated_at (when the sale/refund/status
+        // last changed). FakeDb does not materialise the column's DEFAULT
+        // CURRENT_TIMESTAMP, so a fixture that omits updated_at has none at
+        // all and falls outside every revenue window — see the note in
+        // AnalyticsTest::service().
+        if (!isset($data['updated_at'])) $data['updated_at'] = $data['created_at'];
+        $app->db->insert('orders', $data);
     }
 
     private function service($app, $user, array $o = array())
     {
         static $n = 0;
         $n++;
-        $app->db->insert('service_transactions', array_merge(array(
+        $data = array_merge(array(
             'public_id'       => 'STXQ'.str_pad((string)$n, 22, '0', STR_PAD_LEFT),
             'user_id'         => $user->id,
             'service_domain'  => 'VTU',
@@ -93,7 +100,10 @@ class DashboardQueryCostTest extends TestCase
             'currency'        => 'NGN',
             'source'          => 'WEB',
             'created_at'      => gmdate('Y-m-d H:i:s'),
-        ), $o));
+        ), $o);
+        // See the note in order().
+        if (!isset($data['updated_at'])) $data['updated_at'] = $data['created_at'];
+        $app->db->insert('service_transactions', $data);
     }
 
     /** Queries issued while running $fn. */
