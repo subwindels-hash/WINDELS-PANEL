@@ -1,6 +1,13 @@
 # Unfinished work — MarvySocials
 
-*As of 2026-08-29, branch `arena/01a04b8d-windels-panel`.*
+*As of 2026-08-31, branch `arena/01a058f9-windels-panel`. Item 5's
+auto-run remainder is closed by module 38
+([module-cron-autorun.md](module-cron-autorun.md), commit `987c488`): the
+panel now runs its own due jobs from ordinary traffic — no crontab
+required — and the dead-DB crash in the `cron` CLI is fixed with it.
+Item 22 moved: both workflows are now authored and stored in
+[github-actions/](github-actions/); what remains is the one-time UI
+activation, still blocked on the `workflows` permission.*
 
 **Progress:** items 11 and 12 are **closed** by module 17
 ([module-private-attachments.md](module-private-attachments.md)) and item 13 by
@@ -22,9 +29,9 @@ record rather than a moving target.
 
 There are **no half-built modules left**. Every module in
 [modules.md](modules.md) is implemented, tested and driven end to end
-(`tools/verify_all.sh` — 43 stages, 0 failed; 1427 PHP tests, 0 failures), and
-a grep of `application/` finds no `TODO`, `FIXME`, "not implemented" or
-scaffold markers.
+(`tools/verify_all.sh` — 48 stages, 0 failed re-confirmed 2026-08-31; 1658
+PHP tests, 0 failures), and a grep of `application/` finds no `TODO`,
+`FIXME`, "not implemented" or scaffold markers.
 
 What follows is the honest list of what is **not finished**, in three
 categories: features deliberately left incomplete, known defects/races still
@@ -40,7 +47,7 @@ open, and things this sandbox cannot prove.
 | ~~2~~ | ~~**Multi-currency wallets**~~ | **Closed (module 37).** A wallet may hold any enabled foreign currency — chosen once, while empty, by the customer or staff, frozen forever after the first movement. Conversion happens at the single ledger boundary (LedgerService, the only wallet writer), so every purchase domain supports a foreign wallet with **no engine changes**; each conversion writes its own four-legged double entry through an `fx:CODE` translation account so each currency's books balance independently. The refund-rate policy is enforced in the ledger: a refund replays the rate **pinned on the charge**, so FX drift can never make a refund create or destroy money. Gateway deposits *denominated* in a foreign currency remain C-category work. |
 | ~~3~~ | ~~**Marketplace partial refunds**~~ | **Closed (module 23).** `refund_partial()` returns part of an order's money with a cumulative ceiling, optional restock, the goods left in place, and the figure written to both `marketplace_orders` and `service_transactions` so revenue stops overstating. Per-line refunds across a multi-order basket are still per order. |
 | ~~4~~ | ~~**Physical shipping flow**~~ | **Closed (this session, [module-physical-shipping-escrow.md](module-physical-shipping-escrow.md)).** Re-audited line by line against the module 11 escrow rules: purchase, the shipment state machine, release, refund and the sweep all hold. The audit found one real defect — a **part refund of a physical order in transit left the order uncloseable** (a part-refunded order can never be recorded delivered, so its escrow remainder rode the abandonment sweep back to a buyer who still receives the parcel: goods AND full money). `refund_partial()` now refuses any shipment-bound order whose parcel is not `DELIVERED` (`SHIPMENT_IN_TRANSIT`), pointing staff at the two honest options; a full refund stays available in transit, and the same part refund stands after delivery. Pinned by a new unit test, ten corrected money tests, and 14 new end-to-end checks (`physical_order_refund_check` 38/38). Two adjacent defects fixed along the way: four checks with hardcoded demo passwords (a README violation), and `marketplace_fulfilment_check` silently depending on other stages to top up its wallet. |
-| ~~5~~ | ~~**Cron scheduling (write side)**~~ | **Partly closed (module 22).** A job can be paused and resumed from the panel, with a required reason, a named consequence, an audited trail and a 24-hour expiry that resumes it automatically. A "Run now" button runs any job once from the screen through the same `CronRegistry` worker and `JobRunner` exclusive lock as the crontab tick (POST-only, `settings.manage`, paused jobs refused, every run recorded and audited). Installing and editing schedules is still a crontab paste. |
+| ~~5~~ | ~~**Cron scheduling (write side)**~~ | **Closed (module 22 + module 38).** A job can be paused and resumed from the panel, with a required reason, a named consequence, an audited trail and a 24-hour expiry that resumes it automatically. A "Run now" button runs any job once from the screen through the same `CronRegistry` worker and `JobRunner` exclusive lock as the crontab tick (POST-only, `settings.manage`, paused jobs refused, every run recorded and audited). And since module 38 (commit `987c488`) the panel **runs its own due jobs from traffic**: a flock-throttled heartbeat on every web request and `/health/live` ping executes what the schedule says is due — most-overdue first, ≤3 jobs / 20 s budget, paused jobs silent, runs recorded exactly as crontab runs — so a host without any crontab still reconciles deposits and settles orders. Editing the *schedule* itself stays in `$config['cron']` + the generated crontab paste, by design (module 22: the panel and the crontab must not disagree about when). |
 | ~~6~~ | ~~**Announcement bar links**~~ | **Closed (module 21).** A line may carry `[label](target)`; the anchor is built, never pasted through, and only site paths, http(s) and mailto are accepted. Raw HTML renders as visible text. |
 | ~~7~~ | ~~**Contact map — first-party render**~~ | **Closed (this session; [module-site-chrome.md](module-site-chrome.md) §7).** The iframes are gone: `ContactMapService` resolves the operator's query on the server (`lat,lng` locally, free text with one Nominatim geocode cached 30 days), fetches the nine OSM tiles around the point on the server and caches them 30 days under `storage/cache/maps/`, and serves them from this origin at `/contact/map/tile/{key}/{i}/{j}` — a 96-bit key over the configured map, so the endpoint cannot proxy arbitrary tiles. A visitor on `/contact` now makes requests to exactly one origin; when there is no outbound route or the place is unknown the map box is omitted (address, phone, hours and the user-initiated "Open in maps" link remain) instead of rendering broken. The CSP's conditional `frame-src` relaxation is gone with it — `frame-src 'self'` is unconditional now that the panel has no iframes. Pinned by `ContactMapServiceTest` (15) and `contact_map_check.mjs` (28/28), with `chrome_check.mjs` §8 updated to match. |
 | ~~8~~ | ~~**Brand artwork**~~ | **Closed (this session).** The set was audited file by file (every size, format and variant verified: 972×192 wordmarks at the documented 5.0625 ratio, 256 icon, 192/512 PWA, 16/32/48/180 favicons, multi-size ICO, coherent SVG sources) and the design is now recorded in [brand.md](brand.md): the mark, the palette, every file's role, where each variant renders, and the operator's replacement procedure — including the ratio table in `partials/brand_logo.php` that must follow a new wordmark. The stale styleguide line ("an A and two rising bars") now describes the actual gradient-M mark. What remains is what the panel can never do for an operator: choose the operator's own identity. |
@@ -67,7 +74,7 @@ open, and things this sandbox cannot prove.
 | 19 | **MySQL 8 verification** | No MySQL here. Two `deploy-verify.php` schema-*shape* checks can only pass on the real engine. |
 | 20 | **Redis paths** | Redis-backed sessions, cache and rate limits are code-reviewed only; the file-backed fallbacks are what the suite exercises. |
 | 21 | **Apache `.htaccess`** | No Apache. The rules are asserted as text and the dev server refuses the same paths. |
-| 22 | **Docker / CI runner** | No Docker. `tools/verify_all.sh` is the same pipeline and is CI-ready, but has never run on a hosted runner. |
+| 22 | **CI runner** | `tools/verify_all.sh` is the same pipeline and is CI-ready; both GitHub Actions workflows are now **authored and stored** in [github-actions/](github-actions/) — `verify.yml` runs all 48 stages on `ubuntu-latest` (dev database + application server booted exactly as locally), `deployment-package.yml` builds and verifies the zip. What remains is the one-time activation: this environment's token is refused the `workflows` permission (the push is rejected by GitHub), so a human must paste each file to `.github/workflows/<name>.yml` via the UI — the click-path is in [github-actions/README.md](github-actions/README.md). |
 
 ---
 
@@ -78,6 +85,9 @@ open, and things this sandbox cannot prove.
    `gateway_check` and `smm_provider_check`. Nothing else de-risks a launch as
    much.
 3. **19** — run `tools/verify_all.sh` once against real MySQL 8.
+   *(And activate the two authored workflows — [github-actions/README.md](github-actions/README.md);
+   `verify.yml` then proves the pipeline on a hosted runner on every push,
+   closing item 22.)*
 4. ~~**13**~~ — done, module 18.
 5. ~~**9**~~ — done, module 19.
 6. ~~**1 / 2**~~ — done, modules 36 and 37.
