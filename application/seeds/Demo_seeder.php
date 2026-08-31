@@ -109,6 +109,12 @@ class Demo_seeder extends Seeder {
      * A 5sim virtual-number vendor, on the same terms as VTpass: only when
      * its token is in the environment, and INACTIVE even then.
      *
+     * The token here must be the dashboard's "API key for 5sim protocol" —
+     * the current API this adapter speaks — not the one labelled "Deprecated
+     * API" (the legacy API1/handler_api protocol, which the adapter refuses
+     * outright). At runtime the environment wins over this seeded copy, so
+     * rotating FIVESIM_API_KEY in production takes effect without a reseed.
+     *
      * The rate_to_base note matters. 5sim quotes roubles; this panel is
      * denominated in naira. Without FIVESIM_RATE_TO_BASE the adapter reports
      * no converted cost at all, which shows up as an unknown margin rather
