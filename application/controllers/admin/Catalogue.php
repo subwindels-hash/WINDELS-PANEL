@@ -74,7 +74,7 @@ class Catalogue extends Admin_Controller {
         $product = $this->catalogueservice->find($domain, $public_id);
         if (!$product) show_404();
 
-        $this->render($domain, 'admin/catalogue/edit', $product->name, array(
+        $this->render($domain, 'admin/catalogue/edit', $this->display_name($product), array(
             'product' => $product,
             'options' => $this->catalogueservice->options($domain),
         ));
@@ -91,7 +91,7 @@ class Catalogue extends Admin_Controller {
 
         $product = $res['product'];
         $this->audit('catalogue.created', $domain, $product, null, $this->row($product));
-        $this->flash($res, 'Product "'.$product->name.'" created.');
+        $this->flash($res, 'Product "'.$this->display_name($product).'" created.');
         redirect('admin/catalogue/'.$domain.'/'.$product->public_id);
     }
 
@@ -130,8 +130,8 @@ class Catalogue extends Admin_Controller {
             $product, array('is_active' => (int)$product->is_active),
             array('is_active' => $active ? 1 : 0));
         $this->flash($res, $active
-            ? '"'.$product->name.'" is now on sale.'
-            : '"'.$product->name.'" has been taken off sale.');
+            ? '"'.$this->display_name($product).'" is now on sale.'
+            : '"'.$this->display_name($product).'" has been taken off sale.');
         redirect('admin/catalogue/'.$domain.'/'.$product->public_id);
     }
 
@@ -203,6 +203,18 @@ class Catalogue extends Admin_Controller {
     /** The stored row as an array, for the audit trail. */
     private function row($product) {
         return $product ? get_object_vars($product) : null;
+    }
+
+    /**
+     * A human label for a catalogue row. Number products are code-based
+     * (NG-WHATSAPP) and carry no name column, so fall back to the joined
+     * service name, then the code.
+     */
+    private function display_name($product) {
+        if (!$product) return '';
+        if (isset($product->name) && (string)$product->name !== '') return (string)$product->name;
+        if (isset($product->service_name) && (string)$product->service_name !== '') return (string)$product->service_name;
+        return isset($product->code) ? (string)$product->code : '';
     }
 
     /** The table an audit entry should name, per domain. */

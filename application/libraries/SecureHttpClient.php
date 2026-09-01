@@ -40,6 +40,11 @@ class SecureHttpClient {
 
     public function request($method, $url, $data=null, $headers=array(), $options=array()){
         $attempt=0; $last_error=''; $backoffs=array(500,1500,4000);
+        // Callers may override the retry budget per request. Mutating calls
+        // (a number purchase) pass max_retries=0: a retried buy can double-order
+        // when the first attempt actually reached the vendor and only the
+        // response was lost — fail fast and let the caller refund instead.
+        $max = isset($options['max_retries']) ? (int)$options['max_retries'] : $this->max_retries;
         $request_id = $options['request_id'] ?? marvy_request_id();
 
         $rejection = $this->reject_url($url);
@@ -83,8 +88,8 @@ class SecureHttpClient {
             }
             $last_error = $error ?: ('HTTP '.$http_code);
             log_message('error', 'SecureHttpClient retry '.$attempt.' '.$method.' '.$url.' error='.$last_error.' rid='.$request_id);
-            if ($attempt < $this->max_retries) usleep(($backoffs[$attempt] ?? 4000)*1000);
-        } while (++$attempt <= $this->max_retries);
+            if ($attempt < $max) usleep(($backoffs[$attempt] ?? 4000)*1000);
+        } while (++$attempt <= $max);
 
         // Circuit-breaker hook (future: mark provider degraded)
         return array('http_code'=>0,'body'=>null,'error'=>$last_error,'request_id'=>$request_id);

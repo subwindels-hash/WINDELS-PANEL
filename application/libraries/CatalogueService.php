@@ -324,7 +324,10 @@ class CatalogueService {
         }
 
         if ($row && (int)$row->id !== $id) {
-            return 'The code "'.$fields['code'].'" is already used by "'.$row->name.'".';
+            // Number products have no name column; name the code instead.
+            $label = (isset($row->name) && (string)$row->name !== '')
+                ? (string)$row->name : (string)$fields['code'];
+            return 'The code "'.$fields['code'].'" is already used by "'.$label.'".';
         }
         return null;
     }

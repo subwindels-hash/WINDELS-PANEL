@@ -312,6 +312,9 @@ $route['admin/providers/(:any)/pricing'] = 'admin/providers/pricing/$1';
 $route['admin/providers/(:any)/test'] = 'admin/providers/test/$1';
 $route['admin/providers/(:any)/sync'] = 'admin/providers/sync/$1';
 $route['admin/providers/(:any)/sync-balance'] = 'admin/providers/sync_balance/$1';
+// Rotate the API URL and key on an existing provider (providers.manage,
+// POST-only, key encrypted at rest — the key is never rendered back).
+$route['admin/providers/(:any)/credentials'] = 'admin/providers/credentials/$1';
 // Bulk-import the synced catalogue as panel services (writes the catalogue,
 // so services.manage — POST-only like every other write here).
 $route['admin/providers/(:any)/import'] = 'admin/providers/import/$1';

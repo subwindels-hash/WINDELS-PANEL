@@ -59,7 +59,10 @@ $has = function ($permission) use ($permissions) {
       </div>
       <?php endif; ?>
       <?php if ($has('providers.manage')): ?>
-      <div class="row mt-3" style="justify-content:flex-end">
+      <div class="row mt-3" style="justify-content:flex-end;gap:.5rem">
+        <button class="btn btn-secondary btn-sm" type="button" data-dialog-open="ws-credentials">
+          ⚿ Update credentials
+        </button>
         <form method="post" action="<?=site_url('admin/providers/'.$p->public_id.'/delete')?>"
               style="margin:0">
           <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>"
@@ -259,6 +262,44 @@ $has = function ($permission) use ($permissions) {
     </div>
   </aside>
 </div>
+
+<?php if ($has('providers.manage')): ?>
+<dialog id="ws-credentials" class="ws-dialog" data-dialog-light-dismiss>
+  <form method="post" action="<?=site_url('admin/providers/'.$p->public_id.'/credentials')?>" class="stack">
+    <h3 class="card-title mb-0">Update credentials</h3>
+    <p class="text-sm muted mt-1">
+      Rotate the API URL and key for <strong><?=htmlspecialchars($p->name)?></strong>.
+      The current key is stored encrypted and is never shown here — leave the key
+      field empty only if you are changing the URL alone.
+    </p>
+    <label class="field"><span class="label">API URL</span>
+      <input class="input" name="api_url" type="url" required
+             value="<?=htmlspecialchars($p->api_url)?>" autocomplete="off">
+    </label>
+    <?php if ($p->api_type === 'FIVESIM'): ?>
+      <p class="text-xs muted" style="margin-top:-.25rem">
+        5sim speaks the <strong>current</strong> protocol: base
+        <span class="mono">https://5sim.net/v1</span> with a Bearer token.
+        <span class="mono">handler_api.php</span> / <span class="mono">api1.5sim.net</span>
+        are the deprecated API and are refused.
+      </p>
+    <?php endif; ?>
+    <label class="field"><span class="label">API key (the new one)</span>
+      <input class="input" name="api_key" autocomplete="off"
+             placeholder="Paste the new key — stored encrypted, never displayed">
+    </label>
+    <p class="text-xs muted">
+      Saved keys are encrypted at rest, and the connection is tested in the same
+      action. On hosts that manage secrets by environment variable, set
+      <span class="mono">FIVESIM_API_KEY</span> — it wins over the stored key.
+    </p>
+    <div class="row" style="justify-content:flex-end;gap:.5rem">
+      <button type="button" class="btn btn-ghost" data-dialog-close="ws-credentials">Cancel</button>
+      <button type="submit" class="btn btn-primary">Save credentials</button>
+    </div>
+  </form>
+</dialog>
+<?php endif; ?>
 
 <?php if ($can_manage_services && empty($is_vtu)): ?>
 <dialog id="ws-import-services" class="ws-dialog" data-dialog-light-dismiss>

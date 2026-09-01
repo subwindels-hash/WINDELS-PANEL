@@ -1078,6 +1078,9 @@ class ProviderSyncService {
         if (isset($input['api_type']) && strtoupper($input['api_type']) === 'RELOADLY') {
             foreach ($this->reloadly_credential_errors($input) as $e) $errors[] = $e;
         }
+        if (isset($input['api_type']) && strtoupper($input['api_type']) === 'FIVESIM') {
+            foreach ($this->fivesim_url_errors($input) as $e) $errors[] = $e;
+        }
         if (isset($input['timeout_ms']) && ((int)$input['timeout_ms'] < 1000 || (int)$input['timeout_ms'] > 60000)) {
             $errors[] = 'Timeout must be between 1000 and 60000 ms.';
         }
@@ -1088,5 +1091,90 @@ class ProviderSyncService {
             $errors[] = 'Markup cannot be negative.';
         }
         return $errors;
+    }
+
+    /**
+     * A 5sim URL must be on the current protocol before it is stored.
+     *
+     * This is the same check the adapter enforces at call time, run at save
+     * time so a deprecated `handler_api.php` URL (or a docs example like
+     * `/v1/user/profile`) is refused with a form error instead of surfacing
+     * on the first customer purchase. The constructor's refusal message is
+     * reused verbatim: it is written for operators, not for logs.
+     */
+    private function fivesim_url_errors(array $input) {
+        if (empty($input['api_url'])) {
+            return array('The 5sim API URL is required — use https://5sim.net/v1 '
+                .'(the current 5sim protocol).');
+        }
+        // The adapter is loaded lazily by Provider_manager; reference it
+        // explicitly so a plain provider save never trips over the class.
+        if (!class_exists('FiveSimAdapter')) {
+            require_once __DIR__.'/FiveSimAdapter.php';
+        }
+        try {
+            FiveSimAdapter::current_protocol_base($input['api_url']);
+        } catch (Exception $e) {
+            return array($e->getMessage());
+        }
+        return array();
+    }
+
+    /**
+     * Rotate a provider's credentials (API URL and key).
+     *
+     * The key is encrypted at rest exactly like a create. The URL is pinned
+     * to the current protocol for the 5sim family before anything is written,
+     * so a rotation can never quietly re-point the panel at the deprecated
+     * API. Runs the same live probe as the "Test connection" button, so the
+     * operator knows immediately whether the new key authenticates — but the
+     * save succeeds either way, because a panel that refuses to store a key
+     * it cannot verify yet (vendor outage) strands the operator mid-rotation.
+     *
+     * @return array{ok:bool,provider?:object,probe?:array,error?:string,errors?:array}
+     */
+    public function update_credentials($provider, array $input) {
+        $input['name'] = $provider->name;
+        $input['api_type'] = $provider->api_type;
+        // An empty key field means "keep the stored key" (URL-only change).
+        // The stored key is never echoed back, so rotation still requires
+        // pasting the new one.
+        $rotate_key = !empty($input['api_key']);
+        if ($rotate_key) {
+            $errors = $this->validate($input);
+        } else {
+            unset($input['api_key']);
+            $errors = $this->validate($input);
+            $errors = array_values(array_filter($errors, function ($e) {
+                return stripos($e, 'API key') === false;
+            }));
+        }
+        if ($errors) return array('ok' => false, 'errors' => $errors);
+
+        $before = array('api_url' => $provider->api_url);
+
+        $data = array(
+            'api_url'    => rtrim(trim($input['api_url']), '/'),
+            'updated_at' => gmdate('Y-m-d H:i:s'),
+        );
+        if ($rotate_key) {
+            $data['api_key_encrypted'] = $this->ci->encryptionservice->encrypt($this->credential_payload($input));
+        }
+
+        $this->ci->load->model('Audit_log_model');
+        $this->ci->Provider_model->update_provider($provider->id, $data);
+        $provider = $this->ci->Provider_model->find_by_id($provider->id);
+
+        $this->ci->Audit_log_model->record(
+            (isset($this->ci->authservice) && $this->ci->authservice) ? $this->ci->authservice->id() : null,
+            'provider.credentials', 'providers', $provider->public_id,
+            $before,
+            array('api_url' => $provider->api_url, 'key_rotated' => $rotate_key), // the key itself is never recorded
+            $this->ci->input->ip_address(), $this->ci->input->user_agent(),
+            method_exists($this->ci, 'request_id') ? $this->ci->request_id() : null);
+
+        $probe = $this->test_connection($provider);
+
+        return array('ok' => true, 'provider' => $provider, 'probe' => $probe);
     }
 }
