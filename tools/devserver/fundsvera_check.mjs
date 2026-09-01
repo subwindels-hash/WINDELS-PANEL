@@ -419,9 +419,11 @@ check('a duplicate submit resolves to the existing deposit, not a new checkout',
   `location=${dup.location} checkouts=${chkCount()}`);
 
 // The deposits page must let the customer resume: account details + link.
+// The link is the "Pay now — open secure checkout" CTA (the hosted page is
+// where card payment happens), labelled case-insensitively on purpose.
 r = await customer.get(`/dashboard/wallet/deposits/${newTx.public_id}`);
 check('the deposit page shows the account number and a resume link',
-  /81\d{8}/.test(r.text) && /Open secure checkout page/.test(r.text), 'deposit page lacks details or resume');
+  /81\d{8}/.test(r.text) && /open secure checkout/i.test(r.text), 'deposit page lacks details or resume');
 
 // ---- failure matrix: the panel must answer, never hang ---------------------
 async function expectInitFailure(behavior, expectText, label) {

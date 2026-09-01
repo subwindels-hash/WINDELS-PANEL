@@ -14,45 +14,71 @@
     <div><dt class="muted text-xs">Method</dt><dd><?=htmlspecialchars($method->name ?? '—')?></dd></div>
     <div><dt class="muted text-xs">Date</dt><dd class="text-sm"><?=date('M j, Y H:i', strtotime($d->created_at))?> UTC</dd></div>
   </dl>
-  <?php if ($d->status === 'PENDING' && !empty($checkout)):
-    // A provider-issued transfer account. The window is short, so the expiry
-    // is shown rather than left for the customer to discover.
-    $expired = !empty($checkout->expires_at) && strtotime($checkout->expires_at.' UTC') < time();
+  <?php if ($d->status === 'PENDING' && $method && strtolower((string)$method->code) === 'fundsvera'):
+    // A Fundsvera checkout is one link with two payment routes: the hosted
+    // secure-checkout page takes card payment, the account details are the
+    // bank-transfer route. The details live on the checkout row AND in the
+    // transaction metadata (written at initiation) — merge both so a partial
+    // provider response still leaves the customer a way to pay.
+    $gc = is_array($gateway_checkout ?? null) ? $gateway_checkout : array();
+    $fv = array(
+        'account_number' => trim((string)($checkout->account_number ?? '')) !== '' ? (string)$checkout->account_number : (string)($gc['account_number'] ?? ''),
+        'account_name'   => trim((string)($checkout->account_name ?? ''))   !== '' ? (string)$checkout->account_name   : (string)($gc['account_name'] ?? ''),
+        'bank_name'      => trim((string)($checkout->bank_name ?? ''))      !== '' ? (string)$checkout->bank_name      : (string)($gc['bank_name'] ?? ''),
+        'checkout_url'   => trim((string)($checkout->checkout_url ?? ''))   !== '' ? (string)$checkout->checkout_url   : (string)($gc['checkout_url'] ?? ''),
+        'expires_at'     => trim((string)($checkout->expires_at ?? '')),
+    );
+    $fv['has_details'] = $fv['account_number'] !== '';
+    // The window is short, so the expiry is shown rather than left for the
+    // customer to discover.
+    $expired = $fv['expires_at'] !== '' && strtotime($fv['expires_at'].' UTC') < time();
   ?>
     <div class="alert <?=$expired ? 'alert-warning' : 'alert-info'?> mt-4 mb-0">
       <?php if ($expired): ?>
-        <strong>This transfer account has expired.</strong>
+        <strong>This payment window has expired.</strong>
         <p class="mt-1 mb-0">
-          Start a new deposit to get fresh account details. If you already sent the money it will
-          still be credited once the bank confirms it.
+          Start a new deposit to get fresh details. If you already paid it will
+          still be credited once the payment is confirmed.
         </p>
       <?php else: ?>
-        <strong>Transfer <?=marvy_money($d->amount, $d->currency)?> to this account</strong>
-        <dl class="grid grid-3 mt-3" style="gap:1rem">
-          <div>
-            <dt class="muted text-xs">Bank</dt>
-            <dd class="font-semibold"><?=htmlspecialchars((string)$checkout->bank_name)?></dd>
-          </div>
-          <div>
-            <dt class="muted text-xs">Account number</dt>
-            <dd class="mono font-semibold" style="font-size:1.1rem"><?=htmlspecialchars((string)$checkout->account_number)?></dd>
-          </div>
-          <div>
-            <dt class="muted text-xs">Account name</dt>
-            <dd class="font-semibold"><?=htmlspecialchars((string)$checkout->account_name)?></dd>
-          </div>
-        </dl>
-        <p class="mt-3 mb-0 text-sm">
-          Send the exact amount. Your wallet is credited automatically once the bank confirms the
-          transfer — you do not need to send us a receipt.
-          <?php if (!empty($checkout->expires_at)): ?>
-            <br>These details expire at
-            <strong><?=htmlspecialchars(date('H:i', strtotime($checkout->expires_at.' UTC')))?> UTC</strong>.
-          <?php endif; ?>
-        </p>
-        <?php if (!empty($checkout->checkout_url)): ?>
-          <a class="btn btn-primary btn-sm mt-3" href="<?=htmlspecialchars($checkout->checkout_url)?>"
-             target="_blank" rel="noopener">Open secure checkout page</a>
+        <strong>Pay <?=marvy_money($d->amount, $d->currency)?> by card or bank transfer</strong>
+        <?php if ($fv['checkout_url'] !== ''): ?>
+          <p class="mt-2 mb-0 text-sm">
+            The secure checkout page accepts <strong>credit and debit cards</strong> as well as
+            bank transfer. Your wallet is credited automatically once the payment is confirmed —
+            no receipt needed.
+          </p>
+          <a class="btn btn-primary btn-sm mt-3" href="<?=htmlspecialchars($fv['checkout_url'])?>"
+             target="_blank" rel="noopener">Pay now — open secure checkout</a>
+        <?php endif; ?>
+        <?php if ($fv['has_details']): ?>
+          <dl class="grid grid-3 mt-3" style="gap:1rem">
+            <div>
+              <dt class="muted text-xs">Bank</dt>
+              <dd class="font-semibold"><?=htmlspecialchars($fv['bank_name'] !== '' ? $fv['bank_name'] : '—')?></dd>
+            </div>
+            <div>
+              <dt class="muted text-xs">Account number</dt>
+              <dd class="mono font-semibold" style="font-size:1.1rem"><?=htmlspecialchars($fv['account_number'])?></dd>
+            </div>
+            <div>
+              <dt class="muted text-xs">Account name</dt>
+              <dd class="font-semibold"><?=htmlspecialchars($fv['account_name'] !== '' ? $fv['account_name'] : '—')?></dd>
+            </div>
+          </dl>
+          <p class="mt-3 mb-0 text-sm">
+            For a bank transfer, send the exact amount to the account above.
+            <?php if ($fv['expires_at'] !== ''): ?>
+              <br>These details expire at
+              <strong><?=htmlspecialchars(date('H:i', strtotime($fv['expires_at'].' UTC')))?> UTC</strong>.
+            <?php endif; ?>
+          </p>
+        <?php elseif ($fv['checkout_url'] === ''): ?>
+          <p class="mt-2 mb-0 text-sm">
+            We could not fetch the payment details from the provider just now.
+            Please start the deposit again, or contact support with reference
+            <code class="mono"><?=htmlspecialchars(substr($d->public_id,0,12))?>…</code>.
+          </p>
         <?php endif; ?>
       <?php endif; ?>
     </div>

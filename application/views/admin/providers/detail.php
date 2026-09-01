@@ -266,6 +266,11 @@ $has = function ($permission) use ($permissions) {
 <?php if ($has('providers.manage')): ?>
 <dialog id="ws-credentials" class="ws-dialog" data-dialog-light-dismiss>
   <form method="post" action="<?=site_url('admin/providers/'.$p->public_id.'/credentials')?>" class="stack">
+    <?php // Same contract as every other POST form on the panel: a token
+          // carried by the form itself. Without it the browser's save hits the
+          // CSRF guard and the "enter the new key" flow dies on an error
+          // page instead of saving. ?>
+    <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>" value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
     <h3 class="card-title mb-0">Update credentials</h3>
     <p class="text-sm muted mt-1">
       Rotate the API URL and key for <strong><?=htmlspecialchars($p->name)?></strong>.

@@ -64,7 +64,8 @@ const server = http.createServer((req, res) => {
     if (method === 'POST' && path === '/__control/behavior') {
       try {
         const b = JSON.parse(raw || '{}').behavior;
-        if (['ok', 'unauthorized', 'bad-request', 'busy', 'hang', 'no-checkout-url', 'duplicate']
+        if (['ok', 'unauthorized', 'bad-request', 'busy', 'hang', 'no-checkout-url', 'duplicate',
+            'nested', 'nested-no-details']
           .includes(b)) state.behavior = b;
       } catch {}
       return json(res, 200, { behavior: state.behavior });
@@ -152,6 +153,16 @@ const server = http.createServer((req, res) => {
       };
       if (behavior === 'no-checkout-url') {
         delete checkout.checkout_url; // the "success without a link" case
+      }
+      // The production API has been observed answering with the details wrapped
+      // in a top-level `data` object (rather than flat). `nested` reproduces
+      // that so the panel's normalisation is exercised, and `nested-no-details`
+      // wraps an empty body to prove the customer is never stranded.
+      if (behavior === 'nested' || behavior === 'nested-no-details') {
+        const wrapped = { status: 'SUCCESS', message: 'Account details generated successfully',
+                          data: behavior === 'nested' ? checkout : { status: 'Pending' } };
+        state.checkouts.set(String(body.request_id), wrapped);
+        return json(res, 200, wrapped);
       }
       state.checkouts.set(String(body.request_id), checkout);
       return json(res, 200, checkout);

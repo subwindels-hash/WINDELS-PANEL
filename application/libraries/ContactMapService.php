@@ -104,7 +104,14 @@ class ContactMapService {
 
         // The centre tile must be servable or the box would render as a
         // broken picture; the other eight stream in from the same cache.
-        if ($this->tile_bytes($z, $x, $y) === null) return $ctx;
+        // A failure here is visible on the page (the map box is absent) but
+        // was previously silent in the log — name the reason once a day.
+        if ($this->tile_bytes($z, $x, $y) === null) {
+            $this->note_once('tile:'.$key, 'contact map: the centre tile (z='.(int)$z.' x='.(int)$x.' y='.(int)$y
+                .') could not be fetched and is not cached — no outbound route from this server, or the tile '.
+                'server refused the request. The map stays hidden until a tile can be cached.');
+            return $ctx;
+        }
 
         // Row-major: tiles[j*3+i] is column i, row j.
         $base = site_url('contact/map/tile/'.$key);
@@ -183,7 +190,16 @@ class ContactMapService {
             // out of date in a month; use it rather than hiding the map.
         }
 
-        if (!$cached || !isset($cached['lat'], $cached['lng'])) return null;
+        if (!$cached || !isset($cached['lat'], $cached['lng'])) {
+            // The map box silently disappears on a geocode miss — exactly how
+            // "show the map" becomes an unsolvable mystery. Say in the log,
+            // once a day, what failed and what fixes it.
+            $this->note_once('geo'.sha1($query), 'contact map: "'.$query.'" could not be resolved to coordinates '
+                .'(the geocoder returned nothing and no cached result exists) — the map is hidden. '
+                .'Street-level addresses often do not resolve; set the Map location to "lat,lng" '
+                .'for a deterministic pin.');
+            return null;
+        }
         $this->write_map_file($map_key, $query, $zoom, (float)$cached['lat'], (float)$cached['lng']);
         return array('lat' => (float)$cached['lat'], 'lng' => (float)$cached['lng']);
     }
@@ -306,6 +322,22 @@ class ContactMapService {
 
     private function ensure_dir($dir) {
         if (!is_dir($dir)) @mkdir($dir, 0775, true);
+    }
+
+    /**
+     * Log an operator-actionable failure at most once per day per key.
+     *
+     * The contact page is public and heavily visited; a persistent miss
+     * (an unresolvable street, a host with no outbound route) must not
+     * write an error line on every hit, but it must say something — the
+     * flag file is the throttle and self-expires.
+     */
+    private function note_once($key, $message) {
+        $flag = $this->dir.'/note-'.substr(sha1($key), 0, 16).'.flag';
+        if (is_file($flag) && (time() - (int)filemtime($flag)) < 86400) return;
+        $this->ensure_dir(dirname($flag));
+        @touch($flag);
+        log_message('error', $message);
     }
 
     private function http_client() {

@@ -158,7 +158,10 @@ button { font-family:inherit; cursor:pointer; }
 .btn-primary:hover { background:var(--brand-700); text-decoration:none; }
 .btn-secondary { background:var(--color-surface); color:var(--color-text); border-color:var(--color-border); }
 .btn-secondary:hover { background:var(--surface-muted); text-decoration:none; }
-.btn-ghost { background:transparent; color:var(--slate-700); }
+/* Ghost label is the semantic text token, not a fixed slate: on a dark
+   surface --slate-700 rendered the (inactive) shop filter tabs and other
+   ghost buttons dark-on-dark. --text-secondary flips with the theme. */
+.btn-ghost { background:transparent; color:var(--text-secondary); }
 .btn-ghost:hover { background:var(--surface-muted); text-decoration:none; }
 .btn-danger { background:var(--danger-600); color:#fff; }
 .btn-danger:hover { background:var(--danger-700); text-decoration:none; }
@@ -186,7 +189,7 @@ button { font-family:inherit; cursor:pointer; }
 @media(max-width:560px){.ws-searchwrap{width:100%}}
 
 /* ------------------------------- Forms ----------------------------------- */
-.label { display:block; font-size:.875rem; font-weight:500; color:var(--slate-700); margin-bottom:.375rem; }
+.label { display:block; font-size:.875rem; font-weight:500; color:var(--text-secondary); margin-bottom:.375rem; }
 .input, .select, .textarea {
   width:100%; padding:.6rem .8rem; font-size:.95rem; color:var(--color-text);
   background:var(--color-surface); border:1px solid var(--color-border); border-radius:.625rem;
@@ -299,6 +302,10 @@ button { font-family:inherit; cursor:pointer; }
 .ws-announce-track{display:flex;align-items:center;width:max-content;
   animation:ws-announce-marquee var(--ws-announce-speed,40s) linear infinite}
 .ws-announce-track .ws-announce-item{margin-right:3rem}
+/* A single scrolling message: each copy takes the full viewport width so the
+   50% march is seamless even when the text is shorter than the strip. Long
+   text is unaffected — the item simply grows past the minimum. */
+.ws-announce.is-single .ws-announce-track .ws-announce-item{min-width:100vw}
 .ws-announce-viewport:hover .ws-announce-track,
 .ws-announce-viewport:focus-within .ws-announce-track{animation-play-state:paused}
 @keyframes ws-announce-marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
@@ -335,9 +342,15 @@ button { font-family:inherit; cursor:pointer; }
 .ws-faq-hero{max-width:46rem;margin-inline:auto;text-align:center}
 .ws-faq-hero .ws-lede{margin-inline:auto}
 .ws-faq-hero .ws-searchwrap{position:relative;max-width:28rem;margin-inline:auto}
-.ws-lede{font-size:1.125rem;color:var(--slate-600);max-width:40rem}
+/* Text colour is the semantic token, not a fixed slate: the fixed light scale
+   does not flip in dark mode, so --slate-600 here rendered dark-on-dark on the
+   contact / services / shop write-ups. --text-secondary flips with the theme. */
+.ws-lede{font-size:1.125rem;color:var(--text-secondary);max-width:40rem}
+/* Kicker uses the themeable --primary, not the fixed --brand-700: the hero
+   eyebrows ("Support", "Services", "Shop") sat dark-indigo on a dark hero in
+   dark mode. --primary flips (brand-600 light, brand-500 dark). */
 .ws-kicker{display:inline-block;font-size:.75rem;font-weight:700;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--brand-700);margin-bottom:.75rem}
+  text-transform:uppercase;color:var(--primary);margin-bottom:.75rem}
 
 /* ------------------------------- Public nav ----------------------------- */
 /* Skip link: visually hidden until keyboard focus, but always present in the

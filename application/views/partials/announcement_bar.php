@@ -90,10 +90,14 @@ $ink  = (string)$setting('announcement_text_color', '#ffffff');
 
 // The speed setting is the motion switch (Admin → Settings → Branding):
 // 0 keeps the bar static and centred, any positive value scrolls the
-// messages across in that many seconds. A single message is always static —
-// marching one line around the screen says nothing, it only moves.
+// messages across in that many seconds — a single message included. The
+// "one line can't march a loop" objection is handled in CSS, not here: each
+// copy of a single message takes the full viewport width, so the 50% march
+// stays seamless whether the text is short or long. (This is the fix for the
+// "the bar stopped moving" report: the operator's one typed message used to
+// be pinned static no matter what the speed said.)
 $speed  = (int)$setting('announcement_speed_seconds', 40);
-$static = (count($items) === 1) || $speed <= 0;
+$static = $speed <= 0;
 
 $style = 'background:'.htmlspecialchars($bg, ENT_QUOTES).';'
        . 'color:'.htmlspecialchars($ink, ENT_QUOTES).';'
@@ -104,12 +108,17 @@ if (!$static) {
     // thing that changes per install.
     $style .= ' --ws-announce-speed:'.$speed.'s;';
 }
+// A single scrolling message: flag it so the stylesheet can give each copy of
+// the line the full viewport width. Without that, the one short item would be
+// narrower than the viewport and the 50% march would leave a blank gap sweeping
+// through the strip.
+$single = (count($items) === 1);
 
 // AnnouncementText escapes every character it did not write itself, so the
 // output is placed unescaped on purpose — escaping it again would print the
 // anchor as text.
 ?>
-<div class="ws-announce<?= $static ? ' is-static' : ''?>" role="region" aria-label="Announcements"
+<div class="ws-announce<?= $static ? ' is-static' : ($single ? ' is-single' : '')?>" role="region" aria-label="Announcements"
      data-announce style="<?=$style?>">
   <div class="ws-announce-viewport">
     <?php if ($static && count($items) === 1): ?>

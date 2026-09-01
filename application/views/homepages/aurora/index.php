@@ -53,15 +53,17 @@ if (empty($faqs)) {
 .ws-aurora .ms-hero{background:
   radial-gradient(900px 320px at 8% -10%,rgba(99,102,241,.18),transparent 60%),
   radial-gradient(700px 260px at 92% 0,rgba(192,38,211,.14),transparent 55%);}
-/* Hero write-up (eyebrow, headline, lede) reads solid black on the light wash.
+/* Hero write-up (eyebrow, headline, lede) reads solid on the light wash.
    Overrides the white-on-gradient hero text from marketing.css and the purple
-   gradient-clipped headline above. */
+   gradient-clipped headline above. The colour is the theme's primary text
+   token, NOT a hard-coded #000 — that is what left the write-up black-on-dark
+   in dark mode (the hero wash sits on the page background, which flips). */
 .ws-aurora .ws-landing-hero.ms-hero .ws-kicker,
 .ws-aurora .ws-landing-hero.ms-hero h1,
-.ws-aurora .ws-landing-hero.ms-hero .lede{color:#000;}
+.ws-aurora .ws-landing-hero.ms-hero .lede{color:var(--color-text);}
 .ws-aurora .ws-landing-hero.ms-hero h1.gradient-text{
   background:none;-webkit-background-clip:border-box;background-clip:border-box;
-  color:#000;-webkit-text-fill-color:#000;}
+  color:var(--color-text);-webkit-text-fill-color:var(--color-text);}
 /* "View services" is a white-on-gradient button in marketing.css — on this
    light hero that left white type on a near-white wash. Solid black label on a
    white face, with a visible border instead of a white one. */
