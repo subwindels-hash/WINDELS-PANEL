@@ -336,7 +336,10 @@ class SettingsService {
                 'Shown next to the map and used to place the pin when no explicit map query is set. '
                 .'One line per line of the address.', ''),
             'contact_map_query' => array('text', 'contact', 'Map location',
-                'What the map should centre on: an address, a place name, or "latitude,longitude". '
+                'What the map should centre on, most reliable first: "latitude,longitude" (no lookup '
+                .'needed — use this when the map does not appear), a place name, or a full address. '
+                .'Free text is geocoded by OpenStreetMap and street-level addresses often do not resolve, '
+                .'in which case the map is hidden and the reason is written to the log. '
                 .'Leave blank to use the business address above.', ''),
             'contact_map_zoom' => array('int', 'contact', 'Map zoom',
                 'Roughly: 12 shows a city, 15 a district, 17 a street.', 15),
@@ -460,7 +463,7 @@ class SettingsService {
             // than its real value. Submitting the form unchanged must leave
             // the secret alone, not overwrite it with a row of bullets.
             if ($type === 'secret' && $value === self::SECRET_PLACEHOLDER) continue;
-            $res   = $this->coerce($type, $value, $label);
+            $res   = $this->coerce($type, $value, $label, $default);
             if ($res['error'] !== null) { $errors[] = $res['error']; continue; }
             $clean[$key] = $res['value'];
         }
@@ -493,7 +496,7 @@ class SettingsService {
     }
 
 /** Type coercion and per-type validation, in one place. */
-    private function coerce($type, $value, $label) {
+    private function coerce($type, $value, $label, $default = null) {
         // Input validation: ensure $type and $value exist
         if (!isset($type) || $type === '') {
             return array('value' => null, 'error' => $label . ' has an invalid type.');
@@ -598,9 +601,15 @@ class SettingsService {
             case 'text':
             default:
                 $value = (string)$value;
-                // Allow empty values for types that support it (validated at a higher level)
-                // but reject purely empty submissions for required-style fields
+                // Optional text fields are declared with a blank default —
+                // "leave blank to hide it" — and submitting one empty must
+                // restore that state, not fail the whole form save (the same
+                // rule the url type already applies). Fields whose default is
+                // a real value are required-style and still refuse blank.
                 if ($value === '') {
+                    if ((string)$default === '') {
+                        return array('value' => '', 'error' => null);
+                    }
                     return array('value' => null, 'error' => $label.' cannot be empty.');
                 }
                 return array('value' => mb_substr($value, 0, 255), 'error' => null);
