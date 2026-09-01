@@ -74,7 +74,7 @@ class Providers extends Admin_Controller {
             return redirect('admin/providers');
         }
         $this->session->set_flashdata('success', 'Provider "'.$result['provider']->name.'" created. Test the connection before enabling sync.');
-        redirect('admin/providers/detail/'.$result['provider']->public_id);
+        redirect('admin/providers/'.$result['provider']->public_id);
     }
 
     public function detail($public_id) {
@@ -161,7 +161,7 @@ class Providers extends Admin_Controller {
         } else {
             $this->session->set_flashdata('error', 'Connection failed: '.($res['error'] ?? 'unknown error').' ('.$res['latency_ms'].' ms).');
         }
-        redirect('admin/providers/detail/'.$public_id);
+        redirect('admin/providers/'.$public_id);
     }
 
     public function sync($public_id) {
@@ -180,7 +180,7 @@ class Providers extends Admin_Controller {
         } else {
             $this->session->set_flashdata('error', 'Sync failed: '.($res['error'] ?? 'unknown error'));
         }
-        redirect('admin/providers/detail/'.$public_id);
+        redirect('admin/providers/'.$public_id);
     }
 
     public function sync_balance($public_id) {
@@ -195,7 +195,7 @@ class Providers extends Admin_Controller {
         } else {
             $this->session->set_flashdata('error', 'Balance sync failed: '.($res['error'] ?? 'unknown error'));
         }
-        redirect('admin/providers/detail/'.$public_id);
+        redirect('admin/providers/'.$public_id);
     }
 
     /**
@@ -274,7 +274,7 @@ class Providers extends Admin_Controller {
         $res = $this->providersyncservice->update_credentials($provider, $this->input->post(null, true));
         if (empty($res['ok'])) {
             $this->session->set_flashdata('error', implode(' ', $res['errors'] ?? array('The credentials could not be saved.')));
-            return redirect('admin/providers/detail/'.$provider->public_id);
+            return redirect('admin/providers/'.$provider->public_id);
         }
 
         $probe = $res['probe'] ?? null;
@@ -289,7 +289,7 @@ class Providers extends Admin_Controller {
                 .($probe['error'] ?? 'unknown error')
                 .' — check the key and the URL, then test again.');
         }
-        redirect('admin/providers/detail/'.$provider->public_id);
+        redirect('admin/providers/'.$provider->public_id);
     }
 
     /**

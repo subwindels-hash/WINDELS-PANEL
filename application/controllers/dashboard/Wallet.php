@@ -157,9 +157,38 @@ class Wallet extends Auth_Controller {
         // returned details without a checkout link): show the deposit page,
         // which renders the account details and any resume link.
         $this->session->set_flashdata('success',
-            'Your bank transfer details are ready below — complete the transfer '
-            .'within 30 minutes and your wallet will be credited once payment is confirmed.');
+            'Your deposit is ready below — pay by card or bank transfer. Your wallet will be '
+            .'credited once the payment is confirmed.');
         redirect('dashboard/wallet/deposits/'.$tx->public_id);
+    }
+
+    /**
+     * POST /dashboard/wallet/deposits/:public_id/card — pay an open Fundsvera
+     * deposit by card through a configured hosted card gateway.
+     *
+     * Fundsvera's secured checkout only produces bank-transfer instructions;
+     * this route re-uses the exact same deposit and asks Paystack /
+     * Flutterwave / Razorpay / Stripe for a card checkout URL. A successful
+     * card webhook credits the same deposit once, so the customer never has
+     * two payments to reconcile.
+     */
+    public function card($public_id) {
+        if ($this->input->method(true) !== 'POST') show_404();
+
+        $tx = $this->Payment_transaction_model->find_public_for_user($public_id, $this->current_user->id);
+        if (!$tx) show_404();
+
+        $res = $this->paymentservice->card_checkout($tx, $this->current_user);
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error'] ?? 'Could not start the card payment.');
+            redirect('dashboard/wallet/deposits/'.$public_id);
+            return;
+        }
+        if (!empty($res['redirect_url'])) {
+            redirect($res['redirect_url']);
+        }
+        $this->session->set_flashdata('success', 'Your card payment is ready below.');
+        redirect('dashboard/wallet/deposits/'.$public_id);
     }
 
     public function deposits($public_id = null) {
@@ -173,6 +202,8 @@ class Wallet extends Auth_Controller {
         // the transaction. Loaded here so the view stays free of queries.
         $checkout = null;
         $gateway_checkout = null;
+        $card_checkout = null;
+        $card_method = null;
         if ($tx && $tx->status === 'PENDING') {
             try {
                 $this->load->model('Fundsvera_checkout_model');
@@ -184,7 +215,18 @@ class Wallet extends Auth_Controller {
             // what they showed the customer on the transaction itself, so an
             // interrupted payment can be resumed rather than restarted.
             $meta = json_decode((string)$tx->metadata, true);
-            if (is_array($meta) && !empty($meta['checkout'])) $gateway_checkout = $meta['checkout'];
+            if (is_array($meta)) {
+                if (!empty($meta['checkout'])) $gateway_checkout = $meta['checkout'];
+                if (!empty($meta['card_checkout'])) $card_checkout = $meta['card_checkout'];
+            }
+            // A Fundsvera deposit can also be paid by card when a hosted card
+            // gateway is configured. Exposing it here keeps the deposit page
+            // free of service queries.
+            try {
+                $card_method = $this->paymentservice->card_method_for_deposit();
+            } catch (Throwable $e) {
+                log_message('error', 'could not resolve a card gateway: '.$e->getMessage());
+            }
         }
         $this->load->view('layouts/app', array(
             'title' => 'Deposits',
@@ -197,6 +239,8 @@ class Wallet extends Auth_Controller {
             'active_deposit' => $tx,
             'checkout' => $checkout,
             'gateway_checkout' => $gateway_checkout,
+            'card_method' => $card_method,
+            'card_checkout' => $card_checkout,
         ));
     }
 }

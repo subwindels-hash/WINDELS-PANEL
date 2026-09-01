@@ -51,7 +51,7 @@ $search = $search ?? '';
     <?php foreach ($providers as $p): ?>
       <tr>
         <td>
-          <a class="font-medium text-slate-900" href="<?=site_url('admin/providers/detail/'.$p->public_id)?>"><?=htmlspecialchars($p->name)?></a>
+          <a class="font-medium text-slate-900" href="<?=site_url('admin/providers/'.$p->public_id)?>"><?=htmlspecialchars($p->name)?></a>
         </td>
         <td class="mono text-xs"><?=htmlspecialchars($p->api_type)?></td>
         <td><span class="badge <?=$p->status==='ACTIVE'?'badge-success':'badge-default'?>"><?=htmlspecialchars($p->status)?></span></td>
@@ -65,7 +65,7 @@ $search = $search ?? '';
         <td class="mono"><?=$p->balance!==null ? htmlspecialchars($p->balance).' '.htmlspecialchars($p->currency) : '—'?></td>
         <td><?=number_format($counts[(int)$p->id] ?? 0)?></td>
         <td class="text-xs muted whitespace-nowrap"><?=$p->last_successful_sync_at ? date('M j, H:i', strtotime($p->last_successful_sync_at)) : 'never'?></td>
-        <td><a class="btn btn-ghost btn-sm" href="<?=site_url('admin/providers/detail/'.$p->public_id)?>">Manage →</a></td>
+        <td><a class="btn btn-ghost btn-sm" href="<?=site_url('admin/providers/'.$p->public_id)?>">Manage →</a></td>
       </tr>
     <?php endforeach; ?>
     </tbody>

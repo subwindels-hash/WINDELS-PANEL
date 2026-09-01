@@ -22,6 +22,9 @@ class PaymentService {
     const STATUS_SUCCESS = 'SUCCESS';
     const STATUS_FAILED  = 'FAILED';
 
+    /** Hosted card gateways the panel can route a card payment through. */
+    const CARD_GATEWAY_CODES = array('paystack', 'flutterwave', 'razorpay', 'stripe');
+
     private $ci;
 
     public function __construct() {
@@ -121,6 +124,16 @@ class PaymentService {
         if (empty($init['ok'])) {
             $this->mark_failed($tx->id, $init['error'] ?? 'Gateway error');
             return array('ok'=>false,'error'=>$init['error'] ?? 'Could not initiate payment','code'=>'GATEWAY_ERROR');
+        }
+        // Fundsvera's own checkout URL is a bank-transfer instructions page.
+        // Always land the customer on our deposit page instead: it offers a
+        // hosted card gateway when one is configured, shows the account
+        // details we parsed, and keeps the Fundsvera checkout link as the
+        // "open secure checkout" option. Jumping straight to the Fundsvera
+        // link is how a customer who asked for card payment ends up staring at
+        // a transfer page with no card option.
+        if (strtolower((string)$method->code) === 'fundsvera') {
+            $init['redirect_url'] = null;
         }
         $status = $init['status'] ?? self::STATUS_PENDING;
         // Hosted gateways echo the reference we gave them on their callback,
@@ -513,6 +526,112 @@ class PaymentService {
             if ($this->method_is_configured($row)) $out[] = $row;
         }
         return $out;
+    }
+
+    /**
+     * The first configured hosted card gateway for a card fallback.
+     *
+     * Fundsvera is a bank-transfer provider; its checkout URL is a transfer
+     * instructions page, not a card form. To still let a Fundsvera deposit be
+     * paid by card, the deposit page can hand the exact same transaction to a
+     * hosted card gateway (Paystack / Flutterwave / Razorpay / Stripe). This
+     * helper answers which one is actually ready — configured — so the page
+     * never offers a card button that fails at the first click.
+     *
+     * @return object|null a payment_methods row for the card gateway
+     */
+    public function card_method_for_deposit() {
+        // A configured card gateway is enough for the Fundsvera fallback even
+        // when its own method row is not shown on Add funds — the operator has
+        // supplied working credentials, and the fallback is the only way a
+        // customer can pay that deposit by card.
+        foreach (self::CARD_GATEWAY_CODES as $code) {
+            $row = $this->resolve_method($code);
+            if ($row && $this->method_is_configured($row)) return $row;
+        }
+        return null;
+    }
+
+    /**
+     * Start (or resume) a card checkout against an existing pending deposit.
+     *
+     * The deposit was created as a Fundsvera bank-transfer payment. This does
+     * not create a second deposit: it asks a hosted card gateway for a
+     * checkout URL using the SAME transaction, so a successful card webhook
+     * credits the same deposit exactly once. The card URL is stored on the
+     * transaction metadata so a customer who closes the tab can resume it.
+     *
+     * @param object $tx   an existing PaymentTransaction
+     * @param object $user the signed-in customer
+     * @return array{ok:bool, redirect_url?:string, checkout?:array, method?:object, error?:string, code?:string}
+     */
+    public function card_checkout($tx, $user) {
+        if (!$tx) {
+            return array('ok' => false, 'error' => 'No deposit to pay for', 'code' => 'NO_TRANSACTION');
+        }
+        if ($tx->status === self::STATUS_SUCCESS) {
+            return array('ok' => false, 'error' => 'This deposit is already completed', 'code' => 'ALREADY_COMPLETE');
+        }
+        if ($tx->status === self::STATUS_FAILED) {
+            return array('ok' => false, 'error' => 'This deposit has already failed — start a new deposit',
+                'code' => 'ALREADY_FAILED');
+        }
+        if (!in_array($tx->status, array(self::STATUS_CREATED, self::STATUS_PENDING), true)) {
+            return array('ok' => false, 'error' => 'This deposit cannot be paid now', 'code' => 'BAD_STATE');
+        }
+
+        // Reuse an already-created card checkout rather than opening a second
+        // one on every page refresh.
+        $meta = json_decode((string)$tx->metadata, true);
+        if (is_array($meta) && !empty($meta['card_checkout']['redirect_url'])) {
+            return array(
+                'ok'           => true,
+                'redirect_url' => (string)$meta['card_checkout']['redirect_url'],
+                'checkout'     => $meta['card_checkout'],
+            );
+        }
+
+        $method = $this->card_method_for_deposit();
+        if (!$method) {
+            return array('ok' => false,
+                'error' => 'Card payment is not available yet. Enable Paystack, Flutterwave, '
+                    .'Razorpay or Stripe in Admin → Settings, or use bank transfer.',
+                'code' => 'CARD_UNAVAILABLE');
+        }
+
+        $gateway = $this->gateway_for($method);
+        $init = $gateway->initiate($tx, $user);
+        if (empty($init['ok'])) {
+            return array('ok' => false,
+                'error' => $init['error'] ?? 'Could not start the card payment',
+                'code' => $init['code'] ?? 'CARD_INIT_FAILED');
+        }
+
+        $this->store_card_checkout($tx, $init);
+        return array(
+            'ok'           => true,
+            'redirect_url' => $init['redirect_url'] ?? null,
+            'checkout'     => $init['checkout'] ?? null,
+            'method'       => $method,
+        );
+    }
+
+    /** Persist the card checkout URL on the transaction so it can be resumed. */
+    private function store_card_checkout($tx, array $init) {
+        $meta = json_decode((string)$tx->metadata, true);
+        $meta = is_array($meta) ? $meta : array();
+        $checkout = is_array($init['checkout'] ?? null) ? $init['checkout'] : array();
+        $meta['card_checkout'] = array_merge(
+            $checkout,
+            array(
+                'redirect_url' => $init['redirect_url'] ?? null,
+                'provider'     => $checkout['provider'] ?? '',
+            )
+        );
+        $this->ci->Payment_transaction_model->update_status($tx->id, array(
+            'metadata'   => json_encode($meta, JSON_UNESCAPED_SLASHES),
+            'updated_at' => gmdate('Y-m-d H:i:s'),
+        ));
     }
 
     /**

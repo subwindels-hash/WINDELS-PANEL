@@ -65,7 +65,7 @@ const server = http.createServer((req, res) => {
       try {
         const b = JSON.parse(raw || '{}').behavior;
         if (['ok', 'unauthorized', 'bad-request', 'busy', 'hang', 'no-checkout-url', 'duplicate',
-            'nested', 'nested-no-details']
+            'nested', 'nested-no-details', 'nested-camel']
           .includes(b)) state.behavior = b;
       } catch {}
       return json(res, 200, { behavior: state.behavior });
@@ -82,6 +82,38 @@ const server = http.createServer((req, res) => {
       res.end(`<!doctype html><title>Fundsvera — secure checkout</title>
 <h1>Fundsvera secure checkout</h1><p>Card page for <code>${ref}</code>.</p>
 <p>Transfer within 30 minutes. This fake has no payment form.</p>`);
+      return;
+    }
+
+    // The hosted card fallback (Paystack-compatible) used by the Fundsvera
+    // deposit page. The panel's card_checkout() re-uses the SAME transaction
+    // through this endpoint, so the e2e can assert the deposit page card CTA
+    // produces a real provider checkout and the resulting webhook credits the
+    // deposit exactly once.
+    if (method === 'POST' && path === '/transaction/initialize') {
+      if (!/^Bearer /i.test(req.headers.authorization || '')) {
+        return json(res, 401, { status: false, message: 'Unauthorized' });
+      }
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch {}
+      const reference = String(body.reference || '');
+      const authUrl = `http://127.0.0.1:${PORT}/fake-card-checkout?ref=${encodeURIComponent(reference)}`;
+      return json(res, 200, {
+        status: true,
+        data: {
+          reference,
+          access_code: 'access-dev-' + reference.slice(-8),
+          authorization_url: authUrl,
+        },
+      });
+    }
+
+    // The customer's browser lands here after Paystack "initialize"; it only
+    // needs to render so the redirect target is real.
+    if (method === 'GET' && path === '/fake-card-checkout') {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end(`<!doctype html><title>Fake card checkout</title>
+<h1>Fake card checkout</h1><p>Reference <code>${url.searchParams.get('ref') || ''}</code>.</p>`);
       return;
     }
 
@@ -155,12 +187,25 @@ const server = http.createServer((req, res) => {
         delete checkout.checkout_url; // the "success without a link" case
       }
       // The production API has been observed answering with the details wrapped
-      // in a top-level `data` object (rather than flat). `nested` reproduces
-      // that so the panel's normalisation is exercised, and `nested-no-details`
-      // wraps an empty body to prove the customer is never stranded.
-      if (behavior === 'nested' || behavior === 'nested-no-details') {
+      // in a top-level `data` object (rather than flat), and sometimes with
+      // camelCase spelling. `nested` / `nested-camel` reproduce those so the
+      // panel's normalisation is exercised, and `nested-no-details` wraps an
+      // empty body to prove the customer is never stranded.
+      if (behavior === 'nested' || behavior === 'nested-no-details' || behavior === 'nested-camel') {
+        let payload = checkout;
+        if (behavior === 'nested-camel') {
+          payload = {
+            status: 'Pending', message: 'Account details generated successfully',
+            customer_email: checkout.customer_email, customer_name: checkout.customer_name,
+            bankName: checkout.bank_name, accountName: checkout.account_name,
+            accountNumber: checkout.account_number, validity: checkout.validity,
+            request_id: checkout.request_id, trxRef: checkout.trx_ref,
+            checkoutUrl: checkout.checkout_url,
+            business_name: checkout.business_name, business_email: checkout.business_email,
+          };
+        }
         const wrapped = { status: 'SUCCESS', message: 'Account details generated successfully',
-                          data: behavior === 'nested' ? checkout : { status: 'Pending' } };
+                          data: behavior === 'nested-no-details' ? { status: 'Pending' } : payload };
         state.checkouts.set(String(body.request_id), wrapped);
         return json(res, 200, wrapped);
       }

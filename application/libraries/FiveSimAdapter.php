@@ -694,7 +694,14 @@ class FiveSimAdapter implements NumberProviderInterface {
             .($body !== '' ? ' body '.strlen($body).'B' : ' empty'));
 
         if ($http_code === 401 || $http_code === 403) {
-            return array('ok' => false, 'error' => 'The vendor rejected our credentials');
+            // The 5sim dashboard issues two keys: one for the current 5sim
+            // protocol and one for the old API1 protocol. A current-protocol
+            // base URL is exactly where an API1 key is rejected, so name the
+            // two credentials instead of leaving an operator guessing.
+            return array('ok' => false,
+                'error' => 'The vendor rejected our credentials. Use the dashboard key labelled '
+                    .'"API key for 5sim protocol" (NOT the "Deprecated API" key) '
+                    .'with base URL https://'.self::API_HOST.'/v1.');
         }
         if ($http_code === 429) {
             return array('ok' => false, 'error' => self::$errors['bandwidth limit']);

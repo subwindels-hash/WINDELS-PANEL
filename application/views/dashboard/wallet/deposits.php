@@ -41,43 +41,76 @@
           still be credited once the payment is confirmed.
         </p>
       <?php else: ?>
-        <strong>Pay <?=marvy_money($d->amount, $d->currency)?> by card or bank transfer</strong>
-        <?php if ($fv['checkout_url'] !== ''): ?>
-          <p class="mt-2 mb-0 text-sm">
-            The secure checkout page accepts <strong>credit and debit cards</strong> as well as
-            bank transfer. Your wallet is credited automatically once the payment is confirmed —
-            no receipt needed.
-          </p>
-          <a class="btn btn-primary btn-sm mt-3" href="<?=htmlspecialchars($fv['checkout_url'])?>"
-             target="_blank" rel="noopener">Pay now — open secure checkout</a>
-        <?php endif; ?>
-        <?php if ($fv['has_details']): ?>
-          <dl class="grid grid-3 mt-3" style="gap:1rem">
-            <div>
-              <dt class="muted text-xs">Bank</dt>
-              <dd class="font-semibold"><?=htmlspecialchars($fv['bank_name'] !== '' ? $fv['bank_name'] : '—')?></dd>
-            </div>
-            <div>
-              <dt class="muted text-xs">Account number</dt>
-              <dd class="mono font-semibold" style="font-size:1.1rem"><?=htmlspecialchars($fv['account_number'])?></dd>
-            </div>
-            <div>
-              <dt class="muted text-xs">Account name</dt>
-              <dd class="font-semibold"><?=htmlspecialchars($fv['account_name'] !== '' ? $fv['account_name'] : '—')?></dd>
-            </div>
-          </dl>
-          <p class="mt-3 mb-0 text-sm">
-            For a bank transfer, send the exact amount to the account above.
-            <?php if ($fv['expires_at'] !== ''): ?>
-              <br>These details expire at
-              <strong><?=htmlspecialchars(date('H:i', strtotime($fv['expires_at'].' UTC')))?> UTC</strong>.
+        <strong>Pay <?=marvy_money($d->amount, $d->currency)?></strong>
+
+        <?php // Card is a first-class route on a Fundsvera deposit: Fundsvera's
+              // own checkout page is the bank-transfer instructions page, so a
+              // configured hosted card gateway is what actually processes cards. ?>
+        <?php if (!empty($card_method)): ?>
+          <div class="mt-3">
+            <div class="font-medium">Pay by card</div>
+            <p class="mt-1 mb-0 text-sm">
+              Secure card checkout via <strong><?=htmlspecialchars($card_method->name)?></strong>.
+              Your wallet is credited automatically once the card payment is confirmed.
+            </p>
+            <?php if (!empty($card_checkout['redirect_url'])): ?>
+              <a class="btn btn-primary btn-sm mt-3" href="<?=htmlspecialchars($card_checkout['redirect_url'])?>"
+                 target="_blank" rel="noopener">Resume card payment</a>
+            <?php else: ?>
+              <?=form_open('dashboard/wallet/deposits/'.$d->public_id.'/card', array('class'=>'inline'), array())?>
+                <button class="btn btn-primary btn-sm mt-3" type="submit" data-loading-text="Loading card checkout…">Pay by card</button>
+              <?=form_close()?>
             <?php endif; ?>
-          </p>
-        <?php elseif ($fv['checkout_url'] === ''): ?>
+          </div>
+        <?php endif; ?>
+
+        <?php if ($fv['checkout_url'] !== '' || $fv['has_details']): ?>
+          <div class="mt-3">
+            <div class="font-medium">Prefer bank transfer?</div>
+            <?php if ($fv['checkout_url'] !== ''): ?>
+              <p class="mt-1 mb-0 text-sm">
+                Fundsvera's secure checkout shows the transfer details and an automatic
+                expiry timer. Your wallet is credited automatically once the bank confirms it.
+              </p>
+              <a class="btn btn-secondary btn-sm mt-2" href="<?=htmlspecialchars($fv['checkout_url'])?>"
+                 target="_blank" rel="noopener">Pay now — open secure checkout</a>
+            <?php endif; ?>
+            <?php if ($fv['has_details']): ?>
+              <dl class="grid grid-3 mt-3" style="gap:1rem">
+                <div>
+                  <dt class="muted text-xs">Bank</dt>
+                  <dd class="font-semibold"><?=htmlspecialchars($fv['bank_name'] !== '' ? $fv['bank_name'] : '—')?></dd>
+                </div>
+                <div>
+                  <dt class="muted text-xs">Account number</dt>
+                  <dd class="mono font-semibold" style="font-size:1.1rem"><?=htmlspecialchars($fv['account_number'])?></dd>
+                </div>
+                <div>
+                  <dt class="muted text-xs">Account name</dt>
+                  <dd class="font-semibold"><?=htmlspecialchars($fv['account_name'] !== '' ? $fv['account_name'] : '—')?></dd>
+                </div>
+              </dl>
+              <p class="mt-3 mb-0 text-sm">
+                For a bank transfer, send the exact amount to the account above.
+                <?php if ($fv['expires_at'] !== ''): ?>
+                  <br>These details expire at
+                  <strong><?=htmlspecialchars(date('H:i', strtotime($fv['expires_at'].' UTC')))?> UTC</strong>.
+                <?php endif; ?>
+              </p>
+            <?php endif; ?>
+          </div>
+        <?php endif; ?>
+
+        <?php if (empty($card_method) && $fv['checkout_url'] === '' && !$fv['has_details']): ?>
           <p class="mt-2 mb-0 text-sm">
             We could not fetch the payment details from the provider just now.
             Please start the deposit again, or contact support with reference
             <code class="mono"><?=htmlspecialchars(substr($d->public_id,0,12))?>…</code>.
+          </p>
+        <?php elseif (empty($card_method) && $fv['checkout_url'] === '' && $fv['has_details']): ?>
+          <p class="mt-2 mb-0 text-sm">
+            Card payment is not available yet — complete the bank transfer above, or an
+            administrator can enable Paystack, Flutterwave, Razorpay or Stripe.
           </p>
         <?php endif; ?>
       <?php endif; ?>
