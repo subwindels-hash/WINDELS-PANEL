@@ -112,23 +112,53 @@ class Wallet extends Auth_Controller {
             $this->session->set_flashdata('error', validation_errors());
             redirect('dashboard/add-funds');
         }
-        $res = $this->paymentservice->deposit($this->current_user, array(
-            'payment_method' => $this->input->post('payment_method', true),
-            'amount' => $this->input->post('amount'),
-            'currency' => marvy_base_currency(),
-        ));
+
+        // One deposit per rendered form: the hidden form_token scopes the
+        // idempotency key to this customer and this exact attempt, so a
+        // double-click or a browser retry resolves to the SAME transaction
+        // instead of opening a second checkout at the provider.
+        $form_token = substr((string)$this->input->post('form_token', true), 0, 40);
+
+        try {
+            $res = $this->paymentservice->deposit($this->current_user, array(
+                'payment_method'  => $this->input->post('payment_method', true),
+                'amount'          => $this->input->post('amount'),
+                'currency'        => marvy_base_currency(),
+                'idempotency_key' => $form_token !== '' ? 'form:'.$form_token : null,
+            ));
+        } catch (Throwable $e) {
+            // A provider or storage failure during initiation must never
+            // strand the customer on an error page: land back on the form
+            // with a message they can act on.
+            log_message('error', 'deposit initiation threw: '.$e->getMessage());
+            $this->session->set_flashdata('error',
+                'Could not start the payment right now — please try again. If it keeps failing, contact support.');
+            redirect('dashboard/add-funds');
+        }
+
         if (empty($res['ok'])) {
             $this->session->set_flashdata('error', $res['error'] ?? 'Could not initiate payment');
             redirect('dashboard/add-funds');
         }
 
         $tx = $res['transaction'];
+        if (!empty($res['duplicate'])) {
+            // The same form was submitted twice: take the customer to the
+            // deposit that already exists (with its resume link) rather than
+            // starting anything new.
+            $this->session->set_flashdata('success',
+                'This deposit is already open — continue from here.');
+            redirect('dashboard/wallet/deposits/'.$tx->public_id);
+        }
         if (!empty($res['redirect_url'])) {
             redirect($res['redirect_url']);
         }
-        // Manual gateway: show instructions / pending state.
+        // No hosted checkout URL (manual instructions, or the provider
+        // returned details without a checkout link): show the deposit page,
+        // which renders the account details and any resume link.
         $this->session->set_flashdata('success',
-            'Deposit request created. Your wallet will be credited once payment is confirmed.');
+            'Your bank transfer details are ready below — complete the transfer '
+            .'within 30 minutes and your wallet will be credited once payment is confirmed.');
         redirect('dashboard/wallet/deposits/'.$tx->public_id);
     }
 

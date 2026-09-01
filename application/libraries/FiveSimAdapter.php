@@ -153,7 +153,7 @@ class FiveSimAdapter implements NumberProviderInterface {
         $this->http = $http ?: new SecureHttpClient(array('timeout' => $timeout));
 
         $url = isset($provider_row->api_url) ? trim((string)$provider_row->api_url) : '';
-        $this->base = $url !== '' ? self::current_protocol_base($url) : self::BASE_URL;
+        $this->base = $this->resolve_base($url);
 
         $cfg = $this->config_blob();
         $this->country_map = array_merge(self::$countries, $this->upper_keys($cfg['countries'] ?? array()));
@@ -214,6 +214,46 @@ class FiveSimAdapter implements NumberProviderInterface {
         return 'https://'.self::API_HOST.'/v1';
     }
 
+    /**
+     * Resolve the base URL: the provider row, or the explicit environment
+     * override, or the pinned default — in that order.
+     *
+     * `FIVESIM_BASE_URL` exists so a staging build can be pointed at a
+     * sandboxed 5sim without touching production credentials, exactly the
+     * "test authentication first, then continue" drill. It is **refused in
+     * production**: `ENVIRONMENT=production` always speaks to 5sim.net over
+     * TLS, no matter what the environment says, so a stray variable on a
+     * live host cannot silently redirect customer traffic to a test backend.
+     * A non-production override is still held to the protocol: https only,
+     * and `handler_api.php` / `/stubs/` paths are refused everywhere.
+     *
+     * @return string base URL, trailing slash trimmed
+     */
+    private function resolve_base($stored_url) {
+        $override = getenv('FIVESIM_BASE_URL');
+        if ($override !== false && trim((string)$override) !== '') {
+            if (defined('ENVIRONMENT') && ENVIRONMENT === 'production') {
+                self::log('error', '5sim: FIVESIM_BASE_URL is ignored in production — '
+                    .'the panel always speaks to https://'.self::API_HOST.'/v1');
+            } else {
+                $base = trim((string)$override);
+                $parts = parse_url($base);
+                $scheme = strtolower((string)($parts['scheme'] ?? ''));
+                $path   = rtrim((string)($parts['path'] ?? ''), '/');
+                if ($scheme === 'http' || $scheme === 'https') {
+                    if (strpos($path, 'handler_api') !== false || stripos($path, '/stubs') !== false) {
+                        throw new RuntimeException(
+                            'FIVESIM_BASE_URL points at the deprecated API1 protocol '
+                            .'(handler_api.php) — the panel refuses it.');
+                    }
+                    return rtrim($base, '/');
+                }
+                throw new RuntimeException('FIVESIM_BASE_URL must be an http(s) URL.');
+            }
+        }
+        return $stored_url !== '' ? self::current_protocol_base($stored_url) : self::BASE_URL;
+    }
+
     /* ----------------------------- reservation ---------------------------- */
 
     /**
@@ -248,7 +288,11 @@ class FiveSimAdapter implements NumberProviderInterface {
             return $v !== null && $v !== '';
         }));
 
-        $res = $this->call('reserve', $path);
+        // A purchase is the one call that must not be blindly retried: if the
+        // first attempt reached the vendor and only the response was lost, a
+        // retry buys a second number and the customer pays once. Fail fast;
+        // the transaction engine refunds the reservation.
+        $res = $this->call('reserve', $path, 0);
         if (empty($res['ok'])) return array('ok' => false, 'error' => $res['error']);
 
         return $this->reservation($res['data']);
@@ -602,11 +646,20 @@ class FiveSimAdapter implements NumberProviderInterface {
      * token in the Authorization header — never in the URL, so request logs
      * (ours and any intermediate's) never see the key.
      *
+     * The diagnostics line is built for the exact support question this class
+     * exists to answer — "which URL did we call, with what, and what came
+     * back?" It carries the full URL (path and query: they contain country /
+     * product / order id, never the token), the method, the header *names* and
+     * the response status and size. The Authorization value, the request body
+     * and the response body never reach the log.
+     *
      * @param string $action short label for the log line (reserve, status, …)
      * @param string $path   endpoint path beginning with /
+     * @param int    $max_retries retry budget for this call; purchases pass 0
+     *                            (a retried buy can double-order the vendor)
      * @return array{ok:bool,data?:array,error?:string}
      */
-    private function call($action, $path) {
+    private function call($action, $path, $max_retries = null) {
         $token = $this->token();
         if ($token === '') {
             self::log('error', '5sim '.$action.': no API key configured — set FIVESIM_API_KEY '
@@ -618,26 +671,42 @@ class FiveSimAdapter implements NumberProviderInterface {
         $url = $this->base.'/'.ltrim($path, '/');
         $headers = array('Authorization: Bearer '.$token, 'Accept: application/json');
 
+        $options = array();
+        if ($max_retries !== null) $options['max_retries'] = max(0, (int)$max_retries);
         try {
-            $res = $this->http->get($url, $headers);
+            $res = $this->http->get($url, $headers, $options);
         } catch (Exception $e) {
-            self::log('error', '5sim '.$action.' transport error: '.$e->getMessage());
+            self::log('error', '5sim '.$action.' GET '.$url.' transport error: '.$e->getMessage());
             return array('ok' => false, 'error' => 'Vendor unreachable');
         }
 
         $http_code = isset($res['http_code']) ? (int)$res['http_code'] : 0;
         $body = isset($res['body']) ? trim((string)$res['body']) : '';
-        // The endpoint (path only, no query, no token) and the status are safe
-        // and useful; the body is not logged because vendor errors are
+        // The URL (no token), the header names (no values) and the status are
+        // safe and useful; the body is not logged because vendor errors are
         // customer-reachable and the mapped message already carries the gist.
+        $header_names = implode(',', array_map(function ($h) {
+            return strtolower(trim(strtok($h, ':')));
+        }, $headers));
         self::log($http_code >= 400 || $http_code === 0 ? 'error' : 'debug',
-            '5sim '.$action.' GET '.parse_url($url, PHP_URL_PATH).' -> HTTP '.$http_code);
+            '5sim '.$action.' GET '.$url
+            .' ['.$header_names.'] -> HTTP '.$http_code
+            .($body !== '' ? ' body '.strlen($body).'B' : ' empty'));
 
         if ($http_code === 401 || $http_code === 403) {
             return array('ok' => false, 'error' => 'The vendor rejected our credentials');
         }
         if ($http_code === 429) {
             return array('ok' => false, 'error' => self::$errors['bandwidth limit']);
+        }
+        if ($http_code === 404) {
+            // The classic symptom of calling the deprecated API1 paths: the
+            // vendor answers 404 for /stubs/handler_api.php on 5sim.net. Name
+            // the URL so the operator can see exactly which endpoint 404'd.
+            return array('ok' => false,
+                'error' => 'The vendor answered 404 for that endpoint ('.parse_url($url, PHP_URL_PATH).')'
+                    .' — the current API is https://'.self::API_HOST.'/v1 with a Bearer token;'
+                    .' handler_api.php / api1.5sim.net are the deprecated protocol and are never called.');
         }
         if ($http_code === 0 || $http_code >= 500) {
             return array('ok' => false, 'error' => 'The vendor did not respond'

@@ -40,6 +40,11 @@ class SecureHttpClient {
 
     public function request($method, $url, $data=null, $headers=array(), $options=array()){
         $attempt=0; $last_error=''; $backoffs=array(500,1500,4000);
+        // Callers may override the retry budget per request. Mutating calls
+        // (a number purchase) pass max_retries=0: a retried buy can double-order
+        // when the first attempt actually reached the vendor and only the
+        // response was lost — fail fast and let the caller refund instead.
+        $max = isset($options['max_retries']) ? (int)$options['max_retries'] : $this->max_retries;
         $request_id = $options['request_id'] ?? marvy_request_id();
 
         $rejection = $this->reject_url($url);
@@ -81,13 +86,25 @@ class SecureHttpClient {
                 log_message('debug', 'SecureHttpClient '.$method.' '.$url.' -> '.$http_code.' rid='.$request_id);
                 return array('http_code'=>$http_code,'body'=>$body,'request_id'=>$request_id);
             }
+            // The server answered with a 5xx (or transport failed). Keep the
+            // last outcome so the caller can tell "provider answered 500"
+            // apart from "provider unreachable" — collapsing both into
+            // http_code 0 made every 500 read as a connection failure.
+            $last_body    = $errno === 0 ? $body : null;
+            $last_code    = $errno === 0 ? (int)$http_code : 0;
             $last_error = $error ?: ('HTTP '.$http_code);
             log_message('error', 'SecureHttpClient retry '.$attempt.' '.$method.' '.$url.' error='.$last_error.' rid='.$request_id);
-            if ($attempt < $this->max_retries) usleep(($backoffs[$attempt] ?? 4000)*1000);
-        } while (++$attempt <= $this->max_retries);
+            if ($attempt < $max) usleep(($backoffs[$attempt] ?? 4000)*1000);
+        } while (++$attempt <= $max);
 
-        // Circuit-breaker hook (future: mark provider degraded)
-        return array('http_code'=>0,'body'=>null,'error'=>$last_error,'request_id'=>$request_id);
+        // Circuit-breaker hook (future: mark provider degraded). A received
+        // 5xx is reported as itself; only a transport-level failure is 0.
+        return array(
+            'http_code' => $last_code,
+            'body'      => $last_body,
+            'error'     => $last_code === 0 ? $last_error : null,
+            'request_id'=> $request_id,
+        );
     }
 
     /**

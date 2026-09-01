@@ -157,7 +157,8 @@ $current_type = $filters['service_type'] ?? ($filters['id_type'] ?? ($filters['d
       ?>
         <tr>
           <td>
-            <a href="<?=site_url('admin/catalogue/'.$domain.'/'.$r->public_id)?>"><?=htmlspecialchars((string)$r->name)?></a>
+            <?php $row_name = (isset($r->name) && (string)$r->name !== '') ? $r->name : ($r->service_name ?? $r->code); ?>
+            <a href="<?=site_url('admin/catalogue/'.$domain.'/'.$r->public_id)?>"><?=htmlspecialchars((string)$row_name)?></a>
             <div class="mono text-xs muted"><?=htmlspecialchars((string)$r->code)?></div>
           </td>
           <td class="text-sm">

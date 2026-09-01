@@ -42,6 +42,10 @@ $suggested = min($max, max($min, 5000));
       <?php endif; ?>
 
       <?=form_open('dashboard/wallet/deposit', array('class'=>'mt-4 stack'))?>
+        <?php // One token per rendered form: a double-submit or a retry of THIS
+              // form resolves to the same deposit instead of opening a second
+              // checkout at the payment provider. ?>
+        <input type="hidden" name="form_token" value="<?=htmlspecialchars(uniqid('dep', true))?>">
         <label class="field">
           <span class="label">Amount (<?=html_escape($cur)?>)</span>
           <input id="ws-amount" class="input" name="amount" type="number" min="<?=$min?>" max="<?=$max?>" step="0.01" value="<?=number_format($suggested, 2, '.', '')?>" inputmode="decimal" required>

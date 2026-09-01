@@ -156,6 +156,29 @@ $search = $search ?? '';
       </label>
     </details>
     <details class="text-sm muted">
+      <summary>5sim API key (FIVESIM only)</summary>
+      <p class="text-xs muted" style="margin-top:.5rem">
+        5sim speaks the <strong>current</strong> protocol: choose type
+        <span class="mono">FIVESIM</span>, set the API URL to
+        <span class="mono">https://5sim.net/v1</span> and paste the dashboard's
+        <em>“API key for 5SIM protocol”</em> (a JWT) into the API key field above.
+        Every call goes out as <span class="mono">GET https://5sim.net/v1/…</span>
+        with <span class="mono">Authorization: Bearer …</span>.
+      </p>
+      <p class="text-xs muted">
+        <span class="mono">api1.5sim.net</span> and
+        <span class="mono">handler_api.php</span> are the <strong>deprecated API</strong> —
+        they are refused. The “Deprecated API” dashboard key is a different
+        credential and must never be used here.
+      </p>
+      <p class="text-xs muted">
+        Production hosts can instead set
+        <span class="mono">FIVESIM_API_KEY</span> in the environment (or
+        <span class="mono">.env</span>); it wins over the stored key and is
+        never rendered to the browser.
+      </p>
+    </details>
+    <details class="text-sm muted">
       <summary>Reloadly client secret (RELOADLY only)</summary>
       <p class="text-xs muted" style="margin-top:.5rem">
         Reloadly is OAuth2, not an API key: put the <span class="mono">client id</span> in the

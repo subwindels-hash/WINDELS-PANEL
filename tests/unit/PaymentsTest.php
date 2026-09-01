@@ -491,6 +491,57 @@ class PaymentsTest extends TestCase
             'unsupported must fall through to NO_VERIFIER, not UNREACHABLE');
     }
 
+    /**
+     * The provider's documented success bodies are flat (account_number at
+     * the top level — secured-checkout does exactly that), but a nested
+     * `virtual_account` wrapper is common enough that the gateway must read
+     * both shapes instead of failing on the nested one.
+     */
+    public function testVirtualAccountCreationAcceptsFlatAndNestedResponseShapes()
+    {
+        putenv('FUNDSVERA_ENABLED=1');
+        putenv('FUNDSVERA_PUBLIC_KEY=pk-test');
+        putenv('FUNDSVERA_SECRET_KEY=sk-test');
+        try {
+            $ci = $this->fresh();
+            $ci->user = (object)array('id' => 7, 'email' => 'maria@example.com',
+                'first_name' => 'Maria', 'last_name' => 'Ngozi', 'phone' => '08031234567');
+
+            // Flat: the documented style.
+            $ci->Fundsvera_virtual_account_model = new PayFakeVAModel('8100000001');
+            $http = new PayFakeHttp(array(array(
+                'http_code' => 200,
+                'body' => json_encode(array(
+                    'account_number' => '8100000001',
+                    'account_name'   => 'MVS / Maria',
+                    'bank_name'      => 'Palmpay',
+                    'account_status' => 'Active',
+                )),
+                'request_id' => 'r',
+            )));
+            $res = (new FundsveraGateway(null, $http))->create_virtual_account($ci->user);
+            $this->assertTrue($res['ok'], json_encode($res));
+            $this->assertSame('8100000001', $res['account']->account_number);
+
+            // Nested wrapper: must be accepted too.
+            $ci->Fundsvera_virtual_account_model = new PayFakeVAModel('8100000002');
+            $http2 = new PayFakeHttp(array(array(
+                'http_code' => 200,
+                'body' => json_encode(array('virtual_account' => array(
+                    'account_number' => '8100000002',
+                    'account_name'   => 'MVS / Maria',
+                    'bank_name'      => 'Palmpay',
+                ))),
+                'request_id' => 'r2',
+            )));
+            $res2 = (new FundsveraGateway(null, $http2))->create_virtual_account($ci->user);
+            $this->assertTrue($res2['ok'], json_encode($res2));
+            $this->assertSame('8100000002', $res2['account']->account_number);
+        } finally {
+            putenv('FUNDSVERA_PUBLIC_KEY'); putenv('FUNDSVERA_SECRET_KEY'); putenv('FUNDSVERA_ENABLED');
+        }
+    }
+
     /** Signatures may arrive prefixed with their algorithm. */
     public function testFundsveraSignatureAcceptsAPrefixedDigest()
     {
@@ -821,5 +872,33 @@ class PayFakeCheckoutModel
     {
         $this->results[] = $data;
         return true;
+    }
+}
+
+/**
+ * Double for Fundsvera_virtual_account_model: no existing account, stores the
+ * row and hands it back through find_by_id() with the scripted account number.
+ */
+class PayFakeVAModel
+{
+    public $stored = null;
+    private $account_number;
+
+    public function __construct($account_number) { $this->account_number = $account_number; }
+
+    public function for_user($user_id) { return null; }
+
+    public function store($user, array $data) {
+        $this->stored = $data;
+        return 7;
+    }
+
+    public function find_by_id($id) {
+        return (object)array(
+            'id'             => $id,
+            'account_number' => $this->account_number,
+            'account_name'   => 'MVS / Maria',
+            'bank_name'      => 'Palmpay',
+        );
     }
 }

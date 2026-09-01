@@ -12,7 +12,7 @@ $margin = ($product->price !== null && $product->provider_cost !== null)
 <div class="row justify-between mb-4" style="align-items:flex-start;flex-wrap:wrap;gap:.75rem">
   <div>
     <a class="text-sm muted" href="<?=site_url('admin/catalogue/'.$domain)?>">← <?=htmlspecialchars(CatalogueService::label($domain))?></a>
-    <h2 class="mb-0" style="font-size:1.4rem;font-weight:600"><?=htmlspecialchars((string)$product->name)?></h2>
+    <h2 class="mb-0" style="font-size:1.4rem;font-weight:600"><?=htmlspecialchars((string)((isset($product->name) && (string)$product->name !== '') ? $product->name : ($product->service_name ?? $product->code)))?></h2>
     <p class="muted text-sm">
       <span class="mono"><?=htmlspecialchars((string)$product->code)?></span> ·
       <?php if ($product->is_active): ?>

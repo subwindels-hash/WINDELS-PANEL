@@ -600,6 +600,35 @@
   // fires, so a double-click can never double-place an order or double-fund a
   // wallet. Forms that drive their own async flow opt out with data-no-guard.
   function initFormSubmitGuard() {
+    function restore(btn) {
+      if (!btn || !btn.classList.contains('ws-submitting')) return;
+      btn.classList.remove('ws-submitting');
+      btn.disabled = false;
+      var original = btn.getAttribute('data-original-text');
+      if (original !== null) {
+        btn.textContent = original;
+        btn.removeAttribute('data-original-text');
+      }
+      var spin = btn.querySelector('.spinner');
+      if (spin && spin.parentNode) spin.parentNode.removeChild(spin);
+    }
+    function restoreAll() {
+      var stuck = document.querySelectorAll('.ws-submitting');
+      for (var i = 0; i < stuck.length; i++) restore(stuck[i]);
+    }
+
+    // A page restored from the back/forward cache keeps the exact DOM the
+    // submit handler disabled — the customer lands back from the payment
+    // provider and the button still says "Processing…", forever. A normal
+    // full-page load renders a fresh button, but a bfcache restore does not.
+    window.addEventListener('pageshow', function (event) {
+      if (event.persisted) restoreAll();
+    });
+    // Safety net: never boot a document with a submit button stuck in its
+    // submitting state, whatever produced it (server render, cache, a script
+    // that failed mid-flight on the previous page).
+    restoreAll();
+
     document.addEventListener('submit', function (e) {
       var form = e.target;
       if (!form || form.tagName !== 'FORM') return;

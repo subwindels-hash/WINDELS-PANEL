@@ -102,8 +102,11 @@ class RbacService {
      *
      * A key now counts as enforced only when it reaches a **gate**:
      *
-     *   - as a literal argument to `require_perm()` / `require_any_perm()`
-     *     (including via a shared `guard()` helper that passes it on), or
+     *   - as a literal argument to `require_perm()` / `require_any_perm()`,
+     *     either directly or handed to a shared `guard()` helper — including
+     *     the helper's *default* parameter value, which is what a call with
+     *     no permission argument gates on (`guard_post()` on the provider
+     *     test/sync actions checks its `$perm = 'providers.sync'` default), or
      *   - as a value in a declared map a gate reads dynamically — the
      *     `admin/Operations` queue table and `ContentService::permission()`
      *     both do this, so their arrays are recognised.
@@ -143,15 +146,23 @@ class RbacService {
         //    `require_perm($perm)`, so the literal lives at the call site.
         //    Detected by shape — a helper whose body gates a *variable* — so a
         //    new controller following the same pattern is covered without
-        //    naming it here.
-        foreach ($this->forwarding_helpers($src) as $helper) {
+        //    naming it here. The gated parameter's default counts as well:
+        //    Providers::test/sync/sync_balance call bare `guard_post()`, whose
+        //    `$perm = 'providers.sync'` default is the key being checked.
+        foreach ($this->forwarding_helpers($src) as $helper => $default) {
             $call = '/\$this->'.preg_quote($helper, '/').'\s*\(([^;]{0,200}?)\)/';
             if (preg_match_all($call, $src, $calls)) {
+                $bare = false;
                 foreach ($calls[1] as $args) {
                     if (preg_match_all("/'([a-z_]+(?:\.[a-z_*]+)+)'/", $args, $found)) {
                         foreach ($found[1] as $key) $keys[] = $key;
+                    } elseif ($default !== null && trim($args) === '') {
+                        // No permission argument — the parameter default is
+                        // the key the gate checks.
+                        $bare = true;
                     }
                 }
+                if ($bare) $keys[] = $default;
             }
         }
 
@@ -162,23 +173,35 @@ class RbacService {
     }
 
     /**
-     * Helpers that gate on a permission handed to them.
+     * Helpers that gate on a permission handed to them, mapped to the default
+     * value of the gated parameter (null when it has none).
      *
      * `private function guard($public_id, $perm) { ...; $this->require_perm($perm); }`
      * is the shape: the check is real, the key is at the call site. A helper
      * that merely *mentions* a permission does not qualify — the body has to
-     * pass a variable to require_perm().
+     * pass a variable to require_perm(). A permission default on that variable
+     * (`guard_post($perm = 'providers.sync')`) is itself a gate: a call that
+     * passes nothing checks the default, so it is recorded as such.
      */
     private function forwarding_helpers($src) {
         $out = array();
-        $re = '/function\s+(\w+)\s*\([^)]*\)\s*\{[\s\S]{0,800}?require_perm\(\s*\$/';
-        if (preg_match_all($re, $src, $m)) {
-            foreach (array_unique($m[1]) as $name) {
+        $re = '/function\s+(\w+)\s*\(([^)]*)\)\s*\{[\s\S]{0,800}?require_perm\(\s*\$(\w+)/';
+        if (preg_match_all($re, $src, $m, PREG_SET_ORDER)) {
+            foreach ($m as $one) {
+                $name = $one[1];
                 if ($name === 'require_perm') continue;
-                $out[] = $name;
+                $out[$name] = $this->default_perm($one[2], $one[3]);
             }
         }
         return $out;
+    }
+
+    /** The gated parameter's default value, when it is a permission key. */
+    private function default_perm($params, $gated) {
+        if (preg_match('/\$'.preg_quote($gated, '/').'\s*=\s*\'([a-z_]+(?:\.[a-z_*]+)+)\'/', $params, $d)) {
+            return $d[1];
+        }
+        return null;
     }
 
     /**

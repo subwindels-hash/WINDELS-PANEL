@@ -304,6 +304,55 @@ class AdminStaffTest extends TestCase
     }
 
     /**
+     * A false positive the Roles screen produced: `providers.sync` was listed
+     * as gating nothing even though Providers::test/sync/sync_balance all
+     * reach `require_perm('providers.sync')` through guard_post()'s default
+     * parameter. The detector must count the default as the gate — unticking
+     * the box revokes three live endpoints, so telling an operator the tick
+     * does nothing is a lie that costs access.
+     */
+    public function testProvidersSyncIsNotReportedAsUnenforced()
+    {
+        list($app, , , ) = $this->app();
+        $app->db->insert('permissions', array(
+            'perm_key' => 'providers.sync', 'category' => 'providers', 'description' => 'providers.sync',
+            'created_at' => gmdate('Y-m-d H:i:s'),
+        ));
+        Permission_model::flush_cache();
+
+        $dead = $app->rbacservice->unenforced();
+
+        $this->assertNotContains('providers.sync', $dead,
+            'guard_post() defaults to providers.sync; the screen must not list it as gating nothing');
+    }
+
+    /**
+     * Every admin controller that renders the unread badge uses the shared
+     * DashboardStats library — so any controller that reaches for
+     * `$this->dashboardstats` must load it first. Admin/Inbox did not: its
+     * render() called `unread_count()` on a never-loaded library, which is a
+     * fatal (\"Call to a member function unread_count() on null\") and a 500 on
+     * /admin/inbox in production.
+     */
+    public function testEveryAdminControllerThatUsesDashboardStatsLoadsIt()
+    {
+        $admin = self::$root.'/application/controllers/admin';
+        $broken = array();
+        foreach (glob($admin.'/*.php') as $file) {
+            $src = file_get_contents($file);
+            if ($src === false) continue;
+            // The render() shape that reads the shared unread count.
+            if (strpos($src, 'dashboardstats') === false) continue;
+            // The library must be loaded in the same controller (constructor).
+            if (preg_match("/load->library\([^)]*'DashboardStats'[^)]*\)/", $src)) continue;
+            $broken[] = basename($file);
+        }
+        $this->assertSame(array(), $broken,
+            'controllers using $this->dashboardstats without loading DashboardStats: '
+            .implode(', ', $broken));
+    }
+
+    /**
      * The check that found the sixteen missing modules: a permission granted
      * by the seeded role matrix but enforced by no code is a promise the panel
      * does not keep, and — as with `admin/customers` — usually means a whole

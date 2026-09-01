@@ -256,6 +256,43 @@ class Providers extends Admin_Controller {
     }
 
     /**
+     * POST /admin/providers/:id/credentials — rotate the API URL and key.
+     *
+     * Credentials used to be immutable after creation: the only way to rotate
+     * a vendor key was to delete the provider (and its synced catalogue) and
+     * re-create it. That is exactly the situation a 5sim operator hits when
+     * their dashboard issues a new JWT: enter the new key somewhere, meet a
+     * wall. This is the edit path — POST-only, providers.manage, encrypted at
+     * rest, audited, and it runs the live probe so the new key is verified in
+     * the same breath. The stored key is never rendered back to the screen.
+     */
+    public function credentials($public_id) {
+        $this->guard_post('providers.manage');
+        $provider = $this->Provider_model->find_by_public_id($public_id);
+        if (!$provider) show_404();
+
+        $res = $this->providersyncservice->update_credentials($provider, $this->input->post(null, true));
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', implode(' ', $res['errors'] ?? array('The credentials could not be saved.')));
+            return redirect('admin/providers/detail/'.$provider->public_id);
+        }
+
+        $probe = $res['probe'] ?? null;
+        if (!empty($probe['ok'])) {
+            $this->session->set_flashdata('success',
+                'Credentials saved and verified — the vendor answered with balance '
+                .($probe['balance'] !== null ? $probe['balance'].' '.$probe['currency'] : 'OK')
+                .' ('.$probe['latency_ms'].' ms).');
+        } else {
+            $this->session->set_flashdata('warning',
+                'Credentials saved, but the connection test failed: '
+                .($probe['error'] ?? 'unknown error')
+                .' — check the key and the URL, then test again.');
+        }
+        redirect('admin/providers/detail/'.$provider->public_id);
+    }
+
+    /**
      * POST /admin/providers/:id/delete — remove a provider and its synced
      * catalogue in one action.
      *

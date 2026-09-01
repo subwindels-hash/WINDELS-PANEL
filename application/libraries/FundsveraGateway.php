@@ -270,7 +270,13 @@ class FundsveraGateway implements GatewayInterface {
             return $this->fail('PROVIDER_ERROR', $res['error']);
         }
 
-        $va = isset($res['body']['virtual_account']) ? $res['body']['virtual_account'] : array();
+        // The provider's documented success bodies are flat (account_number
+        // at the top level, as with secured-checkout); accept a nested
+        // `virtual_account` object too, since the spelling is not pinned
+        // anywhere in the docs. The raw body is stored either way.
+        $va = isset($res['body']['virtual_account']) && is_array($res['body']['virtual_account'])
+            ? $res['body']['virtual_account']
+            : $res['body'];
         if (empty($va['account_number'])) {
             log_message('error', 'fundsvera: create-virtual-account returned no account number');
             return $this->fail('PROVIDER_ERROR', 'The bank account service returned an unexpected response.');
@@ -628,29 +634,50 @@ class FundsveraGateway implements GatewayInterface {
                 'Public-Key: '.$cfg['public_key'],
                 'Content-Type: application/json',
                 'Accept: application/json',
-            )
+            ),
+            $this->http_options()
         );
 
         $code = (int)($res['http_code'] ?? 0);
         $body = json_decode((string)($res['body'] ?? ''), true);
 
         if ($code === 0) {
-            log_message('error', 'fundsvera: '.$path.' unreachable: '.($res['error'] ?? 'unknown'));
-            return array('ok' => false, 'error' => 'Could not reach the payment provider. Try again shortly.');
+            $transport_error = (string)($res['error'] ?? 'unknown');
+            log_message('error', 'fundsvera: '.$path.' unreachable: '.$transport_error);
+            if (stripos($transport_error, 'timed out') !== false
+                || stripos($transport_error, 'timeout') !== false) {
+                return array('ok' => false,
+                    'error' => 'The payment provider took too long to answer. Please try again — '
+                              .'your deposit has not been started.');
+            }
+            return array('ok' => false,
+                'error' => 'Could not reach the payment provider. Please try again shortly — '
+                          .'your deposit has not been started.');
         }
         // Log the status, never the payload: bodies carry customer emails and
         // account numbers, and the log is not where those belong.
         log_message($code >= 400 ? 'error' : 'debug',
             'fundsvera: POST '.$path.' -> HTTP '.$code);
 
-        if ($code < 200 || $code >= 300 || !is_array($body)) {
+        if ($code < 200 || $code >= 300) {
             // Surface the provider's own message: "Duplicate request ID" and
             // "amount greater than or equal to 100" are actionable, and hiding
-            // them behind a generic error makes support impossible.
-            $message = is_array($body) && !empty($body['message'])
-                ? (string)$body['message']
-                : 'The payment provider rejected the request (HTTP '.$code.').';
-            return array('ok' => false, 'error' => $message);
+            // them behind a generic error makes support impossible. The
+            // provider sends errors both as JSON ({message}) and as plain
+            // text (401 'Unauthorized request please use valid keys').
+            if (is_array($body) && !empty($body['message'])) {
+                return array('ok' => false, 'error' => (string)$body['message']);
+            }
+            $plain = trim((string)($res['body'] ?? ''));
+            if ($plain !== '' && strpos($plain, '{') !== 0 && strpos($plain, '[') !== 0) {
+                return array('ok' => false, 'error' => mb_substr($plain, 0, 160));
+            }
+            return array('ok' => false,
+                'error' => 'The payment provider rejected the request (HTTP '.$code.').');
+        }
+        if (!is_array($body)) {
+            return array('ok' => false,
+                'error' => 'The payment provider returned an unusable response. Try again.');
         }
 
         return array('ok' => true, 'body' => $body);
@@ -663,7 +690,7 @@ class FundsveraGateway implements GatewayInterface {
                 'Authorization: Bearer '.$cfg['secret_key'],
                 'Public-Key: '.$cfg['public_key'],
                 'Accept: application/json',
-            ));
+            ), $this->http_options());
         } catch (Exception $e) {
             return array('http_code' => 0, 'body' => null, 'error' => $e->getMessage());
         }
@@ -680,12 +707,29 @@ class FundsveraGateway implements GatewayInterface {
     private function http() {
         if ($this->http) return $this->http;
         $this->ci->load->library('SecureHttpClient');
-        $this->http = new SecureHttpClient(array(
-            'timeout' => 12,
+        $this->http = new SecureHttpClient($this->http_options());
+        return $this->http;
+    }
+
+    /**
+     * The per-call client options. A customer is waiting on the browser side
+     * of initiate(): the provider must fail fast, with no internal retry
+     * ladder that turns one slow request into minutes of silence.
+     * FUNDSVERA_TIMEOUT_SECONDS lets an operator with a slow uplink tune it
+     * (3–60s); the default stays at 12s.
+     */
+    private function http_options() {
+        $timeout = 12;
+        $env_timeout = getenv('FUNDSVERA_TIMEOUT_SECONDS');
+        if ($env_timeout !== false && is_numeric($env_timeout) && (int)$env_timeout >= 3
+            && (int)$env_timeout <= 60) {
+            $timeout = (int)$env_timeout;
+        }
+        return array(
+            'timeout' => $timeout,
             'connect_timeout' => 4,
             'max_retries' => 0,
-        ));
-        return $this->http;
+        );
     }
 
     /** Case-insensitive header lookup — PHP and proxies disagree on casing. */
