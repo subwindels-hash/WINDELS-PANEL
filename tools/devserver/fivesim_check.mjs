@@ -20,6 +20,7 @@
  *      appears in any rendered admin page.
  */
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from './client.mjs';
@@ -29,7 +30,11 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:8080';
 const FAKE = process.env.FAKE_5SIM_URL || 'http://127.0.0.1:9400';
 const KEY_FILE = process.env.FIVESIM_KEY_FILE || path.resolve('/home/user/.fivesim_key');
 const PASSWORD = process.env.DEMO_PASSWORD || 'Repro!2026Pass';
-const token = fs.existsSync(KEY_FILE) ? fs.readFileSync(KEY_FILE, 'utf8').trim() : 'FAKE-JWT-FOR-DEV-ONLY';
+// A real key file pins the check to the operator's key; without one, use a
+// long random token (a JWT-shaped fallback string would leave a short slice
+// of it in page prose, tripping the "never echoed" assertion).
+const token = fs.existsSync(KEY_FILE) ? fs.readFileSync(KEY_FILE, 'utf8').trim()
+  : 'dev-' + crypto.randomBytes(32).toString('hex');
 
 const results = [];
 function check(label, ok, detail = '') {
