@@ -270,7 +270,13 @@ class FundsveraGateway implements GatewayInterface {
             return $this->fail('PROVIDER_ERROR', $res['error']);
         }
 
-        $va = isset($res['body']['virtual_account']) ? $res['body']['virtual_account'] : array();
+        // The provider's documented success bodies are flat (account_number
+        // at the top level, as with secured-checkout); accept a nested
+        // `virtual_account` object too, since the spelling is not pinned
+        // anywhere in the docs. The raw body is stored either way.
+        $va = isset($res['body']['virtual_account']) && is_array($res['body']['virtual_account'])
+            ? $res['body']['virtual_account']
+            : $res['body'];
         if (empty($va['account_number'])) {
             log_message('error', 'fundsvera: create-virtual-account returned no account number');
             return $this->fail('PROVIDER_ERROR', 'The bank account service returned an unexpected response.');
