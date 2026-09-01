@@ -60,10 +60,53 @@ exactly the screenshot). One missing shape broke **both** routes at once.
 - `reconciliation_check.mjs` 10/10 (with any gateway configured, as intended);
 - full PHP suite **1670 tests / 0 failures**.
 
-> Note: Fundsvera's public API documents only the secured checkout (card +
-> transfer on the hosted page) and webhooks — there is no separate "card"
-> endpoint to call. Card payment is delivered through the `checkout_url`,
-> which is now extracted reliably and surfaced as the primary action.
+> Note: Fundsvera's public API documents only the secured checkout and
+> webhooks — there is no separate "card" endpoint to call. The
+> `checkout_url` is a bank-transfer instructions page, not a card form.
+
+---
+
+## Second pass — this branch
+
+The first pass extracted the checkout URL reliably, but the live Fundsvera
+checkout page the customer was redirected to is a **bank-transfer** page; it
+does not process cards. This branch delivers real card payment and makes the
+bank-transfer details more robust.
+
+### #1 — Fundsvera now has a real "Pay by card" route
+
+- A Fundsvera deposit no longer jumps straight to the Fundsvera transfer page.
+  It lands on our deposit page, which offers **both**:
+  - **Pay by card** — routes the same deposit through a configured hosted card
+    gateway (Paystack, Flutterwave, Razorpay or Stripe); and
+  - **Prefer bank transfer?** — the Fundsvera checkout link and the parsed
+    Bank / Account number / Account name details.
+- The card checkout re-uses the existing transaction (`internal_reference`),
+  so a successful card webhook credits that deposit **once** and never creates
+  a second deposit.
+- Card checkout URLs are stored on the transaction metadata and can be resumed
+  from the deposit page (idempotent card start — no duplicate card orders).
+- `payment_reconciliation` now asks the **card** gateway (not Fundsvera) when
+  a deposit has a card checkout, so a missed card webhook is still recovered.
+- `FundsveraGateway::checkout_fields()` now normalises nested `data` /
+  `virtual_account` / `customer` wrappers **and** camelCase aliases
+  (`accountNumber`, `bankName`, `checkoutUrl`, `trxRef`, …), so the bank
+  details survive the response shapes the live provider has been observed
+  answering with.
+- The e2e fake gained a `nested-camel` provider shape; `fundsvera_check.mjs`
+  asserts it still renders the account details + checkout link.
+
+### #2 — 5sim key-entry flow
+
+- Admin provider links/redirects now use the canonical
+  `/admin/providers/{public_id}` URL (the list "Manage", create, test, sync,
+  credentials, delete); a legacy `/admin/providers/detail/{id}` alias remains
+  so old bookmarks do not 404 after an upgrade.
+- A 5sim 401/403 now names the exact fix: use the dashboard key labelled
+  **"API key for 5sim protocol"** (NOT the old "Deprecated API" key) with base
+  **`https://5sim.net/v1`**.
+- The rebuilt `application-deployment.zip` in this branch carries all of the
+  above — the stale package is no longer the deployment to use.
 
 ---
 

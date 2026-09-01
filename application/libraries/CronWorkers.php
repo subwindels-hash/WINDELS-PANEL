@@ -907,6 +907,27 @@ class CronWorkers {
         if ($code === '' || $code === 'manual') return $none;
 
         $gateway = $this->ci->paymentservice->adapter_for($method ?: (object)array('code' => $code));
+
+        // A Fundsvera deposit can also be paid by card through a hosted card
+        // gateway (see PaymentService::card_checkout). If a card checkout was
+        // opened on this transaction, reconciliation must ask THAT gateway
+        // rather than Fundsvera — Fundsvera never saw the card payment.
+        $meta = json_decode((string)$tx->metadata, true);
+        $card_ref = null;
+        if (is_array($meta) && !empty($meta['card_checkout']['provider'])) {
+            $card_code = strtolower((string)$meta['card_checkout']['provider']);
+            if (in_array($card_code, PaymentService::CARD_GATEWAY_CODES, true)) {
+                $card_method = $this->ci->db->where('code', $card_code)->get('payment_methods')->row();
+                if ($card_method) $gateway = $this->ci->paymentservice->adapter_for($card_method);
+                // Paystack/Flutterwave verify by our own reference; Stripe and
+                // Razorpay verify by the session/link the provider returned.
+                $card_checkout = is_array($meta['card_checkout'] ?? null) ? $meta['card_checkout'] : array();
+                $provider_key = $card_checkout['session_id'] ?? $card_checkout['link_id'] ?? null;
+                $card_ref = $provider_key !== null && $provider_key !== ''
+                    ? (string)$provider_key : $tx->internal_reference;
+            }
+        }
+
         // Only adapters that can ask the provider a question take part; the
         // rest fall through to the age-out rule below.
         if (!method_exists($gateway, 'verify')) return $none;
@@ -914,7 +935,7 @@ class CronWorkers {
 
         // The reference we gave the provider at initiation. Without one there
         // is nothing to look up.
-        $reference = $tx->provider_tx_id ?: $tx->internal_reference;
+        $reference = $card_ref ?: ($tx->provider_tx_id ?: $tx->internal_reference);
         if (!$reference) return $none;
 
         $res = $gateway->verify($reference);

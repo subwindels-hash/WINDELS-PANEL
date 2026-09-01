@@ -9,6 +9,12 @@ exact 503 failure all reproduce and behave as designed.
 
 ---
 
+> **Superseded note (2026-09-01):** Fundsvera's secured-checkout page is a
+> bank-transfer instructions page, not a card form. Card payment is now
+> delivered through the hosted card fallback described in
+> `WINDELS_FIXES_REPORT.md`; the deposit page offers "Pay by card" and
+> "Prefer bank transfer?" on the same deposit.
+
 ## 1. Fundsvera: "Processing…" that never reaches the card page
 
 **What was wrong.** Two independent ways to get stranded on the form with the

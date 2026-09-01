@@ -347,6 +347,7 @@ check('no earning is created merely by signing up', after === before,
 const FAKE_FV = process.env.FAKE_FV_URL || 'http://127.0.0.1:9410';
 const FV_SECRET = process.env.FAKE_FV_SECRET || 'fv-secret-for-dev-only';
 const FV_PUBLIC = process.env.FAKE_FV_PUBLIC || 'pk_dev_fake';
+const CARD_SECRET = 'card-secret-' + crypto.randomBytes(6).toString('hex');
 
 async function fvBehavior(behavior) {
   await fetch(`${FAKE_FV}/__control/behavior`, {
@@ -399,16 +400,33 @@ async function attemptDeposit({ token = formToken, method = 'fundsvera', amount 
 }
 
 const first = await attemptDeposit();
-check('deposit POST answers with a redirect to the provider checkout page',
-  first.res.status >= 300 && first.res.status < 400 && /secured-checkout\?ref=/.test(first.location),
+// The panel now lands on its own deposit page (where card + transfer are both
+// offered) rather than jumping straight to Fundsvera's transfer page. The
+// Fundsvera checkout_url is still stored on the checkout row so the customer
+// can follow it for the bank-transfer route.
+check('deposit POST answers with a redirect to the deposit page',
+  first.res.status >= 300 && first.res.status < 400 && /dashboard\/wallet\/deposits\//.test(first.location),
   `status=${first.res.status} location=${first.location}`);
-check('the fake card page renders for the customer',
-  first.location.includes(FAKE_FV) || /secure checkout/i.test(first.landed?.text || ''), 'card page not reached');
+const fvRow = db.prepare(
+  'SELECT checkout_url, account_number, bank_name, account_name FROM fundsvera_checkouts ORDER BY id DESC LIMIT 1').get();
+check('the checkout row keeps the provider checkout link and account details',
+  !!fvRow?.checkout_url && !!fvRow?.account_number && !!fvRow?.bank_name,
+  `checkout_url=${fvRow?.checkout_url || '(none)'} account=${fvRow?.account_number || '(none)'}`);
+if (fvRow?.checkout_url) {
+  try {
+    const fake = await fetch(fvRow.checkout_url);
+    const text = await fake.text();
+    check('the Fundsvera hosted checkout page renders for the customer',
+      /secure checkout/i.test(text), 'card/checkout page not reached');
+  } catch (e) {
+    check('the Fundsvera hosted checkout page renders for the customer', false, String(e));
+  }
+}
 check('a checkout row was opened with the provider account details',
   chkCount() === chkBefore + 1
     && !!db.prepare('SELECT account_number FROM fundsvera_checkouts ORDER BY id DESC LIMIT 1').get()?.account_number,
   `checkouts ${chkBefore} -> ${chkCount()}`);
-const newTx = db.prepare('SELECT public_id, status FROM payment_transactions ORDER BY id DESC LIMIT 1').get();
+const newTx = db.prepare('SELECT id, public_id, status FROM payment_transactions ORDER BY id DESC LIMIT 1').get();
 check('the deposit transaction is PENDING (awaiting the webhook)', newTx?.status === 'PENDING', `status=${newTx?.status}`);
 
 // Same form token again: must resolve to the SAME deposit — no second checkout.
@@ -419,11 +437,95 @@ check('a duplicate submit resolves to the existing deposit, not a new checkout',
   `location=${dup.location} checkouts=${chkCount()}`);
 
 // The deposits page must let the customer resume: account details + link.
-// The link is the "Pay now — open secure checkout" CTA (the hosted page is
-// where card payment happens), labelled case-insensitively on purpose.
+// The link is the "Pay now — open secure checkout" CTA (the bank-transfer
+// route), labelled case-insensitively on purpose.
 r = await customer.get(`/dashboard/wallet/deposits/${newTx.public_id}`);
 check('the deposit page shows the account number and a resume link',
   /81\d{8}/.test(r.text) && /open secure checkout/i.test(r.text), 'deposit page lacks details or resume');
+
+// ---------------------------------------------------------------------------
+// Card fallback: Fundsvera's own page is transfer only, so a configured hosted
+// card gateway must surface a real "Pay by card" route on the SAME deposit and
+// a successful card webhook must credit it exactly once.
+// ---------------------------------------------------------------------------
+const txMeta = () => JSON.parse(db.prepare('SELECT metadata FROM payment_transactions WHERE id = ?').get(newTx.id)?.metadata || '{}');
+check('no card checkout exists before the customer clicks the card button',
+  !(txMeta().card_checkout?.provider), 'card checkout already stored');
+
+setSetting('paystack_enabled', true);
+setSetting('paystack_base_url', FAKE_FV);
+setSetting('paystack_public_key', FV_PUBLIC);
+setSetting('paystack_secret_key', CARD_SECRET);
+
+const cardPage = await customer.get(`/dashboard/wallet/deposits/${newTx.public_id}`);
+check('a configured card gateway adds "Pay by card" on the Fundsvera deposit page',
+  /Pay by card/.test(cardPage.text) && /Paystack/.test(cardPage.text),
+  'deposit page lacks the card CTA');
+const cardRes = await customer.postForm(`/dashboard/wallet/deposits/${newTx.public_id}/card`, {},
+  { fromHtml: cardPage.text, follow: false });
+const cardLocation = cardRes.headers.get('location') || '';
+check('the card checkout re-uses the deposit and redirects to the hosted card page',
+  cardRes.status >= 300 && cardRes.status < 400 && /fake-card-checkout/.test(cardLocation),
+  `status=${cardRes.status} location=${cardLocation}`);
+const cardMeta = txMeta();
+check('the card checkout URL is stored for resume',
+  !!cardMeta.card_checkout?.redirect_url && cardMeta.card_checkout?.provider === 'paystack',
+  JSON.stringify(cardMeta.card_checkout || {}));
+
+// A Paystack charge.success webhook for the same internal reference: the same
+// deposit must go SUCCESS and the wallet must be credited once (never twice).
+async function cardWebhook(body) {
+  const payload = JSON.stringify(body);
+  const sig = crypto.createHmac('sha512', CARD_SECRET).update(payload).digest('hex');
+  const res = await fetch(`${BASE}/webhook/paystack`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-paystack-signature': sig },
+    body: payload,
+  });
+  return { status: res.status, body: await res.text() };
+}
+const cardUserId = db.prepare('SELECT user_id FROM payment_transactions WHERE id = ?').get(newTx.id).user_id;
+const walletBefore = db.prepare('SELECT balance FROM wallets WHERE user_id = ?').get(cardUserId)?.balance;
+const cardRef = db.prepare('SELECT internal_reference FROM payment_transactions WHERE id = ?').get(newTx.id).internal_reference;
+const cardEvent = {
+  event: 'charge.success',
+  data: {
+    id: 'pay-' + crypto.randomBytes(8).toString('hex'),
+    reference: cardRef,
+    status: 'success',
+    amount: 500000,
+    currency: 'NGN',
+    metadata: {
+      payment_transaction_id: String(newTx.id),
+      internal_reference: cardRef,
+    },
+  },
+};
+const cardWh = await cardWebhook(cardEvent);
+check('a signed Paystack card webhook is accepted', cardWh.status === 200, `status=${cardWh.status} ${cardWh.body}`);
+const walletAfter = () => db.prepare('SELECT balance FROM wallets WHERE user_id = ?').get(cardUserId)?.balance;
+check('the card payment credits the Fundsvera deposit exactly once',
+  db.prepare('SELECT status FROM payment_transactions WHERE id = ?').get(newTx.id)?.status === 'SUCCESS'
+    && parseFloat(walletAfter() || '0') > parseFloat(walletBefore || '0'),
+  `status=${db.prepare('SELECT status FROM payment_transactions WHERE id = ?').get(newTx.id)?.status} wallet ${walletBefore} -> ${walletAfter()}`);
+const walletAfterFirst = walletAfter();
+const cardWh2 = await cardWebhook(cardEvent);
+check('a replayed card webhook does not credit twice', cardWh2.status === 200, `status=${cardWh2.status}`);
+check('the card webhook replay leaves the balance unchanged',
+  parseFloat(walletAfter() || '0') === parseFloat(walletAfterFirst || '0'));
+
+// The real provider has been seen answering with camelCase keys inside a
+// `data` wrapper. The account details and checkout link must survive that
+// shape too — blank Bank / Account number / Account name fields are the exact
+// production complaint this suite exists to stop.
+await fvBehavior('nested-camel');
+r = await customer.get('/dashboard/add-funds');
+const camelToken = (r.text.match(/name="form_token" value="([^"]+)"/) || [])[1] || null;
+const camel = await attemptDeposit({ token: camelToken });
+check('camelCase nested response still renders bank details and a resume link',
+  /81\d{8}/.test(camel.landed?.text || '') && /open secure checkout/i.test(camel.landed?.text || ''),
+  'camelCase response left the deposit page without details or a link');
+await fvBehavior('ok');
 
 // ---- failure matrix: the panel must answer, never hang ---------------------
 async function expectInitFailure(behavior, expectText, label) {
@@ -453,7 +555,7 @@ const token2 = (r.text.match(/name="form_token" value="([^"]+)"/) || [])[1];
 const noUrl = await attemptDeposit({ token: token2 });
 check('success without checkout_url lands on the deposit page, not a dead end',
   noUrl.location.includes('/dashboard/wallet/deposits/')
-    && /bank transfer details are ready/i.test(noUrl.flash || ''),
+    && /deposit is ready/i.test(noUrl.flash || ''),
   `location=${noUrl.location} flash=${noUrl.flash.slice(0, 120)}`);
 await fvBehavior('ok');
 

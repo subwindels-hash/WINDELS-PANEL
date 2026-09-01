@@ -169,6 +169,9 @@ $route['dashboard/favorites/remove/(:any)'] = 'dashboard/favorites/remove/$1';
 $route['dashboard/add-funds'] = 'dashboard/wallet/add_funds';
 $route['dashboard/wallet/deposit'] = 'dashboard/wallet/deposit';
 $route['dashboard/wallet/deposits'] = 'dashboard/wallet/deposits';
+// A Fundsvera deposit can be paid by card via a hosted card gateway. Must come
+// before the generic :any route or "card" would be treated as a deposit id.
+$route['dashboard/wallet/deposits/(:any)/card'] = 'dashboard/wallet/card/$1';
 $route['dashboard/wallet/deposits/(:any)'] = 'dashboard/wallet/deposits/$1';
 $route['dashboard/transactions'] = 'dashboard/wallet/transactions';
 
@@ -321,6 +324,10 @@ $route['admin/providers/(:any)/import'] = 'admin/providers/import/$1';
 // Delete a provider and its synced catalogue (providers.manage, POST-only).
 // Must stay above the public-id catch-all on the next lines.
 $route['admin/providers/(:any)/delete'] = 'admin/providers/delete/$1';
+// Compatibility alias: older bookmarks/links used /detail/{id}. The canonical
+// route below is /admin/providers/{id}; this keeps old deep links alive rather
+// than turning a provider bookmark into a "page not found" after an upgrade.
+$route['admin/providers/detail/(:any)'] = 'admin/providers/detail/$1';
 $route['admin/providers/(:any)'] = 'admin/providers/detail/$1';
 $route['admin/customers'] = 'admin/users/customers';
 $route['admin/wallets'] = 'admin/users/wallets';

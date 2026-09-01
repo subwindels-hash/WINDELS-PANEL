@@ -219,10 +219,11 @@ class FundsveraGateway implements GatewayInterface {
             'redirect_url' => $body['checkout_url'],
             'checkout'     => array(
                 'provider'       => 'fundsvera',
-                // The hosted checkout page is where card payment happens; the
-                // account details below it (or on the deposit page) are the
-                // transfer route. One checkout, both routes.
-                'method'         => $body['checkout_url'] !== null ? 'card_or_transfer' : 'bank_transfer',
+                // Fundsvera's secured checkout is the bank-transfer route. The
+                // deposit page layers a hosted card gateway on top when one is
+                // configured, so a customer who wants to pay by card gets a
+                // real card checkout instead of this transfer page.
+                'method'         => 'bank_transfer',
                 'account_number' => $body['account_number'],
                 'account_name'   => $body['account_name'],
                 'bank_name'      => $body['bank_name'],
@@ -231,9 +232,10 @@ class FundsveraGateway implements GatewayInterface {
                 'reference'      => $request_id,
                 'checkout_url'   => $body['checkout_url'],
                 'validity'       => self::CHECKOUT_TTL_MINUTES.' minutes',
-                'instructions'   => 'Pay by card on the secure checkout page, or transfer exactly '
+                'instructions'   => 'Transfer exactly '
                                     .marvy_money($transaction->amount, $currency)
-                                    .' to the account shown. Details are valid for '
+                                    .' to the account shown, or use the deposit page to pay by card. '
+                                    .'Details are valid for '
                                     .self::CHECKOUT_TTL_MINUTES.' minutes and your wallet is credited '
                                     .'automatically once the payment is confirmed.',
             ),
@@ -807,9 +809,31 @@ class FundsveraGateway implements GatewayInterface {
      *               trx_ref:string|null, validity:string|null}
      */
     private function checkout_fields(array $body) {
+        // Documented success bodies put the details at the top level
+        // (secured-checkout) or under `virtual_account` (create-virtual-account).
+        // Production traffic has also been seen wrapped in `data`/`result`/
+        // `payload`, sometimes with the account block nested a level deeper,
+        // and occasionally with camelCase spelling. Scan every plausible
+        // container in documented-priority order so whichever shape the
+        // provider answers with, the account details and checkout link survive
+        // — a deposit rendered with blank Bank / Account number / Account name
+        // is a customer who cannot pay at all.
         $containers = array($body);
-        foreach (array('data', 'result', 'payload', 'virtual_account', 'checkout', 'account') as $key) {
+        $wrapper_keys = array('data', 'result', 'payload', 'details');
+        $account_keys = array('virtual_account', 'virtualaccount', 'checkout', 'account', 'customer', 'business');
+        foreach (array_merge($wrapper_keys, $account_keys) as $key) {
             if (isset($body[$key]) && is_array($body[$key])) $containers[] = $body[$key];
+        }
+        // A wrapper container can itself nest the account block (for example
+        // `data` -> `virtual_account`). Add those next so they are not missed
+        // when the top-level body carries only the wrapper.
+        foreach ($wrapper_keys as $wrapper) {
+            if (!isset($body[$wrapper]) || !is_array($body[$wrapper])) continue;
+            foreach ($account_keys as $nested) {
+                if (isset($body[$wrapper][$nested]) && is_array($body[$wrapper][$nested])) {
+                    $containers[] = $body[$wrapper][$nested];
+                }
+            }
         }
 
         $pick = function (array $names) use ($containers) {
@@ -824,13 +848,15 @@ class FundsveraGateway implements GatewayInterface {
         };
 
         return array(
-            'account_number' => $pick(array('account_number', 'account_no', 'va_number',
-                                            'virtual_account_no', 'account')),
-            'account_name'   => $pick(array('account_name', 'account_holder', 'account_title')),
-            'bank_name'      => $pick(array('bank_name', 'bank')),
-            'checkout_url'   => $pick(array('checkout_url', 'secured_checkout_url', 'payment_url')),
-            'trx_ref'        => $pick(array('trx_ref', 'transaction_ref', 'reference')),
-            'validity'       => $pick(array('validity')),
+            'account_number' => $pick(array('account_number', 'accountNumber', 'account_no', 'accountNo',
+                                            'va_number', 'vaNumber', 'virtual_account_no', 'virtualAccountNo', 'account')),
+            'account_name'   => $pick(array('account_name', 'accountName', 'account_holder', 'accountHolder',
+                                            'account_title', 'accountTitle')),
+            'bank_name'      => $pick(array('bank_name', 'bankName', 'bank')),
+            'checkout_url'   => $pick(array('checkout_url', 'checkoutUrl', 'secured_checkout_url', 'securedCheckoutUrl',
+                                            'payment_url', 'paymentUrl', 'payment_link', 'paymentLink')),
+            'trx_ref'        => $pick(array('trx_ref', 'trxRef', 'transaction_ref', 'transactionRef', 'reference')),
+            'validity'       => $pick(array('validity', 'validity_period', 'valid_for')),
         );
     }
 

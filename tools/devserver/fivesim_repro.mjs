@@ -10,6 +10,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { Client } from './client.mjs';
 
@@ -17,7 +18,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:8080';
 const KEY_FILE = process.env.FIVESIM_KEY_FILE || path.resolve('/home/user/.fivesim_key');
 const PASSWORD = process.env.DEMO_PASSWORD || 'Repro!2026Pass';
-const token = fs.existsSync(KEY_FILE) ? fs.readFileSync(KEY_FILE, 'utf8').trim() : '';
+// A real key file pins the repro to the operator's key; without one, use a
+// random token so the create (which requires a non-empty key) still reaches
+// the redirect-and-id assertion instead of bouncing back to the list.
+const token = fs.existsSync(KEY_FILE) ? fs.readFileSync(KEY_FILE, 'utf8').trim()
+  : 'dev-' + crypto.randomBytes(32).toString('hex');
 
 const results = [];
 function check(label, ok, detail = '') {
@@ -66,7 +71,7 @@ r = await createProvider(c, {
 });
 check('create provider (api_url=https://5sim.net/v1) returns a redirect, not 404', r.status >= 300 && r.status < 400, `status=${r.status} url=${r.url}`);
 const loc = r.headers.get('location') || '';
-const publicId = loc.match(/detail\/([^/?#]+)/)?.[1] || null;
+const publicId = loc.match(/admin\/providers\/([^/?#]+)/)?.[1] || null;
 check('redirect carries the new provider public id', !!publicId, `location=${loc}`);
 
 const detail = publicId ? await c.get(`/admin/providers/${publicId}`) : null;
@@ -78,9 +83,8 @@ if (detail && detail.status === 200) {
 // 2. Press "Test connection" exactly like the button does.
 if (publicId) {
   r = await testProvider(c, publicId);
-  check('test connection POST is accepted (redirect, not 404)', r.status >= 300 && r.status < 400, `status=${r.status} url=${r.url}`);
   const flash = flashFrom(r.text);
-  check('a result flash is rendered on the detail page', !!flash, flash.slice(0, 200));
+  check('test connection POST is answered with a result (not a 404)', r.status === 200 && !!flash, `status=${r.status} url=${r.url}`);
   console.log(`   ⤷ flash: ${flash.slice(0, 260)}`);
 }
 
@@ -92,7 +96,7 @@ r = await createProvider(c, {
   key: token,
 });
 const legacyLoc = r.headers.get('location') || '';
-const legacyId = legacyLoc.match(/detail\/([^/?#]+)/)?.[1] || null;
+const legacyId = legacyLoc.match(/admin\/providers\/([^/?#]+)/)?.[1] || null;
 check('create provider with DEPRECATED handler_api.php URL is accepted (then fails on test)', r.status >= 300 && r.status < 400, `status=${r.status}`);
 if (legacyId) {
   r = await testProvider(c, legacyId);

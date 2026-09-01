@@ -158,7 +158,7 @@ r = await admin.postForm('/admin/providers/create', {
   markup_percent: '0',
 }, { fromHtml: r.text, follow: false });
 check('create with the correct v1 URL redirects (no 404)', r.status >= 300 && r.status < 400, `status=${r.status}`);
-const publicId = (r.headers.get('location') || '').match(/detail\/([^/?#]+)/)?.[1] || null;
+const publicId = (r.headers.get('location') || '').match(/admin\/providers\/([^/?#]+)/)?.[1] || null;
 check('redirect names the new provider', !!publicId, `location=${r.headers.get('location')}`);
 
 const detailPage = await admin.get(`/admin/providers/${publicId}`);
