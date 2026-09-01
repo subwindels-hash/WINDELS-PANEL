@@ -327,6 +327,32 @@ class AdminStaffTest extends TestCase
     }
 
     /**
+     * Every admin controller that renders the unread badge uses the shared
+     * DashboardStats library — so any controller that reaches for
+     * `$this->dashboardstats` must load it first. Admin/Inbox did not: its
+     * render() called `unread_count()` on a never-loaded library, which is a
+     * fatal (\"Call to a member function unread_count() on null\") and a 500 on
+     * /admin/inbox in production.
+     */
+    public function testEveryAdminControllerThatUsesDashboardStatsLoadsIt()
+    {
+        $admin = self::$root.'/application/controllers/admin';
+        $broken = array();
+        foreach (glob($admin.'/*.php') as $file) {
+            $src = file_get_contents($file);
+            if ($src === false) continue;
+            // The render() shape that reads the shared unread count.
+            if (strpos($src, 'dashboardstats') === false) continue;
+            // The library must be loaded in the same controller (constructor).
+            if (preg_match("/load->library\([^)]*'DashboardStats'[^)]*\)/", $src)) continue;
+            $broken[] = basename($file);
+        }
+        $this->assertSame(array(), $broken,
+            'controllers using $this->dashboardstats without loading DashboardStats: '
+            .implode(', ', $broken));
+    }
+
+    /**
      * The check that found the sixteen missing modules: a permission granted
      * by the seeded role matrix but enforced by no code is a promise the panel
      * does not keep, and — as with `admin/customers` — usually means a whole

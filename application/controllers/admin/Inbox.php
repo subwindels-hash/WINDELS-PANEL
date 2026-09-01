@@ -30,7 +30,7 @@ class Inbox extends Admin_Controller {
         // the mail configuration permission: whoever runs the mail queue
         // reads the inbox.
         $this->require_perm('settings.manage');
-        $this->load->library(array('InboxService', 'MailService'));
+        $this->load->library(array('InboxService', 'MailService', 'DashboardStats'));
         $this->load->model('Audit_log_model');
     }
 

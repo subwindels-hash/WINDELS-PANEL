@@ -102,6 +102,14 @@ class MailService {
         try {
             $this->ci->load->library('email');
             $this->ci->email->clear(true);
+            // Greet the server with the panel's real domain, never the stock
+            // 'localhost.localdomain' a cron request has for SERVER_NAME:
+            // cPanel Exim setups with strict HELO checks reject or mislog a
+            // junk greeting name, and that is the class of failure the
+            // "503 HELO or EHLO required" queue errors came from.
+            if (property_exists($this->ci->email, 'helo_host')) {
+                $this->ci->email->helo_host = $this->helo_host();
+            }
             // DB settings win (admin-editable); .env supplies the initial
             // defaults (VP_MAIL_FROM_ADDRESS / VP_MAIL_FROM_NAME).
             $from_email = class_exists('Env') ? (string) Env::get('MAIL_FROM_ADDRESS', '') : '';
@@ -162,7 +170,14 @@ class MailService {
         foreach ((array) $lines as $line) {
             $line = trim($line);
             if ($line === '' || $this->is_smtp_exchange($line)) continue;
-            $reason = $line; // keep the last meaningful line
+            // The server's own reply is the truth: "from: 503 HELO or EHLO
+            // required" explains more than CI3's generic lang keys do, so
+            // prefer the first server reply carrying a failure code.
+            if (preg_match('/^[a-z_]*:?\s*[45]\d{2}[\s-]/i', $line)) {
+                $reason = $line;
+                break;
+            }
+            $reason = $line; // fallback: keep the last meaningful line
         }
         if ($reason === '') {
             $reason = 'The SMTP server rejected the message without a usable explanation.';
@@ -181,6 +196,14 @@ class MailService {
             || strpos($lower, 'smtp_auth_un') !== false) {
             $hint = 'The server rejected the AUTH LOGIN handshake. Try VP_MAIL_CRYPTO=ssl with VP_MAIL_PORT=465 '
                 .'(or tls with 587) in .env — some cPanel hosts only accept one of the two.';
+        } elseif (strpos($lower, 'helo or ehlo required') !== false
+            || strpos($lower, 'bad sequence') !== false
+            || (preg_match('/\b503\b/', $reason) && strpos($lower, 'helo') !== false)) {
+            $hint = 'The mail server processed MAIL FROM without accepting the greeting. The panel now greets '
+                .'with the panel\'s own domain (VP_MAIL_HELO, or the site URL host) and falls back to a plain HELO '
+                .'when EHLO is refused. If this error still appears, the configured host:port is not a mail-submission '
+                .'endpoint for this account — or switch mail_transport to "mail" (cPanel\'s sendmail), which needs no '
+                .'SMTP host, port or credentials at all.';
         } elseif (strpos($lower, 'starttls') !== false
             || strpos($lower, 'unable to connect') !== false
             || strpos($lower, 'error: #(') !== false
@@ -233,6 +256,30 @@ class MailService {
 
         $configured = strtolower((string)$this->ci->Setting_model->get('mail_transport', $default));
         return in_array($configured, array('log', 'smtp', 'mail'), true) ? $configured : $default;
+    }
+
+    /**
+     * The name the SMTP client greets the server with (EHLO/HELO argument).
+     *
+     * Resolved from VP_MAIL_HELO (or the admin setting `mail_helo`), then the
+     * panel's own host from the base URL. Under cron there is no
+     * $_SERVER['SERVER_NAME'], and stock CI3 would greet with
+     * "localhost.localdomain" — a name strict cPanel Exim configurations
+     * reject or mis-log, which is the class of failure behind the production
+     * "503 HELO or EHLO required" queue errors. Empty string = let the client
+     * decide.
+     */
+    private function helo_host() {
+        require_once APPPATH.'core/Env.php';
+        $env = strtolower(trim((string)Env::get('MAIL_HELO', '')));
+        if ($env !== '') return $env;
+
+        $setting = strtolower(trim((string)$this->ci->Setting_model->get('mail_helo', '')));
+        if ($setting !== '') return $setting;
+
+        $host = parse_url(rtrim((string)site_url(''), '/'), PHP_URL_HOST);
+        if (is_string($host) && $host !== '') return strtolower($host);
+        return '';
     }
 
     /**

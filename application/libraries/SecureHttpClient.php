@@ -86,13 +86,25 @@ class SecureHttpClient {
                 log_message('debug', 'SecureHttpClient '.$method.' '.$url.' -> '.$http_code.' rid='.$request_id);
                 return array('http_code'=>$http_code,'body'=>$body,'request_id'=>$request_id);
             }
+            // The server answered with a 5xx (or transport failed). Keep the
+            // last outcome so the caller can tell "provider answered 500"
+            // apart from "provider unreachable" — collapsing both into
+            // http_code 0 made every 500 read as a connection failure.
+            $last_body    = $errno === 0 ? $body : null;
+            $last_code    = $errno === 0 ? (int)$http_code : 0;
             $last_error = $error ?: ('HTTP '.$http_code);
             log_message('error', 'SecureHttpClient retry '.$attempt.' '.$method.' '.$url.' error='.$last_error.' rid='.$request_id);
             if ($attempt < $max) usleep(($backoffs[$attempt] ?? 4000)*1000);
         } while (++$attempt <= $max);
 
-        // Circuit-breaker hook (future: mark provider degraded)
-        return array('http_code'=>0,'body'=>null,'error'=>$last_error,'request_id'=>$request_id);
+        // Circuit-breaker hook (future: mark provider degraded). A received
+        // 5xx is reported as itself; only a transport-level failure is 0.
+        return array(
+            'http_code' => $last_code,
+            'body'      => $last_body,
+            'error'     => $last_code === 0 ? $last_error : null,
+            'request_id'=> $request_id,
+        );
     }
 
     /**

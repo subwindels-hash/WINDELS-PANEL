@@ -334,6 +334,127 @@ const after = db.prepare('SELECT COUNT(*) c FROM earnings WHERE user_id = ?').ge
 check('no earning is created merely by signing up', after === before,
   `earnings went ${before} -> ${after} without a qualifying event`);
 
+// ---------------------------------------------------------------------------
+// Initiation flow over real HTTP against the fake provider.
+//
+// The production complaint this section pins: "Fundsvera keeps showing
+// Processing… it never processes to the card page." The customer's deposit
+// POST must answer quickly with a redirect to the provider's checkout_url —
+// never hang, never die, never land the customer somewhere unexplained.
+//
+// Requires: node tools/devserver/fake_fundsvera.mjs --port 9410
+// ---------------------------------------------------------------------------
+const FAKE_FV = process.env.FAKE_FV_URL || 'http://127.0.0.1:9410';
+const FV_SECRET = process.env.FAKE_FV_SECRET || 'fv-secret-for-dev-only';
+const FV_PUBLIC = process.env.FAKE_FV_PUBLIC || 'pk_dev_fake';
+
+async function fvBehavior(behavior) {
+  await fetch(`${FAKE_FV}/__control/behavior`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ behavior }),
+  });
+}
+
+console.log('\n── Fundsvera · initiation flow (deposit POST → card page)');
+await fvBehavior('ok');
+setSetting('fundsvera_base_url', `${FAKE_FV}/api/v1`);
+setSetting('fundsvera_public_key', FV_PUBLIC);
+setSetting('fundsvera_secret_key', FV_SECRET);
+db.prepare("UPDATE payment_methods SET is_active = 1 WHERE code = 'fundsvera'").run();
+
+const customer = new Client(BASE);
+r = await customer.get('/login');
+r = await customer.postForm('/login', { identifier: 'demo', password: process.env.DEMO_PASSWORD || 'Repro!2026Pass' });
+check('demo customer signs in for the deposit flow', !/login/.test(r.url || ''), `at ${r.url}`);
+
+r = await customer.get('/dashboard/add-funds');
+const formToken = (r.text.match(/name="form_token" value="([^"]+)"/) || [])[1] || null;
+check('the add-funds form carries a one-shot form token', !!formToken);
+
+const chkCount = () => db.prepare('SELECT COUNT(*) c FROM fundsvera_checkouts').get().c;
+const chkBefore = chkCount();
+
+async function attemptDeposit({ token = formToken, method = 'fundsvera', amount = '5000' } = {}) {
+  const body = new URLSearchParams({ payment_method: method, amount, form_token: token });
+  const csrf = customer.csrfFrom(r.text);
+  if (csrf) body.append(csrf.name, csrf.value);
+  const res = await customer.raw('/dashboard/wallet/deposit', {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+  const location = res.headers.get('location') || '';
+  let landed = res;
+  if (res.status >= 300 && res.status < 400) {
+    // Follow redirects that stay inside the panel; fetch the provider's
+    // checkout_url directly so the caller can assert on the card page.
+    if (/^https?:\/\//i.test(location) && !location.startsWith(BASE)) {
+      const ext = await fetch(location);
+      landed = { status: ext.status, text: await ext.text() };
+    } else {
+      landed = await customer.get(location);
+    }
+  }
+  const flash = (landed.text || '').match(/alert (?:alert-)?(?:success|error|danger|warning)[^>]*>([\s\S]{0,500}?)<\//);
+  return { res, landed, location, flash: flash ? flash[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '' };
+}
+
+const first = await attemptDeposit();
+check('deposit POST answers with a redirect to the provider checkout page',
+  first.res.status >= 300 && first.res.status < 400 && /secured-checkout\?ref=/.test(first.location),
+  `status=${first.res.status} location=${first.location}`);
+check('the fake card page renders for the customer',
+  first.location.includes(FAKE_FV) || /secure checkout/i.test(first.landed?.text || ''), 'card page not reached');
+check('a checkout row was opened with the provider account details',
+  chkCount() === chkBefore + 1
+    && !!db.prepare('SELECT account_number FROM fundsvera_checkouts ORDER BY id DESC LIMIT 1').get()?.account_number,
+  `checkouts ${chkBefore} -> ${chkCount()}`);
+const newTx = db.prepare('SELECT public_id, status FROM payment_transactions ORDER BY id DESC LIMIT 1').get();
+check('the deposit transaction is PENDING (awaiting the webhook)', newTx?.status === 'PENDING', `status=${newTx?.status}`);
+
+// Same form token again: must resolve to the SAME deposit — no second checkout.
+const dup = await attemptDeposit();
+check('a duplicate submit resolves to the existing deposit, not a new checkout',
+  dup.location.includes(`/dashboard/wallet/deposits/${newTx.public_id}`)
+    && chkCount() === chkBefore + 1,
+  `location=${dup.location} checkouts=${chkCount()}`);
+
+// The deposits page must let the customer resume: account details + link.
+r = await customer.get(`/dashboard/wallet/deposits/${newTx.public_id}`);
+check('the deposit page shows the account number and a resume link',
+  /81\d{8}/.test(r.text) && /Open secure checkout page/.test(r.text), 'deposit page lacks details or resume');
+
+// ---- failure matrix: the panel must answer, never hang ---------------------
+async function expectInitFailure(behavior, expectText, label) {
+  await fvBehavior(behavior);
+  const before = chkCount();
+  r = await customer.get('/dashboard/add-funds');
+  const token = (r.text.match(/name="form_token" value="([^"]+)"/) || [])[1];
+  const out = await attemptDeposit({ token });
+  check(label, expectText.test(out.flash || ''), `flash: ${(out.flash || '').slice(0, 160)}`);
+  check(`${label} — no checkout row was opened`, chkCount() === before, `checkouts ${before} -> ${chkCount()}`);
+}
+
+await expectInitFailure('unauthorized', /valid keys/i,
+  'provider 401 → the provider\'s message reaches the customer');
+await expectInitFailure('busy', /System busy/i,
+  'provider 500 → friendly retry message, no hang');
+await expectInitFailure('bad-request', /valid amount/i,
+  'provider 400 → the validation message reaches the customer');
+await expectInitFailure('hang', /took too long/i,
+  'provider hang → timeout message instead of an endless Processing button');
+
+// Success without a checkout_url: the provider returned the account details
+// but no link — the customer lands on the deposit page with the details.
+await fvBehavior('no-checkout-url');
+r = await customer.get('/dashboard/add-funds');
+const token2 = (r.text.match(/name="form_token" value="([^"]+)"/) || [])[1];
+const noUrl = await attemptDeposit({ token: token2 });
+check('success without checkout_url lands on the deposit page, not a dead end',
+  noUrl.location.includes('/dashboard/wallet/deposits/')
+    && /bank transfer details are ready/i.test(noUrl.flash || ''),
+  `location=${noUrl.location} flash=${noUrl.flash.slice(0, 120)}`);
+await fvBehavior('ok');
+
 const failed = results.filter((x) => !x.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) {
