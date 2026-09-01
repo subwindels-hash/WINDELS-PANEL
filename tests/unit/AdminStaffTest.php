@@ -304,6 +304,29 @@ class AdminStaffTest extends TestCase
     }
 
     /**
+     * A false positive the Roles screen produced: `providers.sync` was listed
+     * as gating nothing even though Providers::test/sync/sync_balance all
+     * reach `require_perm('providers.sync')` through guard_post()'s default
+     * parameter. The detector must count the default as the gate — unticking
+     * the box revokes three live endpoints, so telling an operator the tick
+     * does nothing is a lie that costs access.
+     */
+    public function testProvidersSyncIsNotReportedAsUnenforced()
+    {
+        list($app, , , ) = $this->app();
+        $app->db->insert('permissions', array(
+            'perm_key' => 'providers.sync', 'category' => 'providers', 'description' => 'providers.sync',
+            'created_at' => gmdate('Y-m-d H:i:s'),
+        ));
+        Permission_model::flush_cache();
+
+        $dead = $app->rbacservice->unenforced();
+
+        $this->assertNotContains('providers.sync', $dead,
+            'guard_post() defaults to providers.sync; the screen must not list it as gating nothing');
+    }
+
+    /**
      * The check that found the sixteen missing modules: a permission granted
      * by the seeded role matrix but enforced by no code is a promise the panel
      * does not keep, and — as with `admin/customers` — usually means a whole

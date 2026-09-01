@@ -52,7 +52,10 @@ because the value of this module is the proof, not a patch.
    `private function guard($public_id, $perm) { …; $this->require_perm($perm); }`
    used by half the admin controllers. Detected by *shape* (a helper whose body
    gates a variable), so a new controller following the same pattern is covered
-   without being named;
+   without being named. The gated parameter's **default** counts as the gate
+   for a call that passes nothing: `Providers::guard_post($perm =
+   'providers.sync')` means the bare `guard_post()` on test/sync/sync-balance
+   really does check `providers.sync`;
 3. a key reached through a declared map that a gate reads dynamically — the
    `admin/Operations` queue table (`require_perm(self::$queues[$q][1])`) and
    `ContentService::permission($domain)`. Recognised only when the same source
@@ -157,3 +160,52 @@ worker instead of reporting a failure that is not the panel's.
   whom" would be the natural next step if the staff hierarchy grows.
 - No penetration testing tool was run: everything above is hand-written request
   shaping against the real application.
+
+---
+
+## 5. Follow-up: `providers.sync` was reported dead while gating three actions
+
+The Roles screen surfaced a false positive after this module shipped:
+
+> 1 permission currently gate nothing … `providers.sync`
+
+The screen was wrong, and the false positive is worth recording because it is
+the exact class of failure the detector exists to prevent — but in reverse: it
+told an operator the tick did nothing when unticking it actually revokes three
+live endpoints.
+
+**Why it happened.** `Providers::test/sync/sync_balance` call the POST-and-
+permission helper with no argument:
+
+```php
+public function test($public_id) {
+    $this->guard_post();
+    ...
+}
+
+private function guard_post($perm = 'providers.sync') {
+    if ($this->input->method(true) !== 'POST') show_404();
+    $this->require_perm($perm);
+}
+```
+
+The helper was recognised by shape, and its call sites were scanned — but the
+key lives in the gated parameter's **default**, and the detector only read
+literals passed *at* the call site. The bare calls contributed nothing, so
+`providers.sync` fell out of the enforced set and onto the warning banner.
+
+**Why the suite missed it.** The independent test
+(`testEverySeededPermissionActuallyGatesSomething`) is written to catch the
+detector, but its rule scanned `guard_post(` anywhere in the source — which
+accidentally matched the helper's own *signature*, including the default
+literal. The test and the detector disagreed, and the test won.
+
+**The fix.** `RbacService::enforced_keys()` now records the default value of a
+forwarding helper's gated parameter, and counts it as enforcement when a call
+site passes no permission argument — which is precisely the runtime behaviour.
+The independent test's rule was rewritten to mirror the detector (call sites
+anchored to `$this->`, defaults counted only for bare calls), and two pins
+were added: `testProvidersSyncDefaultIsCountedAsEnforcement` and
+`testProvidersSyncIsNotReportedAsUnenforced` (the latter drives the real
+`RbacService` against the live source). `providers.sync` is enforced, the
+screen now agrees, and the warning banner is empty.

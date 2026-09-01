@@ -217,13 +217,45 @@ class AuthorizationMatrixTest extends TestCase
 
         // The same rule RbacService::enforced_keys() applies, written out
         // here rather than called: a detector that grades its own homework
-        // cannot fail, and this test exists to catch the detector too.
+        // cannot fail, and this test exists to catch the detector too. It
+        // mirrors each detection step — including helper *defaults*: a bare
+        // `guard_post()` gates on the helper's `$perm = 'providers.sync'`
+        // default, so the default counts as enforcement. (The previous shape
+        // scanned `guard_post(` anywhere, which accidentally matched the
+        // helper's own signature and hid the detector's blind spot.)
         $enforced = array();
-        $gates = '/(?:require_perm|require_any_perm|guard|guard_post)\s*\(([^;]{0,200}?)\)/';
-        if (preg_match_all($gates, $src, $calls)) {
+
+        // 1. Literals handed to a gate, directly. One level of nesting so
+        //    `require_perm(ContentService::permission($d))` stays readable.
+        $gate = '/(?:require_perm|require_any_perm)\s*\(([^()]*(?:\([^()]*\)[^()]*)*)\)/';
+        if (preg_match_all($gate, $src, $calls)) {
             foreach ($calls[1] as $args) {
                 if (preg_match_all("/'([a-z_]+(?:\.[a-z_*]+)+)'/", $args, $lit)) {
                     foreach ($lit[1] as $key) $enforced[$key] = true;
+                }
+            }
+        }
+
+        // 2. Helpers that forward their argument to a gate: the key lives at
+        //    the call site, or in the gated parameter's default when a call
+        //    passes nothing.
+        $helpers = array();
+        if (preg_match_all('/function\s+(\w+)\s*\(([^)]*)\)\s*\{[\s\S]{0,800}?require_perm\(\s*\$(\w+)/',
+                           $src, $found, PREG_SET_ORDER)) {
+            foreach ($found as $fn) {
+                $helpers[$fn[1]] = preg_match('/\$'.preg_quote($fn[3], '/')
+                    ."\s*=\s*'([a-z_]+(?:\.[a-z_*]+)+)'/", $fn[2], $d) ? $d[1] : null;
+            }
+        }
+        foreach ($helpers as $helper => $default) {
+            if (preg_match_all('/\$this->'.preg_quote($helper, '/').'\s*\(([^;]{0,200}?)\)/',
+                               $src, $calls)) {
+                foreach ($calls[1] as $args) {
+                    if (preg_match_all("/'([a-z_]+(?:\.[a-z_*]+)+)'/", $args, $lit)) {
+                        foreach ($lit[1] as $key) $enforced[$key] = true;
+                    } elseif ($default !== null && trim($args) === '') {
+                        $enforced[$default] = true;
+                    }
                 }
             }
         }
@@ -250,5 +282,26 @@ class AuthorizationMatrixTest extends TestCase
         }));
         $this->assertSame(array(), $dead,
             'a granted permission that gates nothing is a promise the code does not keep');
+    }
+
+    /**
+     * The exact false positive an operator reported: the Roles screen listed
+     * `providers.sync` under "currently gate nothing" while it gates three
+     * actions. Providers::test/sync/sync_balance call `guard_post()` with no
+     * argument, and the helper's `$perm = 'providers.sync'` default is the key
+     * its require_perm() checks — a bare call IS the gate. The detector (and
+     * this mirror of its rule) must count the default, or the screen tells an
+     * operator that unticking the box changes nothing while it revokes live
+     * endpoints.
+     */
+    public function testProvidersSyncDefaultIsCountedAsEnforcement()
+    {
+        $src = self::source('Providers');
+
+        $this->assertStringContainsString("guard_post(\$perm = 'providers.sync')", $src,
+            'the parameter default is the gate for the bare guard_post() calls');
+        $this->assertSame(3, substr_count($src, '$this->guard_post()'),
+            'test/sync/sync_balance must keep their bare guard_post() calls — losing the '
+            .'default while keeping the calls would leave three actions ungated');
     }
 }
