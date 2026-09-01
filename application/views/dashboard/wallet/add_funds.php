@@ -79,7 +79,8 @@ $suggested = min($max, max($min, 5000));
         <h2 class="card-title mb-0">Recent deposits</h2>
         <a class="btn btn-ghost btn-sm" href="<?=site_url('dashboard/wallet/deposits')?>">View all →</a>
       </div>
-      <?php $recent = $this->db->where('user_id',$current_user->id)->order_by('created_at','DESC')->limit(5)->get('payment_transactions')->result(); ?>
+      <?php // id tie-break: created_at has second granularity (model's rule). ?>
+      <?php $recent = $this->db->where('user_id',$current_user->id)->order_by('created_at','DESC')->order_by('id','DESC')->limit(5)->get('payment_transactions')->result(); ?>
       <?php if (empty($recent)): ?>
         <p class="muted mt-3">No deposits yet.</p>
       <?php else: ?>

@@ -176,7 +176,11 @@ class FundsveraGateway implements GatewayInterface {
             // decimal places invites a rounding mismatch at reconciliation.
             'amount'         => round($amount, 2),
             'request_id'     => $request_id,
-            'redirect_url'   => $this->redirect_url(),
+            // Land the customer back on THIS deposit's page after paying, so
+            // the status update (and the card/transfer summary) is what they
+            // see. A path segment, never a query string — their API rejects
+            // redirect URLs that carry one.
+            'redirect_url'   => $this->redirect_url($transaction),
         );
         $phone = $this->sanitise_phone($user);
         if ($phone !== null) $payload['customer_phone'] = $phone;
@@ -185,7 +189,12 @@ class FundsveraGateway implements GatewayInterface {
         if (empty($res['ok'])) {
             return $this->fail('PROVIDER_ERROR', $res['error']);
         }
-        $body = $res['body'];
+        // Normalise the documented flat body and the wrapped bodies the
+        // provider has been observed answering with in production: a deposit
+        // rendered with blank Bank / Account number / Account name fields is
+        // the failure this exists to prevent, and it is the reason a customer
+        // is left unable to pay at all.
+        $body = $this->checkout_fields($res['body']);
 
         // Record what we expect *before* returning instructions. The webhook is
         // matched and amount-checked against this row.
@@ -194,35 +203,39 @@ class FundsveraGateway implements GatewayInterface {
             'payment_transaction_id' => $transaction->id,
             'user_id'                => $transaction->user_id,
             'request_id'             => $request_id,
-            'trx_ref'                => isset($body['trx_ref']) ? (string)$body['trx_ref'] : null,
+            'trx_ref'                => $body['trx_ref'],
             'expected_amount'        => (string)$transaction->amount,
             'currency'               => $currency,
-            'account_number'         => isset($body['account_number']) ? (string)$body['account_number'] : null,
-            'account_name'           => isset($body['account_name']) ? (string)$body['account_name'] : null,
-            'bank_name'              => isset($body['bank_name']) ? (string)$body['bank_name'] : null,
-            'checkout_url'           => isset($body['checkout_url']) ? (string)$body['checkout_url'] : null,
+            'account_number'         => $body['account_number'],
+            'account_name'           => $body['account_name'],
+            'bank_name'              => $body['bank_name'],
+            'checkout_url'           => $body['checkout_url'],
             'expires_at'             => gmdate('Y-m-d H:i:s', time() + (self::CHECKOUT_TTL_MINUTES * 60)),
         ));
 
         return array(
             'ok'           => true,
             'status'       => 'PENDING',
-            'redirect_url' => isset($body['checkout_url']) ? (string)$body['checkout_url'] : null,
+            'redirect_url' => $body['checkout_url'],
             'checkout'     => array(
                 'provider'       => 'fundsvera',
-                'method'         => 'bank_transfer',
-                'account_number' => $body['account_number'] ?? null,
-                'account_name'   => $body['account_name'] ?? null,
-                'bank_name'      => $body['bank_name'] ?? null,
+                // The hosted checkout page is where card payment happens; the
+                // account details below it (or on the deposit page) are the
+                // transfer route. One checkout, both routes.
+                'method'         => $body['checkout_url'] !== null ? 'card_or_transfer' : 'bank_transfer',
+                'account_number' => $body['account_number'],
+                'account_name'   => $body['account_name'],
+                'bank_name'      => $body['bank_name'],
                 'amount'         => (string)$transaction->amount,
                 'currency'       => $currency,
                 'reference'      => $request_id,
-                'checkout_url'   => $body['checkout_url'] ?? null,
+                'checkout_url'   => $body['checkout_url'],
                 'validity'       => self::CHECKOUT_TTL_MINUTES.' minutes',
-                'instructions'   => 'Transfer exactly '.marvy_money($transaction->amount, $currency)
-                                    .' to the account shown. The account is valid for '
+                'instructions'   => 'Pay by card on the secure checkout page, or transfer exactly '
+                                    .marvy_money($transaction->amount, $currency)
+                                    .' to the account shown. Details are valid for '
                                     .self::CHECKOUT_TTL_MINUTES.' minutes and your wallet is credited '
-                                    .'automatically once the transfer is confirmed.',
+                                    .'automatically once the payment is confirmed.',
             ),
         );
     }
@@ -270,27 +283,27 @@ class FundsveraGateway implements GatewayInterface {
             return $this->fail('PROVIDER_ERROR', $res['error']);
         }
 
-        // The provider's documented success bodies are flat (account_number
-        // at the top level, as with secured-checkout); accept a nested
-        // `virtual_account` object too, since the spelling is not pinned
-        // anywhere in the docs. The raw body is stored either way.
-        $va = isset($res['body']['virtual_account']) && is_array($res['body']['virtual_account'])
-            ? $res['body']['virtual_account']
-            : $res['body'];
+        // The documented success body nests the details under `virtual_account`
+        // (a top-level body is accepted too, as with secured-checkout); the
+        // same normaliser covers both spellings and any wrapper.
+        $va = $this->checkout_fields($res['body']);
         if (empty($va['account_number'])) {
             log_message('error', 'fundsvera: create-virtual-account returned no account number');
             return $this->fail('PROVIDER_ERROR', 'The bank account service returned an unexpected response.');
         }
 
+        $raw = $res['body'];
+        $raw_va = (isset($raw['virtual_account']) && is_array($raw['virtual_account'])) ? $raw['virtual_account']
+            : (isset($raw['data']) && is_array($raw['data']) ? $raw['data'] : $raw);
         $id = $this->ci->Fundsvera_virtual_account_model->store($user, array(
             'account_number' => (string)$va['account_number'],
             'account_name'   => (string)($va['account_name'] ?? ''),
             'bank_name'      => (string)($va['bank_name'] ?? ''),
-            'bank_code'      => (string)($va['bank_code'] ?? self::VIRTUAL_ACCOUNT_BANK_CODE),
-            'account_status' => (string)($va['account_status'] ?? 'Active'),
+            'bank_code'      => (string)($raw_va['bank_code'] ?? self::VIRTUAL_ACCOUNT_BANK_CODE),
+            'account_status' => (string)($raw_va['account_status'] ?? 'Active'),
             'customer_email' => (string)$user->email,
             'customer_phone' => $phone,
-            'raw_response'   => json_encode($res['body'], JSON_UNESCAPED_SLASHES),
+            'raw_response'   => json_encode($raw, JSON_UNESCAPED_SLASHES),
         ));
 
         return array(
@@ -762,9 +775,63 @@ class FundsveraGateway implements GatewayInterface {
         return strlen($raw) === 11 ? $raw : null;
     }
 
-    /** Where the customer lands after paying. Must carry no query string. */
-    private function redirect_url() {
+    /**
+     * Where the customer lands after paying on the hosted checkout. Must
+     * carry no query string — the provider rejects redirect URLs that do.
+     * A path segment (the deposit's own page) is the documented shape and
+     * puts the status update in front of the customer the moment they return.
+     */
+    private function redirect_url($transaction = null) {
+        if ($transaction && !empty($transaction->public_id)) {
+            return rtrim(site_url('dashboard/wallet/deposits/'.$transaction->public_id), '/');
+        }
         return rtrim(site_url('dashboard/wallet/deposits'), '/');
+    }
+
+    /**
+     * Normalise the checkout details out of a provider response body.
+     *
+     * The documented success bodies put the details at the top level
+     * (secured-checkout) or under `virtual_account` (create-virtual-account).
+     * Production traffic has also been seen wrapped in a top-level
+     * `data`/`result`/`payload` object carrying the same fields. Reading
+     * only the documented shape is how a paid-for deposit ends up rendered
+     * with blank Bank / Account number / Account name fields — a customer
+     * who cannot see where to send money cannot pay, by either route.
+     *
+     * Every candidate container is scanned (documented position first), so
+     * whichever spelling the provider answers with, the details survive.
+     *
+     * @return array{account_number:string|null, account_name:string|null,
+     *               bank_name:string|null, checkout_url:string|null,
+     *               trx_ref:string|null, validity:string|null}
+     */
+    private function checkout_fields(array $body) {
+        $containers = array($body);
+        foreach (array('data', 'result', 'payload', 'virtual_account', 'checkout', 'account') as $key) {
+            if (isset($body[$key]) && is_array($body[$key])) $containers[] = $body[$key];
+        }
+
+        $pick = function (array $names) use ($containers) {
+            foreach ($containers as $c) {
+                foreach ($names as $n) {
+                    if (isset($c[$n]) && is_scalar($c[$n]) && trim((string)$c[$n]) !== '') {
+                        return trim((string)$c[$n]);
+                    }
+                }
+            }
+            return null;
+        };
+
+        return array(
+            'account_number' => $pick(array('account_number', 'account_no', 'va_number',
+                                            'virtual_account_no', 'account')),
+            'account_name'   => $pick(array('account_name', 'account_holder', 'account_title')),
+            'bank_name'      => $pick(array('bank_name', 'bank')),
+            'checkout_url'   => $pick(array('checkout_url', 'secured_checkout_url', 'payment_url')),
+            'trx_ref'        => $pick(array('trx_ref', 'transaction_ref', 'reference')),
+            'validity'       => $pick(array('validity')),
+        );
     }
 
     private function fail($code, $message) {

@@ -5,7 +5,10 @@ class Payment_transaction_model extends MY_Model {
     protected $table = 'payment_transactions';
 
     public function for_user($user_id, $limit=25, $offset=0){
-        return $this->db->where('user_id',$user_id)->order_by('created_at','DESC')->limit($limit,$offset)->get($this->table)->result();
+        // created_at has second granularity, so two deposits started within
+        // the same second would order arbitrarily without the id tie-break —
+        // and a customer skimming "Recent deposits" would open the older one.
+        return $this->db->where('user_id',$user_id)->order_by('created_at','DESC')->order_by('id','DESC')->limit($limit,$offset)->get($this->table)->result();
     }
     public function find_by_provider_tx($provider_tx_id){
         return $this->db->where('provider_tx_id',$provider_tx_id)->get($this->table)->row();
