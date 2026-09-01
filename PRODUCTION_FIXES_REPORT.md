@@ -39,6 +39,13 @@ button stuck on "Processing…":
 - Any initiation throw is caught in the controller: the customer gets a
   friendly flash error and is redirected back to the form — no exception
   page, no stuck spinner.
+- **The "Processing…" button itself is fixed** (`assets/js/app.js`): the
+  submit guard now restores the button (label, spinner, `disabled`) whenever
+  the page comes back from the browser's back/forward cache — previously a
+  customer who returned from the provider's page (or any redirect) found the
+  deposit button permanently disabled with "Processing…" on it. A safety
+  sweep also un-sticks any button found in the submitting state on page
+  load.
 - Provider failures now surface Fundsvera's **own message** ("System busy
   please try again later", "Duplicate request ID…", "amount greater than or
   equal to 100", "Unauthorized request please use valid keys"), and a
@@ -92,17 +99,26 @@ that produce exactly this class of failure on strict cPanel Exim setups:
    does not require extensions).
 
 **What changed** (new `application/libraries/MY_Email.php`, automatically
-loaded by CI3's `MY_` subclass prefix; `application/libraries/MailService.php`):
+loaded by CI3's `MY_` subclass prefix; `application/libraries/MailService.php`,
+`application/libraries/CronWorkers.php`, `application/config/email.php`):
 
 - The greeting name is now the panel's real domain: `VP_MAIL_HELO` env (or
   the `mail_helo` admin setting), falling back to the site URL's host —
   never `localhost.localdomain`.
 - A refused EHLO is retried once as HELO (no AUTH required in that case),
   exactly as RFC 5321 §4.1.4 instructs.
+- `smtp_keepalive` is pinned OFF — a keep-alive socket the server has
+  already closed is precisely the state that makes Exim answer MAIL FROM
+  with "503 HELO or EHLO required" (the greeting belonged to the old
+  session).
 - `smtp_failure_summary()` now reports the server's own failure line
   (`from: 503 HELO or EHLO required`) instead of CI3's generic
   `email_send_failure_smtp`, and adds a targeted operator hint.
-- `.env.example` / `.env.production.example` document `MAIL_HELO`.
+- The queue worker stores the hint on the `email_queue` row too, so the
+  error the operator reads on the mail-queue screen now tells them the fix.
+- `.env.example` / `.env.production.example` document `MAIL_HELO` and make
+  **`mail` the recommended production driver** (cPanel sendmail — no SMTP
+  host, port or credentials, and nothing to handshake).
 
 **Verified** at three levels:
 
@@ -118,18 +134,17 @@ loaded by CI3's `MY_` subclass prefix; `application/libraries/MailService.php`):
   connection and confirm the operator-visible result.
 - Full unit suite green (1669/0).
 
-**Production actions for the mail queue:**
+**Production actions for the mail queue — do the fastest one first:**
 
-1. Deploy the rebuilt `application-deployment.zip` (it contains `MY_Email.php`
-   and the MailService changes).
-2. Optionally set `VP_MAIL_HELO=www.marvysocials.com` in `.env` — the panel
-   already defaults to the site's host, so this is only needed if the host
-   insists on a specific name.
-3. Re-run the queue (or wait for the cron worker). If `503 HELO or EHLO
-   required` still appears, the configured `smtp_host`/`smtp_port` is not a
-   mail-submission endpoint for the account — or switch `mail_transport` to
-   **mail** (cPanel's sendmail; no SMTP host/port/credentials needed at all),
-   which is also the hint the queue screen now shows.
+1. **Switch the transport to `mail`** (the recommended fix on cPanel):
+   Admin → Settings → Email → Transport → **mail**, then save. cPanel's
+   sendmail needs no SMTP host, port, user or password and cannot produce a
+   HELO/503 handshake error at all. Re-run the queue afterwards.
+2. If you prefer SMTP: deploy the rebuilt package (below) — it greets the
+   server with your real domain and retries refused EHLOs as HELO — and
+   optionally set `VP_MAIL_HELO=www.marvysocials.com` in `.env`.
+3. Re-run the queue (or wait for the cron worker). If a queue row fails, its
+   error now names the exact server reply **and** the fix.
 
 ---
 
@@ -138,12 +153,12 @@ loaded by CI3's `MY_` subclass prefix; `application/libraries/MailService.php`):
 - [ ] Upload the rebuilt `application-deployment.zip` through cPanel File
       Manager and extract over the existing install (back up first).
 - [ ] `GET https://www.marvysocials.com/admin/inbox` → 200.
-- [ ] Test a Fundsvera deposit end-to-end; confirm the browser lands on the
+- [ ] Try a Fundsvera deposit end-to-end; confirm the browser lands on the
       provider's checkout page (or the deposit page with details if the
-      provider returns none).
-- [ ] Queue a test email (Admin → Content → Mail queue → test message) and
-      confirm delivery; if it fails, the failure now names the real server
-      reply and the fix.
+      provider returns none). No button may stay stuck on "Processing…".
+- [ ] Mail: switch Admin → Settings → Email → Transport to **mail** (or keep
+      smtp with the new package), then queue a test message. Any failure now
+      names the real server reply and the fix.
 - [ ] Optional: `VP_MAIL_HELO` / `FUNDSVERA_TIMEOUT_SECONDS` in `.env`.
 
 Nothing here needs a database migration; the schema is unchanged.

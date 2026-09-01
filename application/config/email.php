@@ -24,6 +24,10 @@ $config['smtp_user']   = (string) Env::get('SMTP_USER', '');
 $config['smtp_pass']   = (string) Env::get('SMTP_PASSWORD', '');
 $config['smtp_crypto'] = (string) Env::get('SMTP_CRYPTO', 'tls');
 $config['smtp_timeout'] = 15;
+// Never reuse a connection across messages: a keep-alive socket that the
+// server has already closed is exactly the kind of state that produces
+// "503 HELO or EHLO required" (the greeting belonged to the old session).
+$config['smtp_keepalive'] = FALSE;
 $config['mailtype']    = 'html';
 $config['charset']     = 'utf-8';
 $config['newline']     = "\r\n";

@@ -673,6 +673,13 @@ class CronWorkers {
 
             $failed++;
             $error = substr((string)($ok['error'] ?? 'send failed'), 0, 1000);
+            // Keep the actionable hint on the row too: the queue screen is
+            // where the operator reads why mail died, and "check the SMTP
+            // host" is useless next to "switch Admin → Settings → Email →
+            // Transport to mail".
+            if (!empty($ok['hint'])) {
+                $error .= ' — '.substr((string)$ok['hint'], 0, 600);
+            }
             if ($attempts >= $max_attempts) {
                 $this->ci->db->where('id', $mail->id)->update('email_queue', array(
                     'status' => 'FAILED', 'attempts' => $attempts, 'last_error' => $error,

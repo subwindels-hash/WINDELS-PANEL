@@ -201,9 +201,10 @@ class MailService {
             || (preg_match('/\b503\b/', $reason) && strpos($lower, 'helo') !== false)) {
             $hint = 'The mail server processed MAIL FROM without accepting the greeting. The panel now greets '
                 .'with the panel\'s own domain (VP_MAIL_HELO, or the site URL host) and falls back to a plain HELO '
-                .'when EHLO is refused. If this error still appears, the configured host:port is not a mail-submission '
-                .'endpoint for this account — or switch mail_transport to "mail" (cPanel\'s sendmail), which needs no '
-                .'SMTP host, port or credentials at all.';
+                .'when EHLO is refused. If this error still appears, switch the transport to "mail" in '
+                .'Admin → Settings → Email → Transport (cPanel\'s sendmail needs no SMTP host, port or credentials '
+                .'and works out of the box), or check that the SMTP host/port are the mail-submission endpoint from '
+                .'cPanel → Email Accounts → Connect Devices.';
         } elseif (strpos($lower, 'starttls') !== false
             || strpos($lower, 'unable to connect') !== false
             || strpos($lower, 'error: #(') !== false
