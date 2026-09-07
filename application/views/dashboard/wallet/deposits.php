@@ -162,6 +162,42 @@
 </div>
 <?php endif; ?>
 
+<?php $va = $virtual_account ?? null; ?>
+<div class="card max-w-2xl mb-6">
+  <div class="row justify-between">
+    <h2 class="card-title mb-0">Your bank transfer account</h2>
+    <?php if ($va): ?><span class="badge badge-success"><?=htmlspecialchars((string)($va->account_status ?? 'Active'))?></span><?php endif; ?>
+  </div>
+  <?php if ($va): ?>
+    <p class="muted text-sm mt-2 mb-0">
+      A permanent account in your name — top up any time, no deadline. Every
+      transfer to it is credited to your wallet automatically.
+    </p>
+    <dl class="grid grid-3 mt-4" style="gap:1rem">
+      <div>
+        <dt class="muted text-xs">Bank</dt>
+        <dd class="font-semibold"><?=htmlspecialchars((string)$va->bank_name)?></dd>
+      </div>
+      <div>
+        <dt class="muted text-xs">Account number</dt>
+        <dd class="mono font-semibold" style="font-size:1.05rem"><?=htmlspecialchars((string)$va->account_number)?></dd>
+      </div>
+      <div>
+        <dt class="muted text-xs">Account name</dt>
+        <dd class="font-semibold"><?=htmlspecialchars((string)$va->account_name)?></dd>
+      </div>
+    </dl>
+  <?php else: ?>
+    <p class="muted text-sm mt-2 mb-0">
+      Get a permanent account number in your name and top up your wallet by
+      bank transfer whenever you like.
+    </p>
+    <?=form_open('dashboard/wallet/virtual-account', array('class' => 'mt-3'))?>
+      <button class="btn btn-secondary btn-sm" type="submit" data-loading-text="Creating account…">Get my account number</button>
+    <?=form_close()?>
+  <?php endif; ?>
+</div>
+
 <div class="card">
   <h2 class="card-title">Deposits</h2>
   <?php if (empty($deposits)): ?>

@@ -559,6 +559,100 @@ class PaymentsTest extends TestCase
         }
     }
 
+    /* ------------- standing virtual-account payments (docs) -------------- */
+
+    /**
+     * The docs' Virtual Account Webhook exists to tell the merchant "this
+     * customer's standing account was funded — credit them". A payment into a
+     * recognised account must therefore open a deposit and credit the owner's
+     * wallet exactly once — not be dropped with "no matching transaction".
+     */
+    public function testFundsveraVirtualAccountWebhookCreditsTheAccountOwner()
+    {
+        $ci = $this->fresh();
+        $ci->Fundsvera_checkout_model = new PayFakeCheckoutModel();
+        $ci->Fundsvera_virtual_account_model = new PayFakeVAOwner('1234567890', 7);
+
+        putenv('FUNDSVERA_WEBHOOK_SECRET=fv-webhook-secret');
+        try {
+            $svc = new PaymentService();
+            // The documented VA payload: no request_id, no trx_type — the
+            // account number is what names the customer.
+            $body = $this->fundsvera_body(array(
+                'trx_ref'            => 'FVTRX-VA1',
+                'request_id'         => null,
+                'trx_type'           => null,
+                'transaction_status' => 'SUCCESSFUL',
+                'amount_paid'        => '500',
+                'customer'           => array(
+                    'email'              => 'maria@example.com',
+                    'virtual_account_no' => '1234567890',
+                    'bank_name'          => 'Palmpay',
+                ),
+            ));
+            $sig = hash_hmac('sha256', $body, 'fv-webhook-secret');
+
+            $first = $svc->record_webhook('fundsvera', $body, array('X-FUNDSVERA-SIGNATURE' => $sig));
+            $this->assertTrue($first['ok'], json_encode($first));
+            $this->assertSame(1, $ci->ledger_credits, 'the VA payment must credit its owner once');
+            $this->assertSame('SUCCESS', $ci->tx->status);
+            $this->assertSame('500.00000000', $ci->tx->amount);
+            $this->assertSame('virtual_account', $ci->tx->payment_method);
+
+            // A redelivery is a duplicate, not a second credit.
+            $second = $svc->record_webhook('fundsvera', $body, array('X-FUNDSVERA-SIGNATURE' => $sig));
+            $this->assertTrue(!empty($second['already_seen']));
+            $this->assertSame(1, $ci->ledger_credits);
+        } finally {
+            putenv('FUNDSVERA_WEBHOOK_SECRET');
+        }
+    }
+
+    /** An account the panel does not recognise must stay unmatched, not guessed. */
+    public function testFundsveraVirtualAccountWebhookForAnUnknownAccountIsIgnored()
+    {
+        $ci = $this->fresh();
+        $ci->Fundsvera_checkout_model = new PayFakeCheckoutModel();
+        $ci->Fundsvera_virtual_account_model = new PayFakeVAOwner('1234567890', 7);
+
+        $event = $this->fundsvera_gateway()->parse_event($this->fundsvera_body(array(
+            'trx_ref'            => 'FVTRX-VA2',
+            'request_id'         => null,
+            'trx_type'           => null,
+            'customer'           => array(
+                'email'              => 'stranger@example.com',
+                'virtual_account_no' => '9999999999',
+            ),
+        )));
+
+        $this->assertSame('IGNORED', $event['status']);
+        $this->assertArrayNotHasKey('wallet_user_id', $event['metadata']);
+    }
+
+    /** The documented "Virtual Account (Create)" must actually be reachable. */
+    public function testVirtualAccountEndpointsAreWired()
+    {
+        $routes = file_get_contents(self::$root.'/application/config/routes.php');
+        $this->assertStringContainsString("api/payments/fundsvera/virtual-account", $routes,
+            'the JSON API endpoint has a route (before the api/payments/(:any) catch-all)');
+        $this->assertStringContainsString('dashboard/wallet/virtual-account', $routes,
+            'the dashboard form action has a route');
+
+        $api = file_get_contents(self::$root.'/application/controllers/Payments.php');
+        $this->assertStringContainsString('function virtual_account', $api);
+
+        $wallet = file_get_contents(self::$root.'/application/controllers/dashboard/Wallet.php');
+        $this->assertStringContainsString('function virtual_account', $wallet);
+
+        $svc = file_get_contents(self::$root.'/application/libraries/PaymentService.php');
+        $this->assertStringContainsString('function virtual_account', $svc);
+        $this->assertStringContainsString('open_virtual_account_deposit', $svc);
+
+        $docs = file_get_contents(self::$root.'/application/views/api/docs.php');
+        $this->assertStringContainsString('/payments/fundsvera/virtual-account', $docs,
+            'the published API docs list the endpoint');
+    }
+
     private function fundsvera_gateway() {
         return new FundsveraGateway(null, new PayFakeHttp(array()));
     }
@@ -900,5 +994,27 @@ class PayFakeVAModel
             'account_name'   => 'MVS / Maria',
             'bank_name'      => 'Palmpay',
         );
+    }
+}
+
+/**
+ * Double for the webhook-side VA lookup: answers by_account_number() with a
+ * row owned by the scripted user (or null when the number is unknown), which
+ * is all FundsveraGateway::parse_event() needs to resolve who to credit.
+ */
+class PayFakeVAOwner
+{
+    private $account_number;
+    private $user_id;
+
+    public function __construct($account_number, $user_id) {
+        $this->account_number = $account_number;
+        $this->user_id = $user_id;
+    }
+
+    public function by_account_number($account_number) {
+        return (string)$account_number === (string)$this->account_number
+            ? (object)array('user_id' => $this->user_id, 'account_number' => $this->account_number)
+            : null;
     }
 }

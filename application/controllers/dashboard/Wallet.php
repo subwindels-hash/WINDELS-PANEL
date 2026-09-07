@@ -191,6 +191,29 @@ class Wallet extends Auth_Controller {
         redirect('dashboard/wallet/deposits/'.$public_id);
     }
 
+    /** POST /dashboard/wallet/virtual-account — create/fetch the standing bank account. */
+    public function virtual_account() {
+        if ($this->input->method(true) !== 'POST') show_404();
+        try {
+            $res = $this->paymentservice->virtual_account($this->current_user);
+        } catch (Throwable $e) {
+            // A provider or storage failure must never strand the customer on
+            // an error page — land back on the deposits page with a message.
+            log_message('error', 'virtual account creation threw: '.$e->getMessage());
+            $res = array('ok' => false,
+                'error' => 'Could not reach the bank account service right now — please try again.');
+        }
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error'] ?? 'Could not create your bank account.');
+            redirect('dashboard/wallet/deposits');
+        }
+        $acct = $res['account'];
+        $this->session->set_flashdata('success',
+            'Your bank transfer account is ready: '.(string)$acct->account_number
+            .' ('.(string)$acct->bank_name.'). Transfers to it credit your wallet automatically.');
+        redirect('dashboard/wallet/deposits');
+    }
+
     public function deposits($public_id = null) {
         $tx = $public_id
             ? $this->Payment_transaction_model->find_public_for_user($public_id, $this->current_user->id)
@@ -241,6 +264,23 @@ class Wallet extends Auth_Controller {
             'gateway_checkout' => $gateway_checkout,
             'card_method' => $card_method,
             'card_checkout' => $card_checkout,
+            'virtual_account' => $this->standing_virtual_account(),
         ));
+    }
+
+    /**
+     * The customer's standing Fundsvera bank account, or null.
+     *
+     * Loaded here so the view stays free of queries; a provider/model failure
+     * degrades to "no account shown", never to a broken deposits page.
+     */
+    private function standing_virtual_account() {
+        try {
+            $this->load->model('Fundsvera_virtual_account_model');
+            return $this->Fundsvera_virtual_account_model->for_user($this->current_user->id);
+        } catch (Throwable $e) {
+            log_message('error', 'could not load the virtual account: '.$e->getMessage());
+            return null;
+        }
     }
 }
