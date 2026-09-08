@@ -54,15 +54,25 @@ class FundsveraGateway implements GatewayInterface {
     const VIRTUAL_ACCOUNT_BANK_CODE = '100033';
 
     /**
-     * Transaction-status lookup paths, tried in order by verify().
+     * Transaction-status lookup paths, used by verify() **only when an
+     * operator has opted in**.
      *
-     * Fundsvera's published surface names secured-checkout and
-     * create-virtual-account; a status endpoint is how every comparable
-     * Nigerian collections API answers "did reference X pay?". verify() probes
-     * both spellings and, when the provider answers 404 to both, reports the
-     * lookup as *unsupported* rather than unreachable — so reconciliation
-     * falls back to the age-out rule instead of holding every deposit open
-     * for ever. If Fundsvera confirms an exact path, change it here.
+     * Fundsvera's published surface is exactly two endpoints —
+     * `secured-checkout` and `create-virtual-account`. Their own docs list
+     * "Transaction History" under **Coming Soon**: there is no status
+     * endpoint today. Probing invented paths against a live host is not free
+     * and not harmless — an unknown path on a normal web app answers with an
+     * HTML error page, not a JSON 404, and this adapter used to read that as
+     * "the provider is unreachable", which reconciliation maps to UNREACHABLE
+     * and *never* ages out. Every unpaid deposit then stayed open for ever
+     * and the sweep burned two HTTP calls per deposit per tick doing it.
+     *
+     * So the probe is off by default. Set FUNDSVERA_STATUS_PATH (or the
+     * `fundsvera_status_path` setting) to the real path once Fundsvera ship
+     * one — `/transaction/{ref}` style if it ends in a slash, otherwise it is
+     * POSTed with `{"request_id": ...}`. With nothing configured verify()
+     * answers `unsupported`, which the cron maps to NO_VERIFIER so the
+     * age-out rule keeps working exactly as designed.
      */
     const STATUS_LOOKUP_PATH = '/transaction/';
     const STATUS_QUERY_PATH  = '/transaction-status';
@@ -169,12 +179,18 @@ class FundsveraGateway implements GatewayInterface {
         }
 
         $request_id = $this->request_id_for($transaction);
+
+        // The figure we actually quote the provider. Rounded to kobo, because
+        // sending eight decimal places invites a rounding mismatch — but it is
+        // then also what gets stored as `expected_amount` below. Quoting a
+        // rounded-DOWN amount while expecting the unrounded one is how a
+        // customer who paid the exact amount they were shown was flagged
+        // UNDERPAID and never credited.
+        $quoted = number_format(round($amount, 2), 2, '.', '');
         $payload = array(
             'customer_email' => (string)$user->email,
             'customer_name'  => $this->sanitise_name($user),
-            // Whole naira: the provider validates a number, and sending eight
-            // decimal places invites a rounding mismatch at reconciliation.
-            'amount'         => round($amount, 2),
+            'amount'         => (float)$quoted,
             'request_id'     => $request_id,
             // Land the customer back on THIS deposit's page after paying, so
             // the status update (and the card/transfer summary) is what they
@@ -196,6 +212,20 @@ class FundsveraGateway implements GatewayInterface {
         // is left unable to pay at all.
         $body = $this->checkout_fields($res['body']);
 
+        // A "success" that carries neither transfer details nor a checkout
+        // link is not a success — there is nothing the customer can do with
+        // it. Returning ok here left a PENDING deposit and an empty checkout
+        // row, and the customer stared at a page with no account number and
+        // no link: the literal "it does not work" symptom. Fail the deposit
+        // instead, so they get a message and can try again.
+        if (empty($body['account_number']) && empty($body['checkout_url'])) {
+            log_message('error', 'fundsvera: secured-checkout returned neither account details '
+                .'nor a checkout URL for '.$request_id);
+            return $this->fail('PROVIDER_ERROR',
+                'The bank transfer service did not return payment details. Please try again in a '
+                .'moment, or pay by card.');
+        }
+
         // Record what we expect *before* returning instructions. The webhook is
         // matched and amount-checked against this row.
         $this->ci->load->model('Fundsvera_checkout_model');
@@ -204,7 +234,10 @@ class FundsveraGateway implements GatewayInterface {
             'user_id'                => $transaction->user_id,
             'request_id'             => $request_id,
             'trx_ref'                => $body['trx_ref'],
-            'expected_amount'        => (string)$transaction->amount,
+            // The amount we actually asked the customer for, not the raw
+            // 8-decimal transaction figure: the webhook is compared against
+            // this, so it must be the same number the provider quoted.
+            'expected_amount'        => $quoted,
             'currency'               => $currency,
             'account_number'         => $body['account_number'],
             'account_name'           => $body['account_name'],
@@ -320,8 +353,23 @@ class FundsveraGateway implements GatewayInterface {
      * @return bool|null TRUE verified, FALSE rejected, NULL cannot verify
      */
     public function verify_webhook($raw_body, array $headers) {
-        $secret = $this->webhook_secret();
-        if (empty($secret)) {
+        $cfg = $this->config();
+
+        // Fundsvera document ONE key: webhooks are signed with the business
+        // secret key. FUNDSVERA_WEBHOOK_SECRET is honoured because operators
+        // expect that variable to work — but when it is set to something the
+        // provider is not actually signing with, every genuine callback was
+        // rejected 401 and no deposit could ever be credited. Both candidates
+        // are checked, so a misconfigured optional secret can no longer take
+        // payments down; only a signature matching neither is refused.
+        $candidates = array();
+        foreach (array($cfg['webhook_secret'], $cfg['secret_key']) as $candidate) {
+            $candidate = (string)$candidate;
+            if ($candidate !== '' && !in_array($candidate, $candidates, true)) {
+                $candidates[] = $candidate;
+            }
+        }
+        if (!$candidates) {
             // Fail closed upstream: PaymentService stores the event and credits
             // nothing when this is NULL.
             return null;
@@ -337,21 +385,26 @@ class FundsveraGateway implements GatewayInterface {
             $parts = explode('=', $presented, 2);
             if (ctype_alnum($parts[0])) $presented = $parts[1];
         }
+        // Hex is case-insensitive; hash_equals is not. A provider that emits
+        // an uppercase digest is sending a valid signature, and rejecting it
+        // over letter case is the same class of bug as the status casing one.
+        $presented = strtolower($presented);
 
-        $expected = hash_hmac('sha256', (string)$raw_body, $secret);
-
-        // hash_equals is timing-safe but throws on non-strings and compares
-        // length first; both operands are hex digests here.
-        $ok = hash_equals($expected, $presented);
+        $ok = false;
+        foreach ($candidates as $secret) {
+            // hash_equals is timing-safe and compares length first; both
+            // operands are hex digests here.
+            if (hash_equals(hash_hmac('sha256', (string)$raw_body, $secret), $presented)) {
+                $ok = true;
+                break;
+            }
+        }
         if (!$ok) {
             // Name the source, never the value: an operator whose webhook was
             // rotated in one place but not the other needs exactly this hint.
-            $env = getenv('FUNDSVERA_WEBHOOK_SECRET');
-            $source = ($env !== false && trim((string)$env) !== '') ? 'FUNDSVERA_WEBHOOK_SECRET env'
-                : (getenv('FUNDSVERA_SECRET_KEY') !== false ? 'FUNDSVERA_SECRET_KEY env'
-                : 'the fundsvera_webhook_secret/fundsvera_secret_key settings');
-            log_message('error', 'fundsvera: webhook signature rejected — verified against '.$source
-                .'. Rotate both sides to the same secret.');
+            log_message('error', 'fundsvera: webhook signature rejected — tried '.count($candidates)
+                .' configured secret(s) (fundsvera_webhook_secret / fundsvera_secret_key, env first). '
+                .'Rotate both sides to the same secret.');
         }
         return $ok;
     }
@@ -388,10 +441,22 @@ class FundsveraGateway implements GatewayInterface {
             $status = 'PENDING';
         }
 
+        // The de-duplication key.
+        //
+        // It must contain the status. Fundsvera can send more than one event
+        // for the same `trx_ref` — a "Pending" notification followed by the
+        // "SUCCESSFUL" one. Keyed on `trx_ref` alone, the first event was
+        // stored and closed as processed, and the callback that actually said
+        // the money arrived was then discarded as a duplicate: the customer
+        // had paid and the wallet was never credited. Including the resolved
+        // status means a *redelivery* of the same event still de-duplicates
+        // (identical key) while a genuine status change is a new event.
+        $base_key = $trx_ref !== '' ? $trx_ref : ($request_id !== '' ? $request_id : null);
+
         $event = array(
             // Fall back to request_id so a virtual-account credit (which has no
             // request_id) and a checkout (which does) both get a stable key.
-            'event_id'       => $trx_ref !== '' ? $trx_ref : ($request_id !== '' ? $request_id : null),
+            'event_id'       => $base_key === null ? null : $base_key.':'.$status,
             'type'           => 'fundsvera.'.strtolower((string)($data['trx_type'] ?? 'payment')),
             'provider_tx_id' => $trx_ref !== '' ? $trx_ref : null,
             'status'         => $status,
@@ -462,6 +527,18 @@ class FundsveraGateway implements GatewayInterface {
             return array('ok' => false, 'unsupported' => true, 'error' => 'Fundsvera is not configured');
         }
 
+        // Fundsvera publish no status endpoint (their docs list transaction
+        // history as "Coming Soon"). Guessing one and calling it on every
+        // pending deposit, every tick, produced HTML error pages that read as
+        // "provider unreachable" — and UNREACHABLE deposits are deliberately
+        // never aged out, so they stayed open for ever. Say "unsupported"
+        // honestly instead, unless an operator has configured a real path.
+        $path = $this->status_path();
+        if ($path === null) {
+            return array('ok' => false, 'unsupported' => true,
+                'error' => 'Fundsvera publishes no transaction-status endpoint');
+        }
+
         // The provider's own trx_ref (if a webhook or a checkout row told us)
         // is the better lookup key; our request_id is the fallback.
         $refs = array($reference);
@@ -474,14 +551,12 @@ class FundsveraGateway implements GatewayInterface {
         }
 
         foreach ($refs as $ref) {
-            // 1. GET /transaction/{ref}
-            $res = $this->get($cfg['base_url'].self::STATUS_LOOKUP_PATH.rawurlencode($ref), $cfg);
+            // A path ending in "/" is a REST-style GET /…/{ref}; anything else
+            // is POSTed with {"request_id": ref}.
+            $res = substr($path, -1) === '/'
+                ? $this->get($cfg['base_url'].$path.rawurlencode($ref), $cfg)
+                : $this->post_status_query($cfg, $ref, $path);
             $code = (int)($res['http_code'] ?? 0);
-            if ($code === 404) {
-                // 2. POST /transaction-status {request_id}
-                $res = $this->post_status_query($cfg, $ref);
-                $code = (int)($res['http_code'] ?? 0);
-            }
 
             if ($code === 404) continue; // unknown reference — try the next one
             if ($code === 0) {
@@ -536,8 +611,28 @@ class FundsveraGateway implements GatewayInterface {
         $row = $this->checkout_row($request_id, $trx_ref);
 
         if ($row) {
-            $paid = isset($data['amount_paid']) ? (string)$data['amount_paid'] : '0';
-            $underpaid = bccomp($paid, (string)$row->expected_amount, 8) < 0;
+            // Fundsvera send DECIMAL-ish strings, but a webhook is untrusted
+            // input: bccomp() throws on anything non-numeric under PHP 8, and
+            // an exception here aborts the whole callback with a 500 that the
+            // provider then retries for ever.
+            $raw_paid = $data['amount_paid'] ?? null;
+            $paid = (is_scalar($raw_paid) && is_numeric((string)$raw_paid))
+                ? (string)$raw_paid : null;
+
+            // A non-terminal event (their "Pending" notification) must not
+            // touch the checkout row at all. Writing it through here closed
+            // the row as FAILED on amount_paid = 0 and reported the deposit
+            // UNDERPAID — so the SUCCESSFUL callback that followed found a
+            // closed row and the customer's money was never credited.
+            if ($status !== 'SUCCESS' && $status !== 'FAILED') {
+                return array('transaction_id' => (int)$row->payment_transaction_id, 'underpaid' => false);
+            }
+
+            // No amount reported on a success is not a short payment — it is
+            // a payload that simply did not carry the figure. Treating the
+            // missing value as zero flagged fully-paid deposits as underpaid.
+            $underpaid = $paid !== null
+                && bccomp($paid, (string)$row->expected_amount, 8) < 0;
 
             // A terminal failure closes the checkout row too, so support sees
             // FAILED rather than a PENDING row that hides the real outcome.
@@ -564,10 +659,15 @@ class FundsveraGateway implements GatewayInterface {
 
         // A virtual-account credit has no checkout row: the customer pushed
         // money to their standing account without opening a deposit first.
+        // That is real money sitting unattributed, so it is logged at error
+        // level — an 'info' line is invisible on a production log level and
+        // nobody ever went looking for it.
         $va = $data['customer']['virtual_account_no'] ?? null;
-        if ($va) {
-            log_message('info', 'fundsvera: unsolicited virtual-account credit to '.$va
-                .' — recorded, awaiting operator reconciliation');
+        if ($va && $status === 'SUCCESS') {
+            log_message('error', 'fundsvera: unattributed credit of '
+                .(isset($data['amount_paid']) ? (string)$data['amount_paid'] : '?')
+                .' to virtual account '.$va.' — no open deposit matches it; '
+                .'credit it manually from Admin → Payments.');
         }
         return null;
     }
@@ -586,22 +686,51 @@ class FundsveraGateway implements GatewayInterface {
         return $row;
     }
 
-    /** POST /transaction-status with the request id (verify()'s second probe). */
-    private function post_status_query($cfg, $ref) {
+    /** POST the configured status path with the request id. */
+    private function post_status_query($cfg, $ref, $path = self::STATUS_QUERY_PATH) {
         try {
             return $this->http()->post(
-                $cfg['base_url'].self::STATUS_QUERY_PATH,
+                $cfg['base_url'].$path,
                 json_encode(array('request_id' => $ref), JSON_UNESCAPED_SLASHES),
                 array(
                     'Authorization: Bearer '.$cfg['secret_key'],
                     'Public-Key: '.$cfg['public_key'],
                     'Content-Type: application/json',
                     'Accept: application/json',
-                )
+                ),
+                // Reconciliation runs unattended, but a stalled sweep is still
+                // a sweep that never credits anybody: same fail-fast budget as
+                // every other provider call this adapter makes.
+                $this->http_options()
             );
         } catch (Exception $e) {
             return array('http_code' => 0, 'body' => null, 'error' => $e->getMessage());
         }
+    }
+
+    /**
+     * The operator-configured transaction-status path, or NULL when there is
+     * none (the documented state of the API today).
+     *
+     * Normalised to a leading slash so both `transaction/` and `/transaction/`
+     * work, and length-bounded so a pasted full URL cannot smuggle a different
+     * host into the request.
+     */
+    private function status_path() {
+        $raw = $this->secret('FUNDSVERA_STATUS_PATH', 'fundsvera_status_path');
+        $raw = trim((string)$raw);
+        if ($raw === '') return null;
+        if (preg_match('#^https?://#i', $raw)) {
+            log_message('error', 'fundsvera: FUNDSVERA_STATUS_PATH must be a path, not a full URL — ignoring');
+            return null;
+        }
+        // No traversal: `../..` would climb out of /api/v1 and post our
+        // credentials at an unintended endpoint on the same host.
+        if (strpos($raw, '..') !== false || !preg_match('#^/?[A-Za-z0-9._\-/]{1,120}$#', $raw)) {
+            log_message('error', 'fundsvera: FUNDSVERA_STATUS_PATH is not a usable path — ignoring');
+            return null;
+        }
+        return $raw[0] === '/' ? $raw : '/'.$raw;
     }
 
     /** Webhook/status vocabulary → SUCCESS | FAILED | PENDING. */
@@ -784,10 +913,32 @@ class FundsveraGateway implements GatewayInterface {
      * puts the status update in front of the customer the moment they return.
      */
     private function redirect_url($transaction = null) {
-        if ($transaction && !empty($transaction->public_id)) {
-            return rtrim(site_url('dashboard/wallet/deposits/'.$transaction->public_id), '/');
+        $path = ($transaction && !empty($transaction->public_id))
+            ? 'dashboard/wallet/deposits/'.$transaction->public_id
+            : 'dashboard/wallet/deposits';
+
+        $url = rtrim((string)site_url($path), '/');
+
+        // Their validation refuses a redirect_url that does not start with
+        // http(s) or that carries a query string, answering 400 for the whole
+        // checkout. site_url() returns a *relative* path when APP_URL is unset
+        // — a very ordinary cPanel misconfiguration — so every deposit failed
+        // with the provider's terse "Please input valid..." and nothing said
+        // why. Repair what can be repaired and name the cause when it cannot.
+        $url = strtok($url, '?');           // never send a query string
+        $url = strtok($url, '#');
+
+        if (!preg_match('#^https?://#i', $url)) {
+            $base = trim((string)(getenv('APP_URL') ?: ''));
+            if ($base !== '' && preg_match('#^https?://#i', $base)) {
+                $url = rtrim($base, '/').'/'.ltrim($path, '/');
+            } else {
+                log_message('error', 'fundsvera: APP_URL is not set to an absolute http(s) URL, so the '
+                    .'checkout redirect_url cannot be built — Fundsvera will reject the checkout. '
+                    .'Set APP_URL in .env.');
+            }
         }
-        return rtrim(site_url('dashboard/wallet/deposits'), '/');
+        return $url;
     }
 
     /**

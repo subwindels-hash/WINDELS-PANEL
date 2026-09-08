@@ -207,6 +207,11 @@ class SettingsService {
                 .'signatures are verified with the secret key, which is what their documentation specifies.', ''),
             'fundsvera_base_url' => array('text', 'fundsvera', 'API base URL',
                 'Change only if Fundsvera give you a different endpoint.', 'https://fundsvera.co/api/v1'),
+            'fundsvera_status_path' => array('text', 'fundsvera', 'Transaction-status path (optional)',
+                'Leave blank. Fundsvera publish no transaction-status endpoint yet ("Coming Soon" in '
+                .'their docs), and guessing one makes every reconciliation sweep look like a provider '
+                .'outage. Fill it in only when they give you a real path — end it with "/" for a '
+                .'GET /path/{reference} lookup, otherwise it is POSTed with the request_id.', ''),
 
             // --- Hosted card / wallet gateways ---------------------------
             // One block per gateway: an enable switch, the credentials, and the

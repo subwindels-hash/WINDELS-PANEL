@@ -361,6 +361,9 @@ class PaymentsTest extends TestCase
         putenv('FUNDSVERA_PUBLIC_KEY=pk-test');
         putenv('FUNDSVERA_SECRET_KEY=sk-test');
         putenv('FUNDSVERA_ENABLED=1');
+        // Fundsvera publish no status endpoint, so the lookup is opt-in. This
+        // test is about what happens once an operator configures a real one.
+        putenv('FUNDSVERA_STATUS_PATH=/transaction/');
         try {
             $http = new PayFakeHttp(array(
                 array('http_code' => 200, 'body' => json_encode(array(
@@ -381,6 +384,57 @@ class PaymentsTest extends TestCase
             $this->assertSame('GET', $http->calls[0]['method']);
         } finally {
             putenv('FUNDSVERA_PUBLIC_KEY'); putenv('FUNDSVERA_SECRET_KEY'); putenv('FUNDSVERA_ENABLED');
+            putenv('FUNDSVERA_STATUS_PATH');
+        }
+    }
+
+    /**
+     * With no status path configured — the default, and the truth about their
+     * API today — verify() must not invent one.
+     *
+     * Probing a guessed path against the live host answered with an HTML error
+     * page, which read as "provider unreachable"; reconciliation maps that to
+     * UNREACHABLE and deliberately never ages those deposits out. Every unpaid
+     * bank-transfer deposit therefore stayed open for ever, and the sweep spent
+     * two HTTP calls per deposit per tick to achieve it.
+     */
+    public function testFundsveraVerifyMakesNoRequestWhenNoStatusEndpointIsConfigured()
+    {
+        putenv('FUNDSVERA_PUBLIC_KEY=pk-test');
+        putenv('FUNDSVERA_SECRET_KEY=sk-test');
+        putenv('FUNDSVERA_STATUS_PATH');
+        try {
+            $http = new PayFakeHttp(array());
+            $res = (new FundsveraGateway(null, $http))->verify('MVS-PAY00000000000000001');
+
+            $this->assertFalse($res['ok']);
+            $this->assertTrue(!empty($res['unsupported']),
+                'no published status endpoint is "no verifier", not an outage');
+            $this->assertSame(array(), $http->calls,
+                'the adapter must not call a path the provider does not document');
+        } finally {
+            putenv('FUNDSVERA_PUBLIC_KEY'); putenv('FUNDSVERA_SECRET_KEY');
+        }
+    }
+
+    /** A configured path that is a full URL, or contains traversal, is refused. */
+    public function testFundsveraStatusPathRejectsAnythingThatIsNotAPlainPath()
+    {
+        putenv('FUNDSVERA_PUBLIC_KEY=pk-test');
+        putenv('FUNDSVERA_SECRET_KEY=sk-test');
+        try {
+            foreach (array('https://evil.example/x', '../../admin', 'has spaces') as $bad) {
+                putenv('FUNDSVERA_STATUS_PATH='.$bad);
+                $http = new PayFakeHttp(array());
+                $res = (new FundsveraGateway(null, $http))->verify('MVS-PAY00000000000000001');
+
+                $this->assertTrue(!empty($res['unsupported']), $bad.' must not be used');
+                $this->assertSame(array(), $http->calls,
+                    $bad.' must never reach the HTTP client');
+            }
+        } finally {
+            putenv('FUNDSVERA_PUBLIC_KEY'); putenv('FUNDSVERA_SECRET_KEY');
+            putenv('FUNDSVERA_STATUS_PATH');
         }
     }
 
@@ -389,6 +443,7 @@ class PaymentsTest extends TestCase
     {
         putenv('FUNDSVERA_PUBLIC_KEY=pk-test');
         putenv('FUNDSVERA_SECRET_KEY=sk-test');
+        putenv('FUNDSVERA_STATUS_PATH=/transaction/');
         try {
             $http = new PayFakeHttp(array(
                 array('http_code' => 404, 'body' => '', 'request_id' => 'r'),
@@ -401,6 +456,7 @@ class PaymentsTest extends TestCase
                 'an unknown reference is an unconfirmed payment, not an outage');
         } finally {
             putenv('FUNDSVERA_PUBLIC_KEY'); putenv('FUNDSVERA_SECRET_KEY');
+            putenv('FUNDSVERA_STATUS_PATH');
         }
     }
 
@@ -409,6 +465,7 @@ class PaymentsTest extends TestCase
     {
         putenv('FUNDSVERA_PUBLIC_KEY=pk-test');
         putenv('FUNDSVERA_SECRET_KEY=sk-test');
+        putenv('FUNDSVERA_STATUS_PATH=/transaction/');
         try {
             $http = new PayFakeHttp(array(
                 array('http_code' => 0, 'body' => null, 'error' => 'connection timed out', 'request_id' => 'r'),
@@ -420,6 +477,7 @@ class PaymentsTest extends TestCase
                 'no answer must not become a guessed one');
         } finally {
             putenv('FUNDSVERA_PUBLIC_KEY'); putenv('FUNDSVERA_SECRET_KEY');
+            putenv('FUNDSVERA_STATUS_PATH');
         }
     }
 
@@ -539,6 +597,250 @@ class PaymentsTest extends TestCase
             $this->assertSame('8100000002', $res2['account']->account_number);
         } finally {
             putenv('FUNDSVERA_PUBLIC_KEY'); putenv('FUNDSVERA_SECRET_KEY'); putenv('FUNDSVERA_ENABLED');
+        }
+    }
+
+    /**
+     * A "Pending" callback must not consume the event id the SUCCESSFUL one
+     * needs.
+     *
+     * Fundsvera can send more than one callback for the same `trx_ref`. Keyed
+     * on `trx_ref` alone, the first (pending) event was stored and closed, and
+     * the callback that actually said the money arrived was then discarded by
+     * record_once() as a duplicate — the customer had paid and the wallet was
+     * never credited. This is the single most expensive failure in the
+     * integration, so it is asserted directly.
+     */
+    public function testFundsveraPendingCallbackDoesNotSwallowTheLaterSuccess()
+    {
+        $ci = $this->fresh();
+        $ci->Fundsvera_checkout_model = new PayFakeCheckoutModel();
+        $gateway = $this->fundsvera_gateway();
+
+        $pending = $gateway->parse_event($this->fundsvera_body(array(
+            'transaction_status' => 'Pending', 'amount_paid' => 0,
+        )));
+        $success = $gateway->parse_event($this->fundsvera_body(array(
+            'transaction_status' => 'SUCCESSFUL', 'amount_paid' => '1000',
+        )));
+
+        $this->assertSame('PENDING', $pending['status']);
+        $this->assertSame('SUCCESS', $success['status']);
+        $this->assertNotSame($pending['event_id'], $success['event_id'],
+            'the success must not de-duplicate against the pending notification');
+
+        // A true redelivery still de-duplicates.
+        $ci->Fundsvera_checkout_model = new PayFakeCheckoutModel();
+        $again = $gateway->parse_event($this->fundsvera_body(array(
+            'transaction_status' => 'SUCCESSFUL', 'amount_paid' => '1000',
+        )));
+        $this->assertSame($success['event_id'], $again['event_id']);
+    }
+
+    /** A non-terminal callback must not close the checkout row. */
+    public function testFundsveraPendingCallbackLeavesTheCheckoutRowOpen()
+    {
+        $ci = $this->fresh();
+        $checkout = new PayFakeCheckoutModel();
+        $ci->Fundsvera_checkout_model = $checkout;
+
+        $this->fundsvera_gateway()->parse_event($this->fundsvera_body(array(
+            'transaction_status' => 'Pending', 'amount_paid' => 0,
+        )));
+
+        $this->assertSame(array(), $checkout->results,
+            'closing the row on a pending ping marked a paid deposit FAILED/underpaid');
+    }
+
+    /**
+     * A success that reports no amount is a payload without the figure, not a
+     * short payment. Reading the missing value as zero flagged fully-paid
+     * deposits UNDERPAID, which never credits and never expires.
+     */
+    public function testFundsveraSuccessWithoutAnAmountIsNotTreatedAsUnderpaid()
+    {
+        $ci = $this->fresh();
+        $checkout = new PayFakeCheckoutModel();
+        $ci->Fundsvera_checkout_model = $checkout;
+
+        $body = json_decode($this->fundsvera_body(), true);
+        unset($body['amount_paid']);
+        $event = $this->fundsvera_gateway()->parse_event(json_encode($body));
+
+        $this->assertSame('SUCCESS', $event['status']);
+        $this->assertSame('PAID', $checkout->results[0]['status']);
+    }
+
+    /** A genuinely short payment is still caught. */
+    public function testFundsveraShortPaymentIsStillFlagged()
+    {
+        $ci = $this->fresh();
+        $ci->Fundsvera_checkout_model = new PayFakeCheckoutModel();
+        $event = $this->fundsvera_gateway()->parse_event(
+            $this->fundsvera_body(array('amount_paid' => '400')));
+        $this->assertSame('UNDERPAID', $event['status']);
+    }
+
+    /**
+     * A webhook is untrusted input: bccomp() throws on a non-numeric string
+     * under PHP 8, and an exception here answers the provider with a 500 they
+     * then retry for ever.
+     */
+    public function testFundsveraNonNumericAmountDoesNotThrow()
+    {
+        $ci = $this->fresh();
+        $ci->Fundsvera_checkout_model = new PayFakeCheckoutModel();
+        $event = $this->fundsvera_gateway()->parse_event(
+            $this->fundsvera_body(array('amount_paid' => 'N/A')));
+        $this->assertSame('SUCCESS', $event['status']);
+    }
+
+    /**
+     * The amount quoted to the provider and the amount the webhook is checked
+     * against must be the same number.
+     *
+     * initiate() rounded to 2dp when sending but stored the raw 8dp figure as
+     * `expected_amount`, so a customer who paid exactly what they were shown
+     * came back a hair short and was flagged UNDERPAID — paid, never credited.
+     */
+    public function testFundsveraQuotesAndExpectsTheSameAmount()
+    {
+        putenv('FUNDSVERA_PUBLIC_KEY=pk-test');
+        putenv('FUNDSVERA_SECRET_KEY=sk-test');
+        putenv('FUNDSVERA_ENABLED=1');
+        try {
+            $ci = $this->fresh();
+            $checkout = new PayFakeCheckoutModel();
+            $ci->Fundsvera_checkout_model = $checkout;
+
+            $http = new PayFakeHttp(array(
+                array('http_code' => 200, 'body' => json_encode(array(
+                    'trx_ref'        => 'FVTRX0011',
+                    'account_number' => '9021234567',
+                    'account_name'   => 'FV / Maria',
+                    'bank_name'      => 'Palmpay',
+                    'checkout_url'   => 'https://fundsvera.co/pay/abc',
+                )), 'request_id' => 'r'),
+            ));
+            $tx = (object)array(
+                'id' => 42, 'public_id' => 'PAY000000000000000001', 'user_id' => 7,
+                'internal_reference' => 'MVS-PAY00000000000000001',
+                'amount' => '1000.12345678', 'currency' => 'NGN',
+            );
+            $user = (object)array('id' => 7, 'email' => 'maria@example.com',
+                'first_name' => 'Maria', 'last_name' => 'Ngozi', 'phone' => '08031234567');
+
+            $res = (new FundsveraGateway(null, $http))->initiate($tx, $user);
+            $this->assertTrue($res['ok'], json_encode($res));
+
+            $sent = json_decode($http->calls[0]['data'], true);
+            $this->assertSame(1000.12, $sent['amount']);
+            $this->assertSame('1000.12', $checkout->opened[0]['expected_amount'],
+                'the webhook is compared against this — it must equal what we quoted');
+        } finally {
+            putenv('FUNDSVERA_PUBLIC_KEY'); putenv('FUNDSVERA_SECRET_KEY'); putenv('FUNDSVERA_ENABLED');
+        }
+    }
+
+    /**
+     * Their API refuses a redirect_url that is not absolute or that carries a
+     * query string, and answers 400 for the whole checkout. site_url() returns
+     * a relative path when APP_URL is unset — an ordinary cPanel state — so
+     * every bank-transfer deposit failed with a terse provider message.
+     */
+    public function testFundsveraRedirectUrlIsAbsoluteAndQueryFree()
+    {
+        putenv('FUNDSVERA_PUBLIC_KEY=pk-test');
+        putenv('FUNDSVERA_SECRET_KEY=sk-test');
+        putenv('FUNDSVERA_ENABLED=1');
+        try {
+            $ci = $this->fresh();
+            $ci->Fundsvera_checkout_model = new PayFakeCheckoutModel();
+            $http = new PayFakeHttp(array(
+                array('http_code' => 200, 'body' => json_encode(array(
+                    'trx_ref' => 'FVTRX0012', 'account_number' => '9021234567',
+                    'account_name' => 'FV / Maria', 'bank_name' => 'Palmpay',
+                    'checkout_url' => 'https://fundsvera.co/pay/abc',
+                )), 'request_id' => 'r'),
+            ));
+            $tx = (object)array(
+                'id' => 42, 'public_id' => 'PAY000000000000000001', 'user_id' => 7,
+                'internal_reference' => 'MVS-PAY00000000000000001',
+                'amount' => '1000.00000000', 'currency' => 'NGN',
+            );
+            $user = (object)array('id' => 7, 'email' => 'maria@example.com',
+                'first_name' => 'Maria', 'last_name' => 'Ngozi', 'phone' => '08031234567');
+
+            (new FundsveraGateway(null, $http))->initiate($tx, $user);
+            $sent = json_decode($http->calls[0]['data'], true);
+
+            $this->assertMatchesRegularExpression('#^https?://#', $sent['redirect_url']);
+            $this->assertStringNotContainsString('?', $sent['redirect_url']);
+        } finally {
+            putenv('FUNDSVERA_PUBLIC_KEY'); putenv('FUNDSVERA_SECRET_KEY'); putenv('FUNDSVERA_ENABLED');
+        }
+    }
+
+    /**
+     * A 200 carrying neither account details nor a checkout link is not a
+     * usable checkout: it left a PENDING deposit and a page with no account
+     * number and no link — the literal "it does not work" the customer sees.
+     */
+    public function testFundsveraCheckoutWithoutDetailsOrLinkFailsTheDeposit()
+    {
+        putenv('FUNDSVERA_PUBLIC_KEY=pk-test');
+        putenv('FUNDSVERA_SECRET_KEY=sk-test');
+        putenv('FUNDSVERA_ENABLED=1');
+        try {
+            $ci = $this->fresh();
+            $checkout = new PayFakeCheckoutModel();
+            $ci->Fundsvera_checkout_model = $checkout;
+            $http = new PayFakeHttp(array(
+                array('http_code' => 200,
+                      'body' => json_encode(array('status' => 'Pending', 'message' => 'ok')),
+                      'request_id' => 'r'),
+            ));
+            $tx = (object)array(
+                'id' => 42, 'public_id' => 'PAY000000000000000001', 'user_id' => 7,
+                'internal_reference' => 'MVS-PAY00000000000000001',
+                'amount' => '1000.00000000', 'currency' => 'NGN',
+            );
+            $user = (object)array('id' => 7, 'email' => 'maria@example.com',
+                'first_name' => 'Maria', 'last_name' => 'Ngozi', 'phone' => '08031234567');
+
+            $res = (new FundsveraGateway(null, $http))->initiate($tx, $user);
+
+            $this->assertTrue(empty($res['ok']), 'an unpayable checkout is not a success');
+            $this->assertSame(array(), $checkout->opened,
+                'no orphan checkout row for a checkout nobody can pay');
+        } finally {
+            putenv('FUNDSVERA_PUBLIC_KEY'); putenv('FUNDSVERA_SECRET_KEY'); putenv('FUNDSVERA_ENABLED');
+        }
+    }
+
+    /**
+     * Fundsvera document one key: webhooks are signed with the business secret
+     * key. A stale or mistyped optional webhook secret must not reject every
+     * genuine callback and take collections down.
+     */
+    public function testFundsveraVerifiesAgainstEitherConfiguredSecret()
+    {
+        putenv('FUNDSVERA_SECRET_KEY=sk-real');
+        putenv('FUNDSVERA_WEBHOOK_SECRET=stale-value');
+        try {
+            $gateway = $this->fundsvera_gateway();
+            $body = '{"trx_ref":"FV1"}';
+            $sig = hash_hmac('sha256', $body, 'sk-real');
+
+            $this->assertTrue($gateway->verify_webhook($body, array('X-FUNDSVERA-SIGNATURE' => $sig)),
+                'the documented signing key must always be accepted');
+            $this->assertTrue($gateway->verify_webhook($body, array('X-FUNDSVERA-SIGNATURE' => strtoupper($sig))),
+                'hex is case-insensitive; a signature is not invalid for being uppercase');
+            $this->assertFalse($gateway->verify_webhook($body,
+                array('X-FUNDSVERA-SIGNATURE' => str_repeat('a', 64))),
+                'a signature matching neither secret is still refused');
+        } finally {
+            putenv('FUNDSVERA_SECRET_KEY'); putenv('FUNDSVERA_WEBHOOK_SECRET');
         }
     }
 
