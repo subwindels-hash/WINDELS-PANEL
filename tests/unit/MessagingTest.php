@@ -226,8 +226,12 @@ class MessagingTest extends TestCase
         $this->assertStringContainsString('public function compose(', $src);
         $this->assertStringContainsString('public function send(', $src);
         $this->assertStringContainsString("method(true) !== 'POST'", $src, 'sending is POST-only');
-        $this->assertStringContainsString('RateLimiter', $src,
-            'a signed-in customer must not be able to flood the shared staff inbox');
+        // One bucket per customer: a global bucket would let five sends from
+        // anyone throttle the whole panel.
+        $this->assertStringContainsString("scope('inbox_to_admin', (string) \$this->current_user->id)", $src);
+        // The limiter counts success=0 rows only, so the volume limit is real
+        // only if every send is recorded as a countable row.
+        $this->assertStringContainsString("record(\$bucket, \$ip, false, 'INBOX_SENT'", $src);
 
         $routes = file_get_contents(self::$root.'/application/config/routes.php');
         $this->assertLessThan(strpos($routes, "dashboard/inbox/(:any)"),
@@ -263,6 +267,39 @@ class MessagingTest extends TestCase
         $this->assertNotEmpty($m);
         $this->assertStringNotContainsString('notifications.send', $m[0],
             'broadcasting to every customer is the super admin\'s call by default');
+    }
+
+    /**
+     * A scope name missing from RateLimiter::SCOPES silently shares the
+     * sign-in budget — which is how the admin login counter used to collide
+     * with customer logins. Every caller must have its own budget.
+     */
+    public function testEveryRateLimiterScopeCallerHasItsOwnBudget()
+    {
+        require_once self::$root.'/application/libraries/RateLimiter.php';
+        $known = RateLimiter::SCOPES;
+
+        $names = array();
+        $dirs = array_merge(
+            glob(self::$root.'/application/controllers/*.php'),
+            glob(self::$root.'/application/controllers/*/*.php'),
+            glob(self::$root.'/application/libraries/*.php')
+        );
+        foreach ($dirs as $file) {
+            if (basename($file) === 'RateLimiter.php') continue;
+            preg_match_all("~RateLimiter::scope\('([a-z_]+)'~", file_get_contents($file), $m);
+            foreach ($m[1] as $name) $names[$name] = true;
+        }
+        $this->assertNotEmpty($names, 'the scan must find the real callers');
+
+        foreach (array_keys($names) as $name) {
+            $this->assertContains($name, $known,
+                "'".$name."' throttles through RateLimiter::scope() but is not in SCOPES — "
+                .'its counter is silently spending the sign-in budget');
+        }
+
+        // Called with a constant, so the scan above cannot see it.
+        $this->assertContains('setup', $known, 'Setup::BUCKET needs its own budget too');
     }
 
     public function testTheNotificationsScreenIsWiredAndReachable()
