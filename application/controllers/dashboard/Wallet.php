@@ -218,6 +218,32 @@ class Wallet extends Auth_Controller {
         $tx = $public_id
             ? $this->Payment_transaction_model->find_public_for_user($public_id, $this->current_user->id)
             : null;
+
+        // The customer is back from the provider's approval screen (?paid=1 is
+        // appended to the return_url we sent). For PayPal the payment is not
+        // finished at PayPal's side until WE capture the approved order, so
+        // this return is where that happens - through the service layer, the
+        // only thing allowed to move wallet money, and idempotent: a refresh
+        // or the webhook landing first both end at the same single credit.
+        // Gateways that finish the charge on their own side no-op there.
+        if ($tx && in_array($tx->status, array('CREATED', 'PENDING'), true)
+                && $this->input->get('paid') === '1') {
+            try {
+                $settled = $this->paymentservice->settle_hosted_return($tx);
+                if (!empty($settled['ok']) && empty($settled['noop'])) {
+                    $this->session->set_flashdata('success',
+                        'Your payment was confirmed and your wallet has been credited.');
+                } elseif (empty($settled['ok']) && !empty($settled['error'])) {
+                    $this->session->set_flashdata('error', $settled['error']);
+                }
+                $tx = $this->Payment_transaction_model->find_public_for_user($public_id, $this->current_user->id);
+            } catch (Throwable $e) {
+                // A thrown settlement must never break the deposits page: the
+                // reconciliation sweep will finish the work.
+                log_message('error', 'return settlement failed for '.$public_id.': '.$e->getMessage());
+            }
+        }
+
         $deposits = $this->Payment_transaction_model->for_user($this->current_user->id, 25);
 
         // A bank-transfer deposit is useless to the customer without the

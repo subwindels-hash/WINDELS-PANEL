@@ -750,6 +750,75 @@ class PaymentService {
     }
 
     /**
+     * Finish a hosted payment whose customer has come back to us.
+     *
+     * Most hosted gateways complete the charge on their own side and their
+     * return visit is a formality - for those this is a quiet no-op. PayPal is
+     * the exception: the buyer's approval only signs the order, and PayPal
+     * charges the instrument when WE capture, so the return is where the money
+     * actually moves. Everything here goes through the same idempotent
+     * confirm() a webhook uses, so a page refresh, a racing
+     * PAYMENT.CAPTURE.COMPLETED webhook, or the reconciliation sweep cannot
+     * credit the wallet twice.
+     *
+     * @param object $tx an open payment transaction
+     * @return array{ok:bool, noop?:bool, transaction?:object, error?:string}
+     */
+    public function settle_hosted_return($tx) {
+        if (!$tx || !in_array($tx->status, array(self::STATUS_CREATED, self::STATUS_PENDING), true)) {
+            return array('ok' => true, 'noop' => true);
+        }
+
+        $code = strtolower((string)$tx->provider);
+        if (!in_array($code, $this->implemented_gateways(), true)) {
+            return array('ok' => true, 'noop' => true);
+        }
+
+        $gateway = $this->gateway_for_code($code);
+        if (!method_exists($gateway, 'capture')) {
+            return array('ok' => true, 'noop' => true);
+        }
+
+        // The provider's own key for this checkout (PayPal's order id), stored
+        // at initiation. Without it there is nothing to capture.
+        $meta = json_decode((string)$tx->metadata, true);
+        $checkout = is_array($meta['checkout'] ?? null) ? $meta['checkout'] : array();
+        $order_id = $checkout['order_id'] ?? null;
+        if (!$order_id) return array('ok' => true, 'noop' => true);
+
+        $cap = $gateway->capture($order_id);
+        if (empty($cap['ok'])) {
+            // Deliberately NOT mark_failed: a transient blip must not close a
+            // deposit the customer may still complete, and reconciliation
+            // re-checks every open order on its next tick anyway.
+            log_message('error', $code.': could not capture the approved order for '
+                .$tx->public_id.': '.($cap['error'] ?? 'unknown'));
+            return array('ok' => false, 'error' => $cap['error'] ?? 'The payment could not be completed yet.');
+        }
+
+        // What the provider captured must cover what the deposit was opened
+        // for. The order was created for exactly this amount, so a mismatch
+        // means something is wrong somewhere - flagged for staff, never
+        // credited short.
+        if (isset($cap['amount']) && $cap['amount'] !== null
+                && bccomp((string)$cap['amount'], (string)$tx->amount, 8) < 0) {
+            log_message('error', $code.': capture for '.$tx->public_id.' arrived short - '
+                .($cap['amount'] ?? '?').' against '.$tx->amount.'; left for staff');
+            return array('ok' => false, 'error' => 'The payment that arrived is short of the deposit amount.');
+        }
+
+        if (($cap['status'] ?? '') === 'SUCCESS') {
+            return $this->confirm($tx, 'GATEWAY', $cap['provider_tx_id'] ?? null);
+        }
+        if (($cap['status'] ?? '') === 'FAILED') {
+            $this->mark_failed($tx->id, 'The provider reports the payment as '
+                .strtolower((string)($cap['detail'] ?? 'failed')).'.');
+            return array('ok' => false, 'error' => 'The payment was not completed.');
+        }
+        return array('ok' => false, 'error' => 'The payment is still processing.');
+    }
+
+    /**
      * Whether the adapter behind a payment method can take a payment.
      *
      * Manual bank transfer needs no credentials — a human reconciles it — so

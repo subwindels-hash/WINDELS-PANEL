@@ -672,6 +672,76 @@ class PaymentsTest extends TestCase
 
     /* ---------------------------- source ---------------------------- */
 
+    /**
+     * The PayPal return path: the customer comes back from the approval
+     * screen, we capture, the wallet is credited exactly once — and a second
+     * pass (refresh, racing webhook) cannot credit again.
+     */
+    public function testSettleHostedReturnCapturesTheApprovedPayPalOrderOnce()
+    {
+        $ci = $this->fresh();
+        $ci->securehttpclient = new PayFakeHttp(array(
+            array('http_code' => 200, 'body' => json_encode(array('access_token' => 'A21', 'expires_in' => 32000))),
+            array('http_code' => 201, 'body' => json_encode(array(
+                'id' => '5O190127TN364715T', 'status' => 'COMPLETED',
+                'purchase_units' => array(array('custom_id' => 'MVS-PAY1',
+                    'payments' => array('captures' => array(array(
+                        'id' => 'C1', 'status' => 'COMPLETED',
+                        'amount' => array('value' => '100.00', 'currency_code' => 'USD'),
+                    ))))),
+            ))),
+        ));
+        putenv('PAYPAL_CLIENT_ID=id');
+        putenv('PAYPAL_CLIENT_SECRET=secret');
+        try {
+            $ci->tx->provider = 'paypal';
+            $ci->tx->status = 'PENDING';
+            $ci->tx->metadata = json_encode(array('checkout' => array(
+                'provider' => 'paypal', 'order_id' => '5O190127TN364715T')));
+            $svc = new PaymentService();
+
+            $res = $svc->settle_hosted_return($ci->tx);
+
+            $this->assertTrue($res['ok']);
+            $this->assertSame(1, $ci->ledger_credits, 'the capture credits the wallet exactly once');
+            $this->assertStringContainsString('/v2/checkout/orders/5O190127TN364715T/capture',
+                $ci->securehttpclient->calls[1]['url']);
+
+            // A second pass lands on the already-settled transaction: a no-op.
+            $again = $svc->settle_hosted_return($ci->tx);
+            $this->assertTrue($again['ok']);
+            $this->assertSame(1, $ci->ledger_credits, 'must not double-credit');
+        } finally {
+            putenv('PAYPAL_CLIENT_ID');
+            putenv('PAYPAL_CLIENT_SECRET');
+        }
+    }
+
+    /** Gateways that finish the charge on their own side no-op on return. */
+    public function testSettleHostedReturnIsAQuietNoOpWithoutACaptureStep()
+    {
+        $ci = $this->fresh();
+        $ci->tx->provider = 'manual';
+        $ci->tx->status = 'PENDING';
+        $svc = new PaymentService();
+
+        $res = $svc->settle_hosted_return($ci->tx);
+
+        $this->assertTrue($res['ok']);
+        $this->assertTrue($res['noop']);
+        $this->assertSame(0, $ci->ledger_credits);
+    }
+
+    public function testThePaypalReturnSettlesThroughTheServiceNotTheController()
+    {
+        $src = file_get_contents(self::$root.'/application/controllers/dashboard/Wallet.php');
+        $this->assertStringContainsString('settle_hosted_return', $src,
+            'the return capture must go through PaymentService');
+        $this->assertStringNotContainsString('ledgerservice->credit', $src,
+            'no controller credits a wallet directly');
+        $this->assertStringNotContainsString("insert('wallet_transactions'", $src);
+    }
+
     public function testWalletControllerPostsToPaymentService()
     {
         $src = file_get_contents(self::$root.'/application/controllers/dashboard/Wallet.php');

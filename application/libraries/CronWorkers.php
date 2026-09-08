@@ -938,6 +938,20 @@ class CronWorkers {
         $reference = $card_ref ?: ($tx->provider_tx_id ?: $tx->internal_reference);
         if (!$reference) return $none;
 
+        // A direct hosted-checkout deposit stores the provider's own lookup
+        // key on the transaction (PayPal's order id, Stripe's session id,
+        // Razorpay's link id). Our internal reference means nothing to those
+        // lookups, so when the checkout metadata names this same provider,
+        // that key is the one to ask with. A card checkout (handled above)
+        // always wins: it is the payment actually in flight.
+        if ($card_ref === null) {
+            $checkout = is_array($meta['checkout'] ?? null) ? $meta['checkout'] : array();
+            if (strtolower((string)($checkout['provider'] ?? '')) === $code) {
+                $key = $checkout['order_id'] ?? $checkout['session_id'] ?? $checkout['link_id'] ?? null;
+                if ($key !== null && (string)$key !== '') $reference = (string)$key;
+            }
+        }
+
         $res = $gateway->verify($reference);
         if (empty($res['ok'])) {
             // "The provider has no status endpoint" is not an outage: treating
