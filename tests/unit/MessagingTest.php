@@ -32,6 +32,9 @@ class MessagingTest extends TestCase
         if (!function_exists('log_message')) eval('function log_message($l,$m){}');
         require_once self::$root.'/application/core/MY_Model.php';
         require_once self::$root.'/application/helpers/marvy_helper.php';
+        // ShopDeliveryService builds the My Downloads link with site_url();
+        // whichever test file boots first in a single-process runner defines it.
+        if (!function_exists('site_url')) eval('function site_url($p=""){ return "https://panel.test/".ltrim($p,"/"); }');
     }
 
     private function app()
@@ -207,6 +210,60 @@ class MessagingTest extends TestCase
         $this->assertCount(2, $rows);
         $this->assertSame('Second', $rows[0]->title, 'newest first');
         $this->assertSame('ada@example.test', $rows[0]->email, 'the recipient is named');
+    }
+
+    /* -------------------- digital product delivery ------------------------ */
+
+    /**
+     * Buying a digital product must reach the buyer twice, automatically:
+     * a row in their dashboard inbox, and the shop.digital_ready email.
+     * Both fire at the moment access is granted (provision), and a retried
+     * grant neither duplicates nor re-notifies.
+     */
+    public function testADigitalPurchaseIsDeliveredToTheBuyersInboxAndEmail()
+    {
+        $app = $this->app();
+        $app->register('ada', 'ada@example.test');
+        $ada = $app->User_model->find_by_email('ada@example.test');
+        $app->model(array('Digital_product_model', 'Digital_delivery_model', 'Marketplace_order_model'));
+        $app->library('ShopDeliveryService');
+
+        $app->db->insert('digital_products', array(
+            'listing_id' => 7, 'storage_key' => 'digital_products/abc123.pdf',
+            'original_filename' => 'preset-pack.pdf', 'mime_type' => 'application/pdf',
+            'size_bytes' => 1234,
+        ));
+        $order   = (object) array('id' => 55, 'buyer_id' => (int) $ada->id, 'public_id' => 'MPO1');
+        $listing = (object) array('id' => 7, 'title' => 'Streetwear preset pack');
+
+        $res = $app->shopdeliveryservice->provision($order, $listing);
+
+        $this->assertTrue($res['ok']);
+        $rows = $app->inboxservice->for_user((int) $ada->id);
+        $this->assertCount(1, $rows, 'the purchase lands in the buyer\'s dashboard inbox');
+        $this->assertSame('Your download is ready: Streetwear preset pack', $rows[0]->subject);
+        $this->assertStringContainsString('dashboard/downloads', $rows[0]->body_text,
+            'the durable pointer is the My Downloads page, not a token link');
+        $this->assertStringContainsString('order #MPO1', $rows[0]->body_text);
+
+        $mail = end($app->sent_mail);
+        $this->assertSame('ada@example.test', $mail['to']);
+        $this->assertSame('shop.digital_ready', $mail['template']);
+        $this->assertSame('Streetwear preset pack', $mail['vars']['product']);
+        $this->assertSame('MPO1', $mail['vars']['order_id']);
+
+        // A retried provision (duplicate webhook, replayed request) early-returns
+        // on the existing delivery: no second row, no second email.
+        $app->shopdeliveryservice->provision($order, $listing);
+        $this->assertCount(1, $app->inboxservice->for_user((int) $ada->id));
+        $this->assertCount(1, $app->sent_mail, 'the buyer is notified exactly once');
+    }
+
+    public function testTheDigitalDeliveryEmailTemplateIsSeeded()
+    {
+        $src = file_get_contents(self::$root.'/application/seeds/Core_seeder.php');
+        $this->assertStringContainsString("array('shop.digital_ready', 'Your download is ready: {{product}}'", $src,
+            'the email half of the delivery notice ships as a seeded, editable template');
     }
 
     /* ---------------------------- source pins ---------------------------- */

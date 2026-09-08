@@ -571,6 +571,13 @@ class Core_seeder extends Seeder {
             array('ticket.replied', 'Support ticket {{ticket_id}} updated',
                 '<p>Our team replied to your ticket <strong>{{subject}}</strong>.</p><p><a href="{{ticket_url}}">View ticket</a></p>',
                 array('ticket_id','subject','ticket_url')),
+            // Digital-product delivery (shop listings with a file attached).
+            // Points at My Downloads rather than embedding a download token:
+            // tokens expire and email forwards, but the page re-issues a
+            // fresh signed link on demand.
+            array('shop.digital_ready', 'Your download is ready: {{product}}',
+                '<p>Hi {{username}},</p><p>Your purchase <strong>{{product}}</strong> (order {{order_id}}) is ready.</p><p><a href="{{downloads_url}}">Download it from My Downloads</a> — you can issue a fresh download link there at any time.</p>',
+                array('username','product','order_id','downloads_url')),
             // Reply starters for the contact inbox (Admin → Messages). The
             // operator edits them here and picks them when answering a
             // visitor; {{reply}} is where the typed answer lands.
