@@ -191,6 +191,10 @@ $route['dashboard/notifications/read'] = 'dashboard/notifications/mark_read';
 // the inbox_poll cron worker. Read-only actions plus delete, scoped to the
 // signed-in customer in the queries themselves.
 $route['dashboard/inbox'] = 'dashboard/inbox/index';
+// Compose-to-the-team must be matched BEFORE the (:any) detail route below,
+// or "compose" becomes a message id and 404s.
+$route['dashboard/inbox/compose'] = 'dashboard/inbox/compose';
+$route['dashboard/inbox/send'] = 'dashboard/inbox/send';
 $route['dashboard/inbox/read'] = 'dashboard/inbox/mark_read';
 $route['dashboard/inbox/(:any)/delete'] = 'dashboard/inbox/delete/$1';
 $route['dashboard/inbox/(:any)'] = 'dashboard/inbox/detail/$1';
@@ -202,6 +206,10 @@ $route['admin'] = 'admin/dashboard/index';
 // The staff inbox: mail pulled from the configured mailbox (inbox_poll cron)
 // addressed to the admin account or not attributable to a customer. Gated on
 // settings.manage in the controller, like the mail queue.
+// Team broadcasts: a super admin writes to every user, or to one.
+$route['admin/notifications'] = 'admin/notifications/index';
+$route['admin/notifications/send'] = 'admin/notifications/send';
+
 $route['admin/inbox'] = 'admin/inbox/index';
 $route['admin/inbox/read'] = 'admin/inbox/mark_read';
 $route['admin/inbox/(:any)/reply'] = 'admin/inbox/reply/$1';

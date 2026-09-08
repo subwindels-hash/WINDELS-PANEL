@@ -133,12 +133,32 @@ class Inbox extends Admin_Controller {
 
         $subject = 'Re: '.$msg->subject;
         $html = '<p>'.nl2br(htmlspecialchars($body)).'</p>';
-        if (!$this->mailservice->enqueue_raw(
-                $msg->from_email, $subject, $html, $body, $msg->from_name, 'inbox.reply')) {
+        $mailed = $this->mailservice->enqueue_raw(
+            $msg->from_email, $subject, $html, $body, $msg->from_name, 'inbox.reply');
+
+        // The dashboard half: when the sender is a registered customer, the
+        // same reply lands in THEIR dashboard inbox, so the conversation is
+        // answerable in the panel and not only in their mail client. The
+        // mailbox copy still goes out — the two halves serve the two places a
+        // customer may look. The row id is the dedupe source, so a
+        // double-submitted reply stores once.
+        $user = $this->inboxservice->user_by_email($msg->from_email);
+        $in_panel = false;
+        if ($user) {
+            $in_panel = (bool) $this->inboxservice->deliver(
+                'USER', $user->id, $user->email,
+                function_exists('marvy_site_name') ? marvy_site_name() : 'Support',
+                $this->inboxservice->admin_address() ?: null,
+                $subject, $body, 'aireply:'.$public_id
+            );
+        }
+
+        if (!$mailed && !$in_panel) {
             $this->session->set_flashdata('error', 'Could not queue the reply. Try again.');
         } else {
             $this->session->set_flashdata('success',
-                'Reply queued to '.$msg->from_email.'. It sends with the next mail-queue run.');
+                'Reply queued to '.$msg->from_email
+                .($in_panel ? ' and delivered to their dashboard inbox.' : '. It sends with the next mail-queue run.'));
         }
         redirect('admin/inbox/'.$public_id);
     }

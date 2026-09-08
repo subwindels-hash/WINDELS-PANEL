@@ -67,6 +67,10 @@ class Core_seeder extends Seeder {
             'earnings'   => array('earnings.view','earnings.manage','payouts.review'),
             'affiliates' => array('affiliates.view','affiliates.manage'),
             'system'     => array('settings.manage','appearance.manage','audit.view','blacklist.manage','api.manage'),
+            // Seeded into no role grid: SUPER_ADMIN passes by bypass, so
+            // broadcasting to every customer is the super admin's call unless
+            // the matrix explicitly grants it (§22: sharper grants, not wider).
+            'notifications' => array('notifications.send'),
         );
     }
 
