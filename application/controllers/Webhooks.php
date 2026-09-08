@@ -72,6 +72,68 @@ class Webhooks extends MY_Controller {
         return $this->respond($code, array('ok'=>false,'error'=>$result['error'] ?? 'error'));
     }
 
+    /**
+     * POST /webhook/vtpass — VTpass transaction-update callback.
+     *
+     * VTpass pushes final states (delivered, and code-040 reversals) here,
+     * keyed by the request_id we sent on /pay. The payload carries no
+     * signature, so nothing in it is trusted: the handler treats it as a
+     * pointer to a purchase, then asks VTpass's own /requery what actually
+     * happened — the same trust path as the settlement cron. Settlement and
+     * refunds happen inside TransactionEngine, exactly once.
+     *
+     * The docs require acknowledging with {"response":"success"}; any other
+     * body makes VTpass re-deliver. An unparseable or unrecognised push is
+     * therefore logged and acknowledged rather than answered with an error —
+     * retrying it could not change the outcome, and a flood of 4xx/5xx here
+     * reads to VTpass as an outage.
+     */
+    public function vtpass() {
+        if ($this->input->method(true) !== 'POST') {
+            return $this->respond(405, array('response' => 'error', 'error' => 'method not allowed'));
+        }
+
+        $raw = file_get_contents('php://input') ?: '';
+        $data = json_decode($raw, true);
+        if (!is_array($data) || empty($data['type'])) {
+            log_message('error', 'vtpass webhook: unparseable push ('.strlen($raw).'B)');
+            return $this->respond(200, array('response' => 'success'));
+        }
+        if ($data['type'] !== 'transaction-update') {
+            // variation-codes-update and anything VTpass adds later: not a
+            // transaction state, nothing to settle.
+            log_message('info', 'vtpass webhook: ignored push of type '.$data['type']);
+            return $this->respond(200, array('response' => 'success'));
+        }
+
+        $request_id = (string)($data['data']['requestId'] ?? '');
+        if ($request_id === '') {
+            log_message('error', 'vtpass webhook: transaction-update without a requestId');
+            return $this->respond(200, array('response' => 'success'));
+        }
+
+        try {
+            $this->load->library('VtuService');
+            $res = $this->vtuservice->settle_from_provider_update($request_id);
+        } catch (Throwable $e) {
+            // Acknowledge anyway: a thrown settlement error would make VTpass
+            // redeliver the same push, and the settlement cron re-checks every
+            // pending purchase regardless. The log is what support works from.
+            log_message('error', 'vtpass webhook settlement threw for '.$request_id.': '.$e->getMessage());
+            return $this->respond(200, array('response' => 'success'));
+        }
+
+        if (empty($res['ok'])) {
+            log_message('error', 'vtpass webhook: could not settle '.$request_id.': '
+                .($res['error'] ?? 'unknown reason'));
+        } elseif (!empty($res['settled'])) {
+            log_message('info', 'vtpass webhook: settled '.$request_id.' as '
+                .($res['status'] ?? '?').' from a provider requery');
+        }
+
+        return $this->respond(200, array('response' => 'success'));
+    }
+
     private function all_headers() {
         if (function_exists('getallheaders')) {
             $h = getallheaders();

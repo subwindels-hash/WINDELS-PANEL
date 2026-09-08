@@ -472,6 +472,13 @@ $route['api/docs/json'] = 'api_v1/docs_json';
 // Webhooks
 // Gateway callbacks. POST for signed-body gateways; Blockonomics uses an
 // authenticated GET (see Webhooks::GET_CALLBACK_GATEWAYS), so the route must
+// VTpass transaction-update callback (vtpass.com/documentation/
+// transaction-update-webhook-api). Declared BEFORE the (:any) gateway route
+// (CI matches in file order) and kept out of that handler deliberately: the
+// generic path wraps every push in a signature envelope, and VTpass signs
+// nothing — its callback is verified by requerying the provider instead.
+$route['webhook/vtpass'] = 'webhooks/vtpass';
+
 // not be verb-restricted here — the controller enforces the per-gateway rule.
 $route['webhook/(:any)'] = 'webhooks/index/$1';
 
