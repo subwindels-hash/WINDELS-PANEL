@@ -326,10 +326,14 @@ class Core_seeder extends Seeder {
             // code, name, id_type, lookup_field, provider_code, description
             array('NIN_BASIC', 'NIN verification', 'NIN', 'IDENTIFIER', 'kyc/nin',
                   'Confirm a National Identification Number and return the registered name, date of birth and gender.'),
-            array('BVN_BASIC', 'BVN verification', 'BVN', 'IDENTIFIER', 'kyc/bvn',
+            // provider_code is relative to Dojah's documented API root
+            // (/api/v1) — the adapter joins it. BVN's documented lookup is
+            // /kyc/bvn/full; phone lookups are /kyc/phone_number/basic for
+            // every id type (docs.dojah.io, API reference).
+            array('BVN_BASIC', 'BVN verification', 'BVN', 'IDENTIFIER', 'kyc/bvn/full',
                   'Confirm a Bank Verification Number against the NIBSS record.'),
-            array('NIN_PHONE', 'NIN by phone number', 'NIN', 'PHONE', 'kyc/nin/phone_number',
-                  'Find the NIN record linked to a Nigerian phone number.'),
+            array('NIN_PHONE', 'Identity by phone number', 'NIN', 'PHONE', 'kyc/phone_number/basic',
+                  'Find the identity registered to a Nigerian phone number.'),
         );
     }
 

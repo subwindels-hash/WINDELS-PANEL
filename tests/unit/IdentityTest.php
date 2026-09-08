@@ -740,8 +740,8 @@ class IdentityTest extends TestCase
     {
         $cases = array(
             array('NIN', 'IDENTIFIER', '/api/v1/kyc/nin',  'nin'),
-            array('BVN', 'IDENTIFIER', '/api/v1/kyc/bvn',  'bvn'),
-            array('NIN', 'PHONE', '/api/v1/kyc/nin/phone_number', 'phone_number'),
+            array('BVN', 'IDENTIFIER', '/api/v1/kyc/bvn/full',  'bvn'),
+            array('NIN', 'PHONE', '/api/v1/kyc/phone_number/basic', 'phone_number'),
         );
         foreach ($cases as $case) {
             list($type, $field, $path, $param) = $case;
@@ -752,6 +752,36 @@ class IdentityTest extends TestCase
             $this->assertStringContainsString($path, $http->calls[0]['url']);
             $this->assertSame('70123456789', $http->calls[0]['query'][$param]);
         }
+    }
+
+    /**
+     * Product rows store their provider code relative to Dojah's documented
+     * API root ("kyc/bvn/full"), and the adapter owns the root. Joined
+     * straight onto the host, a bare code produced https://host/kyc/bvn/full -
+     * a 404 the found:false rule then reported as "nobody found", so
+     * every seeded check quietly refunded instead of verifying anyone.
+     */
+    public function testAProductProviderCodeResolvesUnderTheDocumentedApiRoot()
+    {
+        list($adapter, $http) = $this->adapter(array(self::ok(self::fixture('bvn_found.json'))));
+        $adapter->lookup(array('id_type' => 'BVN', 'lookup_field' => 'IDENTIFIER',
+                               'identifier' => '22222222222',
+                               'provider_code' => 'kyc/bvn/full'));
+
+        $this->assertSame('/api/v1/kyc/bvn/full', $http->calls[0]['path']);
+        $this->assertSame('22222222222', $http->calls[0]['query']['bvn']);
+    }
+
+    /** A code that already carries an api/ prefix is honoured verbatim. */
+    public function testAProviderCodeWithItsOwnApiPrefixIsNotRewritten()
+    {
+        list($adapter, $http) = $this->adapter(array(self::ok(self::fixture('nin_found.json'))));
+        $adapter->lookup(array('id_type' => 'NIN', 'lookup_field' => 'IDENTIFIER',
+                               'identifier' => '70123456789',
+                               'provider_code' => 'api/v2/kyc/nin/lookup'));
+
+        $this->assertStringContainsString('/api/v2/kyc/nin/lookup', $http->calls[0]['url']);
+        $this->assertStringNotContainsString('/api/v1/api/', $http->calls[0]['url']);
     }
 
     public function testAVerifiedLookupIsMappedOntoTheStableEntityShape()
