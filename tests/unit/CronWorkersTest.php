@@ -299,6 +299,30 @@ class CronWorkersTest extends TestCase
 
     /* ====================== payments & housekeeping ======================= */
 
+    /**
+     * A PayPal order can only be looked up by PayPal's own order id. Asking
+     * with our internal reference would 404 at the provider and read as an
+     * outage for seven days, after which a paid deposit would be written off.
+     */
+    public function testPaypalReconciliationAsksWithTheProvidersOrderId()
+    {
+        $ci = $this->fresh();
+        $ci->stale_payments = array($this->deposit(array(
+            'provider' => 'paypal',
+            'metadata' => json_encode(array('checkout' => array(
+                'provider' => 'paypal', 'order_id' => '5O190127TN364715T',
+            ))),
+        )));
+        $ci->payment_methods = array((object)array('id' => 4, 'code' => 'paypal', 'type' => 'WALLET'));
+        $ci->gateway_verdict = array('ok' => true, 'status' => 'PENDING');
+        $w = new CronWorkers();
+
+        $w->payment_reconciliation();
+
+        $this->assertSame('5O190127TN364715T', $ci->verify_refs[0] ?? null,
+            'reconciliation must ask PayPal with the order id, not our reference');
+    }
+
     /** A deposit row as reconciliation finds it. */
     private function deposit(array $overrides = array())
     {
@@ -601,6 +625,7 @@ class CronFakeCI {
     public $payment_methods = array(), $gateway_verdict = null, $gateway_configured = true;
     public $confirmed = array(), $stored_webhooks = array(), $reprocessed = array();
     public $tx_updates = array();
+    public $verify_refs = array();
 
     public function __construct() {
         $GLOBALS['__fake_ci'] = $this;
@@ -784,6 +809,7 @@ class CronFakeVerifiableGateway {
     private $ci; function __construct($ci){ $this->ci = $ci; }
     function is_configured(){ return $this->ci->gateway_configured; }
     function verify($reference){
+        $this->ci->verify_refs[] = $reference;
         return $this->ci->gateway_verdict === null
             ? array('ok' => false, 'error' => 'no verdict scripted')
             : $this->ci->gateway_verdict;

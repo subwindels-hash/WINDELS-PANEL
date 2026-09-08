@@ -5,6 +5,8 @@
       <?php if ($inbox_unread > 0): ?><span class="badge badge-info badge-dot"><?=$inbox_unread?> new</span><?php endif; ?>
     </h2>
     <div class="row" style="gap:.5rem">
+      <a class="btn btn-primary btn-sm"
+         href="<?=site_url('dashboard/inbox/compose')?>">Message the team</a>
       <a class="btn btn-ghost btn-sm <?=$status==='UNREAD'?'is-disabled':''?>"
          href="<?=site_url('dashboard/inbox')?>">All</a>
       <a class="btn btn-ghost btn-sm <?=$status!=='UNREAD'?'is-disabled':''?>"
@@ -19,8 +21,9 @@
   </div>
   <p class="hint mt-2 mb-0">Mail sent to your address
     <span class="mono"><?=htmlspecialchars((string)$current_user->email)?></span>
-    arrives here. Use <em>Reply</em> in your own mail app to answer — the staff team can reply
-    from their side.</p>
+    arrives here, and the team's replies to your messages land here too. You can also
+    <a href="<?=site_url('dashboard/inbox/compose')?>">write to the team</a> directly, or use
+    <em>Reply</em> in your own mail app.</p>
 
   <?php if (empty($rows)): ?>
     <?php $this->load->view('partials/empty_state', array(

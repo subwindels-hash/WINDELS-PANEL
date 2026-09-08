@@ -419,10 +419,47 @@ class FundsveraGateway implements GatewayInterface {
                 $event['status'] = 'UNDERPAID';
             }
         } elseif ($event['status'] === 'SUCCESS') {
-            $event['status'] = 'IGNORED';
+            // A standing virtual-account credit has no checkout row — but the
+            // payload names the account, and the account has an owner
+            // (fundsvera.co/docs, "Virtual Account Webhook": the merchant is
+            // expected to credit that customer). Resolve the owner here so
+            // PaymentService can credit their wallet; an account number we do
+            // not recognise stays IGNORED for operator review.
+            $owner = $this->virtual_account_owner(
+                (string)($data['customer']['virtual_account_no'] ?? ''));
+            if ($owner !== null) {
+                $event['metadata']['wallet_user_id'] = $owner;
+            } else {
+                if (!empty($data['customer']['virtual_account_no'])) {
+                    log_message('error', 'fundsvera: payment to unrecognised virtual account '
+                        .$data['customer']['virtual_account_no']
+                        .' — stored for operator reconciliation, nothing credited');
+                }
+                $event['status'] = 'IGNORED';
+            }
         }
 
         return $event;
+    }
+
+    /**
+     * The panel user a virtual-account number belongs to, or null.
+     *
+     * @return int|null user_id
+     */
+    private function virtual_account_owner($account_number) {
+        $account_number = trim((string)$account_number);
+        if ($account_number === '') return null;
+        try {
+            $this->ci->load->model('Fundsvera_virtual_account_model');
+            $row = $this->ci->Fundsvera_virtual_account_model->by_account_number($account_number);
+        } catch (Throwable $e) {
+            log_message('error', 'fundsvera: could not resolve virtual account '.$account_number
+                .': '.$e->getMessage());
+            return null;
+        }
+        if (!$row || empty($row->user_id)) return null;
+        return (int)$row->user_id;
     }
 
     /* ------------------------------------------------------------------ */
@@ -564,10 +601,12 @@ class FundsveraGateway implements GatewayInterface {
 
         // A virtual-account credit has no checkout row: the customer pushed
         // money to their standing account without opening a deposit first.
+        // Whether it credits (the account is ours) or needs a human (it is
+        // not) is decided by parse_event()'s account-owner lookup.
         $va = $data['customer']['virtual_account_no'] ?? null;
         if ($va) {
-            log_message('info', 'fundsvera: unsolicited virtual-account credit to '.$va
-                .' — recorded, awaiting operator reconciliation');
+            log_message('info', 'fundsvera: payment into virtual account '.$va
+                .' matched no checkout row — resolving the account owner');
         }
         return null;
     }

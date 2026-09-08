@@ -33,8 +33,11 @@ require_once __DIR__.'/NumberProviderInterface.php';
  *
  *  3. Every call is a GET under `/v1` (`guest/countries`, `guest/prices`,
  *     `guest/products/{country}/{operator}`, `user/profile`,
+ *     `user/orders`, `user/payments`,
  *     `user/buy/activation/...`, `user/check|finish|cancel|ban/{id}`), exactly
- *     the current documentation's surface.
+ *     the current documentation's surface (the docs "User" section:
+ *     balance = `user/profile`, order history = `user/orders`, payments
+ *     history = `user/payments`).
  *
  * Four properties of the current API shape this class, and each one is a money
  * bug if it is got wrong:
@@ -480,6 +483,167 @@ class FiveSimAdapter implements NumberProviderInterface {
                 ? ($this->provider->currency ?? marvy_base_currency()) : 'RUB',
             'raw_balance' => (string)$data['balance'],
         );
+    }
+
+    /* ------------------------ vendor account history ---------------------- */
+
+    /**
+     * The vendor's order history for this account (current API:
+     * `GET /user/orders?category=$category` — the docs "User → Order history"
+     * endpoint).
+     *
+     * This is the reconciliation view of what we actually bought: every order
+     * the vendor has on file, with its price, phone, state and timestamps, so
+     * an operator can line the vendor's ledger up against
+     * `provider_transactions` and catch a charge this panel never recorded.
+     *
+     * Query parameters per the documentation: `category` is required and can
+     * only be `activation` or `hosting`; `limit`, `offset`, `order` (a field
+     * name) and `reverse` are optional pagination. Anything outside the two
+     * categories is refused locally — the vendor's answer to a bad category
+     * is not worth a round-trip, and an unknowable filter would silently read
+     * as "everything".
+     *
+     * The vendor's envelope is `{Data, ProductNames, Statuses, Total}`; rows
+     * are flattened into the same vocabulary `reservation()` speaks (states
+     * through `$state_map`, timestamps normalised to UTC, prices converted
+     * only when `rate_to_base` is configured) so a caller never re-walks the
+     * vendor's shape.
+     *
+     * @param string $category    'activation' (default) or 'hosting'
+     * @param mixed  $limit       pagination limit, or null to omit
+     * @param mixed  $offset      pagination offset, or null to omit
+     * @param mixed  $order_field vendor field name to order by, or null
+     * @param bool   $reverse     reversed order, or null to omit
+     * @return array{ok:bool,orders?:array[],total?:int,error?:string}
+     *               orders: rows of {reference, msisdn, operator, service,
+     *               provider_product, country, state, raw_state, cost_vendor,
+     *               cost?, expires_at, created_at, messages}
+     */
+    public function orders($category = 'activation', $limit = null, $offset = null,
+                           $order_field = null, $reverse = null) {
+        $category = strtolower(trim((string)$category));
+        if ($category !== 'activation' && $category !== 'hosting') {
+            return array('ok' => false,
+                'error' => 'The vendor keeps order history for activations and hostings only');
+        }
+
+        $query = array('category' => $category);
+        foreach (array('limit' => $limit, 'offset' => $offset, 'order' => $order_field) as $name => $value) {
+            if ($value !== null && trim((string)$value) !== '') $query[$name] = (string)$value;
+        }
+        if ($reverse !== null) $query['reverse'] = $reverse ? 'true' : 'false';
+
+        $res = $this->call('orders', '/user/orders?'.http_build_query($query));
+        if (empty($res['ok'])) return array('ok' => false, 'error' => $res['error']);
+        if (!is_array($res['data']) || !isset($res['data']['Data']) || !is_array($res['data']['Data'])) {
+            return array('ok' => false, 'error' => 'The vendor returned an unusable order history');
+        }
+
+        $reverse_products = array_flip($this->product_map);
+        $out = array();
+        foreach ($res['data']['Data'] as $row) {
+            if (!is_array($row)) continue;
+            $vendor_state = strtoupper((string)($row['status'] ?? ''));
+            $entry = array(
+                'reference'        => isset($row['id']) ? (string)$row['id'] : null,
+                'msisdn'           => isset($row['phone']) ? (string)$row['phone'] : null,
+                'operator'         => isset($row['operator']) ? (string)$row['operator'] : null,
+                'service'          => isset($row['product'])
+                    ? ($reverse_products[(string)$row['product']] ?? strtoupper((string)$row['product']))
+                    : null,
+                'provider_product' => isset($row['product']) ? (string)$row['product'] : null,
+                'country'          => isset($row['country']) ? (string)$row['country'] : null,
+                // History rows pass an unknown status through verbatim — a
+                // listing that guesses would mislabel a live vendor state.
+                'state'            => self::$state_map[$vendor_state] ?? $vendor_state,
+                'raw_state'        => $vendor_state,
+                'cost_vendor'      => isset($row['price']) ? (string)$row['price'] : null,
+                'expires_at'       => $this->utc($row['expires'] ?? null),
+                'created_at'       => $this->utc($row['created_at'] ?? null),
+                'messages'         => $this->messages($row),
+            );
+            $cost = $this->to_base($entry['cost_vendor']);
+            if ($cost !== null) $entry['cost'] = $cost;
+            $out[] = $entry;
+        }
+        return array('ok' => true, 'orders' => $out,
+            'total' => isset($res['data']['Total']) ? (int)$res['data']['Total'] : count($out));
+    }
+
+    /**
+     * The vendor's payments history for this account (current API:
+     * `GET /user/payments` — the docs "User → Payments history" endpoint).
+     *
+     * Every top-up and charge the vendor has recorded against its balance,
+     * with the running balance after each — the audit trail behind the figure
+     * `balance()` reports. Optional pagination per the documentation:
+     * `limit`, `offset`, `order` (a field name), `reverse`.
+     *
+     * The vendor's envelope is `{Data, PaymentTypes, PaymentProviders,
+     * Total}`; each row is `{ID, TypeName, ProviderName, Amount, Balance,
+     * CreatedAt}` (note the capitalised keys — a different convention from
+     * the order rows). Amounts stay in the vendor currency as
+     * `amount_vendor`/`balance_vendor` and are converted to base units only
+     * when `rate_to_base` is configured, exactly like every other vendor
+     * figure in this adapter. The type/provider lists are flattened to plain
+     * name arrays so a filter dropdown has something to render.
+     *
+     * @param mixed $limit       pagination limit, or null to omit
+     * @param mixed $offset      pagination offset, or null to omit
+     * @param mixed $order_field vendor field name to order by, or null
+     * @param bool  $reverse     reversed order, or null to omit
+     * @return array{ok:bool,payments?:array[],total?:int,types?:array,
+     *               providers?:array,error?:string}
+     *               payments: rows of {id, type, provider, amount_vendor,
+     *               amount?, balance_vendor, balance?, created_at}
+     */
+    public function payments($limit = null, $offset = null,
+                             $order_field = null, $reverse = null) {
+        $query = array();
+        foreach (array('limit' => $limit, 'offset' => $offset, 'order' => $order_field) as $name => $value) {
+            if ($value !== null && trim((string)$value) !== '') $query[$name] = (string)$value;
+        }
+        if ($reverse !== null) $query['reverse'] = $reverse ? 'true' : 'false';
+
+        $res = $this->call('payments', '/user/payments'.($query ? '?'.http_build_query($query) : ''));
+        if (empty($res['ok'])) return array('ok' => false, 'error' => $res['error']);
+        if (!is_array($res['data']) || !isset($res['data']['Data']) || !is_array($res['data']['Data'])) {
+            return array('ok' => false, 'error' => 'The vendor returned an unusable payments history');
+        }
+
+        $out = array();
+        foreach ($res['data']['Data'] as $row) {
+            if (!is_array($row)) continue;
+            $entry = array(
+                'id'             => isset($row['ID']) ? (string)$row['ID'] : null,
+                'type'           => isset($row['TypeName']) ? (string)$row['TypeName'] : null,
+                'provider'       => isset($row['ProviderName']) ? (string)$row['ProviderName'] : null,
+                'amount_vendor'  => isset($row['Amount']) ? (string)$row['Amount'] : null,
+                'balance_vendor' => isset($row['Balance']) ? (string)$row['Balance'] : null,
+                'created_at'     => $this->utc($row['CreatedAt'] ?? null),
+            );
+            $amount = $this->to_base($entry['amount_vendor']);
+            if ($amount !== null) $entry['amount'] = $amount;
+            $balance = $this->to_base($entry['balance_vendor']);
+            if ($balance !== null) $entry['balance'] = $balance;
+            $out[] = $entry;
+        }
+        return array('ok' => true, 'payments' => $out,
+            'total' => isset($res['data']['Total']) ? (int)$res['data']['Total'] : count($out),
+            'types'     => $this->name_column($res['data']['PaymentTypes'] ?? array()),
+            'providers' => $this->name_column($res['data']['PaymentProviders'] ?? array()));
+    }
+
+    /** `[{Name: x}, ...]` → `[x, ...]`; anything without a Name is dropped. */
+    private function name_column($rows) {
+        $out = array();
+        foreach ((array)$rows as $row) {
+            if (is_array($row) && isset($row['Name']) && (string)$row['Name'] !== '') {
+                $out[] = (string)$row['Name'];
+            }
+        }
+        return $out;
     }
 
     /* ------------------------------ internals ----------------------------- */

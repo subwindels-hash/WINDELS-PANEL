@@ -471,6 +471,60 @@ class InboxService {
     }
 
     /* ================================================================== */
+    /* Panel-written messages                                             */
+    /* ================================================================== */
+
+    /**
+     * Store a message written inside the panel rather than polled from the
+     * mailbox: a visitor's contact form, a customer composing from their
+     * dashboard, or a staff reply. The owner is given, not routed — the
+     * caller has already decided whose inbox this belongs in.
+     *
+     * $dedupe_source makes a re-submission (a double-clicked send, a replayed
+     * form) a no-op instead of a second copy, the same job dedupe_key does
+     * for polled mail. Returns the new row id, or null for a duplicate.
+     */
+    public function deliver($owner_type, $owner_id, $to_email, $from_name,
+                            $from_email, $subject, $body_text, $dedupe_source) {
+        $to = strtolower(trim((string) $to_email));
+        if ($to === '') return null;
+        $body = trim((string) $body_text);
+        if ($body === '') return null;
+        $dedupe = hash('sha256', 'dm:'.(string) $dedupe_source);
+
+        $now = gmdate('Y-m-d H:i:s');
+        try {
+            $ok = $this->ci->db->insert('inbox_messages', array(
+                'public_id'   => marvy_public_id(),
+                'owner_type'  => $owner_type === 'USER' ? 'USER' : 'ADMIN',
+                'owner_id'    => $owner_type === 'USER' ? (int) $owner_id : null,
+                'to_email'    => $to,
+                'from_email'  => $from_email !== null && $from_email !== '' ? strtolower((string) $from_email) : null,
+                'from_name'   => $from_name !== null && $from_name !== '' ? mb_substr((string) $from_name, 0, 190) : null,
+                'subject'     => mb_substr(trim((string) $subject), 0, 255),
+                'body_text'   => $body,
+                'body_html'   => null,
+                'message_id'  => null,
+                'dedupe_key'  => $dedupe,
+                'received_at' => $now,
+                'is_read'     => 0,
+                'created_at'  => $now,
+            ));
+            return $ok ? (int) $this->ci->db->insert_id() : null;
+        } catch (Throwable $e) {
+            log_message('debug', 'inbox deliver skipped: '.$e->getMessage());
+            return null;
+        }
+    }
+
+    /** The registered account behind an address, for replies to customers. */
+    public function user_by_email($email) {
+        $email = strtolower(trim((string) $email));
+        if ($email === '') return null;
+        return $this->ci->User_model->find_by_email($email);
+    }
+
+    /* ================================================================== */
     /* Reading                                                            */
     /* ================================================================== */
 

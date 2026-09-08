@@ -57,7 +57,8 @@
       <a class="btn btn-ghost btn-sm" href="<?=site_url('admin/inbox/'.$msg->public_id)?>">Cancel</a>
     </div>
     <p class="hint mt-2 mb-0">The reply is queued like every other panel mail and sends on the next
-      mail-queue run (every five minutes).</p>
+      mail-queue run (every five minutes). If the sender is a registered customer, a copy also
+      lands straight in their dashboard inbox.</p>
   </form>
   <?php endif; ?>
 </div>

@@ -5,6 +5,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * Payments — JSON payment API for the signed-in customer.
  *
  *   POST /api/payments/fundsvera/initialize
+ *   POST /api/payments/fundsvera/virtual-account
  *   GET  /api/payments/history
  *   GET  /api/payments/:reference
  *
@@ -73,6 +74,49 @@ class Payments extends MY_Controller {
             // redirect is a convenience, the webhook is the truth.
             'note'         => 'Your wallet is credited when the transfer is confirmed by the payment provider, '
                              .'not when you return to this site.',
+        ));
+    }
+
+    /**
+     * POST /api/payments/fundsvera/virtual-account
+     *
+     * The customer's standing bank-transfer account (fundsvera.co/docs,
+     * "Virtual Account (Create)"). Idempotent at the provider: once an account
+     * exists it is returned instead of a duplicate, so pressing the button
+     * twice is safe. Payments into it arrive as Fundsvera virtual-account
+     * webhooks and credit this customer's wallet automatically.
+     */
+    public function virtual_account() {
+        if ($this->input->method(true) !== 'POST') return $this->json_error(405, 'METHOD', 'POST required.');
+
+        $user = $this->require_customer();
+        if (!$user) return;
+
+        // Creation is an outbound provider call; a stuck client must not be
+        // able to hammer it. Failures (a missing phone number is the common
+        // one) feed the failure budget.
+        $this->load->library('RateLimiter');
+        $bucket = RateLimiter::scope('payva', (string)$user->id);
+        if ($this->ratelimiter->too_many_failures($this->input->ip_address(), $bucket, 5, 300)) {
+            return $this->json_error(429, 'RATE_LIMITED', 'Too many attempts. Try again shortly.');
+        }
+
+        $res = $this->paymentservice->virtual_account($user);
+        if (empty($res['ok'])) {
+            $this->ratelimiter->record($this->input->ip_address(), $bucket, false, $res['code'] ?? 'ACCOUNT_FAILED');
+            return $this->json_error(422, $res['code'] ?? 'ACCOUNT_FAILED', $res['error']);
+        }
+
+        $acct = $res['account'];
+        return $this->json_ok(array(
+            'existing' => !empty($res['existing']),
+            'account'  => array(
+                'account_number' => (string)$acct->account_number,
+                'account_name'   => (string)$acct->account_name,
+                'bank_name'      => (string)$acct->bank_name,
+                'status'         => (string)($acct->account_status ?? 'Active'),
+            ),
+            'note'     => 'Transfers to this account credit your wallet automatically.',
         ));
     }
 

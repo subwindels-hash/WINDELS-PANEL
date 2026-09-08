@@ -405,6 +405,14 @@ class PaymentService {
         if (!$tx && !empty($event['metadata']['idempotency_key'])) {
             $tx = $this->ci->Payment_transaction_model->find_by_idempotency_key($event['metadata']['idempotency_key']);
         }
+        if (!$tx && !empty($event['metadata']['wallet_user_id'])) {
+            // A standing Fundsvera virtual-account payment: no deposit was
+            // open, but the gateway resolved the account to its owner. Open a
+            // deposit for that customer and let confirm() settle it below —
+            // this is the documented behaviour of the VA webhook ("virtual
+            // account funded" ⇒ credit that customer), not a bonus feature.
+            $tx = $this->open_virtual_account_deposit($event);
+        }
         if (!$tx) {
             // Accepted and logged, but there is nothing to reconcile — the
             // event references no transaction of ours. Treat it as processed
@@ -437,6 +445,113 @@ class PaymentService {
             'processed_at' => gmdate('Y-m-d H:i:s'),
         ));
         return $res;
+    }
+
+    /**
+     * Open a deposit for a payment that arrived in a standing virtual account.
+     *
+     * Fundsvera's virtual-account webhook names only the account and the
+     * amount — there was no deposit row to begin with. This creates one in
+     * the PENDING state carrying exactly what the webhook reported, and the
+     * caller immediately confirms it, so a VA payment follows the same
+     * ledger-guaranteed exactly-once path as any other deposit:
+     *
+     *   - the webhook row is deduped on (gateway, event_id = trx_ref) before
+     *     this is ever reached, and
+     *   - the transaction itself is keyed on an idempotency key derived from
+     *     the provider's trx_ref, which also becomes the ledger credit key —
+     *   so a redelivery or an admin reprocess cannot double-credit.
+     *
+     * The provider's cut (`settlement_amount`/`fee` in the payload) is
+     * recorded in metadata; the customer is credited what they actually paid
+     * (`amount_paid`).
+     *
+     * @return object|null the PENDING transaction, or null when the event
+     *                     carries no usable owner/amount (stays unmatched)
+     */
+    private function open_virtual_account_deposit(array $event) {
+        $user_id = (int)($event['metadata']['wallet_user_id'] ?? 0);
+        $amount = $event['amount'] ?? null;
+        if ($user_id <= 0 || !is_numeric($amount) || bccomp((string)$amount, '0', 8) <= 0) {
+            return null;
+        }
+        $amount = number_format((float)$amount, 8, '.', '');
+
+        // One deposit per provider transaction, forever — even if the webhook
+        // row were lost, this key refuses a second credit for the same trx_ref.
+        $idem = 'va-'.substr((string)($event['event_id'] ?? ''), 0, 120);
+        if ($idem === 'va-') $idem = null;
+        if ($idem !== null) {
+            $existing = $this->ci->Payment_transaction_model->find_by_idempotency_key($idem);
+            if ($existing) return $existing;
+        }
+
+        $public_id = marvy_public_id();
+        // The table requires a payment_method_id; the seeded fundsvera row is
+        // the one this credit belongs to. A missing row (operator deleted it)
+        // still credits — id 0 keeps the money path alive and the deposit
+        // findable, rather than dropping a confirmed payment over bookkeeping.
+        $method = $this->resolve_method('fundsvera');
+        if (!$method) {
+            log_message('error', 'fundsvera: no fundsvera payment_methods row — '
+                .'virtual-account credits will carry payment_method_id 0');
+        }
+        $meta = array('virtual_account' => array(
+            'account_number'    => $event['metadata']['virtual_account_no'] ?? null,
+            'customer_email'    => $event['metadata']['customer_email'] ?? null,
+            'settlement_amount' => $event['metadata']['settlement_amount'] ?? null,
+            'provider_fee'      => $event['metadata']['fee'] ?? null,
+        ));
+        $this->persist_transaction(array(
+            'public_id'          => $public_id,
+            'internal_reference' => 'MVS-'.strtoupper($public_id),
+            'provider'           => 'fundsvera',
+            'payment_method'     => 'virtual_account',
+            'initiated_at'       => gmdate('Y-m-d H:i:s'),
+            'user_id'            => $user_id,
+            'payment_method_id'  => $method ? (int)$method->id : 0,
+            'amount'             => $amount,
+            'fee'                => '0.00000000',
+            'bonus'              => '0.00000000',
+            'credited_amount'    => $amount,
+            'currency'           => strtoupper((string)($event['currency'] ?? 'NGN')),
+            'status'             => self::STATUS_PENDING,
+            'idempotency_key'    => $idem,
+            'metadata'           => json_encode($meta, JSON_UNESCAPED_SLASHES),
+            'created_at'         => gmdate('Y-m-d H:i:s'),
+        ));
+        $tx = $this->ci->Payment_transaction_model->find_by_id($this->ci->db->insert_id());
+        if (!$tx) return null;
+
+        // Audit-trail entry only (PENDING → PENDING writes no status change).
+        $this->transition($tx->id, self::STATUS_PENDING, self::STATUS_PENDING,
+            'WEBHOOK', 'Paid into the customer\'s bank transfer account');
+        return $tx;
+    }
+
+    /**
+     * Create (or fetch) a customer's standing Fundsvera bank account.
+     *
+     * The controller-facing entry point for the docs' "Virtual Account
+     * (Create)" — kept beside the other gateway routing so neither the JSON
+     * API nor the dashboard can drift from the configured adapter.
+     */
+    public function virtual_account($user) {
+        $method = $this->resolve_method('fundsvera');
+        if (!$method) {
+            return array('ok' => false, 'error' => 'Bank transfer payments are unavailable',
+                'code' => 'NO_METHOD');
+        }
+        if (!(int)$method->is_active) {
+            return array('ok' => false, 'error' => 'That payment method is unavailable',
+                'code' => 'METHOD_INACTIVE');
+        }
+        $gateway = $this->gateway_for($method);
+        if (!method_exists($gateway, 'create_virtual_account')) {
+            return array('ok' => false, 'error' => 'Bank accounts are not available for this provider',
+                'code' => 'UNSUPPORTED');
+        }
+        return $gateway->create_virtual_account($user);
     }
 
     /* -------------------------------------------------------------- */
@@ -632,6 +747,75 @@ class PaymentService {
             'metadata'   => json_encode($meta, JSON_UNESCAPED_SLASHES),
             'updated_at' => gmdate('Y-m-d H:i:s'),
         ));
+    }
+
+    /**
+     * Finish a hosted payment whose customer has come back to us.
+     *
+     * Most hosted gateways complete the charge on their own side and their
+     * return visit is a formality - for those this is a quiet no-op. PayPal is
+     * the exception: the buyer's approval only signs the order, and PayPal
+     * charges the instrument when WE capture, so the return is where the money
+     * actually moves. Everything here goes through the same idempotent
+     * confirm() a webhook uses, so a page refresh, a racing
+     * PAYMENT.CAPTURE.COMPLETED webhook, or the reconciliation sweep cannot
+     * credit the wallet twice.
+     *
+     * @param object $tx an open payment transaction
+     * @return array{ok:bool, noop?:bool, transaction?:object, error?:string}
+     */
+    public function settle_hosted_return($tx) {
+        if (!$tx || !in_array($tx->status, array(self::STATUS_CREATED, self::STATUS_PENDING), true)) {
+            return array('ok' => true, 'noop' => true);
+        }
+
+        $code = strtolower((string)$tx->provider);
+        if (!in_array($code, $this->implemented_gateways(), true)) {
+            return array('ok' => true, 'noop' => true);
+        }
+
+        $gateway = $this->gateway_for_code($code);
+        if (!method_exists($gateway, 'capture')) {
+            return array('ok' => true, 'noop' => true);
+        }
+
+        // The provider's own key for this checkout (PayPal's order id), stored
+        // at initiation. Without it there is nothing to capture.
+        $meta = json_decode((string)$tx->metadata, true);
+        $checkout = is_array($meta['checkout'] ?? null) ? $meta['checkout'] : array();
+        $order_id = $checkout['order_id'] ?? null;
+        if (!$order_id) return array('ok' => true, 'noop' => true);
+
+        $cap = $gateway->capture($order_id);
+        if (empty($cap['ok'])) {
+            // Deliberately NOT mark_failed: a transient blip must not close a
+            // deposit the customer may still complete, and reconciliation
+            // re-checks every open order on its next tick anyway.
+            log_message('error', $code.': could not capture the approved order for '
+                .$tx->public_id.': '.($cap['error'] ?? 'unknown'));
+            return array('ok' => false, 'error' => $cap['error'] ?? 'The payment could not be completed yet.');
+        }
+
+        // What the provider captured must cover what the deposit was opened
+        // for. The order was created for exactly this amount, so a mismatch
+        // means something is wrong somewhere - flagged for staff, never
+        // credited short.
+        if (isset($cap['amount']) && $cap['amount'] !== null
+                && bccomp((string)$cap['amount'], (string)$tx->amount, 8) < 0) {
+            log_message('error', $code.': capture for '.$tx->public_id.' arrived short - '
+                .($cap['amount'] ?? '?').' against '.$tx->amount.'; left for staff');
+            return array('ok' => false, 'error' => 'The payment that arrived is short of the deposit amount.');
+        }
+
+        if (($cap['status'] ?? '') === 'SUCCESS') {
+            return $this->confirm($tx, 'GATEWAY', $cap['provider_tx_id'] ?? null);
+        }
+        if (($cap['status'] ?? '') === 'FAILED') {
+            $this->mark_failed($tx->id, 'The provider reports the payment as '
+                .strtolower((string)($cap['detail'] ?? 'failed')).'.');
+            return array('ok' => false, 'error' => 'The payment was not completed.');
+        }
+        return array('ok' => false, 'error' => 'The payment is still processing.');
     }
 
     /**

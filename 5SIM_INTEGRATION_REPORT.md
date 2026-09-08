@@ -74,7 +74,12 @@ removes it from production.
   `GET /v1/guest/countries`, `GET /v1/guest/prices`,
   `GET /v1/guest/products/{country}/{operator}`,
   `GET /v1/user/buy/activation/{country}/{operator}/{product}`,
-  `GET /v1/user/check|finish|cancel|ban/{id}`.
+  `GET /v1/user/check|finish|cancel|ban/{id}`,
+  and — added from the docs "User" section (#user) — the vendor account
+  history pair: `GET /v1/user/orders?category=activation|hosting`
+  (order history, for reconciling vendor charges against
+  `provider_transactions`) and `GET /v1/user/payments` (payments history,
+  the audit trail behind the balance figure).
 - Handled vendor semantics: plain-text errors with HTTP 200, HTTP 400
   `not enough user balance`, the vendor's own `expires` deadline (never a
   locally guessed one), RUB costs converted through `FIVESIM_RATE_TO_BASE`,

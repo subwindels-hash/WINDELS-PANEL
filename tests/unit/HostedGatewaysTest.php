@@ -336,7 +336,9 @@ class HostedGatewaysTest extends TestCase
                 ))),
             )
         );
-        $res = (new PaypalGateway())->initiate($this->transaction(), $this->user());
+        $tx = $this->transaction();
+        $tx->currency = 'USD'; // PayPal does not settle the panel's base NGN
+        $res = (new PaypalGateway())->initiate($tx, $this->user());
 
         $this->assertTrue($res['ok']);
         $this->assertSame('https://www.paypal.com/checkoutnow?token=5O1', $res['redirect_url']);
@@ -393,6 +395,153 @@ class HostedGatewaysTest extends TestCase
         $this->assertSame('SUCCESS', $event['status']);
         $this->assertSame('MVS-REF', $event['provider_tx_id']);
         $this->assertSame('USD', $event['currency']);
+    }
+
+    /**
+     * The panel's base currency is naira and PayPal cannot settle it. Refused
+     * here, with the list, before a customer is sent to PayPal to be told
+     * INVALID_CURRENCY_CODE in the vaguest possible terms.
+     */
+    public function testPaypalRefusesACurrencyItCannotSettle()
+    {
+        $ci = $this->boot(array('paypal_client_id' => 'id', 'paypal_client_secret' => 'secret'));
+        $res = (new PaypalGateway())->initiate($this->transaction(), $this->user()); // NGN
+
+        $this->assertFalse($res['ok']);
+        $this->assertSame('CURRENCY_UNSUPPORTED', $res['code']);
+        $this->assertStringContainsString('USD', $res['error']);
+        $this->assertCount(0, $ci->securehttpclient->calls,
+            'refused before any provider call — nothing to ask PayPal');
+    }
+
+    /**
+     * Approval is a signature; the capture is the payment. The request id is
+     * derived from the order id so a retried capture is idempotent at PayPal
+     * rather than a second charge.
+     */
+    public function testPaypalCapturesAnApprovedOrderWithAnIdempotentRequestId()
+    {
+        $ci = $this->boot(
+            array('paypal_client_id' => 'id', 'paypal_client_secret' => 'secret'),
+            array(
+                array('code' => 200, 'body' => array('access_token' => 'A21AA', 'expires_in' => 32000)),
+                array('code' => 201, 'body' => array(
+                    'id' => '5O190127TN364715T', 'status' => 'COMPLETED',
+                    'purchase_units' => array(array(
+                        'custom_id' => 'MVS-01HZTESTPUBLICID',
+                        'payments' => array('captures' => array(array(
+                            'id' => '3C679366HH908993F', 'status' => 'COMPLETED',
+                            'amount' => array('value' => '5000.00', 'currency_code' => 'USD'),
+                        ))),
+                    )),
+                )),
+            )
+        );
+
+        $res = (new PaypalGateway())->capture('5O190127TN364715T');
+
+        $this->assertTrue($res['ok']);
+        $this->assertSame('SUCCESS', $res['status']);
+        $this->assertSame('MVS-01HZTESTPUBLICID', $res['provider_tx_id']);
+        $this->assertSame('5000.00', $res['amount']);
+        $this->assertSame('USD', $res['currency']);
+        $this->assertStringContainsString('/v2/checkout/orders/5O190127TN364715T/capture',
+            $ci->securehttpclient->calls[1]['url']);
+        $request_ids = array();
+        foreach ($ci->securehttpclient->calls[1]['headers'] as $h) {
+            if (strpos($h, 'PayPal-Request-Id:') === 0) $request_ids[] = $h;
+        }
+        $this->assertCount(1, $request_ids, 'the docs make PayPal-Request-Id the idempotency key');
+    }
+
+    public function testPaypalVerifyReadsTheOrderAndCapturesAnApprovedOne()
+    {
+        // APPROVED: the buyer signed; capturing is our step, so verify finishes it.
+        $ci = $this->boot(
+            array('paypal_client_id' => 'id', 'paypal_client_secret' => 'secret'),
+            array(
+                array('code' => 200, 'body' => array('access_token' => 'A21AA', 'expires_in' => 32000)),
+                array('code' => 200, 'body' => array('id' => '5O1', 'status' => 'APPROVED')),
+                array('code' => 201, 'body' => array(
+                    'id' => '5O1', 'status' => 'COMPLETED',
+                    'purchase_units' => array(array('custom_id' => 'MVS-REF',
+                        'payments' => array('captures' => array(array(
+                            'id' => 'C1', 'status' => 'COMPLETED',
+                            'amount' => array('value' => '5000.00', 'currency_code' => 'USD'),
+                        ))))),
+                )),
+            )
+        );
+        $res = (new PaypalGateway())->verify('5O1');
+        $this->assertTrue($res['ok']);
+        $this->assertSame('SUCCESS', $res['status']);
+        $this->assertStringContainsString('/v2/checkout/orders/5O1', $ci->securehttpclient->calls[1]['url']);
+        $this->assertStringContainsString('/capture', $ci->securehttpclient->calls[2]['url']);
+        $this->assertCount(3, $ci->securehttpclient->calls, 'one auth, not three');
+
+        // Already COMPLETED: read straight off the order, nothing to capture.
+        $this->boot(
+            array('paypal_client_id' => 'id', 'paypal_client_secret' => 'secret'),
+            array(
+                array('code' => 200, 'body' => array('access_token' => 'A21AA', 'expires_in' => 32000)),
+                array('code' => 200, 'body' => array(
+                    'id' => '5O1', 'status' => 'COMPLETED',
+                    'purchase_units' => array(array('custom_id' => 'MVS-REF',
+                        'payments' => array('captures' => array(array(
+                            'id' => 'C1', 'status' => 'COMPLETED',
+                            'amount' => array('value' => '5000.00', 'currency_code' => 'USD'),
+                        ))))),
+                )),
+            )
+        );
+        $res = (new PaypalGateway())->verify('5O1');
+        $this->assertSame('SUCCESS', $res['status']);
+
+        // CREATED: nobody has approved, still waiting.
+        $this->boot(
+            array('paypal_client_id' => 'id', 'paypal_client_secret' => 'secret'),
+            array(
+                array('code' => 200, 'body' => array('access_token' => 'A21AA', 'expires_in' => 32000)),
+                array('code' => 200, 'body' => array('id' => '5O1', 'status' => 'CREATED')),
+            )
+        );
+        $res = (new PaypalGateway())->verify('5O1');
+        $this->assertSame('PENDING', $res['status']);
+
+        // VOIDED: terminal failure.
+        $this->boot(
+            array('paypal_client_id' => 'id', 'paypal_client_secret' => 'secret'),
+            array(
+                array('code' => 200, 'body' => array('access_token' => 'A21AA', 'expires_in' => 32000)),
+                array('code' => 200, 'body' => array('id' => '5O1', 'status' => 'VOIDED')),
+            )
+        );
+        $res = (new PaypalGateway())->verify('5O1');
+        $this->assertSame('FAILED', $res['status']);
+    }
+
+    /**
+     * The credit-only-after-capture rule, at the webhook boundary:
+     * CHECKOUT.ORDER.APPROVED used to be parsed as money received.
+     */
+    public function testAnApprovalWebhookIsRecordedButNeverCredited()
+    {
+        $this->boot(array('paypal_client_id' => 'i', 'paypal_client_secret' => 's'));
+        $gw = new PaypalGateway();
+
+        $approved = $gw->parse_event(json_encode(array(
+            'id' => 'WH-1', 'event_type' => 'CHECKOUT.ORDER.APPROVED',
+            'resource' => array('id' => '5O1', 'status' => 'APPROVED',
+                'purchase_units' => array(array('custom_id' => 'MVS-REF'))),
+        )));
+        $this->assertSame('PENDING', $approved['status'],
+            'an approval is a signature, not a payment — it must not credit');
+
+        $declined = $gw->parse_event(json_encode(array(
+            'id' => 'WH-2', 'event_type' => 'CHECKOUT.ORDER.DECLINED',
+            'resource' => array('id' => '5O1', 'custom_id' => 'MVS-REF'),
+        )));
+        $this->assertSame('FAILED', $declined['status']);
     }
 
     /* ------------------------------ Razorpay ----------------------------- */

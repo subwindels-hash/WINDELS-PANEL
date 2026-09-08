@@ -1186,6 +1186,73 @@ class GiftcardsTest extends TestCase
     }
 
     /**
+     * The docs' own product samples spell the upper bound
+     * "maxrecipientDenomination" — lowercase r, a typo that ships in the
+     * vendor's reference payload next to a normally-cased lower bound. A
+     * bound lost to spelling would cap a range card at nothing.
+     */
+    public function testARangeBoundSurvivesTheVendorsSpelling()
+    {
+        list($adapter,) = $this->adapter(array(self::ok(json_encode(array(
+            array(
+                'productId' => 61, 'productName' => 'Vanilla Range Card',
+                'denominationType' => 'RANGE',
+                'recipientCurrencyCode' => 'USD', 'senderCurrencyCode' => 'NGN',
+                'minRecipientDenomination' => 5,
+                'maxrecipientDenomination' => 500,
+                'country' => array('isoName' => 'US'),
+                'brand' => array('brandId' => 9, 'brandName' => 'Vanilla'),
+            ),
+        )))));
+
+        $res = $adapter->products('US');
+
+        $this->assertTrue($res['ok']);
+        $this->assertCount(1, $res['products']);
+        $this->assertSame('5.00000000', $res['products'][0]['min_face_value']);
+        $this->assertSame('500.00000000', $res['products'][0]['max_face_value'],
+            'the typo-spelled bound must still be read');
+    }
+
+    /**
+     * GET /products is paginated (size, page) with 13,000+ products behind
+     * it. A sync that reads one page — twenty rows at the vendor's default —
+     * would import a rounding error of the catalogue and leave the rest
+     * unpurchasable, so the walk follows pages until one comes back short.
+     */
+    public function testTheUnqualifiedCatalogueWalksEveryPage()
+    {
+        $row = function ($id) {
+            return array(
+                'productId' => $id, 'productName' => 'Card '.$id,
+                'denominationType' => 'FIXED',
+                'recipientCurrencyCode' => 'USD', 'senderCurrencyCode' => 'NGN',
+                'fixedRecipientDenominations' => array(25),
+            );
+        };
+        $page_one = array();
+        for ($i = 1; $i <= 200; $i++) $page_one[] = $row($i);
+
+        list($adapter, $http) = $this->adapter(array(
+            self::ok(json_encode($page_one)),
+            self::ok(json_encode(array($row(201)))),
+        ));
+
+        $res = $adapter->products();
+
+        $this->assertTrue($res['ok']);
+        $this->assertCount(201, $res['products'], 'the short second page ends the walk');
+        $this->assertCount(2, $http->calls, 'a full page must be followed, not trusted as the last');
+        $this->assertStringContainsString('size=200', $http->calls[0]['url']);
+        $this->assertStringContainsString('page=1', $http->calls[0]['url']);
+        $this->assertStringContainsString('page=2', $http->calls[1]['url']);
+        // RANGE products must be asked for explicitly, or the walk never sees
+        // them and they silently vanish from the catalogue.
+        $this->assertStringContainsString('includeRange=true', $http->calls[0]['url']);
+        $this->assertStringContainsString('includeFixed=true', $http->calls[0]['url']);
+    }
+
+    /**
      * Every other currency column in the panel defaults to the base currency.
      * This one must not: it records what a *card* is worth to the person
      * redeeming it, so a default would turn a vendor's missing field into a
@@ -1278,6 +1345,24 @@ class GiftcardsTest extends TestCase
         $this->assertTrue($res['ok']);
         $this->assertSame('PLACED', $res['status']);
         $this->assertSame('1', $res['reference']);
+    }
+
+    public function testARefundedVendorOrderFailsInsteadOfWaitingForever()
+    {
+        // The docs' transaction ledger defines REFUNDED as "an attempt to
+        // purchase wasn't successful and the customer's funds were instantly
+        // reversed". The vendor has already given the money back, so the
+        // purchase must settle as failed — the engine refunds the customer —
+        // rather than sit PENDING on a card that will never be issued.
+        list($adapter,) = $this->adapter(array(self::ok(json_encode(array(
+            array('transactionId' => 77, 'status' => 'REFUNDED',
+                  'amount' => 34536.21, 'currencyCode' => 'NGN'),
+        )))));
+
+        $res = $adapter->order_status('77');
+
+        $this->assertTrue($res['ok']);
+        $this->assertSame('FAILED', $res['status'], 'REFUNDED is terminal: the money came back');
     }
 
     /* ==================== catalogue sync into the panel =================== */
