@@ -278,4 +278,22 @@ class Service_transaction_model extends MY_Model {
                         ->order_by('created_at','ASC')->limit($limit)
                         ->get($this->table)->result();
     }
+
+    /**
+     * The unsettled purchase a provider callback names, or null.
+     *
+     * Providers (VTpass's transaction-update webhook, for one) push final
+     * states keyed by the reference we sent. Only an in-flight row matches:
+     * a settled one is answered by TransactionEngine's terminal check anyway,
+     * and an unknown reference is a probe, not a payment.
+     */
+    public function pending_by_provider_reference($domain, $reference){
+        $reference = trim((string)$reference);
+        if ($reference === '') return null;
+        return $this->db->where('service_domain',$domain)
+                        ->where('provider_reference',$reference)
+                        ->where_in('status',array('PENDING','PROCESSING'))
+                        ->order_by('id','DESC')->limit(1)
+                        ->get($this->table)->row();
+    }
 }

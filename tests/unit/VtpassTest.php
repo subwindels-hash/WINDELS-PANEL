@@ -40,6 +40,120 @@ class VtpassTest extends TestCase
         require_once self::$root.'/application/libraries/VtpassAdapter.php';
     }
 
+    /* ================= the transaction-update webhook ==================== */
+
+    /**
+     * VTpass pushes final states to the webhook (vtpass.com/documentation/
+     * transaction-update-webhook-api). The push carries no signature, so the
+     * settlement must go through the provider's own /requery — the webhook
+     * only ever supplies the request_id to ask about.
+     */
+    public function testTransactionUpdateWebhookSettlesThroughARequery()
+    {
+        list($svc, $http, $engine) = $this->webhook_world(array(
+            self::ok(self::fixture('requery_delivered.json')),
+        ));
+
+        $res = $svc->settle_from_provider_update('202608171831SANDBOXB2');
+
+        $this->assertTrue($res['ok'], json_encode($res));
+        $this->assertTrue(!empty($res['matched']));
+        $this->assertTrue(!empty($res['settled']));
+        $this->assertSame('SUCCESSFUL', $res['status']);
+
+        // The provider was ASKED, not told: /requery with our request_id.
+        $this->assertSame('POST', $http->calls[0]['method']);
+        $this->assertStringContainsString('/requery', $http->calls[0]['path']);
+        $this->assertSame('202608171831SANDBOXB2', $http->calls[0]['data']['request_id']);
+
+        // Settled through the engine, exactly like the cron settles.
+        $this->assertSame(array(91, 'SUCCESSFUL', 'PROVIDER'), $engine->transitions[0]);
+    }
+
+    /** A code-040 reversal is a refund, through the same engine path. */
+    public function testAReversalWebhookRefundsThroughTheSamePath()
+    {
+        list($svc, $http, $engine) = $this->webhook_world(array(
+            self::ok(self::fixture('requery_reversed.json')),
+        ));
+
+        $res = $svc->settle_from_provider_update('202608171832SANDBOXC3');
+
+        $this->assertTrue($res['ok'], json_encode($res));
+        $this->assertSame('FAILED', $res['status'],
+            'reversed money must land as a refund, not as a delivery');
+        $this->assertSame(array(91, 'FAILED', 'PROVIDER'), $engine->transitions[0],
+            'FAILED transitions refund the customer inside the engine');
+    }
+
+    /** An unknown or already-settled reference is a no-op, never a guess. */
+    public function testAWebhookForAnUnknownPurchaseIsANoOp()
+    {
+        list($svc, $http, $engine) = $this->webhook_world(array());
+        $res = $svc->settle_from_provider_update('209901010000UNKNOWNREF');
+
+        $this->assertTrue($res['ok']);
+        $this->assertTrue(empty($res['matched']));
+        $this->assertSame(array(), $engine->transitions, 'no money may move on a probe');
+        $this->assertSame(array(), $http->calls, 'and the provider is not asked either');
+    }
+
+    /** The webhook route, handler and acknowledged body must exist. */
+    public function testTheVtpassWebhookEndpointIsWired()
+    {
+        $routes = file_get_contents(self::$root.'/application/config/routes.php');
+        $literal = strpos($routes, "\$route['webhook/vtpass']");
+        $wildcard = strpos($routes, "\$route['webhook/(:any)']");
+        $this->assertNotFalse($literal);
+        $this->assertNotFalse($wildcard);
+        $this->assertLessThan($wildcard, $literal,
+            'CI matches routes in file order: the literal must precede the wildcard');
+
+        $wh = file_get_contents(self::$root.'/application/controllers/Webhooks.php');
+        $this->assertStringContainsString('function vtpass', $wh);
+        $this->assertStringContainsString("'response' => 'success'", $wh,
+            'the docs require acknowledging with {"response":"success"}');
+        $this->assertStringContainsString('settle_from_provider_update', $wh);
+
+        $svc_src = file_get_contents(self::$root.'/application/libraries/VtuService.php');
+        $this->assertStringContainsString('function settle_from_provider_update', $svc_src);
+
+        $model_src = file_get_contents(self::$root.'/application/models/Service_transaction_model.php');
+        $this->assertStringContainsString('function pending_by_provider_reference', $model_src);
+    }
+
+    /**
+     * A webhook-shaped world: one in-flight VTU purchase (id 91) whose
+     * provider is the scripted VTpass adapter, plus an engine double that
+     * records every transition instead of moving money.
+     *
+     * @return array{0:VtuService,1:VtpassFakeHttp,2:VtpassFakeEngine}
+     */
+    private function webhook_world(array $script)
+    {
+        require_once self::$root.'/application/libraries/VtuService.php';
+
+        $ci = new VtpassFakeCI();
+        $GLOBALS['__fake_ci'] = $ci;
+
+        $http = new VtpassFakeHttp($script);
+        $adapter = new VtpassAdapter($this->provider(), $http);
+
+        $ci->Service_transaction_model = new VtpassFakeServiceTxModel((object)array(
+            'id'                 => 91,
+            'service_domain'     => 'VTU',
+            'provider_id'        => 7,
+            'provider_reference' => null, // the fake fills it per call
+            'status'             => 'PROCESSING',
+        ));
+        $ci->Provider_model = new VtpassFakeProviderModel($this->provider());
+        $ci->provider_manager = new VtpassFakeProviderManager($adapter);
+        $engine = new VtpassFakeEngine();
+        $ci->transactionengine = $engine;
+
+        return array(new VtuService(), $http, $engine);
+    }
+
     /* ------------------------------ helpers ------------------------------ */
 
     private static function fixture($name)
@@ -779,6 +893,60 @@ class VtpassPassthroughEncryption
     {
         return strpos((string)$blob, 'enc:') === 0
             ? base64_decode(substr((string)$blob, 4)) : (string)$blob;
+    }
+}
+
+/**
+ * Double for Service_transaction_model's webhook lookup: knows exactly the two
+ * references the scripted webhook world covers and hands back an in-flight
+ * row carrying that reference. Anything else is unknown, which is the path a
+ * probe (or an already-settled purchase) takes.
+ */
+class VtpassFakeServiceTxModel
+{
+    private $tx;
+    private $known = array('202608171831SANDBOXB2', '202608171832SANDBOXC3');
+
+    public function __construct($tx) { $this->tx = $tx; }
+
+    public function pending_by_provider_reference($domain, $reference)
+    {
+        if ($domain !== 'VTU' || !in_array($reference, $this->known, true)) return null;
+        $tx = clone $this->tx;
+        $tx->provider_reference = $reference;
+        return $tx;
+    }
+}
+
+/** Double for Provider_model: resolves the one scripted provider row. */
+class VtpassFakeProviderModel
+{
+    private $provider;
+    public function __construct($provider) { $this->provider = $provider; }
+    public function find_by_id($id) { return (int)$id === (int)$this->provider->id ? $this->provider : null; }
+}
+
+/** Double for Provider_manager: hands back the pre-built scripted adapter. */
+class VtpassFakeProviderManager
+{
+    private $adapter;
+    public function __construct($adapter) { $this->adapter = $adapter; }
+    public function adapter($provider, $family = 'SMM') { return $this->adapter; }
+}
+
+/**
+ * Double for TransactionEngine: records transitions instead of moving money,
+ * so tests can assert the webhook settles (or refunds) through the same
+ * engine call the settlement cron makes.
+ */
+class VtpassFakeEngine
+{
+    public $transitions = array();
+
+    public function transition($tx_id, $new_status, $source = 'SYSTEM', $reason = null, array $opts = array())
+    {
+        $this->transitions[] = array($tx_id, $new_status, $source);
+        return array('ok' => true);
     }
 }
 

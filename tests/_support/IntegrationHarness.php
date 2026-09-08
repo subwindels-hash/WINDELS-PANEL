@@ -379,9 +379,9 @@ class IntegrationHarness
             // code, name, id_type, lookup_field, provider_code, price, cost, active
             array('NIN_BASIC',    'NIN verification',   'NIN', 'IDENTIFIER', 'kyc/nin',
                   '250.00000000', '120.00000000', 1),
-            array('BVN_BASIC',    'BVN verification',   'BVN', 'IDENTIFIER', 'kyc/bvn',
+            array('BVN_BASIC',    'BVN verification',   'BVN', 'IDENTIFIER', 'kyc/bvn/full',
                   '300.00000000', '150.00000000', 1),
-            array('NIN_PHONE',    'NIN by phone',       'NIN', 'PHONE',      'kyc/nin/phone_number',
+            array('NIN_PHONE',    'Identity by phone',  'NIN', 'PHONE',      'kyc/phone_number/basic',
                   '400.00000000', '200.00000000', 1),
             array('NIN_UNPRICED', 'NIN premium',        'NIN', 'IDENTIFIER', 'kyc/nin/advance',
                   null,            null,           1),

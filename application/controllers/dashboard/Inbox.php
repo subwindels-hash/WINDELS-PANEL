@@ -74,6 +74,74 @@ class Inbox extends Auth_Controller {
         ));
     }
 
+    /** GET /dashboard/inbox/compose — write to the team from the dashboard. */
+    public function compose() {
+        $this->load->view('layouts/app', array(
+            'title'        => 'Message the team',
+            'nav_active'   => 'dashboard/inbox',
+            'content_view' => 'dashboard/inbox/compose',
+            'current_user' => $this->current_user,
+            'permissions'  => $this->auth->permissions(),
+            'unread'       => $this->dashboardstats->unread_count($this->current_user->id),
+        ));
+    }
+
+    /**
+     * POST /dashboard/inbox/send — deliver a customer's message to the staff
+     * inbox.
+     *
+     * The message is a first-party row, not an email: it lands in Admin →
+     * Inbox beside the polled mailbox mail, and the staff reply comes back to
+     * THIS inbox. Throttled like the public contact form — a signed-in
+     * customer is one bored tab away from flooding a shared staff screen.
+     */
+    public function send() {
+        if ($this->input->method(true) !== 'POST') { redirect('dashboard/inbox/compose'); return; }
+
+        // Volume limit, one bucket per customer (scope + user id), because a
+        // bored tab must not flood a screen every staff member shares. The
+        // limiter counts failure-classified rows (success = 0) only, so every
+        // attempt here is written as one on purpose — the reason code, not
+        // the success column, tells the two apart. Per user: 10 an hour; per
+        // network, the limiter's usual 3x.
+        $this->load->library('RateLimiter');
+        $ip     = $this->input->ip_address();
+        $bucket = RateLimiter::scope('inbox_to_admin', (string) $this->current_user->id);
+        if ($this->ratelimiter->too_many_failures($ip, $bucket, 10, 3600)) {
+            $this->session->set_flashdata('error',
+                'You have sent several messages just now. Try again in a little while.');
+            redirect('dashboard/inbox/compose');
+            return;
+        }
+
+        $subject = trim((string) $this->input->post('subject'));
+        $message = trim((string) $this->input->post('message'));
+        if ($subject === '' || $message === '') {
+            $this->ratelimiter->record($bucket, $ip, false, 'INBOX_EMPTY', $this->input->user_agent());
+            $this->session->set_flashdata('error', 'Write a subject and a message before sending.');
+            redirect('dashboard/inbox/compose');
+            return;
+        }
+
+        $name = trim(trim((string) ($this->current_user->first_name ?: '')).' '
+                        .trim((string) ($this->current_user->last_name ?: '')));
+
+        $this->inboxservice->deliver(
+            'ADMIN', null,
+            $this->inboxservice->admin_address() !== '' ? $this->inboxservice->admin_address() : 'support@panel.local',
+            $name !== '' ? $name : null,
+            $this->current_user->email,
+            $subject,
+            $message,
+            'umsg:'.$this->current_user->id.':'.marvy_public_id()
+        );
+
+        $this->ratelimiter->record($bucket, $ip, false, 'INBOX_SENT', $this->input->user_agent());
+        $this->session->set_flashdata('success',
+            'Your message was delivered to the team. Their reply will arrive in this inbox.');
+        redirect('dashboard/inbox');
+    }
+
     /** POST /dashboard/inbox/read — mark one (public_id) or everything read. */
     public function mark_read() {
         $id = $this->input->post('public_id');

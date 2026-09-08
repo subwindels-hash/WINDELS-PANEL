@@ -15,11 +15,15 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *   1. `initiate()`  → POST /api/new_address, store the address and the fiat
  *                      amount quoted at that moment.
  *   2. customer pays the address from any wallet.
- *   3. Blockonomics GETs the callback URL with `?status=&addr=&value=&txid=`,
- *      once at 0 confirmations and again at each subsequent confirmation.
+ *   3. Blockonomics GETs the callback URL with
+ *      `?addr=&status=&value=&txid=[&crypto=][&rbf=]` (developers.blockonomics.co,
+ *      Callbacks): status 0 unconfirmed, 1 = one confirmation, 2+ final;
+ *      value is satoshis for BTC and 6-decimal base units for USDT; rbf=1
+ *      marks a Replace-By-Fee transaction the sender can still cancel.
  *   4. `parse_event()` normalises that into the shape PaymentService expects;
- *      the wallet is credited exactly once, when the configured confirmation
- *      threshold is reached.
+ *      the wallet is credited exactly once at status >= 2 (the docs' own
+ *      "treat status >= 2 as confirmed" advice), with RBF-flagged unconfirmed
+ *      callbacks never advancing the payment.
  *
  * ## Why the callback secret matters
  *
@@ -48,16 +52,25 @@ class BlockonomicsGateway implements GatewayInterface {
     /** Blockonomics REST base. */
     const API_BASE = 'https://www.blockonomics.co/api';
 
-    /** Satoshis in one bitcoin. */
-    const SATOSHIS = 100000000;
-
     /** Fraction of the quoted amount a payment may fall short by (0.5%). */
     const UNDERPAYMENT_TOLERANCE = 0.005;
 
-    /** Blockonomics numeric statuses. */
+    /**
+     * Blockonomics numeric statuses (developers.blockonomics.co, Callbacks):
+     * 0 = unconfirmed (in mempool), 1 = 1 confirmation, 2 = 2+ (final).
+     * "Treat status >= 2 as a confirmed payment" is the docs' own advice.
+     */
     const STATUS_UNCONFIRMED = 0;
-    const STATUS_PARTIAL = 1;
+    const STATUS_ONE_CONFIRM = 1;
     const STATUS_CONFIRMED = 2;
+
+    /**
+     * Callback `value` is an integer in BASE UNITS: satoshis (8 dp) for BTC,
+     * 6 decimal places for USDT (developers.blockonomics.co, Callbacks and
+     * Receiving Payments). Dividing a USDT callback by 1e8 lies by 100x, so
+     * the unit always comes from the currency, never a constant.
+     */
+    const DECIMALS = array('BTC' => 8, 'USDT' => 6);
 
     private $ci;
     private $method;
@@ -206,35 +219,53 @@ class BlockonomicsGateway implements GatewayInterface {
         $address = (string) ($params['addr'] ?? '');
         $txid    = (string) ($params['txid'] ?? '');
         $status  = isset($params['status']) ? (int) $params['status'] : -1;
-        $satoshi = isset($params['value']) ? (int) $params['value'] : 0;
+        $value   = isset($params['value']) ? (int) $params['value'] : 0;
 
-        $row = $address !== '' ? $this->address_row($address) : null;
+        // `crypto` is absent (or BTC) for Bitcoin callbacks, USDT for Tether.
+        // The docs' security note: an unconfirmed callback may carry rbf=1 -
+        // a Replace-By-Fee transaction the SENDER can cancel or replace - so
+        // it is recorded for visibility but never advances the payment.
+        $crypto = strtoupper((string) ($params['crypto'] ?? 'BTC'));
+        if ($crypto === '') $crypto = 'BTC';
+        $decimals = self::DECIMALS[$crypto] ?? null;
+        $rbf = array_key_exists('rbf', $params) && (int) $params['rbf'] === 1;
 
         $event = array(
             'event_id'       => $address.':'.$txid.':'.$status,
             'type'           => 'blockonomics.payment',
             'provider_tx_id' => $txid !== '' ? $txid : null,
             'status'         => 'PENDING',
-            'amount'         => $satoshi > 0 ? bcdiv((string) $satoshi, (string) self::SATOSHIS, 8) : null,
-            'currency'       => 'BTC',
+            'amount'         => ($decimals !== null && $value > 0)
+                                    ? bcdiv((string) $value, (string) pow(10, $decimals), 8) : null,
+            'currency'       => $crypto,
             'metadata'       => array(
                 'address'      => $address,
-                'satoshi'      => $satoshi,
+                'value'        => $value,
                 'blk_status'   => $status,
             ),
         );
+        if ($rbf) $event['metadata']['rbf'] = 1;
 
-        if (!$row) {
-            // A callback for an address we never issued. Reported as unmatched
-            // so it is logged and never credited.
+        // A currency outside DECIMALS is not one this panel quotes or holds:
+        // logged and ignored rather than converted with guessed units.
+        if (!$row = ($decimals !== null && $address !== '') ? $this->address_row($address) : null) {
             $event['status'] = 'IGNORED';
             return $event;
         }
 
         $event['metadata']['payment_transaction_id'] = (int) $row->payment_transaction_id;
-        $this->record_progress($row, $status, $satoshi, $txid);
 
-        if ($status >= self::STATUS_CONFIRMED && $this->amount_sufficient($row, $satoshi)) {
+        if ($rbf && $status < self::STATUS_CONFIRMED) {
+            // "reject any callback that includes the rbf parameter" - the
+            // transaction can vanish or be swapped for a different one, so it
+            // must not show as payment progress (nor store its txid as the
+            // paying one). The webhook row itself is the audit trail.
+            return $event;
+        }
+
+        $this->record_progress($row, $status, $value, $txid, $crypto);
+
+        if ($status >= self::STATUS_CONFIRMED && $this->amount_sufficient($row, $value, $crypto)) {
             $event['status'] = 'SUCCESS';
         } elseif ($status >= self::STATUS_CONFIRMED) {
             // Confirmed on-chain but short of the quoted amount. Deliberately
@@ -250,11 +281,26 @@ class BlockonomicsGateway implements GatewayInterface {
     /* Internals                                                           */
     /* ------------------------------------------------------------------ */
 
-    /** Ask Blockonomics for the next unused receive address. */
+    /**
+     * Ask Blockonomics for the next unused receive address.
+     *
+     * The docs' own checkout sample is
+     *   POST /api/new_address?match_callback=<store-url fragment>&crypto=BTC
+     * - crypto=BTC because an account can also hold a USDT wallet, and
+     * match_callback because a merchant with several stores must pin which
+     * store's callback URL this address belongs to (optional; set
+     * blockonomics_match_callback / BLOCKONOMICS_MATCH_CALLBACK to a fragment
+     * of the callback URL configured in the Blockonomics dashboard).
+     */
     private function request_address(array $cfg) {
         $this->ci->load->library('SecureHttpClient');
+        $url = self::API_BASE.'/new_address?crypto=BTC';
+        $match = $this->setting('blockonomics_match_callback', 'BLOCKONOMICS_MATCH_CALLBACK');
+        if ($match !== null && trim((string) $match) !== '') {
+            $url .= '&match_callback='.rawurlencode(trim((string) $match));
+        }
         $res = $this->ci->securehttpclient->post(
-            self::API_BASE.'/new_address',
+            $url,
             '',
             array('Authorization: Bearer '.$cfg['api_key'])
         );
@@ -283,7 +329,7 @@ class BlockonomicsGateway implements GatewayInterface {
     public function btc_rate($currency) {
         $this->ci->load->library('SecureHttpClient');
         $res = $this->ci->securehttpclient->get(
-            self::API_BASE.'/price?currency='.rawurlencode(strtoupper($currency))
+            self::API_BASE.'/price?crypto=BTC&currency='.rawurlencode(strtoupper($currency))
         );
         if (empty($res['http_code']) || $res['http_code'] !== 200) return null;
 
@@ -327,13 +373,14 @@ class BlockonomicsGateway implements GatewayInterface {
     }
 
     /** Persist what the callback reported against the stored address. */
-    private function record_progress($row, $status, $satoshi, $txid) {
-        $received = bcdiv((string) max($satoshi, 0), (string) self::SATOSHIS, 8);
+    private function record_progress($row, $status, $value, $txid, $crypto = 'BTC') {
+        $decimals = self::DECIMALS[strtoupper((string) ($row->crypto ?? $crypto))] ?? 8;
+        $received = bcdiv((string) max($value, 0), (string) pow(10, $decimals), 8);
 
         $state = 'AWAITING';
         if ($status >= self::STATUS_CONFIRMED) {
-            $state = $this->amount_sufficient($row, $satoshi) ? 'PAID' : 'PARTIAL';
-        } elseif ($status === self::STATUS_UNCONFIRMED || $status === self::STATUS_PARTIAL) {
+            $state = $this->amount_sufficient($row, $value, $crypto) ? 'PAID' : 'PARTIAL';
+        } elseif ($status === self::STATUS_UNCONFIRMED || $status === self::STATUS_ONE_CONFIRM) {
             $state = 'CONFIRMING';
         }
 
@@ -346,12 +393,14 @@ class BlockonomicsGateway implements GatewayInterface {
         ));
     }
 
-    /** Whether the received satoshis cover the quoted amount within tolerance. */
-    private function amount_sufficient($row, $satoshi) {
+    /** Whether the received value covers the quoted amount within tolerance.
+     *  The quote lives on the row, so the row's own currency sets the unit. */
+    private function amount_sufficient($row, $value, $crypto = 'BTC') {
         $expected = (string) $row->expected_crypto_amount;
         if ((float) $expected <= 0) return true; // nothing quoted; accept what arrived
 
-        $received = bcdiv((string) max($satoshi, 0), (string) self::SATOSHIS, 8);
+        $decimals = self::DECIMALS[strtoupper((string) ($row->crypto ?? $crypto))] ?? 8;
+        $received = bcdiv((string) max($value, 0), (string) pow(10, $decimals), 8);
         $floor = bcmul($expected, (string) (1 - self::UNDERPAYMENT_TOLERANCE), 8);
 
         return bccomp($received, $floor, 8) >= 0;

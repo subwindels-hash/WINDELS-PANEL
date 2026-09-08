@@ -241,6 +241,84 @@ class VtuService {
 
     /* ------------------------------------------------------------------ */
 
+    /**
+     * Settle one VTU purchase from a provider status push.
+     *
+     * VTpass's transaction-update webhook (vtpass.com/documentation/
+     * transaction-update-webhook-api) delivers final states — including
+     * reversals — keyed by the request_id we sent. The push itself carries no
+     * signature, so the payload is treated as a hint, never as evidence:
+     * the only thing this method acts on is what the provider's own /requery
+     * answers, which is the exact trust path the settlement cron uses.
+     *
+     * A webhook that names no in-flight purchase (already settled, or an
+     * unknown/probe reference) is a success-shaped no-op — VTpass expects the
+     * acknowledged either way.
+     *
+     * @param string $request_id the requestId the provider echoed back
+     * @return array{ok:bool, matched?:bool, settled?:bool, status?:string, error?:string}
+     */
+    public function settle_from_provider_update($request_id) {
+        $request_id = trim((string)$request_id);
+        if ($request_id === '') {
+            return array('ok' => false, 'error' => 'No request id in the provider update');
+        }
+
+        $tx = $this->ci->Service_transaction_model->pending_by_provider_reference('VTU', $request_id);
+        if (!$tx) {
+            // Nothing in flight under that reference: settled earlier by the
+            // cron, or a reference this panel never issued. Either way there
+            // is nothing honest to do — and nothing to trust from the push.
+            return array('ok' => true, 'matched' => false);
+        }
+        if (!$tx->provider_id) {
+            return array('ok' => false, 'error' => 'That purchase has no provider to requery');
+        }
+
+        $provider = $this->ci->Provider_model->find_by_id($tx->provider_id);
+        if (!$provider) {
+            return array('ok' => false, 'error' => 'The provider record for that purchase is gone');
+        }
+
+        try {
+            $adapter = $this->ci->provider_manager->adapter($provider, 'VTU');
+        } catch (Throwable $e) {
+            return array('ok' => false, 'error' => 'No adapter for that provider: '.$e->getMessage());
+        }
+        if (!method_exists($adapter, 'status')) {
+            return array('ok' => false, 'error' => 'That adapter cannot requery');
+        }
+
+        // Ask the provider, not the webhook.
+        $res = $adapter->status($tx->provider_reference);
+        if (empty($res['ok']) || empty($res['status'])) {
+            return array('ok' => false,
+                'error' => $res['error'] ?? 'The provider did not confirm a status');
+        }
+
+        $status = strtoupper((string)$res['status']);
+        if (!in_array($status, array('SUCCESSFUL', 'FAILED'), true)) {
+            // PROCESSING or anything new: leave it to the cron to re-check.
+            return array('ok' => true, 'matched' => true, 'settled' => false, 'status' => $status);
+        }
+
+        // FAILED transitions refund the customer inside the engine — which is
+        // also exactly how a code-040 reversal (money bounced back to the
+        // provider's wallet) is supposed to land on our side.
+        $engine = $this->ci->transactionengine->transition(
+            $tx->id, $status, 'PROVIDER',
+            $status === 'FAILED' ? 'Provider reported failure' : null
+        );
+        if (empty($engine['ok'])) {
+            return array('ok' => false,
+                'error' => $engine['error'] ?? 'Could not settle the purchase');
+        }
+        return array('ok' => true, 'matched' => true, 'settled' => true,
+            'status' => $status, 'unchanged' => !empty($engine['unchanged']));
+    }
+
+    /* ------------------------------------------------------------------ */
+
     /** Everything shared by the five purchase types. */
     private function purchase($user, array $s) {
         $provider = $this->provider_for($s['network'], $s['product']);

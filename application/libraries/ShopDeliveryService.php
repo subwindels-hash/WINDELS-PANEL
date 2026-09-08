@@ -148,7 +148,76 @@ class ShopDeliveryService {
             'digital_product_id'   => $product->id,
             'user_id'              => $order->buyer_id,
         ));
+        // Access is granted; telling the buyer is part of granting it, not a
+        // favour. Runs only on the fresh-grant path (the early return above
+        // catches a retried purchase), so a buyer is notified exactly once.
+        $this->notify_buyer($order, $listing, $id);
         return array('ok' => true, 'delivery_id' => $id);
+    }
+
+    /**
+     * Tell the buyer their digital product is ready - in their dashboard
+     * inbox and in their email.
+     *
+     * Notifying is the LAST step of a purchase (the NotificationService
+     * rule): each channel is guarded on its own, so a mail or inbox problem
+     * can never fail the purchase that already succeeded. Both point at My
+     * Downloads rather than embedding a signed token - the token IS the
+     * credential (see Downloads) and email gets forwarded, so the durable
+     * pointer is the page, where a fresh token is one click away.
+     */
+    private function notify_buyer($order, $listing, $delivery_id) {
+        try {
+            $buyer = null;
+            if (isset($order->buyer_id) && (int) $order->buyer_id > 0) {
+                $this->ci->load->model('User_model');
+                $buyer = $this->ci->User_model->find_by_id((int) $order->buyer_id);
+            }
+            if (!$buyer || empty($buyer->email)) return;
+
+            $product     = (string) ($listing->title ?? 'your purchase');
+            $order_ref   = (string) ($order->public_id ?? '');
+            $downloads   = site_url('dashboard/downloads');
+            $subject     = 'Your download is ready: '.$product;
+            $body        = 'Your purchase "'.$product.'"'
+                .($order_ref !== '' ? ' (order #'.$order_ref.')' : '')
+                .' is ready to download.'."\n\n"
+                .'Get it from My Downloads: '.$downloads."\n"
+                .'You can issue a fresh download link there at any time.';
+
+            // The dashboard inbox: one grant, one message ('dldeliver:' is the
+            // same dedupe contract every panel-written inbox row uses).
+            try {
+                $this->ci->load->library('InboxService');
+                $this->ci->inboxservice->deliver(
+                    'USER', (int) $buyer->id, $buyer->email,
+                    function_exists('marvy_site_name') ? marvy_site_name() : 'Support',
+                    null, $subject, $body, 'dldeliver:'.$delivery_id
+                );
+            } catch (Throwable $e) {
+                log_message('error', 'digital delivery inbox notice failed: '.$e->getMessage());
+            }
+
+            // The email: queued like every other panel mail, from the seeded
+            // shop.digital_ready template.
+            try {
+                $this->ci->load->library('MailService');
+                $this->ci->mailservice->enqueue_template(
+                    $buyer->email, 'shop.digital_ready',
+                    array(
+                        'username'      => (string) ($buyer->username ?? ''),
+                        'product'       => $product,
+                        'order_id'      => $order_ref,
+                        'downloads_url' => $downloads,
+                    ),
+                    trim((string) ($buyer->first_name ?? '').' '.(string) ($buyer->last_name ?? '')) ?: null
+                );
+            } catch (Throwable $e) {
+                log_message('error', 'digital delivery email failed: '.$e->getMessage());
+            }
+        } catch (Throwable $e) {
+            log_message('error', 'digital delivery notification failed: '.$e->getMessage());
+        }
     }
 
     /** Every download this user currently has (My Downloads). */

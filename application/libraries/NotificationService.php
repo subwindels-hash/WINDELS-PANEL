@@ -109,6 +109,71 @@ class NotificationService {
         }
     }
 
+    /**
+     * A message from the team, sent by a super admin from Admin →
+     * Notifications — to every user at once, or to one.
+     *
+     * Broadcasts are operational announcements, not event notifications:
+     * they bypass notification_preferences deliberately (a maintenance notice
+     * that respects an opt-out is a notice most users never saw), carry the
+     * admin's own title rather than an EVENTS entry, and never send email —
+     * the bell and the Notifications page are the delivery. Inserted directly
+     * in chunks so a panel with thousands of users is one form submit, not a
+     * timeout.
+     *
+     * @param array $user_ids recipients (users.id)
+     * @return int how many rows were written
+     */
+    public function broadcast(array $user_ids, $title, $body) {
+        $title = trim((string) $title);
+        $body = trim((string) $body);
+        if ($title === '' || $body === '') return 0;
+
+        $user_ids = array_values(array_unique(array_filter(array_map('intval', $user_ids))));
+        $written = 0;
+        $now = gmdate('Y-m-d H:i:s');
+        foreach (array_chunk($user_ids, 500) as $chunk) {
+            $rows = array();
+            foreach ($chunk as $uid) {
+                $rows[] = array(
+                    'public_id'  => marvy_public_id(),
+                    'user_id'    => $uid,
+                    'type'       => 'admin.broadcast',
+                    'channel'    => 'IN_APP',
+                    'title'      => mb_substr($title, 0, 255),
+                    'body'       => $body,
+                    'data'       => json_encode(array('sent_by' => 'admin'), JSON_UNESCAPED_SLASHES),
+                    'is_read'    => 0,
+                    'read_at'    => null,
+                    'created_at' => $now,
+                );
+            }
+            try {
+                $this->ci->db->insert_batch('notifications', $rows);
+                $written += count($rows);
+            } catch (Throwable $e) {
+                log_message('error', 'broadcast: chunk of '.count($rows).' failed: '.$e->getMessage());
+            }
+        }
+        return $written;
+    }
+
+    /** Recent team broadcasts, newest first, with the recipient's email. */
+    public function recent_broadcasts($limit = 50) {
+        try {
+            return $this->ci->db
+                ->select('n.public_id, n.user_id, n.title, n.body, n.created_at, n.is_read, u.email', false)
+                ->from('notifications n')
+                ->join('users u', 'u.id = n.user_id', 'left')
+                ->where('n.type', 'admin.broadcast')
+                ->order_by('n.id', 'DESC')
+                ->limit(max(1, min(200, (int) $limit)))
+                ->get()->result();
+        } catch (Throwable $e) {
+            return array();
+        }
+    }
+
     /** Queue the matching email. Never throws, for the same reason. */
     private function send_email($user_id, $template_key, array $vars) {
         try {

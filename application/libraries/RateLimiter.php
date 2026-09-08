@@ -80,7 +80,15 @@ class RateLimiter {
      * so forgetting to add a name here is a missed improvement, never a
      * missing limit.
      */
-    const SCOPES = array('login', 'admin_login', 'mfa', 'register', 'pwreset', 'assistant', 'chat');
+    const SCOPES = array('login', 'adminlogin', 'mfa', 'register', 'pwreset',
+                         'assistant', 'chat', 'contact', 'payinit', 'payva',
+                         'refvalidate', 'setup', 'inbox_to_admin');
+    // One entry per RateLimiter::scope() name actually called in the panel —
+    // Auth's admin sign-in, the contact form, deposit initiation, the VA
+    // service, referral validation, first-run setup and dashboard-to-team
+    // messages. A name missing here silently shares the sign-in budget,
+    // which is exactly how the admin login counter used to collide with
+    // customer logins; MessagingTest cross-checks callers against this list.
 
     public function __construct() {
         $this->ci =& get_instance();

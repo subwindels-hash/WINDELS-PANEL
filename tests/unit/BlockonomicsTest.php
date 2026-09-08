@@ -228,6 +228,139 @@ class BlockonomicsTest extends TestCase
         $this->assertNotSame($first['event_id'], $next['event_id'], 'a new confirmation must be a new event');
     }
 
+    /* ------------------- documented request shapes ------------------------ */
+
+    /**
+     * The docs' checkout sample is
+     *   POST /api/new_address?match_callback=<fragment>&crypto=BTC
+     * An account can hold a USDT wallet too, so the call must name its crypto;
+     * a merchant with several stores pins the store with match_callback.
+     */
+    public function testNewAddressCallFollowsTheDocumentedCheckoutSample()
+    {
+        $ci = $this->fresh(array('rate' => '100000000.00000000',
+                                 'match_callback' => 'panel.example'));
+        $gw = new BlockonomicsGateway();
+        $this->assertTrue($gw->initiate($this->tx(), $ci->user)['ok']);
+
+        $url = $ci->securehttpclient->calls[0]['url'];
+        $this->assertStringContainsString('/new_address?crypto=BTC', $url);
+        $this->assertStringContainsString('&match_callback=panel.example', $url);
+    }
+
+    public function testNewAddressCallOmitsAnUnconfiguredMatchCallback()
+    {
+        $ci = $this->fresh(array('rate' => '100000000.00000000'));
+        $gw = new BlockonomicsGateway();
+        $this->assertTrue($gw->initiate($this->tx(), $ci->user)['ok']);
+
+        $url = $ci->securehttpclient->calls[0]['url'];
+        $this->assertStringContainsString('/new_address?crypto=BTC', $url);
+        $this->assertStringNotContainsString('match_callback', $url,
+            'an unconfigured fragment must not be sent as an empty match');
+    }
+
+    public function testPriceCallFollowsTheDocumentedSample()
+    {
+        $ci = $this->fresh(array('rate' => '100000000.00000000'));
+        $gw = new BlockonomicsGateway();
+        $gw->btc_rate('NGN');
+
+        $this->assertStringContainsString('/price?crypto=BTC&currency=NGN',
+            $ci->securehttpclient->calls[0]['url']);
+    }
+
+    /* --------------------- documented callback rules ----------------------- */
+
+    /**
+     * Docs, Callbacks - security notes: an unconfirmed callback may carry
+     * rbf=1, a Replace-By-Fee transaction the SENDER can cancel or replace.
+     * It is recorded (the webhook row is the audit trail) but must never show
+     * as payment progress or store its txid as the paying one.
+     */
+    public function testAnRbfUnconfirmedCallbackNeverAdvancesThePayment()
+    {
+        $ci = $this->fresh();
+        $ci->db->address_row = $this->addressRow();
+        $gw = new BlockonomicsGateway();
+
+        $event = $gw->parse_event($this->callback(array(
+            'status' => 0, 'value' => 50000, 'rbf' => 1,
+        )));
+
+        $this->assertSame('PENDING', $event['status']);
+        $this->assertSame(1, $event['metadata']['rbf']);
+        $this->assertCount(0, $ci->db->updates,
+            'an RBF-flagged transaction must not advance the address row');
+    }
+
+    /** rbf only ever marks unconfirmed callbacks; the real confirmation flows. */
+    public function testTheConfirmedCallbackAfterAnRbfOneStillCompletes()
+    {
+        $ci = $this->fresh();
+        $ci->db->address_row = $this->addressRow();
+        $gw = new BlockonomicsGateway();
+
+        $event = $gw->parse_event($this->callback(array('status' => 2, 'value' => 50000)));
+        $this->assertSame('SUCCESS', $event['status']);
+        $this->assertArrayNotHasKey('rbf', $event['metadata']);
+    }
+
+    /**
+     * Docs, Receiving Payments: "USDT values in callbacks are in base units
+     * (6 decimal places), not satoshis." Dividing by 1e8 would understate a
+     * USDT payment a hundredfold and refuse every real deposit.
+     */
+    public function testUsdtCallbacksUseTheDocumentedSixDecimalUnit()
+    {
+        $ci = $this->fresh();
+        $row = $this->addressRow();
+        $row->crypto = 'USDT';
+        $row->expected_crypto_amount = '0.50000000';
+        $ci->db->address_row = $row;
+        $gw = new BlockonomicsGateway();
+
+        // 500000 base units == 0.5 USDT: the full quote, paid in full.
+        $event = $gw->parse_event($this->callback(array(
+            'status' => 2, 'value' => 500000, 'crypto' => 'USDT',
+        )));
+        $this->assertSame('SUCCESS', $event['status']);
+        $this->assertSame('0.50000000', $event['amount']);
+        $this->assertSame('USDT', $event['currency']);
+
+        // 0.25 USDT against a 0.5 quote is short - in USDT terms, not satoshis.
+        $short = $gw->parse_event($this->callback(array(
+            'status' => 2, 'value' => 250000, 'crypto' => 'USDT',
+        )));
+        $this->assertSame('UNDERPAID', $short['status']);
+    }
+
+    /** A currency the panel neither quotes nor holds is never converted by guesswork. */
+    public function testACallbackInAnUnsupportedCryptoIsIgnored()
+    {
+        $ci = $this->fresh();
+        $ci->db->address_row = $this->addressRow();
+        $gw = new BlockonomicsGateway();
+
+        $event = $gw->parse_event($this->callback(array(
+            'status' => 2, 'value' => 100, 'crypto' => 'ETH',
+        )));
+        $this->assertSame('IGNORED', $event['status']);
+        $this->assertArrayNotHasKey('payment_transaction_id', $event['metadata']);
+    }
+
+    /** crypto absent means Bitcoin, exactly as the docs define it. */
+    public function testACallbackWithoutACryptoParamIsBitcoin()
+    {
+        $ci = $this->fresh();
+        $ci->db->address_row = $this->addressRow();
+        $gw = new BlockonomicsGateway();
+
+        $event = $gw->parse_event($this->callback(array('status' => 2, 'value' => 50000)));
+        $this->assertSame('BTC', $event['currency']);
+        $this->assertSame('SUCCESS', $event['status']);
+    }
+
     /* ------------------------------ wiring ------------------------------- */
 
     /**
@@ -262,7 +395,7 @@ class BlockonomicsTest extends TestCase
     {
         return (object)array(
             'id' => 3, 'payment_transaction_id' => 42, 'user_id' => 7,
-            'address' => 'bc1qexampleaddress000000',
+            'crypto' => 'BTC', 'address' => 'bc1qexampleaddress000000',
             'expected_crypto_amount' => '0.00050000',
             'required_confirmations' => 2, 'txid' => null, 'status' => 'AWAITING',
         );
@@ -326,6 +459,7 @@ class BlkFakeSettings
         if (array_key_exists('api_key', $opts)) $defaults['blockonomics_api_key'] = $opts['api_key'];
         if (array_key_exists('callback_secret', $opts)) $defaults['blockonomics_callback_secret'] = $opts['callback_secret'];
         if (array_key_exists('btc_enabled', $opts)) $defaults['blockonomics_btc_enabled'] = $opts['btc_enabled'] ? '1' : '0';
+        if (array_key_exists('match_callback', $opts)) $defaults['blockonomics_match_callback'] = $opts['match_callback'];
         $this->values = $defaults;
     }
 
@@ -340,11 +474,13 @@ class BlkFakeSettings
 class BlkFakeHttp
 {
     private $opts;
+    public $calls = array();
 
     public function __construct(array $opts) { $this->opts = $opts; }
 
     public function post($url, $data = null, $headers = array(), $options = array())
     {
+        $this->calls[] = array('method' => 'POST', 'url' => $url);
         if (strpos($url, 'new_address') !== false) {
             return array('http_code' => 200, 'body' => json_encode(array('address' => 'bc1qexampleaddress000000')));
         }
@@ -353,6 +489,7 @@ class BlkFakeHttp
 
     public function get($url, $headers = array(), $options = array())
     {
+        $this->calls[] = array('method' => 'GET', 'url' => $url);
         if (strpos($url, 'price') !== false) {
             $code = isset($this->opts['rate_http']) ? $this->opts['rate_http'] : 200;
             if ($code !== 200) return array('http_code' => $code, 'body' => '');

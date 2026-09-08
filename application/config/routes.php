@@ -169,6 +169,7 @@ $route['dashboard/favorites/remove/(:any)'] = 'dashboard/favorites/remove/$1';
 $route['dashboard/add-funds'] = 'dashboard/wallet/add_funds';
 $route['dashboard/wallet/deposit'] = 'dashboard/wallet/deposit';
 $route['dashboard/wallet/deposits'] = 'dashboard/wallet/deposits';
+$route['dashboard/wallet/virtual-account'] = 'dashboard/wallet/virtual_account';
 // A Fundsvera deposit can be paid by card via a hosted card gateway. Must come
 // before the generic :any route or "card" would be treated as a deposit id.
 $route['dashboard/wallet/deposits/(:any)/card'] = 'dashboard/wallet/card/$1';
@@ -190,6 +191,10 @@ $route['dashboard/notifications/read'] = 'dashboard/notifications/mark_read';
 // the inbox_poll cron worker. Read-only actions plus delete, scoped to the
 // signed-in customer in the queries themselves.
 $route['dashboard/inbox'] = 'dashboard/inbox/index';
+// Compose-to-the-team must be matched BEFORE the (:any) detail route below,
+// or "compose" becomes a message id and 404s.
+$route['dashboard/inbox/compose'] = 'dashboard/inbox/compose';
+$route['dashboard/inbox/send'] = 'dashboard/inbox/send';
 $route['dashboard/inbox/read'] = 'dashboard/inbox/mark_read';
 $route['dashboard/inbox/(:any)/delete'] = 'dashboard/inbox/delete/$1';
 $route['dashboard/inbox/(:any)'] = 'dashboard/inbox/detail/$1';
@@ -201,6 +206,10 @@ $route['admin'] = 'admin/dashboard/index';
 // The staff inbox: mail pulled from the configured mailbox (inbox_poll cron)
 // addressed to the admin account or not attributable to a customer. Gated on
 // settings.manage in the controller, like the mail queue.
+// Team broadcasts: a super admin writes to every user, or to one.
+$route['admin/notifications'] = 'admin/notifications/index';
+$route['admin/notifications/send'] = 'admin/notifications/send';
+
 $route['admin/inbox'] = 'admin/inbox/index';
 $route['admin/inbox/read'] = 'admin/inbox/mark_read';
 $route['admin/inbox/(:any)/reply'] = 'admin/inbox/reply/$1';
@@ -471,6 +480,13 @@ $route['api/docs/json'] = 'api_v1/docs_json';
 // Webhooks
 // Gateway callbacks. POST for signed-body gateways; Blockonomics uses an
 // authenticated GET (see Webhooks::GET_CALLBACK_GATEWAYS), so the route must
+// VTpass transaction-update callback (vtpass.com/documentation/
+// transaction-update-webhook-api). Declared BEFORE the (:any) gateway route
+// (CI matches in file order) and kept out of that handler deliberately: the
+// generic path wraps every push in a signature envelope, and VTpass signs
+// nothing — its callback is verified by requerying the provider instead.
+$route['webhook/vtpass'] = 'webhooks/vtpass';
+
 // not be verb-restricted here — the controller enforces the per-gateway rule.
 $route['webhook/(:any)'] = 'webhooks/index/$1';
 
@@ -479,6 +495,7 @@ $route['webhook/(:any)'] = 'webhooks/index/$1';
 // operator pastes into their Fundsvera dashboard is stable and greppable.
 $route['api/payments/webhooks/fundsvera'] = 'webhooks/index/fundsvera';
 $route['api/payments/fundsvera/initialize'] = 'payments/initialize';
+$route['api/payments/fundsvera/virtual-account'] = 'payments/virtual_account';
 $route['api/payments/history'] = 'payments/history';
 $route['api/payments/(:any)'] = 'payments/show/$1';
 

@@ -242,8 +242,15 @@ class ReloadlyAdapter implements GiftcardProviderInterface {
         $vendor = strtoupper((string)($data['status'] ?? ''));
         return array(
             'ok'        => true,
+            // The docs' transaction ledger defines five statuses: SUCCESSFUL,
+            // PENDING, PROCESSING, FAILED and REFUNDED ("an attempt to
+            // purchase wasn't successful and the customer's funds were
+            // instantly reversed"). REFUNDED is terminal — the vendor has
+            // already put the money back — so it lands as FAILED (the engine
+            // refunds the customer) rather than PENDING, where an order whose
+            // card will never be issued would wait forever.
             'status'    => in_array($vendor, array('SUCCESSFUL', 'SUCCESS'), true) ? 'PLACED'
-                            : ($vendor === 'FAILED' ? 'FAILED' : 'PENDING'),
+                            : (in_array($vendor, array('FAILED', 'REFUNDED'), true) ? 'FAILED' : 'PENDING'),
             'reference' => (string)$data['transactionId'],
             'cost'      => $this->cost_from($data),
             'error'     => null,
@@ -253,9 +260,15 @@ class ReloadlyAdapter implements GiftcardProviderInterface {
     /* ------------------------------- catalogue ----------------------------- */
 
     public function products($country = null) {
-        $path = $country
-            ? '/countries/'.rawurlencode(strtoupper((string)$country)).'/products'
-            : '/products';
+        // The country-scoped catalogue is one non-paginated call; the
+        // unqualified one is a paged walk (docs: GET /products takes size and
+        // page, with 13,000+ products behind it).
+        if ($country) return $this->products_for_country($country);
+        return $this->products_all();
+    }
+
+    private function products_for_country($country) {
+        $path = '/countries/'.rawurlencode(strtoupper((string)$country)).'/products';
 
         $res = $this->request('GET', $path);
         if (!empty($res['transport_error'])) {
@@ -277,6 +290,55 @@ class ReloadlyAdapter implements GiftcardProviderInterface {
             return array('ok' => false, 'error' => 'The vendor returned an unusable catalogue');
         }
 
+        return array('ok' => true, 'products' => $this->catalogue_rows($data));
+    }
+
+    /**
+     * Walk GET /products until the vendor runs out of pages. A page is
+     * requested at the documented maximum of 200 rows; a page that comes back
+     * short means the walk is done. The walk is capped at 100 pages (20,000
+     * rows, comfortably past the ~13,000 products the docs advertise) so a
+     * misbehaving vendor cannot spin the sync forever.
+     */
+    private function products_all() {
+        $size = 200;
+        $products = array();
+
+        for ($page = 1; $page <= 100; $page++) {
+            $res = $this->request('GET', '/products?'.http_build_query(array(
+                'size'         => $size,
+                'page'         => $page,
+                'includeRange' => 'true',
+                'includeFixed' => 'true',
+            )));
+            if (!empty($res['transport_error'])) {
+                return array('ok' => false, 'error' => $res['transport_error']);
+            }
+
+            $code = (int)$res['http_code'];
+            $data = json_decode((string)$res['body'], true);
+            if ($code < 200 || $code >= 300) {
+                return array('ok' => false, 'error' => $this->error_for($code, $data));
+            }
+
+            // Paginated responses wrap the list in `content`; a bare list is
+            // accepted too. A mid-walk envelope that is neither is an error
+            // rather than a silent partial catalogue.
+            if (is_array($data) && isset($data['content']) && is_array($data['content'])) {
+                $data = $data['content'];
+            }
+            if (!is_array($data)) {
+                return array('ok' => false, 'error' => 'The vendor returned an unusable catalogue');
+            }
+
+            $products = array_merge($products, $this->catalogue_rows($data));
+            if (count($data) < $size) break;
+        }
+
+        return array('ok' => true, 'products' => $products);
+    }
+
+    private function catalogue_rows(array $data) {
         $products = array();
         foreach ($data as $row) {
             if (!is_array($row) || empty($row['productId'])) continue;
@@ -286,8 +348,7 @@ class ReloadlyAdapter implements GiftcardProviderInterface {
             if (empty($row['recipientCurrencyCode'])) continue;
             foreach ($this->denominations($row) as $d) $products[] = $d;
         }
-
-        return array('ok' => true, 'products' => $products);
+        return $products;
     }
 
     public function balance() {
@@ -352,8 +413,15 @@ class ReloadlyAdapter implements GiftcardProviderInterface {
         if ($type === 'RANGE') {
             return array(array_merge($common, array(
                 'face_value'     => null,
-                'min_face_value' => $this->number($row['minRecipientDenomination'] ?? null),
-                'max_face_value' => $this->number($row['maxRecipientDenomination'] ?? null),
+                // The docs' own samples spell the upper bound
+                // "maxrecipientDenomination" (lowercase r — a vendor typo that
+                // has shipped in their reference payload), while the lower
+                // bound is normal camelCase. Read both spellings of each so a
+                // bound is never silently lost to the vendor's inconsistency.
+                'min_face_value' => $this->number($row['minRecipientDenomination']
+                                                    ?? $row['minrecipientDenomination'] ?? null),
+                'max_face_value' => $this->number($row['maxRecipientDenomination']
+                                                    ?? $row['maxrecipientDenomination'] ?? null),
                 'cost'           => null,
             )));
         }

@@ -650,6 +650,124 @@ class NumbersTest extends TestCase
             'without a rate the float stays in the vendor currency, labelled as such');
     }
 
+    /* ================ the vendor account history (docs #user) ============ */
+
+    /**
+     * The docs "User" section names three account endpoints: `user/profile`
+     * (balance, above), `user/orders` (order history) and `user/payments`
+     * (payments history). These pin the latter two to their documented
+     * request shape and response envelope.
+     */
+    public function testOrderHistoryUsesTheDocumentedEndpointAndParams()
+    {
+        list($adapter, $http) = $this->adapter(array(self::ok(self::fixture('user_orders.json'))));
+        $res = $adapter->orders('activation', 15, 0, 'id', true);
+
+        $this->assertSame('GET', $http->calls[0]['method']);
+        $path = $http->calls[0]['path'];
+        $this->assertStringContainsString('/user/orders?', $path);
+        $this->assertStringContainsString('category=activation', $path);
+        $this->assertStringContainsString('limit=15', $path);
+        $this->assertStringContainsString('offset=0', $path);
+        $this->assertStringContainsString('order=id', $path);
+        $this->assertStringContainsString('reverse=true', $path);
+        $this->assertContains('Authorization: Bearer test-bearer-token', $http->calls[0]['headers']);
+
+        $this->assertTrue($res['ok']);
+        $this->assertSame(2, $res['total']);
+        $this->assertCount(2, $res['orders']);
+    }
+
+    public function testOrderHistoryDefaultsToActivationsAndOmitsUnsetParams()
+    {
+        list($adapter, $http) = $this->adapter(array(self::ok(self::fixture('user_orders.json'))));
+        $res = $adapter->orders();
+
+        $this->assertTrue($res['ok']);
+        $this->assertSame('/user/orders?category=activation', $http->calls[0]['path'],
+            'nothing but the required category rides the query string');
+    }
+
+    public function testOrderHistoryRefusesAnUnknownCategoryBeforeCallingTheVendor()
+    {
+        list($adapter, $http) = $this->adapter(array());
+        $res = $adapter->orders('everything');
+
+        $this->assertFalse($res['ok']);
+        $this->assertCount(0, $http->calls, 'the docs allow activation or hosting only');
+    }
+
+    public function testOrderHistoryRowsAreNormalisedIntoOurVocabulary()
+    {
+        list($adapter, $http) = $this->adapter(
+            array(self::ok(self::fixture('user_orders.json'))),
+            array('retry_policy' => json_encode(array('fivesim' => array('rate_to_base' => '20'))))
+        );
+        $res = $adapter->orders('activation');
+
+        $banned = $res['orders'][0];
+        $this->assertSame('53533933', $banned['reference']);
+        $this->assertSame('+447350690992', $banned['msisdn']);
+        $this->assertSame('FACEBOOK', $banned['service'], 'the vendor slug maps back to our code');
+        $this->assertSame('BANNED', $banned['state']);
+        $this->assertSame('2020-06-28 16:17:43', $banned['created_at'], 'UTC, not the vendor ISO string');
+        $this->assertSame('2020-06-28 16:32:43', $banned['expires_at']);
+        $this->assertSame('420.00000000', $banned['cost'], '2 RUB at 20 naira each');
+
+        $received = $res['orders'][1];
+        $this->assertSame('RECEIVED', $received['state']);
+        $this->assertSame('WHATSAPP', $received['service']);
+        $this->assertSame('480350', $received['messages'][0]['code'],
+            'a code sitting in the history is readable, not just live polls');
+    }
+
+    public function testPaymentHistoryUsesTheDocumentedEndpointAndNormalisesRows()
+    {
+        list($adapter, $http) = $this->adapter(array(self::ok(self::fixture('user_payments.json'))));
+        $res = $adapter->payments(15, 0, 'id', true);
+
+        $this->assertSame('GET', $http->calls[0]['method']);
+        $this->assertSame('/user/payments?limit=15&offset=0&order=id&reverse=true', $http->calls[0]['path']);
+        $this->assertContains('Authorization: Bearer test-bearer-token', $http->calls[0]['headers']);
+
+        $this->assertTrue($res['ok']);
+        $this->assertSame(2, $res['total']);
+        $row = $res['payments'][0];
+        $this->assertSame('30011934', $row['id']);
+        $this->assertSame('charge', $row['type']);
+        $this->assertSame('admin', $row['provider']);
+        $this->assertSame('100', $row['amount_vendor']);
+        $this->assertSame('100', $row['balance_vendor']);
+        $this->assertSame('2020-06-24 15:37:08', $row['created_at']);
+        $this->assertArrayNotHasKey('amount', $row,
+            'a rouble amount must never be passed off as base currency without a rate');
+
+        $this->assertSame(array('charge', 'purchase'), $res['types']);
+        $this->assertSame(array('admin', 'product'), $res['providers']);
+    }
+
+    public function testPaymentHistoryWithARateConvertsTheVendorAmounts()
+    {
+        list($adapter,) = $this->adapter(
+            array(self::ok(self::fixture('user_payments.json'))),
+            array('retry_policy' => json_encode(array('fivesim' => array('rate_to_base' => '20'))))
+        );
+        $res = $adapter->payments();
+
+        $this->assertSame('2000.00000000', $res['payments'][0]['amount']);
+        $this->assertSame('79', $res['payments'][1]['amount_vendor']);
+        $this->assertSame('1580.00000000', $res['payments'][1]['balance'], 'the running balance converts too');
+    }
+
+    public function testAVendorRejectionInHistoryIsReportedNotSwallowed()
+    {
+        list($adapter,) = $this->adapter(array(self::ok('rate limit exceeded', 429)));
+        $res = $adapter->payments();
+
+        $this->assertFalse($res['ok']);
+        $this->assertStringContainsString('rate-limit', $res['error']);
+    }
+
     /* ================== the current 5sim protocol (key #1) ============== */
 
     /**

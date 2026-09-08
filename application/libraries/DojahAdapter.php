@@ -50,14 +50,27 @@ class DojahAdapter implements IdentityProviderInterface {
 
     /**
      * Our lookup key → Dojah endpoint path and query parameter.
+     * Paths are the ones the current documentation publishes
+     * (docs.dojah.io → API reference):
+     *
+     *   - NIN basic          GET /api/v1/kyc/nin?nin=
+     *   - BVN lookup         GET /api/v1/kyc/bvn/full?bvn=   (advanced: /advance)
+     *   - Phone-number owner GET /api/v1/kyc/phone_number/basic?phone_number=
+     *                        (advanced: /api/v1/kyc/phone_number — same record
+     *                        plus a base64 photo, which this panel drops, so
+     *                        the basic tier is the one we buy)
+     *
      * Overridable per provider under retry_policy → dojah.endpoints.
      */
     private static $endpoints = array(
         'NIN:IDENTIFIER' => array('/api/v1/kyc/nin', 'nin'),
-        'BVN:IDENTIFIER' => array('/api/v1/kyc/bvn', 'bvn'),
-        'NIN:PHONE'      => array('/api/v1/kyc/nin/phone_number', 'phone_number'),
-        'BVN:PHONE'      => array('/api/v1/kyc/bvn/phone_number', 'phone_number'),
+        'BVN:IDENTIFIER' => array('/api/v1/kyc/bvn/full', 'bvn'),
+        'NIN:PHONE'      => array('/api/v1/kyc/phone_number/basic', 'phone_number'),
+        'BVN:PHONE'      => array('/api/v1/kyc/phone_number/basic', 'phone_number'),
     );
+
+    /** The root every documented path hangs off. */
+    const API_ROOT = '/api/v1';
 
     /**
      * HTTP status → what an operator can actually do about it.
@@ -68,12 +81,14 @@ class DojahAdapter implements IdentityProviderInterface {
         401 => 'The vendor rejected our credentials',
         402 => 'The vendor wallet is out of funds',
         403 => 'The vendor account is not permitted to run this check',
+        408 => 'The vendor took too long to answer - try again shortly',
         422 => 'The vendor rejected the identifier as malformed',
         424 => 'The government source (NIMC/NIBSS) is unavailable right now',
         429 => 'The vendor is rate-limiting us — try again shortly',
         500 => 'The vendor had an internal error',
         502 => 'The vendor is unreachable',
         503 => 'The vendor is temporarily unavailable',
+        504 => 'The vendor gateway timed out - try again shortly',
     );
 
     /** Vendor fields worth keeping, mapped onto one stable shape. */
@@ -137,9 +152,16 @@ class DojahAdapter implements IdentityProviderInterface {
         }
         list($path, $param) = $this->endpoint_map[$key];
 
-        // Any explicit per-product override wins over the map.
+        // Any explicit per-product override wins over the map. Product rows
+        // store the code *relative to the documented API root* (kyc/nin, not
+        // api/v1/kyc/nin) because the root is this adapter's business, not the
+        // catalogue's — a bare code that used to be joined straight onto the
+        // host produced https://host/kyc/nin, a 404 that the found:false rule
+        // then reported as "nobody found": every check refunded, none worked.
+        // A code that already carries an api/ prefix is honoured verbatim.
         if (!empty($p['provider_code'])) {
-            $path = '/'.ltrim((string)$p['provider_code'], '/');
+            $code = ltrim((string)$p['provider_code'], '/');
+            $path = strpos($code, 'api/') === 0 ? '/'.$code : self::API_ROOT.'/'.$code;
         }
 
         $res = $this->request($path.'?'.http_build_query(array($param => $identifier)));

@@ -312,10 +312,11 @@ class Home extends Public_Controller {
         // replies from, so the conversation stays answerable without leaving
         // the panel. Kept side-by-side deliberately: the mailbox copy works
         // when the panel cannot, and the row works when the mailbox cannot.
+        $contact_public_id = marvy_public_id();
         if ($queued && $this->db->table_exists('contact_messages')) {
             try {
                 $this->db->insert('contact_messages', array(
-                    'public_id'       => marvy_public_id(),
+                    'public_id'       => $contact_public_id,
                     'name'            => mb_substr($form['name'], 0, 100),
                     'email'           => $form['email'],
                     'subject'         => mb_substr($form['subject'], 0, 150),
@@ -329,6 +330,26 @@ class Home extends Public_Controller {
             } catch (Throwable $e) {
                 log_message('error', 'contact message could not be recorded: '.$e->getMessage());
             }
+        }
+
+        // The staff-inbox half. The same message lands in Admin → Inbox next
+        // to the polled mailbox mail, so an operator who works from the inbox
+        // never misses a visitor. The contact row's id is the dedupe source,
+        // so the two copies can never disagree about being one message.
+        try {
+            $this->load->library('InboxService');
+            $this->inboxservice->deliver(
+                'ADMIN', null,
+                $this->inboxservice->admin_address() !== '' ? $this->inboxservice->admin_address() : 'support@panel.local',
+                $form['name'], $form['email'],
+                '[Contact] '.$form['subject'],
+                'From: '.$form['name'].' <'.$form['email'].'>'."\n\n".$form['message'],
+                'contact:'.$contact_public_id
+            );
+        } catch (Throwable $e) {
+            // The email and the contact row already carry the message; a
+            // failed inbox copy must not fail the visitor's submission.
+            log_message('error', 'contact inbox copy failed: '.$e->getMessage());
         }
 
         if (!$queued) {
