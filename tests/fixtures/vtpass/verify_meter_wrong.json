@@ -1,7 +1,0 @@
-{
-  "code": "000",
-  "content": {
-    "WrongBillersCode": true,
-    "error": "Invalid meter number"
-  }
-}
