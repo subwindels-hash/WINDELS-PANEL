@@ -1,0 +1,559 @@
+<?php
+defined('BASEPATH') OR exit('No direct script access allowed');
+
+class Home extends Public_Controller {
+    public function index(){
+        $preview = $this->input->get('preview');
+        $allowed = array('AURORA','NEXUS','PULSE');
+        // Preview override — admin only, not persisted
+        if ($preview && in_array(strtoupper($preview), $allowed, TRUE)) {
+            $is_admin = $this->session->userdata('role') && in_array($this->session->userdata('role'), array('SUPER_ADMIN','ADMIN','STAFF'), TRUE);
+            if ($is_admin) { $active = strtoupper($preview); } else { $active = $this->active_homepage(); }
+        } else {
+            $active = $this->active_homepage();
+        }
+        $copy = array(
+            'homepage_hero_kicker'=>'','homepage_hero_title'=>'','homepage_hero_lede'=>'',
+            'homepage_cta_primary'=>'','homepage_cta_secondary'=>'',
+            'homepage_services_title'=>'','homepage_services_lede'=>'',
+            'homepage_cta_band_title'=>'','homepage_cta_band_body'=>'',
+            'homepage_meta_description'=>'',
+        );
+        if ($this->db_ready) {
+            try {
+                // One read for the whole settings table, then pick the
+                // homepage keys out of it — never a query per key.
+                $this->load->model('Setting_model');
+                $all = $this->Setting_model->all();
+                foreach (array_keys($copy) as $k) {
+                    if (array_key_exists($k, $all) && $all[$k] !== NULL) $copy[$k] = $all[$k];
+                }
+            } catch (Throwable $e) { /* defaults in the view */ }
+        }
+        $data = array(
+            'active_homepage'=>$active,
+            'title'=> $copy['homepage_hero_title'] ?: 'Grow and manage your social presence',
+            'meta_description'=> $copy['homepage_meta_description'] ?: 'MarvySocials is a prepaid panel for social media growth services, Nigerian VTU and bills, virtual numbers, identity checks and gift cards. Add funds, place an order, track it from one dashboard.',
+            'canonical' => '',
+            'hero_kicker' => $copy['homepage_hero_kicker'] ?: null,
+            'hero_title'  => $copy['homepage_hero_title'] ?: null,
+            'hero_lede'   => $copy['homepage_hero_lede'] ?: null,
+            'cta_primary' => $copy['homepage_cta_primary'] ?: 'Get started',
+            'cta_secondary' => $copy['homepage_cta_secondary'] ?: 'View services',
+            'services_title' => $copy['homepage_services_title'] ?: null,
+            'services_lede' => $copy['homepage_services_lede'] ?: null,
+            'cta_band_title' => $copy['homepage_cta_band_title'] ?: null,
+            'cta_band_body' => $copy['homepage_cta_band_body'] ?: null,
+        );
+
+        // The homepage advertises the *live* catalogue: real service names,
+        // real rates, real categories. An empty catalogue renders an honest
+        // "being prepared" state rather than invented placeholder cards, so
+        // the site never promises something the operator cannot deliver.
+        $data['showcase'] = array();
+        $data['categories'] = array();
+        $data['catalogue_size'] = 0;
+        $data['posts'] = array();
+        $data['faqs'] = array();
+        $data['stats'] = array();
+        if ($this->db_ready) {
+            try {
+                $this->load->model(array('Service_model', 'Service_category_model', 'Faq_model', 'Blog_post_model'));
+                $data['showcase'] = $this->Service_model->homepage_showcase(6);
+                $data['categories'] = $this->Service_model->categories_with_counts(8);
+                $data['catalogue_size'] = $this->Service_model->count_active();
+                $data['posts'] = marvy_feature_enabled('blog', true)
+                    ? $this->Blog_post_model->published(null, 3, 0) : array();
+                $data['faqs'] = $this->Faq_model->active();
+                $orders = 0; $customers = 0;
+                try {
+                    $orders = (int)$this->db->where_in('status', array('COMPLETED','PARTIAL'))->count_all_results('orders');
+                    $customers = (int)$this->db->where('role', 'CUSTOMER')->where('status', 'ACTIVE')->count_all_results('users');
+                } catch (Throwable $e) { /* optional aggregates */ }
+                $data['stats'] = array(
+                    array('value' => $data['catalogue_size'] > 0 ? number_format($data['catalogue_size']) : 'Live', 'label' => 'Published services'),
+                    array('value' => $orders > 0 ? number_format($orders) : 'Tracked', 'label' => 'Completed orders'),
+                    array('value' => $customers > 0 ? number_format($customers) : 'Prepaid', 'label' => $customers > 0 ? 'Active customers' : 'Wallet billing'),
+                    array('value' => '24/7', 'label' => 'Ticket support'),
+                );
+            } catch (Throwable $e) {
+                log_message('error', 'homepage catalogue unavailable: '.$e->getMessage());
+            }
+        }
+        if (empty($data['stats'])) {
+            $data['stats'] = array(
+                array('value' => 'Prepaid', 'label' => 'Wallet billing'),
+                array('value' => 'Ledger', 'label' => 'Auditable credits'),
+                array('value' => 'API', 'label' => 'Reseller keys'),
+                array('value' => '24/7', 'label' => 'Ticket support'),
+            );
+        }
+        // Single switch — no Node
+        $view = 'homepages/'.strtolower($active).'/index';
+        // Fallback if template missing. CI_Loader has no view-exists helper, so
+        // check the filesystem directly (AURORA is the guaranteed default).
+        if (!is_file(VIEWPATH.$view.'.php')) $view = 'homepages/aurora/index';
+        $this->load->view('layouts/public_theme', array('content_view'=>$view,'data'=>$data,
+            'title' => $copy['homepage_hero_title'] ?: 'Grow and manage your social presence',
+            'page_description' => $copy['homepage_meta_description'] ?: 'MarvySocials is a prepaid panel for social media growth services, Nigerian VTU and bills, virtual numbers, identity checks and gift cards. Add funds, place an order, track it from one dashboard.',
+        ));
+    }
+    private function active_homepage(){
+        try {
+            if (!marvy_load_database()) {
+                throw new RuntimeException('database unavailable');
+            }
+            $this->load->model('Setting_model');
+            $v = $this->Setting_model->get('active_homepage');
+            if ($v) return $v;
+        } catch(Throwable $e){}
+        $cfg = $this->config->item('marvy');
+        return $cfg['active_homepage'] ?? 'AURORA';
+    }
+    public function pricing(){
+        $this->load->library('SiteOperatorKnowledge');
+        $this->load->view('layouts/public_theme', array('content_view'=>'public/pricing','data'=>array(
+            'title'=>'Pricing',
+            'meta_description'=>'Prepaid wallet pricing for MarvySocials. No invented monthly plans — you pay published service rates. Volume groups are assigned by staff.',
+        )));
+    }
+    public function about(){
+        $this->render_page('about', 'public/about', 'About',
+            'What MarvySocials is, who it is for, and what this site will not invent about the operator.');
+    }
+    public function faq(){
+        $this->load->library('SiteOperatorKnowledge');
+        $faqs = array();
+        $categories = array();
+        try {
+            if ($this->db_ready) {
+                $this->load->model('Faq_model');
+                $faqs = $this->Faq_model->active();
+                $categories = $this->Faq_model->categories();
+            }
+        } catch (Throwable $e) {
+            $faqs = array();
+        }
+        if (empty($faqs)) {
+            foreach (SiteOperatorKnowledge::faqs() as $row) {
+                $faqs[] = (object)array(
+                    'question' => $row['q'],
+                    'answer'   => $row['a'],
+                    'category' => $row['category'],
+                );
+            }
+        }
+        $this->load->view('layouts/public_theme', array('content_view'=>'public/faq','data'=>array(
+            'title'=>'FAQ',
+            'meta_description'=>'Answers about MarvySocials accounts, wallet billing, services, security, the reseller API and the on-site assistant.',
+            'faqs'=>$faqs,
+            'categories'=>$categories,
+        )));
+    }
+
+    /**
+     * Contact page.
+     *
+     * This used to render a heading and nothing else — there was no form, so
+     * "the contact form is broken" was literally true: there was nothing to
+     * submit. It now posts to contact_submit() below.
+     */
+    public function contact($data = array()){
+        $this->load->view('layouts/public_theme', array(
+            'content_view' => 'public/contact',
+            'data' => array_merge(array(
+                'title'           => 'Contact',
+                'meta_description'=> 'Contact MarvySocials support about an order, payment or the reseller API. Signed-in customers get a ticket.',
+                'support_email'   => $this->support_email(),
+                // Everything about the map and the printed contact details is
+                // operator-controlled (Admin → Settings → Contact page), so a
+                // business with no public address simply switches it off.
+                'contact_details' => $this->contact_details(),
+                // The first-party map context (tiles from this origin, or
+                // nothing at all) — see ContactMapService.
+                'map_context'     => $this->map_context(),
+            ), $data),
+        ));
+    }
+
+    /**
+     * One cached map tile for the contact page, served from this origin.
+     *
+     * The grid reference (24 hex digits) identifies the map the operator
+     * configured, not a coordinate, so the endpoint can only ever hand out
+     * the nine tiles around that address — it is not a tile proxy.
+     */
+    public function map_tile($map_key, $i, $j){
+        if (!preg_match('/^[a-f0-9]{24}$/', (string)$map_key)
+            || (int)$i < 0 || (int)$i > 2 || (int)$j < 0 || (int)$j > 2) {
+            show_404();
+            return;
+        }
+        $this->load->library('ContactMapService');
+        $bytes = $this->contactmapservice->tile((string)$map_key, (int)$i, (int)$j);
+        if ($bytes === null) { show_404(); return; }
+        // One-argument set_header(): the two-argument form treats the second
+        // argument as the *replace* flag, so the value would be lost.
+        $this->output
+            ->set_content_type('image/png', null)
+            ->set_header('Cache-Control: public, max-age=2592000')
+            ->set_header('X-Robots-Tag: noindex')
+            ->set_header('Content-Length: '.strlen($bytes))
+            ->set_output($bytes);
+    }
+
+    /**
+     * Contact map context, or a safe default: a map that cannot be rendered
+     * must never take the contact page down with it.
+     */
+    private function map_context() {
+        $none = array('enabled' => false, 'resolved' => false, 'map_key' => null,
+                      'tiles' => null, 'marker' => null, 'search' => null);
+        try {
+            $this->load->library('ContactMapService');
+            return $this->contactmapservice->view_context($this->contact_details());
+        } catch (Throwable $e) {
+            log_message('error', 'contact map unavailable: '.$e->getMessage());
+            return $none;
+        }
+    }
+
+    /**
+     * Handle a contact submission.
+     *
+     * Two destinations, deliberately: a signed-in customer gets a real support
+     * ticket (threaded, visible in their dashboard, answerable by staff),
+     * while a visitor's message is queued as email to the support address.
+     * Inventing a ticket for someone with no account would create a
+     * conversation they could never read a reply to.
+     *
+     * Throttled per IP through the same table the login screen uses, with a
+     * honeypot field for the bots that do not read it.
+     */
+    public function contact_submit(){
+        if ($this->input->method(true) !== 'POST') { redirect('contact'); return; }
+
+        $this->load->library('RateLimiter');
+        $ip     = $this->input->ip_address();
+        $bucket = RateLimiter::scope('contact');
+
+        $form = array(
+            'name'    => trim((string)$this->input->post('name')),
+            'email'   => trim((string)$this->input->post('email')),
+            'subject' => trim((string)$this->input->post('subject')),
+            'message' => trim((string)$this->input->post('message')),
+            'department' => trim((string)$this->input->post('department')),
+        );
+
+        if ($this->ratelimiter->too_many_failures($ip, $bucket, 5, 3600)) {
+            $retry = $this->ratelimiter->retry_after($ip, $bucket, 3600, 5);
+            $this->contact(array(
+                'error' => 'Too many messages from this network. Try again in '
+                           .max(1, (int)ceil($retry / 60)).' minute(s).',
+                'form'  => $form,
+            ));
+            return;
+        }
+
+        // Honeypot: a field no human sees and every naive bot fills in. Answer
+        // with the success page so the bot has nothing to learn.
+        if (trim((string)$this->input->post('website')) !== '') {
+            log_message('info', 'contact: honeypot triggered from '.$ip);
+            $this->contact(array('success' => $this->thanks_message()));
+            return;
+        }
+
+        $error = $this->validate_contact($form);
+        if ($error !== null) {
+            $this->ratelimiter->record($bucket, $ip, false, 'CONTACT_INVALID', $this->input->user_agent());
+            $this->contact(array('error' => $error, 'form' => $form));
+            return;
+        }
+
+        $user = $this->current_user();
+        if ($user) {
+            $this->load->library('TicketService');
+            $departments = array('orders', 'payments', 'api', 'other');
+            $res = $this->ticketservice->open($user, array(
+                'subject'    => $form['subject'],
+                'message'    => $form['message'],
+                'department' => in_array($form['department'], $departments, true) ? $form['department'] : 'other',
+                'priority'   => 'MEDIUM',
+            ));
+            if (empty($res['ok'])) {
+                $this->ratelimiter->record($bucket, $ip, false, 'CONTACT_FAILED', $this->input->user_agent());
+                $this->contact(array(
+                    'error' => $res['error'] ?? 'Your message could not be sent. Please try again.',
+                    'form'  => $form,
+                ));
+                return;
+            }
+            $this->ratelimiter->record($bucket, $ip, true, 'CONTACT_TICKET', $this->input->user_agent());
+            $this->session->set_flashdata('success', 'Thanks — we opened a ticket for your message.');
+            redirect('dashboard/tickets/'.$res['ticket']->public_id);
+            return;
+        }
+
+        $this->load->library('MailService');
+        $support = $this->support_email();
+        $queued = $this->mailservice->enqueue_raw(
+            $support,
+            '[Contact] '.$form['subject'],
+            '<p><strong>From:</strong> '.html_escape($form['name']).' &lt;'.html_escape($form['email']).'&gt;</p>'
+            .'<p><strong>IP:</strong> '.html_escape($ip).'</p>'
+            .'<hr><p>'.nl2br(html_escape($form['message'])).'</p>',
+            $form['name'].' <'.$form['email'].'>'."\n\n".$form['message'],
+            'Support',
+            'contact.message'
+        );
+
+        // The dashboard half of the same message. The email reaches the
+        // operator's mailbox; this row is what Admin → Messages reads — and
+        // replies from, so the conversation stays answerable without leaving
+        // the panel. Kept side-by-side deliberately: the mailbox copy works
+        // when the panel cannot, and the row works when the mailbox cannot.
+        $contact_row_id = null;
+        if ($queued && $this->db->table_exists('contact_messages')) {
+            try {
+                $this->db->insert('contact_messages', array(
+                    'public_id'       => marvy_public_id(),
+                    'name'            => mb_substr($form['name'], 0, 100),
+                    'email'           => $form['email'],
+                    'subject'         => mb_substr($form['subject'], 0, 150),
+                    'department'      => mb_substr($form['department'] !== '' ? $form['department'] : 'other', 0, 32),
+                    'message'         => $form['message'],
+                    'ip'              => $ip,
+                    'email_queue_id'  => (int)$this->db->insert_id() ?: null,
+                    'status'          => 'NEW',
+                    'created_at'      => gmdate('Y-m-d H:i:s'),
+                ));
+                $contact_row_id = (int)$this->db->insert_id() ?: null;
+            } catch (Throwable $e) {
+                log_message('error', 'contact message could not be recorded: '.$e->getMessage());
+            }
+        }
+
+        // The inbox half: beside the polled mailbox mail, the same message is
+        // readable — and answerable — in Admin → Inbox. The contact row id is
+        // the dedupe source, so a double-submitted form stores one row, and
+        // the two halves (contact_messages and inbox_messages) stay in sync
+        // by construction.
+        if ($queued) {
+            try {
+                $this->load->library('InboxService');
+                $this->inboxservice->deliver(
+                    'ADMIN', null, $support, $form['name'], $form['email'],
+                    '[Contact] '.$form['subject'],
+                    "From: {$form['name']} <{$form['email']}>\n\n{$form['message']}",
+                    'contact:'.(string) $contact_row_id
+                );
+            } catch (Throwable $e) {
+                log_message('error', 'contact message could not reach the staff inbox: '.$e->getMessage());
+            }
+        }
+
+        if (!$queued) {
+            $this->ratelimiter->record($bucket, $ip, false, 'CONTACT_QUEUE_FAILED', $this->input->user_agent());
+            $this->contact(array(
+                'error' => 'Your message could not be sent right now. Please email '.$support.' directly.',
+                'form'  => $form,
+            ));
+            return;
+        }
+
+        $this->ratelimiter->record($bucket, $ip, true, 'CONTACT_EMAIL', $this->input->user_agent());
+        $this->contact(array('success' => $this->thanks_message()));
+    }
+
+    /** @return string|null the first problem with the submission, or NULL */
+    private function validate_contact(array $form) {
+        if ($form['name'] === '' || mb_strlen($form['name']) > 100) {
+            return 'Please tell us your name (100 characters or fewer).';
+        }
+        if (!filter_var($form['email'], FILTER_VALIDATE_EMAIL)) {
+            return 'That email address does not look valid — we need it to reply.';
+        }
+        if ($form['subject'] === '' || mb_strlen($form['subject']) > 150) {
+            return 'Please give the message a subject (150 characters or fewer).';
+        }
+        if (mb_strlen($form['message']) < 10) {
+            return 'Please write a little more so we can actually help.';
+        }
+        if (mb_strlen($form['message']) > 5000) {
+            return 'That message is longer than 5,000 characters — please trim it.';
+        }
+        return null;
+    }
+
+    private function thanks_message() {
+        return 'Thanks — your message is on its way to our support team. '
+              .'We reply to the address you gave us, usually within one business day.';
+    }
+
+    /**
+     * The contact page's operator-controlled details.
+     *
+     * A missing settings table (fresh install, mid-migration) must leave the
+     * page working with the form and the support mailbox, so every read is
+     * defaulted and the map is off unless it was deliberately switched on.
+     */
+    private function contact_details() {
+        $get = function ($key, $default = '') {
+            try {
+                $this->load->model('Setting_model');
+                $value = $this->Setting_model->get($key, $default);
+                return $value === null ? $default : $value;
+            } catch (Exception $e) {
+                return $default;
+            }
+        };
+
+        $address = trim((string)$get('contact_address', ''));
+        $query   = trim((string)$get('contact_map_query', ''));
+        $enabled = $get('contact_map_enabled', false);
+        $enabled = ($enabled === true || $enabled === 1 || $enabled === '1' || $enabled === 'true');
+        $zoom    = (int)$get('contact_map_zoom', 15);
+        if ($zoom < 1)  $zoom = 1;
+        if ($zoom > 20) $zoom = 20;
+
+        // The map centres on the explicit query when there is one, otherwise
+        // on the address. With neither, there is nothing to show and the map
+        // stays hidden however the flag is set.
+        $target = $query !== '' ? $query : preg_replace('/\s*\R\s*/', ', ', $address);
+
+        return array(
+            'map_enabled' => $enabled && $target !== '',
+            'map_query'   => $target,
+            'map_zoom'    => $zoom,
+            'address'     => $address,
+            'phone'       => trim((string)$get('contact_phone', '')),
+            'hours'       => trim((string)$get('contact_hours', '')),
+        );
+    }
+
+    /** Support address from settings, falling back to config/.env. */
+    private function support_email() {
+        try {
+            $this->load->model('Setting_model');
+            $value = $this->Setting_model->get('support_email');
+            if ($value) return $value;
+        } catch (Exception $e) { /* settings unavailable — fall through */ }
+        $cfg = $this->config->item('marvy');
+        return $cfg['support_email'] ?? 'support@marvy.local';
+    }
+    public function terms(){
+        $this->render_page('terms', 'public/terms', 'Terms of Service',
+            'Terms of Service for this MarvySocials instance, including accounts, wallet billing, acceptable use and the on-site assistant.');
+    }
+    public function privacy(){
+        $this->render_page('privacy', 'public/privacy', 'Privacy Policy',
+            'How MarvySocials handles account, order, payment, identity and assistant data — written from the actual application.');
+    }
+    public function refund_policy(){
+        $this->render_page('refund-policy', 'public/refund_policy', 'Refund Policy',
+            'When MarvySocials credits a prepaid wallet for partial deliveries, failed purchases or staff decisions.');
+    }
+    public function acceptable_use(){
+        $this->render_page('acceptable-use', 'public/acceptable_use', 'Acceptable Use',
+            'What you may and may not do with a MarvySocials account, wallet, API key and catalogue orders.');
+    }
+
+    /**
+     * Render a policy/marketing page, preferring an administrator override.
+     *
+     * These pages change for legal reasons, on legal timescales, decided by
+     * people who do not deploy code — so their text must be editable from
+     * Admin -> Website content without touching a PHP file. When no override
+     * exists the bundled view still renders, which keeps a fresh install
+     * complete and makes "clear the override" a real undo rather than a way to
+     * blank a legal page.
+     */
+    private function render_page($key, $fallback_view, $title, $meta) {
+        $this->load->library('SiteOperatorKnowledge');
+
+        $override = null;
+        if ($this->db_ready) {
+            try {
+                $this->load->model('Managed_page_model');
+                $override = $this->Managed_page_model->published($key);
+            } catch (Throwable $e) {
+                log_message('error', 'managed page lookup failed for '.$key.': '.$e->getMessage());
+            }
+        }
+
+        if ($override) {
+            return $this->load->view('layouts/public_theme', array(
+                'content_view' => 'public/managed_page',
+                'data' => array(
+                    'title' => $override->title ?: $title,
+                    'meta_description' => $override->meta_description ?: $meta,
+                    'page' => $override,
+                ),
+            ));
+        }
+
+        $this->load->view('layouts/public_theme', array(
+            'content_view' => $fallback_view,
+            'data' => array('title' => $title, 'meta_description' => $meta),
+        ));
+    }
+
+    public function not_found(){
+        $this->output->set_status_header(404);
+        $this->load->view('layouts/public_theme', array(
+            'content_view' => 'public/not_found',
+            'data' => array(
+                'title' => 'Page not found',
+                'meta_description' => 'That address is not a page on MarvySocials.',
+                'meta_robots' => 'noindex,follow',
+            ),
+        ));
+    }
+
+    /**
+     * Design-system guide. Staff/reviewers only — it documents internal design
+     * tokens and component classes, so it must never surface in the public nav,
+     * footer or sitemap.
+     */
+    public function styleguide(){
+        if (!$this->auth || !$this->auth->has_role(array('SUPER_ADMIN','ADMIN','STAFF'))) {
+            show_404();
+        }
+        $this->load->view('layouts/public_theme', array(
+            'content_view' => 'public/styleguide',
+            'data' => array(
+                'title' => 'Design System',
+                'meta_description' => 'MarvySocials design tokens and component inventory.',
+                'meta_robots' => 'noindex,follow',
+                'active_homepage' => $this->active_homepage(),
+            ),
+        ));
+    }
+    public function sitemap(){
+        $urls = array(
+            '', 'services', 'pricing', 'about', 'faq', 'contact',
+            'terms', 'privacy', 'refund-policy', 'acceptable-use',
+            'api/docs',
+        );
+        if ($this->db_ready && marvy_feature_enabled('blog', true)) {
+            try {
+                $urls[] = 'blog';
+                $this->load->model('Blog_post_model');
+                foreach ($this->Blog_post_model->published(null, 200, 0) as $post) {
+                    $urls[] = 'blog/'.$post->slug;
+                }
+            } catch (Throwable $e) { /* public pages only */ }
+        }
+        $xml = '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">';
+        foreach (array_unique($urls) as $path) {
+            $xml .= '<url><loc>'.htmlspecialchars(site_url($path)).'</loc></url>';
+        }
+        $xml .= '</urlset>';
+        $this->output->set_content_type('application/xml')->set_output($xml);
+    }
+    public function robots(){
+        $this->output->set_content_type('text/plain')->set_output(
+            "User-agent: *\nAllow: /\nDisallow: /dashboard\nDisallow: /admin\nDisallow: /login\nDisallow: /register\nSitemap: ".site_url('sitemap.xml')."\n"
+        );
+    }
+}

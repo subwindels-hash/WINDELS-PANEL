@@ -1,0 +1,8 @@
+{
+    "timeStamp": "2026-02-28 10:29:27",
+    "message": "Product with id 999 was not found",
+    "path": "/orders",
+    "errorCode": "PRODUCT_NOT_FOUND",
+    "infoLink": null,
+    "details": []
+}

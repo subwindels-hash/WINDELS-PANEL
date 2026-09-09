@@ -1,0 +1,23 @@
+{
+  "code": "000",
+  "content": {
+    "transactions": {
+      "status": "delivered",
+      "product_name": "WAEC Result Checker PIN",
+      "unique_element": "08011111111",
+      "unit_price": 3500,
+      "quantity": 2,
+      "total_amount": 3400,
+      "type": "Education",
+      "amount": 3500,
+      "transactionId": "17452788197777777777"
+    }
+  },
+  "response_description": "TRANSACTION SUCCESSFUL",
+  "requestId": "202608171845SANDBOXE5",
+  "purchased_code": "Serial No:WRN182541448, pin: 260516349117",
+  "cards": [
+    { "Serial": "WRN182541448", "Pin": "260516349117" },
+    { "Serial": "WRN182541449", "Pin": "260516349118" }
+  ]
+}

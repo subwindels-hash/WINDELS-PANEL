@@ -1,0 +1,29 @@
+{
+  "code": "000",
+  "content": {
+    "transactions": {
+      "status": "delivered",
+      "product_name": "Ikeja Electric Payment - IKEDC",
+      "unique_element": "1111111111111",
+      "unit_price": 5000,
+      "quantity": 1,
+      "commission": 50,
+      "total_amount": 4950,
+      "type": "Electricity Bill",
+      "amount": 5000,
+      "transactionId": "17452788195555555555"
+    }
+  },
+  "response_description": "TRANSACTION SUCCESSFUL",
+  "requestId": "202608171840SANDBOXD4",
+  "amount": 5000,
+  "purchased_code": "Token : 2636 3242 1231 6721 6721",
+  "customerName": "ABDULLAHI MUSA",
+  "meterNumber": "1111111111111",
+  "customerAddress": "12 KANO ROAD MINNA",
+  "token": "2636 3242 1231 6721 6721",
+  "tokenAmount": 4600,
+  "exchangeReference": "6421823",
+  "units": "79.9 kWh",
+  "tariff": "R2S-NMD"
+}

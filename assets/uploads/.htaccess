@@ -1,0 +1,7 @@
+# Uploaded files are data, never code.
+php_flag engine off
+AddType text/plain .php .phtml .php3 .php4 .php5 .php7 .phps .cgi .pl .py .sh
+<IfModule mod_rewrite.c>
+  RewriteEngine Off
+</IfModule>
+Options -ExecCGI -Indexes

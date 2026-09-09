@@ -1,0 +1,17 @@
+{
+  "entity": {
+    "first_name": "ADA",
+    "last_name": "okafor",
+    "middle_name": "NGOZI",
+    "gender": "Female",
+    "image": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA",
+    "photo": "/9j/4AAQSkZJRgABAgAAAQABAAD-dojah-portrait-base64",
+    "phone_number": "08031234567",
+    "date_of_birth": "1990-04-12",
+    "employment_status": "unemployment",
+    "marital_status": "Single",
+    "nationality": "nigeria",
+    "state_of_origin": "Anambra",
+    "lga_of_origin": "Onitsha North"
+  }
+}

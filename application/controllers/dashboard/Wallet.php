@@ -1,0 +1,338 @@
+<?php
+defined('BASEPATH') OR exit('No direct script access allowed');
+
+/**
+ * Dashboard/Wallet — deposit initialization, transaction and deposit history.
+ * Gateway checkout + webhooks are handled by PaymentService (Session 11).
+ */
+class Wallet extends Auth_Controller {
+
+    const PER_PAGE = 25;
+
+    public function __construct() {
+        parent::__construct();
+        $this->load->model(array('Wallet_model','Wallet_transaction_model','Payment_transaction_model'));
+        $this->load->library(array('DashboardStats','PaymentService','form_validation'));
+    }
+
+    public function transactions() {
+        $wallet = $this->Wallet_model->for_user($this->current_user->id);
+        $page = max(1, (int)$this->input->get('page'));
+        $limit = self::PER_PAGE;
+        $txns = $this->Wallet_transaction_model->for_wallet($wallet->id, $limit, ($page-1)*$limit);
+        $total = (int)$this->db->where('wallet_id', $wallet->id)->count_all_results('wallet_transactions');
+
+        $this->load->view('layouts/app', array(
+            'title' => 'Transactions',
+            'nav_active' => 'dashboard/transactions',
+            'unread' => $this->dashboardstats->unread_count($this->current_user->id),
+            'content_view' => 'dashboard/wallet/transactions',
+            'current_user' => $this->current_user,
+            'permissions' => $this->auth->permissions(),
+            'wallet' => $wallet,
+            'transactions' => $txns,
+            'page' => $page,
+            'total_pages' => max(1, (int)ceil($total / $limit)),
+        ));
+    }
+
+    public function add_funds() {
+        $wallet = $this->Wallet_model->for_user($this->current_user->id);
+        // Only methods whose gateway is actually configured: an active row with
+        // no API credentials would take the customer all the way to "Pay" and
+        // then fail at the last step.
+        $methods = $this->paymentservice->payable_methods();
+
+        // Deposit bounds come from settings, not the view. They were hardcoded
+        // as 5/10000 in the template, which silently contradicted the settings
+        // table and made no sense at all once the base currency became naira.
+        $this->load->model('Setting_model');
+
+        // The currency the wallet itself holds is a one-time choice, offered
+        // only while it is empty and has never moved money (Wallet_model's
+        // rule, shared with the admin customer file). A wallet that already
+        // holds a foreign currency keeps showing what it holds instead.
+        $this->load->library('CurrencyService');
+        $currency_choices = array();
+        $can_choose_currency = false;
+        try {
+            $can_choose_currency = $this->Wallet_model->is_virgin($wallet);
+            if ($can_choose_currency) $currency_choices = $this->currencyservice->active();
+        } catch (Throwable $e) {
+            log_message('error', 'wallet currency choice unavailable: '.$e->getMessage());
+        }
+
+        // The customer's standing virtual account (when bank transfers are a
+        // payable method). Read from our own table only — no provider call on
+        // a page render; creation happens on the virtual-account form.
+        $va_available = false;
+        $virtual_account = null;
+        foreach ($methods as $m) {
+            if (strtolower((string)$m->code) === 'fundsvera') { $va_available = true; break; }
+        }
+        if ($va_available) {
+            try {
+                $this->load->model('Fundsvera_virtual_account_model');
+                $virtual_account = $this->Fundsvera_virtual_account_model->for_user($this->current_user->id);
+            } catch (Throwable $e) {
+                log_message('error', 'virtual account lookup failed: '.$e->getMessage());
+            }
+        }
+
+        $this->load->view('layouts/app', array(
+            'title' => 'Add Funds',
+            'nav_active' => 'dashboard/add-funds',
+            'unread' => $this->dashboardstats->unread_count($this->current_user->id),
+            'content_view' => 'dashboard/wallet/add_funds',
+            'current_user' => $this->current_user,
+            'permissions' => $this->auth->permissions(),
+            'wallet' => $wallet,
+            'methods' => $methods,
+            'can_choose_currency' => $can_choose_currency,
+            'currency_choices' => $currency_choices,
+            'va_available' => $va_available,
+            'virtual_account' => $virtual_account,
+            'min_deposit' => $this->Setting_model->get('min_deposit', '500.00000000'),
+            'max_deposit' => $this->Setting_model->get('max_deposit', '5000000.00000000'),
+            'base_currency' => marvy_base_currency(),
+        ));
+    }
+
+    /**
+     * POST /dashboard/wallet/currency — the one-time choice of what the
+     * wallet holds. Wallet_model enforces the only rule that matters: an
+     * empty, never-used wallet may choose; anything with history may not,
+     * because re-labelling a funded wallet re-denominates its whole ledger.
+     */
+    public function currency() {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $res = $this->Wallet_model->choose_currency(
+            $this->current_user->id,
+            $this->input->post('currency', true),
+            $this->current_user->id
+        );
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error'] ?? 'Could not set the wallet currency.');
+        } elseif (empty($res['unchanged'])) {
+            $this->session->set_flashdata('success',
+                'Your wallet now holds '.htmlspecialchars($this->input->post('currency', true)).'. '
+                .'Purchases are still priced in '.marvy_base_currency()
+                .' and charged at the current exchange rate.');
+        }
+        redirect('dashboard/add-funds');
+    }
+
+    /** POST /dashboard/wallet/deposit — initialise a payment. */
+    public function deposit() {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->form_validation->set_rules('payment_method','Payment method','required|trim');
+        $this->form_validation->set_rules('amount','Amount','required|numeric|greater_than[0]');
+        if (!$this->form_validation->run()) {
+            $this->session->set_flashdata('error', validation_errors());
+            redirect('dashboard/add-funds');
+        }
+
+        // One deposit per rendered form: the hidden form_token scopes the
+        // idempotency key to this customer and this exact attempt, so a
+        // double-click or a browser retry resolves to the SAME transaction
+        // instead of opening a second checkout at the provider.
+        $form_token = substr((string)$this->input->post('form_token', true), 0, 40);
+
+        try {
+            $res = $this->paymentservice->deposit($this->current_user, array(
+                'payment_method'  => $this->input->post('payment_method', true),
+                'amount'          => $this->input->post('amount'),
+                'currency'        => marvy_base_currency(),
+                'idempotency_key' => $form_token !== '' ? 'form:'.$form_token : null,
+            ));
+        } catch (Throwable $e) {
+            // A provider or storage failure during initiation must never
+            // strand the customer on an error page: land back on the form
+            // with a message they can act on.
+            log_message('error', 'deposit initiation threw: '.$e->getMessage());
+            $this->session->set_flashdata('error',
+                'Could not start the payment right now — please try again. If it keeps failing, contact support.');
+            redirect('dashboard/add-funds');
+        }
+
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error'] ?? 'Could not initiate payment');
+            redirect('dashboard/add-funds');
+        }
+
+        $tx = $res['transaction'];
+        if (!empty($res['duplicate'])) {
+            // The same form was submitted twice: take the customer to the
+            // deposit that already exists (with its resume link) rather than
+            // starting anything new.
+            $this->session->set_flashdata('success',
+                'This deposit is already open — continue from here.');
+            redirect('dashboard/wallet/deposits/'.$tx->public_id);
+        }
+        if (!empty($res['redirect_url'])) {
+            redirect($res['redirect_url']);
+        }
+        // No hosted checkout URL (manual instructions, or the provider
+        // returned details without a checkout link): show the deposit page,
+        // which renders the account details and any resume link.
+        $this->session->set_flashdata('success',
+            'Your deposit is ready below — pay by card or bank transfer. Your wallet will be '
+            .'credited once the payment is confirmed.');
+        redirect('dashboard/wallet/deposits/'.$tx->public_id);
+    }
+
+    /**
+     * POST /dashboard/wallet/deposits/:public_id/card — pay an open Fundsvera
+     * deposit by card through a configured hosted card gateway.
+     *
+     * Fundsvera's secured checkout only produces bank-transfer instructions;
+     * this route re-uses the exact same deposit and asks Paystack /
+     * Flutterwave / Razorpay / Stripe for a card checkout URL. A successful
+     * card webhook credits the same deposit once, so the customer never has
+     * two payments to reconcile.
+     */
+    public function card($public_id) {
+        if ($this->input->method(true) !== 'POST') show_404();
+
+        $tx = $this->Payment_transaction_model->find_public_for_user($public_id, $this->current_user->id);
+        if (!$tx) show_404();
+
+        $res = $this->paymentservice->card_checkout($tx, $this->current_user);
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error'] ?? 'Could not start the card payment.');
+            redirect('dashboard/wallet/deposits/'.$public_id);
+            return;
+        }
+        if (!empty($res['redirect_url'])) {
+            redirect($res['redirect_url']);
+        }
+        $this->session->set_flashdata('success', 'Your card payment is ready below.');
+        redirect('dashboard/wallet/deposits/'.$public_id);
+    }
+
+    /**
+     * POST /dashboard/wallet/virtual-account — the customer's standing bank
+     * account for wallet top-ups.
+     *
+     * Without an amount: create the account on first use (or return the
+     * existing one) and land back on Add Funds, where it is shown. With an
+     * amount: also open a declared virtual-account deposit, so the payment
+     * has a quoted amount to be checked against when the bank reports it —
+     * the webhook (never this page) is what credits the wallet.
+     */
+    public function virtual_account() {
+        if ($this->input->method(true) !== 'POST') show_404();
+
+        $amount = trim((string)$this->input->post('amount', true));
+
+        try {
+            if ($amount !== '' && is_numeric($amount)) {
+                $res = $this->paymentservice->open_virtual_account_deposit($this->current_user, $amount);
+            } else {
+                $res = $this->paymentservice->virtual_account($this->current_user);
+            }
+        } catch (Throwable $e) {
+            log_message('error', 'virtual account request threw: '.$e->getMessage());
+            $this->session->set_flashdata('error',
+                'Could not set up the bank account right now — please try again shortly.');
+            redirect('dashboard/add-funds');
+            return;
+        }
+
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error'] ?? 'Could not set up the bank account.');
+            redirect('dashboard/add-funds');
+            return;
+        }
+
+        if (!empty($res['transaction'])) {
+            $tx = $res['transaction'];
+            $this->session->set_flashdata('success',
+                'Deposit '.substr($tx->public_id, 0, 12).'… is open — transfer '
+                .marvy_money($tx->amount, $tx->currency).' to your account below. Your wallet is '
+                .'credited automatically once the bank confirms the payment.');
+            redirect('dashboard/wallet/deposits/'.$tx->public_id);
+            return;
+        }
+
+        $account = $res['account'];
+        $this->session->set_flashdata('success',
+            'Your dedicated account '.htmlspecialchars($account->account_number)
+            .' ('.htmlspecialchars($account->bank_name).') is ready — pay into it any time and '
+            .'your wallet is credited automatically when the bank confirms.');
+        redirect('dashboard/add-funds');
+    }
+
+    public function deposits($public_id = null) {
+        $tx = $public_id
+            ? $this->Payment_transaction_model->find_public_for_user($public_id, $this->current_user->id)
+            : null;
+
+        // The customer has just come back from the provider's checkout — this
+        // URL is HostedGateway::return_url(). Settle the deposit NOW: a
+        // capture-step gateway (PayPal) can only be completed from here, and a
+        // self-settling gateway is asked directly whether the payment landed,
+        // so a late or missing webhook never keeps a paid deposit waiting.
+        // All money movement happens inside PaymentService (settle_hosted_
+        // return → confirm), which is idempotent — the webhook landing mid-
+        // view credits nothing twice. Failures are deliberately silent: an
+        // unsettleable deposit simply renders as it did before.
+        if ($tx && in_array($tx->status, array('CREATED', 'PENDING'), true)) {
+            try {
+                $this->paymentservice->settle_hosted_return($tx, 'RETURN');
+                $tx = $this->Payment_transaction_model->find_public_for_user($public_id, $this->current_user->id)
+                    ?: $tx;
+            } catch (Throwable $e) {
+                log_message('error', 'settle on return failed for '.$public_id.': '.$e->getMessage());
+            }
+        }
+
+        $deposits = $this->Payment_transaction_model->for_user($this->current_user->id, 25);
+
+        // A bank-transfer deposit is useless to the customer without the
+        // account details, and those live on the checkout row rather than on
+        // the transaction. Loaded here so the view stays free of queries.
+        $checkout = null;
+        $gateway_checkout = null;
+        $card_checkout = null;
+        $card_method = null;
+        if ($tx && $tx->status === 'PENDING') {
+            try {
+                $this->load->model('Fundsvera_checkout_model');
+                $checkout = $this->Fundsvera_checkout_model->for_transaction($tx->id);
+            } catch (Throwable $e) {
+                log_message('error', 'could not load checkout details: '.$e->getMessage());
+            }
+            // Hosted gateways (Paystack, Stripe, PayPal, CoinPayments, …) store
+            // what they showed the customer on the transaction itself, so an
+            // interrupted payment can be resumed rather than restarted.
+            $meta = json_decode((string)$tx->metadata, true);
+            if (is_array($meta)) {
+                if (!empty($meta['checkout'])) $gateway_checkout = $meta['checkout'];
+                if (!empty($meta['card_checkout'])) $card_checkout = $meta['card_checkout'];
+            }
+            // A Fundsvera deposit can also be paid by card when a hosted card
+            // gateway is configured. Exposing it here keeps the deposit page
+            // free of service queries.
+            try {
+                $card_method = $this->paymentservice->card_method_for_deposit();
+            } catch (Throwable $e) {
+                log_message('error', 'could not resolve a card gateway: '.$e->getMessage());
+            }
+        }
+        $this->load->view('layouts/app', array(
+            'title' => 'Deposits',
+            'nav_active' => 'dashboard/add-funds',
+            'unread' => $this->dashboardstats->unread_count($this->current_user->id),
+            'content_view' => 'dashboard/wallet/deposits',
+            'current_user' => $this->current_user,
+            'permissions' => $this->auth->permissions(),
+            'deposits' => $deposits,
+            'active_deposit' => $tx,
+            'checkout' => $checkout,
+            'gateway_checkout' => $gateway_checkout,
+            'card_method' => $card_method,
+            'card_checkout' => $card_checkout,
+        ));
+    }
+}

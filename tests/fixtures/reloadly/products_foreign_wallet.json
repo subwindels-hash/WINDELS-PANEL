@@ -1,0 +1,14 @@
+[
+    {
+        "productId": 90,
+        "productName": "Amazon US",
+        "denominationType": "FIXED",
+        "recipientCurrencyCode": "USD",
+        "senderCurrencyCode": "USD",
+        "fixedRecipientDenominations": [25],
+        "fixedRecipientToSenderDenominationsMap": { "25.00": 24.5 },
+        "logoUrls": [],
+        "brand": { "brandId": 2, "brandName": "Amazon" },
+        "country": { "isoName": "US", "name": "United States" }
+    }
+]

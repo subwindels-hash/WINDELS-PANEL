@@ -1,0 +1,8 @@
+{
+    "timeStamp": "2026-02-28 10:31:02",
+    "message": "Unit price 33 is not a valid denomination for this product",
+    "path": "/orders",
+    "errorCode": "INVALID_DENOMINATION",
+    "infoLink": null,
+    "details": []
+}

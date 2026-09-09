@@ -1,0 +1,371 @@
+<?php
+defined('BASEPATH') OR exit('No direct script access allowed');
+
+/**
+ * Admin/Providers — list, create, test and sync upstream providers.
+ *
+ * Covers both families: SMM panels and VTU vendors (VTpass). API keys are
+ * encrypted at rest via EncryptionService and never returned to the UI
+ * (Session 08, 24).
+ *
+ * Permissions are granular as the role matrix always intended: reading the
+ * list needs `providers.view`, running a connection test or a catalogue sync
+ * needs `providers.sync`, and creating or editing a provider needs
+ * `providers.manage`. Until Session 30 every action gated on `providers.manage`
+ * alone, so the other two keys were seeded, granted to STAFF, and enforced
+ * nowhere — support could be told they could see the provider list and then
+ * meet a 403.
+ */
+class Providers extends Admin_Controller {
+
+    const PER_PAGE = 20;
+
+    public function __construct() {
+        parent::__construct();
+        $this->require_perm('providers.view');
+        $this->load->model(array('Provider_model', 'Provider_service_model'));
+        $this->load->library(array('ProviderSyncService', 'Provider_manager', 'form_validation'));
+    }
+
+    public function index() {
+        $status = $this->input->get('status', true);
+        $search = $this->input->get('q', true);
+        $page   = max(1, (int)$this->input->get('page'));
+        $limit  = self::PER_PAGE;
+
+        $providers = $this->Provider_model->paginated($limit, ($page-1)*$limit, $status ?: null, $search ?: null);
+        $total     = $this->Provider_model->count_all($status ?: null, $search ?: null);
+
+        // Attach service counts without an N+1 query.
+        $counts = array();
+        if ($providers) {
+            $rows = $this->db
+                ->select('provider_id, COUNT(*) AS c', false)
+                ->where_in('provider_id', array_map(function($p){ return $p->id; }, $providers))
+                ->group_by('provider_id')->get('provider_services')->result();
+            foreach ($rows as $r) $counts[(int)$r->provider_id] = (int)$r->c;
+        }
+
+        $this->load->view('layouts/app', array(
+            'title'        => 'Providers',
+            'nav_active'   => 'admin/providers',
+            'content_view' => 'admin/providers/index',
+            'current_user' => $this->current_user,
+            'permissions'  => $this->auth->permissions(),
+            'unread'       => 0,
+            'providers'    => $providers,
+            'counts'       => $counts,
+            'api_types'    => $this->api_types(),
+            'status'       => $status,
+            'search'       => $search,
+            'page'         => $page,
+            'total_pages'  => max(1, (int)ceil($total / $limit)),
+            'total'        => $total,
+        ));
+    }
+
+    public function create() {
+        $this->require_perm('providers.manage');
+        if ($this->input->method(true) !== 'POST') show_404();
+
+        $result = $this->providersyncservice->create_provider($this->input->post());
+        if (!$result['ok']) {
+            $this->session->set_flashdata('error', implode(' ', $result['errors']));
+            return redirect('admin/providers');
+        }
+        $this->session->set_flashdata('success', 'Provider "'.$result['provider']->name.'" created. Test the connection before enabling sync.');
+        redirect('admin/providers/'.$result['provider']->public_id);
+    }
+
+    public function detail($public_id) {
+        $provider = $this->Provider_model->find_by_public_id($public_id);
+        if (!$provider) show_404();
+
+        $page = max(1, (int)$this->input->get('page'));
+        $limit = self::PER_PAGE;
+        $family = ProviderSyncService::family($provider);
+
+        // A VTU vendor has no SMM service list; its catalogue is vtu_products.
+        if ($family === Provider_manager::FAMILY_VTU) {
+            $this->load->model('Vtu_product_model');
+            $services = $this->Vtu_product_model->paginated_for_provider($provider->id, $limit, ($page-1)*$limit);
+            $total    = $this->Vtu_product_model->count_for_provider($provider->id);
+        } else {
+            $services = $this->Provider_service_model->paginated_for_provider($provider->id, $limit, ($page-1)*$limit);
+            $total    = $this->Provider_service_model->count_for_provider($provider->id);
+        }
+
+        $this->load->view('layouts/app', array(
+            'title'        => $provider->name,
+            'nav_active'   => 'admin/providers',
+            'content_view' => 'admin/providers/detail',
+            'current_user' => $this->current_user,
+            'permissions'  => $this->auth->permissions(),
+            'unread'       => 0,
+            'provider'     => $provider,
+            'family'       => $family,
+            'services'     => $services,
+            'sync_logs'    => $this->Provider_model->recent_sync_logs($provider->id, 10),
+            'health_logs'  => $this->Provider_model->recent_health_logs($provider->id, 10),
+            'page'         => $page,
+            'total_pages'  => max(1, (int)ceil($total / $limit)),
+            'total'        => $total,
+            // Spelled out on screen before the delete button is pressed: what
+            // goes with the provider and what stays behind.
+            'linked_panel_services' => (int)$this->db
+                ->where('provider_id', $provider->id)->count_all_results('services'),
+            'linked_orders' => (int)$this->db
+                ->where('provider_id', $provider->id)->count_all_results('orders'),
+        ));
+    }
+
+    /**
+     * POST /admin/providers/:id/pricing — set the percentage markup applied to
+     * everything this provider supplies (0–200%), plus an optional flat amount.
+     */
+    public function pricing($public_id) {
+        $this->guard_post('providers.manage');
+        $provider = $this->Provider_model->find_by_public_id($public_id);
+        if (!$provider) show_404();
+
+        $res = $this->providersyncservice->set_pricing_rule(
+            $provider,
+            $this->input->post('markup_percent', true),
+            $this->input->post('markup_flat', true) ?: 0,
+            (string)$this->input->post('reprice', true) === '1'
+        );
+
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error']);
+        } else {
+            $msg = 'Pricing rule saved: customers pay vendor cost +'.rtrim(rtrim(number_format($res['percent'], 2, '.', ''), '0'), '.').'%';
+            if (bccomp($res['flat'], '0', 8) > 0) $msg .= ' plus '.marvy_money($res['flat'], $provider->currency);
+            $msg .= '.';
+            if ($res['repriced'] > 0) {
+                $msg .= ' '.$res['repriced'].' auto-priced service'.($res['repriced'] === 1 ? '' : 's').' re-priced now.';
+            }
+            $this->session->set_flashdata('success', $msg);
+        }
+        redirect('admin/providers/'.$provider->public_id);
+    }
+
+    public function test($public_id) {
+        $this->guard_post();
+        $provider = $this->Provider_model->find_by_public_id($public_id);
+        if (!$provider) show_404();
+
+        $res = $this->providersyncservice->test_connection($provider);
+        if ($res['ok']) {
+            $this->session->set_flashdata('success',
+                'Connection OK — balance '.($res['balance'] !== null ? $res['balance'].' '.$res['currency'] : 'unknown').' ('.$res['latency_ms'].' ms).');
+        } else {
+            $this->session->set_flashdata('error', 'Connection failed: '.($res['error'] ?? 'unknown error').' ('.$res['latency_ms'].' ms).');
+        }
+        redirect('admin/providers/'.$public_id);
+    }
+
+    public function sync($public_id) {
+        $this->guard_post();
+        $provider = $this->Provider_model->find_by_public_id($public_id);
+        if (!$provider) show_404();
+
+        $res = $this->providersyncservice->sync_services($provider);
+        if ($res['ok']) {
+            $msg = "Sync complete — {$res['inserted']} new, {$res['updated']} updated ({$res['latency_ms']} ms).";
+            if (!empty($res['inserted'])) {
+                // New VTU products land inactive and unpriced on purpose.
+                $msg .= ' New products are inactive until you set a price.';
+            }
+            $this->session->set_flashdata('success', $msg);
+        } else {
+            $this->session->set_flashdata('error', 'Sync failed: '.($res['error'] ?? 'unknown error'));
+        }
+        redirect('admin/providers/'.$public_id);
+    }
+
+    public function sync_balance($public_id) {
+        $this->guard_post();
+        $provider = $this->Provider_model->find_by_public_id($public_id);
+        if (!$provider) show_404();
+
+        $res = $this->providersyncservice->sync_balance($provider);
+        if ($res['ok']) {
+            $this->session->set_flashdata('success',
+                'Balance synced: '.$res['balance'].' '.$res['currency'].' ('.$res['latency_ms'].' ms).');
+        } else {
+            $this->session->set_flashdata('error', 'Balance sync failed: '.($res['error'] ?? 'unknown error'));
+        }
+        redirect('admin/providers/'.$public_id);
+    }
+
+    /**
+     * POST /admin/providers/:id/import — bring the whole synced catalogue
+     * across as panel services in one action.
+     *
+     * "Add provider → sync → hand-build hundreds of services" was the only
+     * path from a provider to a sellable catalogue, which in practice meant
+     * the provider sat there and customers saw nothing. The import reuses the
+     * single-create mapping (trusted rates, the provider's pricing rule,
+     * capability flags) so there is exactly one definition of a panel service.
+     *
+     * It writes the services catalogue, so the permission is services.manage —
+     * not providers.sync, which only reaches out and reads.
+     */
+    public function import($public_id) {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm('services.manage');
+        $provider = $this->Provider_model->find_by_public_id($public_id);
+        if (!$provider) show_404();
+
+        $this->load->library(array('SmmServiceAdminService'));
+        $res = $this->smmserviceadminservice->import_provider_services(
+            $provider, $this->input->post(null, true));
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error'] ?? 'The import failed.');
+            return redirect('admin/providers/'.$public_id);
+        }
+
+        $this->load->model('Audit_log_model');
+        $this->Audit_log_model->record(
+            $this->current_user->id, 'services.imported', 'providers', (string)$provider->id,
+            null,
+            array(
+                'created' => (int)$res['created'],
+                'skipped_linked' => (int)$res['skipped_linked'],
+                'skipped_category' => (int)$res['skipped_category'],
+                'skipped_rate' => (int)$res['skipped_rate'],
+                'categories_created' => (int)$res['categories_created'],
+                'status' => strtoupper(trim((string)$this->input->post('status', true))) ?: 'INACTIVE',
+            ),
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
+
+        $msg = 'Imported '.$res['created'].' service'.($res['created'] === 1 ? '' : 's')
+            .' from '.$provider->name.'.';
+        if ($res['categories_created'] > 0) {
+            $msg .= ' Created '.$res['categories_created'].' categor'.($res['categories_created'] === 1 ? 'y' : 'ies').'.';
+        }
+        if ($res['skipped_linked'] > 0) {
+            $msg .= ' '.$res['skipped_linked'].' were already imported (left untouched).';
+        }
+        $this->session->set_flashdata('success', $msg);
+        if (!empty($res['warnings'])) {
+            $this->session->set_flashdata('warning', implode(' ', $res['warnings']));
+        }
+        redirect('admin/services?provider='.urlencode($public_id));
+    }
+
+    /**
+     * POST /admin/providers/:id/credentials — rotate the API URL and key.
+     *
+     * Credentials used to be immutable after creation: the only way to rotate
+     * a vendor key was to delete the provider (and its synced catalogue) and
+     * re-create it. That is exactly the situation a 5sim operator hits when
+     * their dashboard issues a new JWT: enter the new key somewhere, meet a
+     * wall. This is the edit path — POST-only, providers.manage, encrypted at
+     * rest, audited, and it runs the live probe so the new key is verified in
+     * the same breath. The stored key is never rendered back to the screen.
+     */
+    public function credentials($public_id) {
+        $this->guard_post('providers.manage');
+        $provider = $this->Provider_model->find_by_public_id($public_id);
+        if (!$provider) show_404();
+
+        $res = $this->providersyncservice->update_credentials($provider, $this->input->post(null, true));
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', implode(' ', $res['errors'] ?? array('The credentials could not be saved.')));
+            return redirect('admin/providers/'.$provider->public_id);
+        }
+
+        $probe = $res['probe'] ?? null;
+        if (!empty($probe['ok'])) {
+            $this->session->set_flashdata('success',
+                'Credentials saved and verified — the vendor answered with balance '
+                .($probe['balance'] !== null ? $probe['balance'].' '.$probe['currency'] : 'OK')
+                .' ('.$probe['latency_ms'].' ms).');
+        } else {
+            $this->session->set_flashdata('warning',
+                'Credentials saved, but the connection test failed: '
+                .($probe['error'] ?? 'unknown error')
+                .' — check the key and the URL, then test again.');
+        }
+        redirect('admin/providers/'.$provider->public_id);
+    }
+
+    /**
+     * POST /admin/providers/:id/delete — remove a provider and its synced
+     * catalogue in one action.
+     *
+     * A provider row used to be immortal: the schema's foreign keys were
+     * defined back in migration 004 but no screen ever offered the delete, so
+     * the only way out was SQL. This is that screen, and the actual surgery
+     * lives in ProviderSyncService::delete_provider() so the CLI (and tests)
+     * run exactly what the button runs. The confirmation names what goes and
+     * what stays; the audit row carries the counts.
+     */
+    public function delete($public_id) {
+        $this->guard_post('providers.manage');
+        $provider = $this->Provider_model->find_by_public_id($public_id);
+        if (!$provider) show_404();
+
+        $res = $this->providersyncservice->delete_provider($provider);
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error'] ?? 'The delete failed.');
+            return redirect('admin/providers/'.$public_id);
+        }
+
+        $counts = $res['counts'];
+        $this->load->model('Audit_log_model');
+        $this->Audit_log_model->record(
+            $this->current_user->id, 'provider.deleted', 'providers', (string)$provider->id,
+            array(
+                'name' => $provider->name,
+                'api_type' => $provider->api_type,
+            ),
+            $counts,
+            $this->input->ip_address(), $this->input->user_agent(), $this->request_id
+        );
+
+        $msg = 'Deleted '.$provider->name.' and '.$counts['synced_services']
+            .' synced service'.($counts['synced_services'] === 1 ? '' : 's').'.';
+        if ($counts['panel_services'] > 0) {
+            $msg .= ' '.$counts['panel_services'].' panel service'.($counts['panel_services'] === 1 ? ' was' : 's were')
+                .' kept and unlinked.';
+        }
+        if ($counts['orders'] > 0) {
+            $msg .= ' '.$counts['orders'].' past order'.($counts['orders'] === 1 ? ' keeps' : 's keep')
+                .' its history with the provider link removed.';
+        }
+        $this->session->set_flashdata('success', $msg);
+        redirect('admin/providers');
+    }
+
+    /**
+     * POST-only, plus the permission the action needs.
+     *
+     * Defaults to `providers.sync`: test/sync/sync-balance all reach out to a
+     * vendor but change no stored credential, which is the distinction the
+     * role matrix draws between STAFF and ADMIN here.
+     */
+    private function guard_post($perm = 'providers.sync') {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm($perm);
+    }
+
+    /**
+     * api_types offered by the create form, grouped by family.
+     *
+     * Read from the registry rather than hardcoded in the view, so a build
+     * without an adapter cannot offer it and then fail at the first call.
+     */
+    private function api_types() {
+        $out = array();
+        foreach (Provider_manager::families() as $family) {
+            foreach (Provider_manager::supported_types($family) as $type) {
+                if ($type === 'MOCK' && isset($out['MOCK'])) continue;
+                $out[$type] = $family;
+            }
+        }
+        return $out;
+    }
+}

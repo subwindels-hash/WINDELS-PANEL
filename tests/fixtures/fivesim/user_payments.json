@@ -1,0 +1,23 @@
+{
+    "Data": [
+        {
+            "ID": 30011934,
+            "TypeName": "charge",
+            "ProviderName": "admin",
+            "Amount": 100,
+            "Balance": 100,
+            "CreatedAt": "2020-06-24T15:37:08.149895Z"
+        },
+        {
+            "ID": 30012100,
+            "TypeName": "purchase",
+            "ProviderName": "product",
+            "Amount": 21,
+            "Balance": 79,
+            "CreatedAt": "2020-06-24T16:00:00.000000Z"
+        }
+    ],
+    "PaymentTypes": [{ "Name": "charge" }, { "Name": "purchase" }],
+    "PaymentProviders": [{ "Name": "admin" }, { "Name": "product" }],
+    "Total": 2
+}
