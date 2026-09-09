@@ -1,0 +1,81 @@
+[
+    {
+        "productId": 11,
+        "productName": "Amazon US",
+        "global": false,
+        "senderFee": 205.29,
+        "senderFeePercentage": 1,
+        "status": "ACTIVE",
+        "discountPercentage": 7.5,
+        "denominationType": "FIXED",
+        "recipientCurrencyCode": "USD",
+        "recipientCurrencyToSenderCurrencyExchangeRate": 1570,
+        "minRecipientDenomination": null,
+        "maxRecipientDenomination": null,
+        "senderCurrencyCode": "NGN",
+        "minSenderDenomination": null,
+        "maxSenderDenomination": null,
+        "fixedRecipientDenominations": [25, 50],
+        "fixedSenderDenominations": [39250.0, 78500.0],
+        "fixedRecipientToSenderDenominationsMap": {
+            "25.00": 39250.0,
+            "50.00": 78500.0
+        },
+        "logoUrls": ["https://cdn.reloadly.com/giftcards/amazon.jpg"],
+        "brand": { "brandId": 2, "brandName": "Amazon" },
+        "category": { "id": 5, "name": "Fashion and Retails" },
+        "country": { "isoName": "US", "name": "United States", "flagUrl": "https://s3.amazonaws.com/rld-flags/us.svg" },
+        "redeemInstruction": {
+            "concise": "Redeem at amazon.com/redeem",
+            "verbose": "Go to amazon.com/redeem and enter the claim code to add it to your Amazon balance."
+        },
+        "additionalRequirements": { "userIdRequired": false }
+    },
+    {
+        "productId": 18,
+        "productName": "Steam US",
+        "global": false,
+        "senderFee": 0,
+        "status": "ACTIVE",
+        "discountPercentage": 4.0,
+        "denominationType": "FIXED",
+        "recipientCurrencyCode": "USD",
+        "senderCurrencyCode": "NGN",
+        "fixedRecipientDenominations": [20],
+        "fixedSenderDenominations": [31400.0],
+        "fixedRecipientToSenderDenominationsMap": [
+            { "20.00": 31400.0 }
+        ],
+        "logoUrls": ["https://cdn.reloadly.com/giftcards/steam.jpg"],
+        "brand": { "brandId": 9, "brandName": "Steam" },
+        "country": { "isoName": "US", "name": "United States", "flagUrl": "https://s3.amazonaws.com/rld-flags/us.svg" },
+        "redeemInstruction": {
+            "concise": "Redeem in the Steam client",
+            "verbose": "Open Steam, choose Games then Redeem a Steam Wallet Code, and enter the code."
+        }
+    },
+    {
+        "productId": 44,
+        "productName": "Amazon US Custom",
+        "global": false,
+        "status": "ACTIVE",
+        "denominationType": "RANGE",
+        "recipientCurrencyCode": "USD",
+        "recipientCurrencyToSenderCurrencyExchangeRate": 1570,
+        "minRecipientDenomination": 5,
+        "maxRecipientDenomination": 500,
+        "senderCurrencyCode": "NGN",
+        "minSenderDenomination": 7850,
+        "maxSenderDenomination": 785000,
+        "fixedRecipientDenominations": [],
+        "fixedSenderDenominations": [],
+        "fixedRecipientToSenderDenominationsMap": {},
+        "logoUrls": ["https://cdn.reloadly.com/giftcards/amazon.jpg"],
+        "brand": { "brandId": 2, "brandName": "Amazon" },
+        "country": { "isoName": "US", "name": "United States", "flagUrl": "https://s3.amazonaws.com/rld-flags/us.svg" },
+        "redeemInstruction": {
+            "concise": "Redeem at amazon.com/redeem",
+            "verbose": "Go to amazon.com/redeem and enter the claim code."
+        }
+    }
+]

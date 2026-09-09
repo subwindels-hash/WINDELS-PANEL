@@ -1,0 +1,13 @@
+parameters:
+    # Level 1 scopes analysis to the plain-domain classes and CLI tools:
+    # unknown classes/functions only. Controllers/views/models speak CI3
+    # magic ($this->db, $this->input) and are glued in codeigniter/framework,
+    # not PSR-0, so they are intentionally out of scope until a stubs
+    # baseline is curated. The CI step is continue-on-error for now.
+    level: 1
+    paths:
+        - application/libraries
+        - tools
+    bootstrapFiles:
+        - tests/_support/phpstan-bootstrap.php
+    checkFunctionNameCase: false

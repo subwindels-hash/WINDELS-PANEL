@@ -1,0 +1,8 @@
+{
+    "timeStamp": 1772280000000,
+    "message": "API rate limit exceeded",
+    "path": "/orders",
+    "errorCode": null,
+    "infoLink": null,
+    "details": []
+}

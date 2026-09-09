@@ -1,0 +1,12 @@
+# Runtime directory — never served over HTTP.
+#
+# Support attachments are customers' bank statements, identity documents and
+# payment screenshots. They are read by PHP (Attachment::ticket(), which checks
+# the session and the ticket's owner) and by nothing else.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order deny,allow
+    Deny from all
+</IfModule>

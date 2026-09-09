@@ -1,0 +1,980 @@
+/**
+ * MarvySocials — vanilla JS (no framework).
+ *
+ * Its one job today is CSRF plumbing, because that is what silently breaks
+ * every page that posts more than once.
+ *
+ * CodeIgniter checks a CSRF token on every POST. A server-rendered form gets
+ * one at render time and is fine. Anything that posts again from the same
+ * page — an AJAX reply box, a support or chat widget, a retry after a failed
+ * send — is holding a token that may already have been used or expired, and
+ * the second send comes back rejected. From the customer's side: "the first
+ * message went through, the second one says something went wrong".
+ *
+ * So: every same-origin fetch/XHR that changes state automatically carries the
+ * current token in the X-CSRF-TOKEN header, the token is refreshed from
+ * GET /csrf whenever the server hands back a new one, and a 419 (token
+ * expired) is retried exactly once with a fresh token instead of surfacing as
+ * a generic failure.
+ *
+ * Third-party widgets that do their own posting can use the public API:
+ *
+ *   await MARVYSOCIALS.csrf()          // current token, refreshed if stale
+ *   MARVYSOCIALS.csrfHeader()          // { 'X-CSRF-TOKEN': '...' } to spread into headers
+ *   MARVYSOCIALS.csrfField()           // { csrf_marvy: '...' } for form bodies
+ */
+(function () {
+  'use strict';
+
+  var TOKEN_HEADER = 'X-CSRF-TOKEN';
+  var UNSAFE = /^(POST|PUT|PATCH|DELETE)$/i;
+
+  function meta(name) {
+    var el = document.querySelector('meta[name="' + name + '"]');
+    return el ? el.getAttribute('content') : null;
+  }
+
+  var state = {
+    name: meta('csrf-name') || 'csrf_marvy',
+    hash: meta('csrf-token') || null,
+    endpoint: (meta('csrf-endpoint') || '/csrf')
+  };
+
+  /** Push a new token into the meta tag and every rendered hidden input. */
+  function adopt(name, hash) {
+    if (!hash) return;
+    if (name) state.name = name;
+    state.hash = hash;
+
+    var tag = document.querySelector('meta[name="csrf-token"]');
+    if (tag) tag.setAttribute('content', hash);
+
+    // Server-rendered forms hold the token that was current when the page was
+    // built. Refreshing them means the Back button and long-open tabs keep
+    // working too, not just scripted posts.
+    var inputs = document.querySelectorAll('input[name="' + state.name + '"]');
+    for (var i = 0; i < inputs.length; i++) inputs[i].value = hash;
+  }
+
+  var inflight = null;
+
+  /** Current token, fetching one if we have never seen it. */
+  function token(force) {
+    if (state.hash && !force) return Promise.resolve(state.hash);
+    if (inflight) return inflight;
+
+    inflight = fetch(state.endpoint, {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+    })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (body) {
+        var data = body && body.data ? body.data : null;
+        if (data) adopt(data.name, data.hash);
+        return state.hash;
+      })
+      .catch(function () { return state.hash; })
+      .then(function (value) { inflight = null; return value; });
+
+    return inflight;
+  }
+
+  function sameOrigin(url) {
+    try {
+      return new URL(url, window.location.href).origin === window.location.origin;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /** A response may carry a rotated token; keep up with it. */
+  function harvest(response) {
+    if (!response) return response;
+    var fresh = response.headers && response.headers.get
+      ? response.headers.get('X-CSRF-TOKEN')
+      : null;
+    if (fresh) adopt(state.name, fresh);
+    return response;
+  }
+
+  /* ----------------------------- fetch ---------------------------------- */
+
+  var nativeFetch = window.fetch ? window.fetch.bind(window) : null;
+
+  if (nativeFetch) {
+    window.fetch = function (input, init) {
+      init = init || {};
+      var url = typeof input === 'string' ? input : (input && input.url) || '';
+      var method = (init.method || (input && input.method) || 'GET').toUpperCase();
+
+      if (!UNSAFE.test(method) || !sameOrigin(url)) {
+        return nativeFetch(input, init).then(harvest);
+      }
+
+      return token(false).then(function (value) {
+        var headers = new Headers(init.headers || (input && input.headers) || {});
+        if (value && !headers.has(TOKEN_HEADER)) headers.set(TOKEN_HEADER, value);
+        if (!headers.has('X-Requested-With')) headers.set('X-Requested-With', 'XMLHttpRequest');
+
+        var options = Object.assign({}, init, { headers: headers });
+        if (!options.credentials) options.credentials = 'same-origin';
+
+        return nativeFetch(input, options).then(function (response) {
+          harvest(response);
+
+          // 419 = the token expired between render and send. That is a
+          // mechanical failure, not something to bother the customer with:
+          // take the fresh token the server returned and send it once more.
+          if (response.status !== 419) return response;
+
+          return response.clone().json().catch(function () { return null; })
+            .then(function (body) {
+              if (body && body.csrf && body.csrf.hash) {
+                adopt(body.csrf.name, body.csrf.hash);
+              } else {
+                return token(true);
+              }
+            })
+            .then(function () {
+              if (!state.hash) return response;
+              var retryHeaders = new Headers(options.headers);
+              retryHeaders.set(TOKEN_HEADER, state.hash);
+              return nativeFetch(input, Object.assign({}, options, { headers: retryHeaders }))
+                .then(harvest);
+            });
+        });
+      });
+    };
+  }
+
+  /* ------------------------------- XHR ---------------------------------- */
+
+  var open = XMLHttpRequest.prototype.open;
+  var send = XMLHttpRequest.prototype.send;
+
+  XMLHttpRequest.prototype.open = function (method, url) {
+    this.__marvy = { method: method, url: url };
+    return open.apply(this, arguments);
+  };
+
+  XMLHttpRequest.prototype.send = function (body) {
+    var info = this.__marvy;
+    var xhr = this;
+    if (info && UNSAFE.test(info.method || '') && sameOrigin(info.url || '')) {
+      if (state.hash) {
+        xhr.setRequestHeader(TOKEN_HEADER, state.hash);
+        return send.call(xhr, body);
+      }
+      // No token yet: fetch one, then send. Async by necessity, which is why
+      // the header is set inside the callback rather than before send().
+      token(false).then(function (value) {
+        if (value) {
+          try { xhr.setRequestHeader(TOKEN_HEADER, value); } catch (e) { /* already sent */ }
+        }
+        send.call(xhr, body);
+      });
+      return undefined;
+    }
+    return send.call(xhr, body);
+  };
+
+  /* ----------------------------- public API ------------------------------ */
+
+  window.MARVYSOCIALS = window.MARVYSOCIALS || {};
+  window.MARVYSOCIALS.csrf = function (force) { return token(!!force); };
+  window.MARVYSOCIALS.csrfHeader = function () {
+    var headers = {};
+    if (state.hash) headers[TOKEN_HEADER] = state.hash;
+    return headers;
+  };
+  window.MARVYSOCIALS.csrfField = function () {
+    var field = {};
+    if (state.hash) field[state.name] = state.hash;
+    return field;
+  };
+
+  /* ----------------------------- theme ----------------------------------- */
+  // Theme switch (light | dark | system). 'system' resolves against the OS
+  // preference; the result is stored so the next load picks it up before paint.
+  window.MARVYSOCIALS.setTheme = function (theme) {
+    var t = (theme === 'light' || theme === 'dark' || theme === 'system') ? theme : 'system';
+    var dark = t === 'dark';
+    if (t === 'system') {
+      dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    document.documentElement.classList.toggle('dark', dark);
+    document.documentElement.setAttribute('data-theme', t);
+    try { localStorage.setItem('ws-theme', t); } catch (e) {}
+    // Keep every theme toggle in the page in sync.
+    var toggles = document.querySelectorAll('[data-theme-toggle]');
+    for (var i = 0; i < toggles.length; i++) {
+      toggles[i].setAttribute('data-theme-current', t);
+      var label = toggles[i].querySelector('[data-theme-toggle-label]');
+      if (label) label.textContent = t === 'dark' ? 'Light' : 'Dark';
+    }
+  };
+
+  /* ----------------------------- toast ----------------------------------- */
+  // One transient notification component for async feedback:
+  //   MARVYSOCIALS.toast('success', 'Saved') / 'error' / 'warning' / 'info'
+  window.MARVYSOCIALS.toast = function (type, message) {
+    var host = document.getElementById('ws-toast-host');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'ws-toast-host';
+      host.setAttribute('aria-live', 'polite');
+      document.body.appendChild(host);
+    }
+    var kinds = { success: 'success', error: 'danger', warning: 'warning', info: 'info' };
+    var kind = kinds[type] || 'info';
+
+    var el = document.createElement('div');
+    el.className = 'toast alert alert-' + kind;
+    el.setAttribute('role', kind === 'danger' ? 'alert' : 'status');
+    el.textContent = message || '';
+
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'toast-close';
+    close.setAttribute('aria-label', 'Dismiss');
+    close.textContent = '×';
+    close.addEventListener('click', function () { dismiss(); });
+    el.appendChild(close);
+
+    host.appendChild(el);
+
+    function dismiss() {
+      el.classList.add('is-leaving');
+      window.setTimeout(function () {
+        if (el.parentNode) el.parentNode.removeChild(el);
+      }, 200);
+    }
+
+    window.setTimeout(dismiss, 5000);
+  };
+
+  function boot() {
+    // A page restored from the back/forward cache carries the token it was
+    // rendered with, which may have been retired in the meantime.
+    window.addEventListener('pageshow', function (event) {
+      if (event.persisted) token(true);
+    });
+
+    try {
+      initPasswordToggles();
+      initMobileNav();
+      initSkipLinks();
+      initAnnounce();
+      initFaqFilter();
+      initSiteOperator();
+      initMfa();
+      initFormSubmitGuard();
+      initThemeToggle();
+      initAppSidebar();
+    } catch (e) {
+      // A broken optional widget must never stop the other global behaviours
+      // (CSRF plumbing, mobile nav, FAQ filter, assistant) from running.
+      if (window.console && console.error) console.error('marvy init failed:', e);
+    }
+  }
+
+  // scripts.php loads this at the end of <body>, but being defensive costs
+  // nothing: if the asset is ever deferred or injected after DOMContentLoaded,
+  // the assistant and mobile nav still initialise.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+
+  /**
+   * Mobile sidebar (authenticated shell).
+   *
+   * The shell renders `[data-sidebar-toggle]` in the topbar and a
+   * `.ws-sidebar-backdrop` behind the drawer; the design system shows the
+   * drawer while `.ws-app-shell` carries `.sidebar-open`. This was called at
+   * boot but never defined, so the init block threw before it could finish and
+   * the toggle did nothing on small screens.
+   */
+  function initAppSidebar() {
+    var shell = document.querySelector('.ws-app-shell') || document.body;
+    var toggles = document.querySelectorAll('[data-sidebar-toggle]');
+    if (!toggles.length) return;
+
+    function setOpen(open) {
+      shell.classList.toggle('sidebar-open', open);
+      for (var i = 0; i < toggles.length; i++) {
+        toggles[i].setAttribute('aria-expanded', open ? 'true' : 'false');
+      }
+      var backdrop = document.querySelector('.ws-sidebar-backdrop');
+      if (backdrop) backdrop.hidden = !open;
+    }
+
+    for (var i = 0; i < toggles.length; i++) {
+      toggles[i].addEventListener('click', function (event) {
+        event.preventDefault();
+        setOpen(!shell.classList.contains('sidebar-open'));
+      });
+    }
+
+    document.addEventListener('click', function (event) {
+      if (event.target && event.target.closest && event.target.closest('[data-sidebar-close]')) {
+        setOpen(false);
+      }
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') setOpen(false);
+    });
+
+    // Following a nav link closes the drawer, so the destination page is not
+    // rendered behind an open overlay on a phone.
+    var sidebar = document.getElementById('ws-app-sidebar');
+    if (sidebar) {
+      sidebar.addEventListener('click', function (event) {
+        if (event.target && event.target.closest && event.target.closest('a')) setOpen(false);
+      });
+    }
+
+    setOpen(false);
+  }
+
+  function initSkipLinks() {
+    // The "Skip to content" link is a plain #main anchor so it still works
+    // without JavaScript. Native behaviour, though, leaves #main stuck in the
+    // address bar (and in any URL the user copies afterwards). Intercept the
+    // click, move focus and scroll ourselves, and keep the URL clean.
+    document.addEventListener('click', function (e) {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      var link = e.target && e.target.closest ? e.target.closest('a[href="#main"]') : null;
+      if (!link) return;
+
+      var target = document.getElementById('main');
+      if (!target) return; // fall back to the browser's native jump
+
+      e.preventDefault();
+      if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+      target.focus({ preventScroll: true });
+
+      var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      target.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+
+      if (window.history && history.replaceState && location.hash === '#main') {
+        history.replaceState(null, '', location.pathname + location.search);
+      }
+    });
+
+    // Arriving with #main already in the URL (a copied or bookmarked link)
+    // should not leave the fragment behind either.
+    if (location.hash === '#main' && window.history && history.replaceState) {
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+  }
+
+  function initPasswordToggles() {
+    var buttons = document.querySelectorAll('[data-password-toggle]');
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].addEventListener('click', function () {
+        var id = this.getAttribute('data-password-toggle');
+        var input = document.getElementById(id);
+        if (!input) return;
+        var show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        this.textContent = show ? 'Hide' : 'Show';
+        this.setAttribute('aria-pressed', show ? 'true' : 'false');
+      });
+    }
+  }
+
+  function initMobileNav() {
+    var toggle = document.querySelector('[data-nav-toggle]');
+    var panel = document.getElementById('ws-nav-panel');
+    if (!toggle || !panel) return;
+    var label = toggle.querySelector('[data-nav-toggle-label]');
+    toggle.addEventListener('click', function () {
+      var open = panel.classList.toggle('is-open');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+      if (label) label.textContent = open ? 'Close' : 'Menu';
+      panel.hidden = !open;
+    });
+  }
+
+  function initAnnounce() {
+    // CSS marquee. Pause is handled with :hover / :focus-within.
+  }
+
+  function initFaqFilter() {
+    var input = document.getElementById('ws-faq-search');
+    if (!input) return;
+    var items = document.querySelectorAll('[data-faq-item]');
+    var empty = document.getElementById('ws-faq-empty');
+    input.addEventListener('input', function () {
+      var q = (input.value || '').toLowerCase().trim();
+      var shown = 0;
+      for (var i = 0; i < items.length; i++) {
+        var hay = (items[i].getAttribute('data-faq-text') || '').toLowerCase();
+        var match = !q || hay.indexOf(q) !== -1;
+        items[i].hidden = !match;
+        if (match) shown++;
+      }
+      var cats = document.querySelectorAll('[data-faq-category]');
+      for (var c = 0; c < cats.length; c++) {
+        var visible = cats[c].querySelectorAll('[data-faq-item]:not([hidden])');
+        cats[c].hidden = visible.length === 0;
+      }
+      if (empty) empty.hidden = shown !== 0;
+    });
+  }
+
+  function initSiteOperator() {
+    var root = document.getElementById('ws-assistant');
+    if (!root) return;
+
+    var launch = document.getElementById('ws-assistant-launch');
+    var closeBtn = document.getElementById('ws-assistant-close');
+    var log = document.getElementById('ws-assistant-log');
+    var form = document.getElementById('ws-assistant-form');
+    var input = document.getElementById('ws-assistant-input');
+    var send = document.getElementById('ws-assistant-send');
+    var status = document.getElementById('ws-assistant-status');
+    var suggest = document.getElementById('ws-assistant-suggest');
+    var endpoint = root.getAttribute('data-endpoint') || '/assistant/chat';
+    var history = [];
+    var pending = false;
+
+    function setOpen(open) {
+      root.hidden = !open;
+      if (launch) launch.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open && input) input.focus();
+    }
+
+    if (launch) {
+      launch.addEventListener('click', function () { setOpen(root.hidden); });
+    }
+    // Direct links on the full-page /assistant route (or anywhere that calls
+    // for the chat) cannot duplicate the floating button, so they dispatch to
+    // it instead of re-implementing the panel.
+    var openers = document.querySelectorAll('[data-open-assistant]');
+    for (var o = 0; o < openers.length; o++) {
+      openers[o].addEventListener('click', function () {
+        if (launch) launch.click();
+      });
+    }
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function () { setOpen(false); if (launch) launch.focus(); });
+    }
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !root.hidden) setOpen(false);
+    });
+
+    function bubble(role, text, links) {
+      var wrap = document.createElement('div');
+      wrap.className = 'ws-bubble ' + (role === 'user' ? 'ws-bubble-user' : 'ws-bubble-assistant');
+      wrap.textContent = text;
+      if (links && links.length) {
+        var nav = document.createElement('div');
+        nav.className = 'ws-assistant-links';
+        for (var i = 0; i < links.length; i++) {
+          var a = document.createElement('a');
+          a.href = links[i].href;
+          a.textContent = links[i].label;
+          nav.appendChild(a);
+        }
+        wrap.appendChild(nav);
+      }
+      log.appendChild(wrap);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function renderSuggestions(items) {
+      if (!suggest) return;
+      suggest.innerHTML = '';
+      if (!items || !items.length) return;
+      for (var i = 0; i < items.length; i++) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = items[i];
+        b.addEventListener('click', function (copy) {
+          return function () { ask(copy); };
+        }(items[i]));
+        suggest.appendChild(b);
+      }
+    }
+
+    function setBusy(on) {
+      pending = on;
+      if (send) send.disabled = on;
+      if (input) input.disabled = on;
+      if (status) status.textContent = on ? 'Looking that up…' : '';
+    }
+
+    function ask(text) {
+      text = (text || '').trim();
+      if (!text || pending) return;
+      bubble('user', text);
+      history.push({ role: 'user', content: text });
+      setBusy(true);
+      fetch(endpoint, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({ message: text, history: history.slice(-8) })
+      })
+        .then(function (r) {
+          return r.json().then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
+        })
+        .then(function (res) {
+          setBusy(false);
+          if (!res.ok || !res.body || !res.body.success) {
+            var msg = (res.body && res.body.error && res.body.error.message)
+              ? res.body.error.message
+              : 'The assistant could not answer just now. Try again, or use Contact.';
+            bubble('assistant', msg);
+            if (status) status.textContent = 'Something went wrong.';
+            return;
+          }
+          var data = res.body.data || {};
+          bubble('assistant', data.reply || '', data.links || []);
+          history.push({ role: 'assistant', content: data.reply || '' });
+          renderSuggestions(data.suggestions || []);
+        })
+        .catch(function () {
+          setBusy(false);
+          bubble('assistant', 'The assistant is unavailable right now. Use the Contact page if you need a person.');
+        });
+    }
+
+    if (form) {
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var value = input ? input.value : '';
+        if (input) input.value = '';
+        ask(value);
+      });
+    }
+    if (input) {
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          if (form) {
+            if (typeof form.requestSubmit === 'function') form.requestSubmit();
+            else form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+          }
+        }
+      });
+    }
+
+    var initial = suggest ? suggest.querySelectorAll('button[data-suggest]') : [];
+    for (var s = 0; s < initial.length; s++) {
+      initial[s].addEventListener('click', function () {
+        ask(this.getAttribute('data-suggest') || this.textContent);
+      });
+    }
+  }
+
+  function initThemeToggle() {
+    var toggles = document.querySelectorAll('[data-theme-toggle]');
+    for (var i = 0; i < toggles.length; i++) {
+      (function (btn) {
+        var label = btn.querySelector('[data-theme-toggle-label]');
+        var current = document.documentElement.getAttribute('data-theme') || 'system';
+        var dark = document.documentElement.classList.contains('dark');
+        btn.setAttribute('data-theme-current', current);
+        if (label) label.textContent = dark ? 'Light' : 'Dark';
+        btn.addEventListener('click', function () {
+          var isDark = document.documentElement.classList.contains('dark');
+          MARVYSOCIALS.setTheme(isDark ? 'light' : 'dark');
+        });
+      })(toggles[i]);
+    }
+  }
+
+  /* -------------------------- form submit guard -------------------------- */
+  // Disables a form's submit button the moment a real (navigation) submit
+  // fires, so a double-click can never double-place an order or double-fund a
+  // wallet. Forms that drive their own async flow opt out with data-no-guard.
+  function initFormSubmitGuard() {
+    function restore(btn) {
+      if (!btn || !btn.classList.contains('ws-submitting')) return;
+      btn.classList.remove('ws-submitting');
+      btn.disabled = false;
+      var original = btn.getAttribute('data-original-text');
+      if (original !== null) {
+        btn.textContent = original;
+        btn.removeAttribute('data-original-text');
+      }
+      var spin = btn.querySelector('.spinner');
+      if (spin && spin.parentNode) spin.parentNode.removeChild(spin);
+    }
+    function restoreAll() {
+      var stuck = document.querySelectorAll('.ws-submitting');
+      for (var i = 0; i < stuck.length; i++) restore(stuck[i]);
+    }
+
+    // A page restored from the back/forward cache keeps the exact DOM the
+    // submit handler disabled — the customer lands back from the payment
+    // provider and the button still says "Processing…", forever. A normal
+    // full-page load renders a fresh button, but a bfcache restore does not.
+    window.addEventListener('pageshow', function (event) {
+      if (event.persisted) restoreAll();
+    });
+    // Safety net: never boot a document with a submit button stuck in its
+    // submitting state, whatever produced it (server render, cache, a script
+    // that failed mid-flight on the previous page).
+    restoreAll();
+
+    document.addEventListener('submit', function (e) {
+      var form = e.target;
+      if (!form || form.tagName !== 'FORM') return;
+      if (form.hasAttribute('data-no-guard')) return;
+
+      var btn = form.querySelector('button[type="submit"], input[type="submit"]');
+      if (!btn || btn.disabled) return;
+      if (btn.classList.contains('ws-submitting')) return;
+
+      btn.classList.add('ws-submitting');
+      btn.disabled = true;
+
+      var label = btn.getAttribute('data-loading-text');
+      if (label) {
+        btn.setAttribute('data-original-text', btn.textContent);
+        btn.textContent = label;
+      }
+      if (!btn.querySelector('.spinner')) {
+        var spin = document.createElement('span');
+        spin.className = 'spinner';
+        spin.setAttribute('aria-hidden', 'true');
+        btn.insertBefore(spin, btn.firstChild);
+      }
+    }, true);
+  }
+
+  /* ----------------------------- MFA enrolment --------------------------- */
+
+  function initMfa() {
+    var section = document.getElementById('ws-mfa-section');
+    if (!section) return;
+
+    var setupUrl = section.getAttribute('data-endpoint-setup');
+    var confirmUrl = section.getAttribute('data-endpoint-confirm');
+    var disableUrl = section.getAttribute('data-endpoint-disable');
+
+    var startBtn = document.getElementById('ws-mfa-start');
+    var enroll = document.getElementById('ws-mfa-enroll');
+    var qrHost = document.getElementById('ws-mfa-qr');
+    var secretEl = document.getElementById('ws-mfa-secret');
+    var copyBtn = document.getElementById('ws-mfa-copy-secret');
+    var codeInput = document.getElementById('ws-mfa-code');
+    var confirmBtn = document.getElementById('ws-mfa-confirm');
+    var cancelBtn = document.getElementById('ws-mfa-cancel');
+    var errorEl = document.getElementById('ws-mfa-error');
+    var recoveryHost = document.getElementById('ws-mfa-recovery');
+
+    var secret = '';
+
+    function showError(el, msg) {
+      if (!el) return;
+      el.textContent = msg || '';
+      el.hidden = !msg;
+    }
+
+    function postJson(url, payload) {
+      return fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify(payload || {})
+      }).then(function (r) {
+        return r.json().then(function (body) { return { ok: r.ok, body: body }; });
+      });
+    }
+
+    function renderQr(text) {
+      if (!qrHost || typeof qrcode !== 'function' || !text) return;
+      try {
+        var q = qrcode(0, 'M');
+        q.addData(text);
+        q.make();
+        qrHost.innerHTML = q.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+      } catch (e) {
+        if (window.console && console.error) console.error('qr render failed:', e);
+      }
+    }
+
+    function renderRecovery(codes) {
+      if (!recoveryHost) return;
+      recoveryHost.innerHTML = '';
+      (codes || []).forEach(function (c) {
+        var code = document.createElement('code');
+        code.className = 'mono';
+        code.style.cssText = 'background:var(--slate-100);padding:.25rem .55rem;border-radius:.4rem;font-size:.8rem';
+        code.textContent = c;
+        recoveryHost.appendChild(code);
+      });
+    }
+
+    function copyText(text) {
+      var done = function () {
+        if (copyBtn) { copyBtn.textContent = 'Copied'; setTimeout(function () { copyBtn.textContent = 'Copy'; }, 1500); }
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(function () { legacyCopy(text); });
+      } else {
+        legacyCopy(text);
+      }
+      function legacyCopy(text) {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) {}
+        document.body.removeChild(ta);
+      }
+    }
+
+    if (startBtn && enroll) {
+      startBtn.addEventListener('click', function () {
+        startBtn.disabled = true;
+        startBtn.textContent = 'Preparing…';
+        showError(errorEl, '');
+        postJson(setupUrl).then(function (res) {
+          startBtn.disabled = false;
+          startBtn.textContent = 'Enable two-factor authentication';
+          if (!res.ok || !res.body || !res.body.success) {
+            var msg = (res.body && res.body.error && res.body.error.message) || 'Could not start MFA setup. Try again.';
+            showError(errorEl, msg);
+            return;
+          }
+          var d = res.body.data || {};
+          secret = d.secret || '';
+          if (secretEl) secretEl.textContent = secret;
+          renderRecovery(d.recovery_codes || []);
+          renderQr(d.otpauth_uri || '');
+          enroll.hidden = false;
+          startBtn.hidden = true;
+        }).catch(function () {
+          startBtn.disabled = false;
+          startBtn.textContent = 'Enable two-factor authentication';
+          showError(errorEl, 'Network error. Try again.');
+        });
+      });
+    }
+
+    if (copyBtn) {
+      copyBtn.addEventListener('click', function () {
+        var t = secretEl ? (secretEl.textContent || '') : '';
+        if (t) copyText(t);
+      });
+    }
+
+    if (confirmBtn && codeInput) {
+      confirmBtn.addEventListener('click', function () {
+        var code = (codeInput.value || '').trim();
+        if (!code) { showError(errorEl, 'Enter the 6-digit code from your authenticator app.'); return; }
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Verifying…';
+        showError(errorEl, '');
+        postJson(confirmUrl, { code: code }).then(function (res) {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = 'Verify & enable';
+          if (!res.ok || !res.body || !res.body.success) {
+            var msg = (res.body && res.body.error && res.body.error.message) || 'That code was not accepted.';
+            showError(errorEl, msg);
+            return;
+          }
+          window.location.reload();
+        }).catch(function () {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = 'Verify & enable';
+          showError(errorEl, 'Network error. Try again.');
+        });
+      });
+    }
+
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', function () {
+        enroll.hidden = true;
+        startBtn.hidden = false;
+        startBtn.disabled = false;
+        secret = '';
+        showError(errorEl, '');
+        if (secretEl) secretEl.textContent = '';
+        if (qrHost) qrHost.innerHTML = '';
+        if (recoveryHost) recoveryHost.innerHTML = '';
+      });
+    }
+
+    // Disable flow
+    var disableBtn = document.getElementById('ws-mfa-disable-btn');
+    var disableWrap = document.getElementById('ws-mfa-disable-confirm');
+    var disableCode = document.getElementById('ws-mfa-disable-code');
+    var disableConfirm = document.getElementById('ws-mfa-disable-confirm-btn');
+    var disableError = document.getElementById('ws-mfa-disable-error');
+
+    if (disableBtn && disableWrap) {
+      disableBtn.addEventListener('click', function () {
+        disableWrap.hidden = !disableWrap.hidden;
+        showError(disableError, '');
+      });
+    }
+    if (disableConfirm && disableCode) {
+      disableConfirm.addEventListener('click', function () {
+        var code = (disableCode.value || '').trim();
+        if (!code) { showError(disableError, 'Enter a code from your authenticator app to confirm.'); return; }
+        disableConfirm.disabled = true;
+        disableConfirm.textContent = 'Disabling…';
+        showError(disableError, '');
+        postJson(disableUrl, { code: code }).then(function (res) {
+          disableConfirm.disabled = false;
+          disableConfirm.textContent = 'Disable';
+          if (!res.ok || !res.body || !res.body.success) {
+            var msg = (res.body && res.body.error && res.body.error.message) || 'That code was not accepted.';
+            showError(disableError, msg);
+            return;
+          }
+          window.location.reload();
+        }).catch(function () {
+          disableConfirm.disabled = false;
+          disableConfirm.textContent = 'Disable';
+          showError(disableError, 'Network error. Try again.');
+        });
+      });
+    }
+  }
+})();
+
+/**
+ * Declarative UI behaviours (CSP-safe).
+ *
+ * These used to be inline `onclick="…"` / `onsubmit="…"` attributes, which
+ * forced the Content-Security-Policy to allow 'unsafe-inline' for scripts —
+ * i.e. to allow exactly the injection class a CSP exists to stop. The markup
+ * now carries data attributes and this one delegated listener implements them,
+ * so script-src can be nonce-only.
+ *
+ *   data-confirm="Message?"        confirm() before a form submits / a button acts
+ *   data-dialog-open="dialog-id"   open a <dialog>
+ *   data-dialog-close="dialog-id"  close a <dialog> (omit the value to close the
+ *                                  nearest enclosing dialog)
+ *   data-dialog-light-dismiss      on <dialog>: click the backdrop to close
+ *   data-autosubmit                on a <select>/<input>: submit its form on change
+ *   data-select-on-click           select an input's whole value on click
+ *   data-copy="#id"                copy that element's value/text to the clipboard
+ *   data-copied-label="Copied"     …and show this label afterwards
+ *   data-check-all=".selector"     master checkbox for a set of checkboxes
+ *   data-toggle-target="id"        show #id only when this control's value
+ *   data-toggle-when="VALUE"       equals VALUE
+ *   data-demo-form                 a styleguide form that must never submit
+ */
+(function () {
+  'use strict';
+
+  function dialogFor(el, id) {
+    if (id) return document.getElementById(id);
+    return el.closest ? el.closest('dialog') : null;
+  }
+
+  function openDialog(d) {
+    if (!d) return;
+    if (typeof d.showModal === 'function') d.showModal();
+    else d.open = true;
+  }
+
+  function closeDialog(d) {
+    if (!d) return;
+    if (typeof d.close === 'function') d.close();
+    else d.open = false;
+  }
+
+  document.addEventListener('click', function (event) {
+    var target = event.target;
+    if (!target || !target.closest) return;
+
+    // Backdrop click on a light-dismiss dialog.
+    if (target.tagName === 'DIALOG' && target.hasAttribute('data-dialog-light-dismiss')) {
+      closeDialog(target);
+      return;
+    }
+
+    var opener = target.closest('[data-dialog-open]');
+    if (opener) {
+      event.preventDefault();
+      openDialog(document.getElementById(opener.getAttribute('data-dialog-open')));
+      return;
+    }
+
+    var closer = target.closest('[data-dialog-close]');
+    if (closer) {
+      event.preventDefault();
+      closeDialog(dialogFor(closer, closer.getAttribute('data-dialog-close')));
+      return;
+    }
+
+    var copier = target.closest('[data-copy]');
+    if (copier) {
+      event.preventDefault();
+      var src = document.querySelector(copier.getAttribute('data-copy'));
+      var text = src ? (src.value !== undefined && src.value !== null && src.value !== '' ? src.value : (src.textContent || '')) : '';
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text.trim());
+      var label = copier.getAttribute('data-copied-label');
+      if (label) copier.textContent = label;
+      return;
+    }
+
+    var selector = target.closest('[data-select-on-click]');
+    if (selector && typeof selector.select === 'function') {
+      selector.select();
+      return;
+    }
+
+    var master = target.closest('[data-check-all]');
+    if (master) {
+      var boxes = document.querySelectorAll(master.getAttribute('data-check-all'));
+      for (var i = 0; i < boxes.length; i++) boxes[i].checked = master.checked;
+      return;
+    }
+
+    // A button that guards its own action (a submit button, or a link).
+    var guarded = target.closest('[data-confirm]');
+    if (guarded && guarded.tagName !== 'FORM' && !window.confirm(guarded.getAttribute('data-confirm'))) {
+      event.preventDefault();
+    }
+  });
+
+  document.addEventListener('submit', function (event) {
+    var form = event.target;
+    if (!form || form.tagName !== 'FORM') return;
+    if (form.hasAttribute('data-demo-form')) { event.preventDefault(); return; }
+    if (form.hasAttribute('data-confirm') && !window.confirm(form.getAttribute('data-confirm'))) {
+      event.preventDefault();
+    }
+  }, true);
+
+  document.addEventListener('change', function (event) {
+    var el = event.target;
+    if (!el || !el.closest) return;
+
+    if (el.hasAttribute('data-autosubmit') && el.form) {
+      el.form.submit();
+      return;
+    }
+
+    if (el.hasAttribute('data-toggle-target')) {
+      var row = document.getElementById(el.getAttribute('data-toggle-target'));
+      if (row) row.hidden = el.value !== el.getAttribute('data-toggle-when');
+    }
+  });
+})();

@@ -1,0 +1,21 @@
+{
+  "id": 1101889666,
+  "phone": "+2348157551412",
+  "operator": "mtn",
+  "product": "whatsapp",
+  "price": 21,
+  "status": "RECEIVED",
+  "expires": "2026-08-17T18:46:12.981478Z",
+  "sms": [
+    {
+      "created_at": "2026-08-17T18:33:01.000000Z",
+      "date": "2026-08-17T18:33:00.000000Z",
+      "sender": "WhatsApp",
+      "text": "Your WhatsApp code is 471-925. Don't share this code with others.",
+      "code": "471925",
+      "id": 987654321
+    }
+  ],
+  "created_at": "2026-08-17T18:31:12.981478Z",
+  "country": "nigeria"
+}

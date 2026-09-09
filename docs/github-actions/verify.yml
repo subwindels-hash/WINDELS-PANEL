@@ -1,0 +1,118 @@
+# MarvySocials — the full verification pipeline on a hosted runner
+#
+# docs/unfinished.md item 22 ("Docker / CI runner") said it plainly:
+# `tools/verify_all.sh` is the same pipeline the project runs locally and is
+# CI-ready, but it had never run on a hosted runner. This workflow is that
+# runner. It executes the exact sequence the certification audits ran by
+# hand: static checks, the PHP suite under the wasm runtime, the production
+# SQL freshness gate, the deployment package build, and every end-to-end
+# check against the real application served over HTTP on a MySQL-wire dev
+# database — 48 stages, exit code = number of failed stages.
+#
+# Prerequisites the pipeline itself provides (a fresh runner has none of
+# them): Node deps, the CodeIgniter framework (composer), a dev `.env`, the
+# dev database on :3399 and the application server on :8080.
+#
+# ACTIVATION (same one-time step as deployment-package.yml — see README.md):
+# copy this file to `.github/workflows/verify.yml` on a token that holds the
+# `workflows` permission, then it runs on every push to main and on PRs.
+
+name: Verify
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'arena/**']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Static + suite + packaging + end-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      DEMO_PASSWORD: 'Verify!2026Demo'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, curl, json, bcmath, mysqli, pdo_sqlite, sqlite3, gd, zip, intl, fileinfo
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Node dependencies
+        run: npm ci --no-fund --no-audit
+
+      - name: Install production dependencies
+        # The post-install hook (composer.json scripts) runs
+        # tools/link_system.php, which materialises system/ from the
+        # framework package — the path the wasm runtime mounts.
+        run: composer install --prefer-dist --no-interaction --optimize-autoloader
+
+      - name: Write the development .env
+        # The runner is a fresh clone: no .env, no storage. The keys mirror
+        # tools/devdb/README.md and the local dev setup; the encryption keys
+        # are throwaway dev values, never production ones.
+        run: |
+          cat > .env <<'ENV'
+          CI_ENV=development
+          APP_ENV=development
+          APP_URL=http://127.0.0.1:8080
+          ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          APP_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          VP_DB_DSN=mysql:host=127.0.0.1;port=3399;dbname=marvysocials;charset=utf8mb4
+          VP_DB_DRIVER=pdo
+          VP_DB_STRICT=inherit
+          DEMO_PASSWORD=Verify!2026Demo
+          HTTP_ALLOW_PRIVATE_HOSTS=true
+          ENV
+
+      - name: Boot the dev database (:3399) and application server (:8080)
+        run: |
+          node tools/devdb/server.js --port 3399 --stats-port 3400 \
+            --db storage/devdb/marvy.sqlite > /tmp/devdb.log 2>&1 &
+          node tools/devserver/server.mjs --port 8080 --max-requests 400 \
+            > /tmp/devserver.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null --max-time 5 http://127.0.0.1:3399/ 2>/dev/null && break || true
+            sleep 1
+          done
+          for i in $(seq 1 60); do
+            curl -fsS -o /dev/null --max-time 10 http://127.0.0.1:8080/health/live 2>/dev/null && break || true
+            sleep 2
+          done
+          curl -fsS --max-time 10 http://127.0.0.1:8080/health/live
+
+      - name: Migrate and seed
+        run: |
+          node tools/devserver/cli.mjs migrate
+          node tools/devserver/cli.mjs seed core
+          node tools/devserver/cli.mjs seed demo
+
+      - name: Run every verification stage
+        run: bash tools/verify_all.sh --admin-password "$DEMO_PASSWORD"
+
+      - name: Upload logs from a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-logs
+          path: |
+            /tmp/devdb.log
+            /tmp/devserver.log
+          if-no-files-found: ignore
+          retention-days: 7

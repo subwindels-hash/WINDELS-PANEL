@@ -1,0 +1,19 @@
+{
+  "entity": {
+    "nin": "70123456789",
+    "firstname": "JOHN   ",
+    "surname": "doe",
+    "middlename": "",
+    "birthdate": "1985-11-02",
+    "gender": "m",
+    "telephoneno": "2348051234567",
+    "birthstate": "Lagos",
+    "birthlga": "Ikeja",
+    "birthcountry": "nigeria",
+    "residence_AdressLine1": "12 Allen Avenue",
+    "residence_Town": "Ikeja",
+    "photo": "/9j/4AAQSkZJRgABAgAAAQABAAD-advance-portrait",
+    "nspokenlang": "IGBO",
+    "tax_id": "N-01234567"
+  }
+}

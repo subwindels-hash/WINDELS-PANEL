@@ -1,0 +1,16 @@
+{
+  "code": "000",
+  "content": {
+    "transactions": {
+      "status": "delivered",
+      "product_name": "MTN Airtime VTU",
+      "unique_element": "201000000000",
+      "total_amount": 970,
+      "amount": 1000,
+      "transactionId": "17452788199876543210"
+    }
+  },
+  "response_description": "TRANSACTION SUCCESSFUL",
+  "requestId": "202608171831SANDBOXB2",
+  "amount": "1000.00"
+}

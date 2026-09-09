@@ -1,0 +1,6 @@
+{
+  "russia": ["any", "beeline", "mts", "megafon"],
+  "nigeria": ["any", "mtn", "glo", "airtel", "9mobile"],
+  "england": ["any", "virtual21", "virtual60"],
+  "kenya": ["any", "safaricom"]
+}

@@ -1,0 +1,35 @@
+{
+  "code": "000",
+  "content": {
+    "transactions": {
+      "status": "delivered",
+      "product_name": "MTN Airtime VTU",
+      "unique_element": "08011111111",
+      "unit_price": 1000,
+      "quantity": 1,
+      "service_verification": null,
+      "channel": "api",
+      "commission": 30,
+      "total_amount": 970,
+      "discount": null,
+      "type": "Airtime Recharge",
+      "email": "sandbox@vtpass.com",
+      "phone": "08011111111",
+      "name": null,
+      "convinience_fee": 0,
+      "amount": 1000,
+      "platform": "api",
+      "method": "api",
+      "transactionId": "17452788191234567890"
+    }
+  },
+  "response_description": "TRANSACTION SUCCESSFUL",
+  "requestId": "202608171830SANDBOXA1",
+  "amount": "1000.00",
+  "transaction_date": {
+    "date": "2026-08-17 18:30:19.000000",
+    "timezone_type": 3,
+    "timezone": "Africa/Lagos"
+  },
+  "purchased_code": ""
+}

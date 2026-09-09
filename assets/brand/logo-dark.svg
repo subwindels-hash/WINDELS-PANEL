@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 486 96" role="img" aria-label="MarvySocials">
+  <defs>
+    <linearGradient id="mv" x1="16" y1="20" x2="64" y2="76" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6366F1"/><stop offset="1" stop-color="#C026D3"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="8" width="80" height="80" rx="20" fill="#0A0A0F"/>
+  <path d="M18 74V30h12l10 25 10-25h12v44H51V47l-8 20h-6l-8-20v27H18z" fill="url(#mv)"/>
+  <text x="100" y="66" font-family="Inter,Segoe UI,Helvetica,Arial,sans-serif" font-size="46" font-weight="800" letter-spacing="-1" fill="#FFFFFF">MarvySocials</text>
+</svg>

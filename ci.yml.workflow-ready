@@ -1,0 +1,375 @@
+# MarvySocials — CI pipeline (two jobs, ~31 steps)
+#
+# Active since 2026-08-21 (moved from repo root, where it was staged as
+# ci.yml.workflow-ready because automation tokens without the `workflows`
+# permission cannot create files under .github/workflows).
+#
+# Runs on every push and pull request.
+#
+# Job 1 `php` — lint, static analysis, schema sync, real-MySQL migration +
+#              seeder validation, full PHPUnit suite, security greps, preflight
+#              negative test.
+# Job 2 `docker` — build every image, boot the full stack, migrate/seed,
+#              prove `deploy check` exits 0, poll /health/ready, assert all
+#              health-checked containers are healthy, run `cron status`, prove
+#              the production compose refuses to render without secrets, then
+#              tear down.
+
+name: CI
+
+on:
+  push:
+    branches: ['main', 'arena/**']
+  pull_request:
+
+env:
+  APP_ENV: testing
+  # Base currency of the platform (kept here so the schema/seed steps can be
+  # checked against it); NGN is the single platform base currency.
+  BASE_CURRENCY: NGN
+
+jobs:
+  php:
+    name: PHP (lint · analyse · migrate · seed · test)
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: marvysocials
+          MYSQL_USER: marvy
+          MYSQL_PASSWORD: marvy_secret
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -umarvy -pmarvy_secret"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache composer
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+
+      # Stage 1 — dependency installation
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, curl, json, bcmath, mysqli, pdo_mysql, gd, zip, intl, redis
+          tools: composer:v2
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer validate
+          composer install --no-interaction --prefer-dist --no-progress
+          npm ci
+
+      # CodeIgniter 3.1.13 ships `system/` inside the composer package; the
+      # front controller expects it at the repo root (it is gitignored, so CI
+      # must materialise it rather than rely on a committed copy).
+      - name: Link CodeIgniter system directory
+        run: ln -sf vendor/codeigniter/framework/system system
+
+      # Stage 2 — code quality
+      - name: PHP syntax lint
+        run: |
+          set -e
+          find application cron tests tools index.php -name '*.php' -print0 \
+            | xargs -0 -n1 php -l >/dev/null
+
+      - name: Build Tailwind assets
+        run: npm run build:css
+
+      # Stage 3 — static analysis (non-blocking until a stubs baseline exists)
+      - name: PHPStan (level 1, continue-on-error)
+        continue-on-error: true
+        run: vendor/bin/phpstan analyse --no-progress
+
+      - name: Schema linter (validate_schema.py)
+        run: |
+          # sqlglot is not preinstalled on GitHub runners; without it the
+          # linter exits 1 and this step would fail before parsing anything.
+          python3 -m pip install --quiet sqlglot
+          python3 tools/validate_schema.py docs/database.sql
+
+      # Stage 4 — schema validation (database.sql must match migrations)
+      - name: Schema sync check
+        run: php tools/export_schema.php --check
+
+      # Stage 5 — migration validation against real MySQL 8
+      - name: Run migrations (MySQL 8)
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: marvy
+          DB_PASSWORD: marvy_secret
+          DB_NAME: marvysocials
+        run: |
+          php index.php migrate
+          php index.php migrate status
+          # Prove idempotency — a second full run must be a no-op.
+          php index.php migrate
+
+      # Stage 6 — seeder validation
+      - name: Seed core + demo (idempotent)
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: marvy
+          DB_PASSWORD: marvy_secret
+          DB_NAME: marvysocials
+        run: |
+          php index.php seed core
+          php index.php seed core
+          php index.php seed demo
+          php index.php seed demo
+
+      - name: Demo seed refused under production
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: marvy
+          DB_PASSWORD: marvy_secret
+          DB_NAME: marvysocials
+        run: |
+          set -e
+          if APP_ENV=production php index.php seed demo; then
+            echo "demo seed was allowed under APP_ENV=production — must be refused" >&2
+            exit 1
+          fi
+          echo "demo seed correctly refused under production"
+
+      # Stage 6b — the cPanel deployment path: one importable database, no
+      # migrate/seed/installer command anywhere. This is the artefact an
+      # operator with no terminal actually installs, so it is verified the way
+      # they will use it: import it into an empty database, then assert the
+      # panel's own expectations against the result.
+      - name: marvysocials.sql is current with the migrations and the core seed
+        run: |
+          php tools/build_production_sql.php --check
+          python3 tools/validate_production_sql.py
+
+      - name: Import marvysocials.sql into an empty database (what phpMyAdmin does)
+        env:
+          MYSQL_PWD: marvy_secret
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -umarvy -e "DROP DATABASE IF EXISTS marvy_import; CREATE DATABASE marvy_import CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+          mysql -h 127.0.0.1 -P 3306 -umarvy marvy_import < database/marvysocials.sql
+
+      - name: A freshly imported database needs no migration and no seed
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: marvy
+          DB_PASSWORD: marvy_secret
+          DB_NAME: marvy_import
+          MYSQL_PWD: marvy_secret
+        run: |
+          set -e
+          # Migrations: already recorded, so this must be a no-op rather than a
+          # replay that collides with existing tables.
+          php index.php migrate | tee /tmp/migrate.out
+          grep -qi "already\|nothing\|up to date\|current" /tmp/migrate.out || {
+            echo "an imported database should have nothing to migrate" >&2; exit 1; }
+
+          # Core seed: idempotent, so re-running it must insert nothing. If it
+          # does, marvysocials.sql is missing seed data an operator would never
+          # get without a terminal.
+          before=$(mysql -h 127.0.0.1 -umarvy -N -B marvy_import -e "SELECT (SELECT COUNT(*) FROM roles)+(SELECT COUNT(*) FROM permissions)+(SELECT COUNT(*) FROM settings)+(SELECT COUNT(*) FROM feature_flags)+(SELECT COUNT(*) FROM payment_methods)+(SELECT COUNT(*) FROM email_templates)+(SELECT COUNT(*) FROM currencies)+(SELECT COUNT(*) FROM vtu_products);")
+          php index.php seed core
+          after=$(mysql -h 127.0.0.1 -umarvy -N -B marvy_import -e "SELECT (SELECT COUNT(*) FROM roles)+(SELECT COUNT(*) FROM permissions)+(SELECT COUNT(*) FROM settings)+(SELECT COUNT(*) FROM feature_flags)+(SELECT COUNT(*) FROM payment_methods)+(SELECT COUNT(*) FROM email_templates)+(SELECT COUNT(*) FROM currencies)+(SELECT COUNT(*) FROM vtu_products);")
+          [ "$before" = "$after" ] || {
+            echo "core seed inserted rows into an imported database ($before -> $after): marvysocials.sql is incomplete" >&2; exit 1; }
+
+      - name: The seeded administrator can authenticate
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: marvy
+          DB_PASSWORD: marvy_secret
+          DB_NAME: marvy_import
+        run: |
+          php -r '
+            $sql = file_get_contents("database/marvysocials.sql");
+            preg_match("/--\s+password:\s+(\S+)/", $sql, $pw);
+            $db = new mysqli("127.0.0.1", "marvy", "marvy_secret", "marvy_import", 3306);
+            $row = $db->query("SELECT password_hash, status, role FROM users WHERE role = \"SUPER_ADMIN\" LIMIT 1")->fetch_assoc();
+            if (!$row) { fwrite(STDERR, "no administrator in the imported database\n"); exit(1); }
+            if ($row["status"] !== "ACTIVE") { fwrite(STDERR, "administrator is not ACTIVE\n"); exit(1); }
+            if (!password_verify($pw[1], $row["password_hash"])) {
+              fwrite(STDERR, "the documented password does not verify against the seeded hash\n"); exit(1);
+            }
+            $grants = $db->query("SELECT COUNT(*) c FROM role_permissions rp JOIN roles r ON r.id = rp.role_id WHERE r.name = \"SUPER_ADMIN\"")->fetch_assoc();
+            if ((int)$grants["c"] === 0) { fwrite(STDERR, "SUPER_ADMIN has no permissions\n"); exit(1); }
+            echo "administrator authenticates, ", $grants["c"], " permissions granted\n";
+          '
+
+      - name: Deployment package builds and deploys with no terminal
+        run: bash tools/verify_deployment_package.sh
+
+      # Stage 7 — full PHPUnit suite
+      - name: Run test suite
+        run: vendor/bin/phpunit --testdox
+
+      # Stage 8 — security checks (tree-level invariants)
+      - name: Security checks
+        run: |
+          set -euo pipefail
+          # No license / purchase-code artifacts anywhere in the tree.
+          if grep -RI --exclude-dir=vendor --exclude-dir=node_modules \
+              -E 'purchase_?code|envato' \
+              application tools tests cron index.php 2>/dev/null; then
+            echo "license / purchase-code artifact found (see above)" >&2
+            exit 1
+          fi
+          # TLS verification must never be disabled in production code paths.
+          if grep -RIn --exclude-dir=vendor --exclude-dir=tests -E \
+              'SSL_VERIFYPEER\s*=>\s*FALSE|verify_peer\s*=>\s*false|verify_peer\s*=\s*false' \
+              application tools index.php 2>/dev/null; then
+            echo "insecure TLS override found (see above)" >&2
+            exit 1
+          fi
+          # Money must only mutate through LedgerService (no raw wallet UPDATE).
+          if grep -RIn --exclude-dir=vendor --exclude-dir=tests \
+              -E "update\('wallets'|update\(\"wallets\"" \
+              application/controllers application/models application/libraries 2>/dev/null \
+              | grep -v 'LedgerService.php'; then
+            echo "direct wallet mutation outside LedgerService found (see above)" >&2
+            exit 1
+          fi
+          echo "security checks passed"
+
+      # Stage 9 — deployment safety (negative test: preflight must FAIL without a key)
+      - name: Preflight must fail without ENCRYPTION_KEY
+        env:
+          APP_ENV: production
+          ENCRYPTION_KEY: ''
+        run: |
+          set -e
+          if php index.php deploy check; then
+            echo "preflight passed without ENCRYPTION_KEY — expected to FAIL" >&2
+            exit 1
+          fi
+          echo "preflight correctly fails without ENCRYPTION_KEY"
+
+  docker:
+    name: Docker (build · boot · health · prod-refusal)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A fresh clone has no .env; compose requires one (env_file). This is the
+      # documented first-boot step, with a real (non-placeholder) key.
+      - name: Create dev .env
+        run: |
+          cp .env.example .env
+          key=$(openssl rand -hex 32)
+          sed -i "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${key}|" .env
+
+      # Both compose files bind-mount the checkout over /var/www/html, so the
+      # HOST needs vendor/ and the system/ link (composer's post-install hook
+      # creates it) — exactly the README first-boot flow.
+      - name: Set up PHP for host composer install
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          tools: composer:v2
+          coverage: none
+
+      - name: Install host dependencies (vendor + system link)
+        run: |
+          composer install --no-dev --no-interaction --prefer-dist --no-progress
+          test -e system/core/CodeIgniter.php
+
+      - name: Build development images
+        run: docker compose build
+
+      - name: Boot datastores
+        run: docker compose up -d --wait mysql redis
+
+      # The web container's deploy gate refuses to serve an unmigrated
+      # database (by design — see README "First boot with Docker"), so
+      # storage/migrate/seed run as one-off containers BEFORE the full stack
+      # starts; `exec` into the gated app container would deadlock instead.
+      - name: Storage + migrations + core seed (one-off containers)
+        run: |
+          docker compose run --rm app php index.php deploy storage
+          docker compose run --rm app php index.php migrate
+          docker compose run --rm app php index.php seed core
+
+      - name: Boot full stack
+        run: docker compose up -d --wait --wait-timeout 300
+
+      - name: Prove deploy check exits 0
+        run: docker compose exec -T app php index.php deploy check
+
+      - name: Poll /health/ready to green
+        run: |
+          set -e
+          # nginx publishes 8080:80 in the development compose.
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/health/ready >/dev/null 2>&1; then
+              echo "health/ready is green"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "health/ready never went green" >&2
+          docker compose ps
+          docker compose logs --tail=100 app nginx
+          exit 1
+
+      - name: Assert all health-checked containers healthy
+        run: |
+          set -e
+          docker compose ps
+          if docker compose ps | grep -E 'unhealthy|Restarting'; then
+            echo "unhealthy or restarting container found (see above)" >&2
+            exit 1
+          fi
+          docker compose ps | grep -E '\(healthy\)' >/dev/null
+
+      - name: Cron status
+        run: docker compose exec -T app php index.php cron status
+
+      - name: Production compose refuses to render without secrets
+        run: |
+          set -e
+          # The production compose requires every secret via ${VAR:?}; with no
+          # environment at all (--env-file /dev/null keeps the dev .env out of
+          # interpolation) `config` must fail rather than render weak defaults.
+          if docker compose --env-file /dev/null -f docker-compose.production.yml config >/dev/null 2>&1; then
+            echo "production compose rendered without secrets — expected to refuse" >&2
+            exit 1
+          fi
+          echo "production compose correctly refused without secrets"
+
+      - name: Tear down
+        if: always()
+        run: docker compose down --volumes --remove-orphans
