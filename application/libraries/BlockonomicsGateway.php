@@ -59,6 +59,16 @@ class BlockonomicsGateway implements GatewayInterface {
     const STATUS_PARTIAL = 1;
     const STATUS_CONFIRMED = 2;
 
+    /**
+     * Base-unit precision per crypto, straight from the docs.
+     *
+     * BTC callbacks report satoshis (8 decimals); USDT callbacks report base
+     * units of 6 decimals — dividing a USDT value by 1e8 would understate a
+     * real payment a hundredfold and refuse every genuine deposit. A crypto
+     * absent from this map is one the panel neither quotes nor holds.
+     */
+    const UNIT_PRECISION = array('BTC' => 8, 'USDT' => 6);
+
     private $ci;
     private $method;
 
@@ -86,6 +96,9 @@ class BlockonomicsGateway implements GatewayInterface {
             'btc_enabled'    => $this->flag('blockonomics_btc_enabled', true),
             'usdt_enabled'   => $this->flag('blockonomics_usdt_enabled', false),
             'timeout_minutes'=> (int) ($this->setting('blockonomics_timeout_minutes', 'BLOCKONOMICS_TIMEOUT_MINUTES') ?: 60),
+            // Optional store fragment (docs: new_address?match_callback=<fragment>).
+            // A merchant running several stores pins the store each address belongs to.
+            'match_callback' => $this->setting('blockonomics_match_callback', 'BLOCKONOMICS_MATCH_CALLBACK'),
         );
     }
 
@@ -206,7 +219,10 @@ class BlockonomicsGateway implements GatewayInterface {
         $address = (string) ($params['addr'] ?? '');
         $txid    = (string) ($params['txid'] ?? '');
         $status  = isset($params['status']) ? (int) $params['status'] : -1;
-        $satoshi = isset($params['value']) ? (int) $params['value'] : 0;
+        $value   = isset($params['value']) ? (int) $params['value'] : 0;
+        // Docs: crypto absent from the callback means Bitcoin.
+        $crypto  = strtoupper(trim((string) ($params['crypto'] ?? 'BTC')));
+        if ($crypto === '') $crypto = 'BTC';
 
         $row = $address !== '' ? $this->address_row($address) : null;
 
@@ -215,12 +231,12 @@ class BlockonomicsGateway implements GatewayInterface {
             'type'           => 'blockonomics.payment',
             'provider_tx_id' => $txid !== '' ? $txid : null,
             'status'         => 'PENDING',
-            'amount'         => $satoshi > 0 ? bcdiv((string) $satoshi, (string) self::SATOSHIS, 8) : null,
-            'currency'       => 'BTC',
+            'amount'         => null,
+            'currency'       => $crypto,
             'metadata'       => array(
-                'address'      => $address,
-                'satoshi'      => $satoshi,
-                'blk_status'   => $status,
+                'address'    => $address,
+                'satoshi'    => $value, // raw base units as reported
+                'blk_status' => $status,
             ),
         );
 
@@ -231,10 +247,33 @@ class BlockonomicsGateway implements GatewayInterface {
             return $event;
         }
 
-        $event['metadata']['payment_transaction_id'] = (int) $row->payment_transaction_id;
-        $this->record_progress($row, $status, $satoshi, $txid);
+        // A callback in a crypto other than the one this address was issued
+        // for is never converted by guesswork — the panel quoted and holds
+        // the row's crypto, and nothing else.
+        if ($crypto !== strtoupper((string) $row->crypto)) {
+            $event['status'] = 'IGNORED';
+            return $event;
+        }
 
-        if ($status >= self::STATUS_CONFIRMED && $this->amount_sufficient($row, $satoshi)) {
+        $divisor = $this->unit_divisor($crypto);
+        $event['amount'] = ($value > 0 && $divisor !== null)
+            ? bcdiv((string) $value, $divisor, 8) : null;
+
+        // Docs, Callbacks - security notes: an unconfirmed callback may carry
+        // rbf=1 — a Replace-By-Fee transaction the SENDER can cancel or
+        // replace. Record it (the webhook row is the audit trail) but never
+        // show it as payment progress or store its txid as the paying one.
+        // rbf only ever marks unconfirmed callbacks; a confirmed one flows on.
+        $rbf = isset($params['rbf']) ? (int) $params['rbf'] : 0;
+        if ($rbf === 1 && $status < self::STATUS_CONFIRMED) {
+            $event['metadata']['rbf'] = 1;
+            return $event;
+        }
+
+        $event['metadata']['payment_transaction_id'] = (int) $row->payment_transaction_id;
+        $this->record_progress($row, $status, $value, $txid);
+
+        if ($status >= self::STATUS_CONFIRMED && $this->amount_sufficient($row, $value)) {
             $event['status'] = 'SUCCESS';
         } elseif ($status >= self::STATUS_CONFIRMED) {
             // Confirmed on-chain but short of the quoted amount. Deliberately
@@ -253,8 +292,18 @@ class BlockonomicsGateway implements GatewayInterface {
     /** Ask Blockonomics for the next unused receive address. */
     private function request_address(array $cfg) {
         $this->ci->load->library('SecureHttpClient');
+
+        // The docs' checkout sample: POST /api/new_address?crypto=BTC&match_callback=<fragment>.
+        // The crypto is always named — an account can hold a USDT wallet too —
+        // and an unconfigured match_callback is omitted rather than sent empty,
+        // which Blockonomics would read as a store fragment that matches none.
+        $query = 'crypto=BTC';
+        if (!empty($cfg['match_callback'])) {
+            $query .= '&match_callback='.rawurlencode((string) $cfg['match_callback']);
+        }
+
         $res = $this->ci->securehttpclient->post(
-            self::API_BASE.'/new_address',
+            self::API_BASE.'/new_address?'.$query,
             '',
             array('Authorization: Bearer '.$cfg['api_key'])
         );
@@ -282,8 +331,9 @@ class BlockonomicsGateway implements GatewayInterface {
      */
     public function btc_rate($currency) {
         $this->ci->load->library('SecureHttpClient');
+        // Docs sample: GET /api/price?crypto=BTC&currency=NGN
         $res = $this->ci->securehttpclient->get(
-            self::API_BASE.'/price?currency='.rawurlencode(strtoupper($currency))
+            self::API_BASE.'/price?crypto=BTC&currency='.rawurlencode(strtoupper($currency))
         );
         if (empty($res['http_code']) || $res['http_code'] !== 200) return null;
 
@@ -326,13 +376,23 @@ class BlockonomicsGateway implements GatewayInterface {
         return $this->ci->db->where('address', $address)->get('blockonomics_addresses')->row();
     }
 
+    /**
+     * Base units per whole coin for a crypto, e.g. 100000000 for BTC.
+     * NULL for a crypto with no precision entry — one the panel does not hold.
+     */
+    private function unit_divisor($crypto) {
+        $decimals = self::UNIT_PRECISION[strtoupper((string) $crypto)] ?? null;
+        return $decimals === null ? null : bcpow('10', (string) $decimals, 0);
+    }
+
     /** Persist what the callback reported against the stored address. */
-    private function record_progress($row, $status, $satoshi, $txid) {
-        $received = bcdiv((string) max($satoshi, 0), (string) self::SATOSHIS, 8);
+    private function record_progress($row, $status, $value, $txid) {
+        $divisor = $this->unit_divisor($row->crypto) ?: (string) self::SATOSHIS;
+        $received = bcdiv((string) max($value, 0), $divisor, 8);
 
         $state = 'AWAITING';
         if ($status >= self::STATUS_CONFIRMED) {
-            $state = $this->amount_sufficient($row, $satoshi) ? 'PAID' : 'PARTIAL';
+            $state = $this->amount_sufficient($row, $value) ? 'PAID' : 'PARTIAL';
         } elseif ($status === self::STATUS_UNCONFIRMED || $status === self::STATUS_PARTIAL) {
             $state = 'CONFIRMING';
         }
@@ -346,12 +406,13 @@ class BlockonomicsGateway implements GatewayInterface {
         ));
     }
 
-    /** Whether the received satoshis cover the quoted amount within tolerance. */
-    private function amount_sufficient($row, $satoshi) {
+    /** Whether the received base units cover the quoted amount within tolerance. */
+    private function amount_sufficient($row, $value) {
         $expected = (string) $row->expected_crypto_amount;
         if ((float) $expected <= 0) return true; // nothing quoted; accept what arrived
 
-        $received = bcdiv((string) max($satoshi, 0), (string) self::SATOSHIS, 8);
+        $divisor = $this->unit_divisor($row->crypto) ?: (string) self::SATOSHIS;
+        $received = bcdiv((string) max($value, 0), $divisor, 8);
         $floor = bcmul($expected, (string) (1 - self::UNDERPAYMENT_TOLERANCE), 8);
 
         return bccomp($received, $floor, 8) >= 0;

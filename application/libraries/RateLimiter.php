@@ -80,11 +80,23 @@ class RateLimiter {
      * so forgetting to add a name here is a missed improvement, never a
      * missing limit.
      */
-    const SCOPES = array('login', 'admin_login', 'mfa', 'register', 'pwreset', 'assistant', 'chat',
+    const SCOPES = array('login', 'admin_login', 'adminlogin', 'mfa', 'register', 'pwreset', 'assistant', 'chat',
                          // Payment initiation (Payments::initialize / ::virtual_account): an
                          // outbound provider call and a deposit row, so it gets its own budget
                          // rather than spending the sign-in one.
-                         'payinit');
+                         'payinit',
+                         // First-run setup (Setup::BUCKET): the installer must
+                         // keep its own budget even though it is scoped with a
+                         // constant the caller scan cannot see.
+                         'setup',
+                         // The public contact form (Home::contact_submit).
+                         'contact',
+                         // Referral code validation (Referral_api::validate).
+                         'refvalidate',
+                         // A customer writing to the staff inbox
+                         // (dashboard/Inbox::send) — one bucket per customer,
+                         // passed as the second scope() argument.
+                         'inbox_to_admin');
 
     public function __construct() {
         $this->ci =& get_instance();

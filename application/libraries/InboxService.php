@@ -471,6 +471,95 @@ class InboxService {
     }
 
     /* ================================================================== */
+    /* Sending into a dashboard                                           */
+    /* ================================================================== */
+
+    /**
+     * Store a message the panel itself writes into one of its inboxes.
+     *
+     * The polling half above stores mail that arrived over POP3; deliver() is
+     * the other direction — a visitor's contact-form message landing in the
+     * staff inbox, a staff reply landing in a customer's dashboard inbox, a
+     * purchase notice. Both funnel through the same table and the same
+     * dedupe rule, because both can be replayed: a double-submitted form, a
+     * retried webhook, an admin clicking Send twice. The caller names the
+     * business event in $dedupe_source ('contact:{row id}',
+     * 'aireply:{message}', 'shopdlv:{order id}') and the second attempt
+     * stores nothing and returns NULL.
+     *
+     * Refuses (returns NULL, stores nothing): an empty body, an empty
+     * recipient address, or a USER delivery with no user to own it.
+     *
+     * @return int|null  the new row's id, or NULL when refused or a duplicate
+     */
+    public function deliver($owner_type, $owner_id, $to_email, $from_name, $from_email,
+                            $subject, $body_text, $dedupe_source) {
+        $to   = strtolower(trim((string) $to_email));
+        $body = (string) $body_text;
+        if ($to === '' || trim($body) === '') return null;
+
+        if ($owner_type === 'USER') {
+            $owner_id = (int) $owner_id;
+            if ($owner_id <= 0) return null; // nobody owns it: never store an invisible row
+        } else {
+            $owner_type = 'ADMIN';           // the shared staff inbox
+            $owner_id   = null;
+        }
+
+        $dedupe = hash('sha256', 'src:'.(string) $dedupe_source);
+        // The pre-check makes the common replay case a clean NULL; the
+        // UNIQUE index (and the catch below) is what actually guarantees it
+        // under concurrency.
+        try {
+            $dupe = $this->ci->db->where('dedupe_key', $dedupe)
+                ->limit(1)->get('inbox_messages')->row();
+            if ($dupe) return null;
+        } catch (Throwable $e) {
+            log_message('debug', 'inbox deliver pre-check failed: '.$e->getMessage());
+        }
+
+        $now = gmdate('Y-m-d H:i:s');
+        $from_email = trim((string) $from_email);
+        $from_name  = trim((string) $from_name);
+        try {
+            $ok = $this->ci->db->insert('inbox_messages', array(
+                'public_id'   => marvy_public_id(),
+                'owner_type'  => $owner_type,
+                'owner_id'    => $owner_id,
+                'to_email'    => $to,
+                'from_email'  => $from_email !== '' ? $from_email : null,
+                'from_name'   => $from_name !== '' ? mb_substr($from_name, 0, 190) : null,
+                'subject'     => mb_substr(trim((string) $subject), 0, 255),
+                'body_text'   => $body,
+                'body_html'   => null,
+                'message_id'  => null,
+                'dedupe_key'  => $dedupe,
+                'received_at' => $now,
+                'is_read'     => 0,
+                'created_at'  => $now,
+            ));
+            return $ok ? (int) $this->ci->db->insert_id() : null;
+        } catch (Throwable $e) {
+            // A UNIQUE dedupe_key collision (the replayed event) is the
+            // expected failure — log and move on.
+            log_message('debug', 'inbox deliver skipped: '.$e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * The account behind an email address, if any — the reverse routing
+     * key. Case-insensitive, like every mail routing in this service: a
+     * reply from Ada@Example.TEST belongs to the same ada@example.test the
+     * message was addressed to.
+     */
+    public function user_by_email($email) {
+        $email = strtolower(trim((string) $email));
+        if ($email === '') return null;
+        return $this->ci->User_model->find_by_email($email);
+    }
+
+    /* ================================================================== */
     /* Reading                                                            */
     /* ================================================================== */
 

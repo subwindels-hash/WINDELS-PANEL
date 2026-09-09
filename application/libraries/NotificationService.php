@@ -44,6 +44,11 @@ class NotificationService {
         // money through TransactionEngine. It used to do so in complete
         // silence: the customer saw a balance change and no explanation.
         'purchase.refunded' => array('Purchase refunded',    null),
+        // A paid digital purchase is worthless if the buyer never learns
+        // their file is waiting. ShopDeliveryService::provision() writes the
+        // dashboard-inbox row (InboxService::deliver) and this is the email
+        // half — a seeded, operator-editable template.
+        'shop.digital_ready' => array('Your download is ready', 'shop.digital_ready'),
         'payment.credited' => array('Wallet credited',        'payment.credited'),
         'ticket.replied'   => array('Support replied',        'ticket.replied'),
     );
@@ -82,6 +87,65 @@ class NotificationService {
             $result['email'] = $this->send_email($user_id, $template, $email_vars);
         }
         return $result;
+    }
+
+    /**
+     * A message from the team, addressed to specific users.
+     *
+     * This is not an "event that happened to you" (notify above) — it is the
+     * admin composing words for chosen recipients: a maintenance window, a
+     * new payment method, or one customer's question being looked at. Two
+     * differences follow from that:
+     *
+     *   - it is in-app only. A broadcast that respected nobody's inbox rules
+     *     and mailed every user would be the spam button no operator means
+     *     to press; the bell and the Notifications page are the surface
+     *     every signed-in customer already reads;
+     *   - it bypasses notification_preferences, which exist to let a user
+     *     opt out of *event* noise (order completed, wallet credited). A
+     *     message addressed to them by name is not noise, and there is no
+     *     'admin.broadcast' row to opt out of anyway.
+     *
+     * Never throws: a broadcast must not take the panel down with it.
+     *
+     * @param array  $user_ids  the recipients
+     * @param string $title
+     * @param string $body
+     * @return int    how many rows were written
+     */
+    public function broadcast(array $user_ids, $title, $body) {
+        $title = trim((string) $title);
+        $body  = trim((string) $body);
+        if ($title === '' || $body === '' || empty($user_ids)) return 0;
+
+        $written = 0;
+        foreach (array_unique(array_map('intval', $user_ids)) as $user_id) {
+            if ($user_id <= 0) continue;
+            if ($this->write_in_app($user_id, 'admin.broadcast', $title, $body, array())) {
+                $written++;
+            }
+        }
+        return $written;
+    }
+
+    /**
+     * Recent broadcasts, newest first, with the recipient named — the
+     * "what has the team already said" list under the compose form.
+     */
+    public function recent_broadcasts($limit = 50) {
+        try {
+            return $this->ci->db
+                ->select('notifications.id AS sort_id, notifications.*, users.email', false)
+                ->from('notifications')
+                ->join('users', 'users.id = notifications.user_id', 'left')
+                ->where('notifications.type', 'admin.broadcast')
+                ->order_by('sort_id', 'DESC')
+                ->limit(max(1, (int) $limit))
+                ->get()->result();
+        } catch (Throwable $e) {
+            log_message('error', 'recent_broadcasts failed: '.$e->getMessage());
+            return array();
+        }
     }
 
     /* ------------------------------------------------------------------ */

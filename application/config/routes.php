@@ -192,6 +192,10 @@ $route['dashboard/notifications/read'] = 'dashboard/notifications/mark_read';
 // signed-in customer in the queries themselves.
 $route['dashboard/inbox'] = 'dashboard/inbox/index';
 $route['dashboard/inbox/read'] = 'dashboard/inbox/mark_read';
+// Literal compose/send routes must precede the (:any) detail route, or
+// "compose" is swallowed as a public id and 404s.
+$route['dashboard/inbox/compose'] = 'dashboard/inbox/compose';
+$route['dashboard/inbox/send'] = 'dashboard/inbox/send';
 $route['dashboard/inbox/(:any)/delete'] = 'dashboard/inbox/delete/$1';
 $route['dashboard/inbox/(:any)'] = 'dashboard/inbox/detail/$1';
 $route['dashboard/profile'] = 'dashboard/account/profile';
@@ -207,6 +211,10 @@ $route['admin/inbox/read'] = 'admin/inbox/mark_read';
 $route['admin/inbox/(:any)/reply'] = 'admin/inbox/reply/$1';
 $route['admin/inbox/(:any)/delete'] = 'admin/inbox/delete/$1';
 $route['admin/inbox/(:any)'] = 'admin/inbox/detail/$1';
+// Team broadcasts — gated on notifications.send in the controller, a grant
+// no staff role carries by default (the super admin's call).
+$route['admin/notifications'] = 'admin/notifications/index';
+$route['admin/notifications/send'] = 'admin/notifications/send';
 $route['admin/orders/failed'] = 'admin/orders/failed';
 $route['admin/orders'] = 'admin/orders/index';
 // Action routes must precede the catch-all detail route below.
@@ -473,6 +481,10 @@ $route['api/docs/json'] = 'api_v1/docs_json';
 // Gateway callbacks. POST for signed-body gateways; Blockonomics uses an
 // authenticated GET (see Webhooks::GET_CALLBACK_GATEWAYS), so the route must
 // not be verb-restricted here — the controller enforces the per-gateway rule.
+// The VTpass transaction-update push gets a dedicated handler (unsigned JSON,
+// settled through a /requery rather than the payment-event pipeline); the
+// literal must precede the wildcard or CI would route it to index('vtpass').
+$route['webhook/vtpass'] = 'webhooks/vtpass';
 $route['webhook/(:any)'] = 'webhooks/index/$1';
 
 // Fundsvera's configured callback URL. Same handler as /webhook/fundsvera —

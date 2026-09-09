@@ -148,7 +148,60 @@ class ShopDeliveryService {
             'digital_product_id'   => $product->id,
             'user_id'              => $order->buyer_id,
         ));
+
+        // Access granted — now the buyer has to learn about it. Both notices
+        // fire exactly here, after the grant and before the return, so a
+        // retried provision (duplicate webhook, replayed request) hits the
+        // early-return above and neither duplicates nor re-notifies.
+        $this->announce_delivery($order, $listing);
+
         return array('ok' => true, 'delivery_id' => $id);
+    }
+
+    /**
+     * Tell the buyer their file is ready — twice, by design.
+     *
+     *   - a row in their dashboard inbox, whose durable pointer is the My
+     *     Downloads page (never a token link: tokens expire, the page is
+     *     theirs forever), written through InboxService::deliver() with the
+     *     order id as the dedupe source;
+     *   - the shop.digital_ready email, queued through NotificationService
+     *     like every other customer-facing mail, so retries, the mail-queue
+     *     screen and the operator's editable template all apply.
+     *
+     * Never throws: the grant is already made, and a notification problem
+     * must not turn a completed purchase into an error.
+     */
+    private function announce_delivery($order, $listing) {
+        try {
+            $buyer = $this->ci->db->where('id', (int) $order->buyer_id)->get('users')->row();
+            if (!$buyer || empty($buyer->email)) return;
+
+            $title    = (string) $listing->title;
+            $order_no = (string) $order->public_id;
+            $site     = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySocials';
+            $downloads = site_url('dashboard/downloads');
+
+            $this->ci->load->library('InboxService');
+            $this->ci->inboxservice->deliver(
+                'USER', (int) $order->buyer_id, $buyer->email,
+                $site, $this->ci->inboxservice->admin_address(),
+                'Your download is ready: '.$title,
+                'Your purchase "'.$title.'" is ready. Download it any time from My Downloads: '
+                .$downloads.' — order #'.$order_no.'.',
+                'shopdlv:'.(int) $order->id
+            );
+
+            $this->ci->load->library('NotificationService');
+            $this->ci->notificationservice->notify(
+                (int) $order->buyer_id, 'shop.digital_ready',
+                'Your download for order #'.$order_no.' is ready.',
+                array('order' => $order_no),
+                array('product' => $title, 'order_id' => $order_no)
+            );
+        } catch (Throwable $e) {
+            log_message('error', 'shop delivery notice failed: '.$e->getMessage());
+        }
     }
 
     /** Every download this user currently has (My Downloads). */

@@ -417,6 +417,76 @@ class VtuService {
 
     private function money($v) { return number_format((float)$v, 8, '.', ''); }
 
+    /**
+     * Settle a purchase a provider webhook says reached a final state.
+     *
+     * VTpass pushes transaction updates to the webhook with no signature at
+     * all (vtpass.com/documentation, transaction-update webhook), so the push
+     * is treated as a *hint*, never as a verdict: the only thing taken from it
+     * is the request_id, and the provider is asked through its own /requery
+     * before any money moves. Settlement then flows through the same
+     * TransactionEngine transition the cron uses — a FAILED there refunds the
+     * customer, a SUCCESSFUL marks delivery — so a webhook and a cron tick can
+     * never disagree about what a status means.
+     *
+     * An unknown or already-settled reference is a quiet no-op: the provider
+     * is not even asked, and no probe can move money.
+     *
+     * @param string $reference the request_id we sent the provider
+     * @return array{ok:bool, matched?:bool, settled?:bool, status?:string, error?:string}
+     */
+    public function settle_from_provider_update($reference) {
+        $reference = trim((string)$reference);
+        if ($reference === '') return array('ok' => true, 'matched' => false);
+
+        $tx = $this->ci->Service_transaction_model->pending_by_provider_reference('VTU', $reference);
+        if (!$tx) return array('ok' => true, 'matched' => false);
+
+        $provider = !empty($tx->provider_id)
+            ? $this->ci->Provider_model->find_by_id($tx->provider_id) : null;
+        if (!$provider) {
+            log_message('error', 'vtpass webhook: purchase '.$tx->id.' has no provider to ask');
+            return array('ok' => true, 'matched' => true, 'settled' => false,
+                'error' => 'No provider configured for that purchase');
+        }
+
+        try {
+            // The provider was ASKED, not told: the push carries no signature,
+            // so /requery with our own request_id is the only trusted answer.
+            // The family constant is read defensively so this path also runs
+            // under a harness that stubs the manager without the registry.
+            $family = defined('Provider_manager::FAMILY_VTU') ? Provider_manager::FAMILY_VTU : 'VTU';
+            $adapter = $this->ci->provider_manager->adapter($provider, $family);
+            $res = $adapter->status($reference);
+        } catch (Throwable $e) {
+            log_message('error', 'vtpass webhook requery threw: '.$e->getMessage());
+            return array('ok' => true, 'matched' => true, 'settled' => false,
+                'error' => 'Could not reach the provider to confirm the update');
+        }
+
+        if (empty($res['ok']) || empty($res['status'])) {
+            // Unreachable or unusable: leave the purchase settling — the cron
+            // sweep asks again, and a webhook must never guess a verdict.
+            return array('ok' => true, 'matched' => true, 'settled' => false,
+                'error' => $res['error'] ?? 'The provider could not confirm the update');
+        }
+
+        $status = strtoupper((string)$res['status']);
+        if (!in_array($status, array('SUCCESSFUL', 'FAILED'), true)) {
+            // Still in flight — nothing to settle.
+            return array('ok' => true, 'matched' => true, 'settled' => false, 'status' => $status);
+        }
+
+        // FAILED refunds automatically inside the engine, exactly as the cron's
+        // vtu_status sweep would.
+        $this->ci->transactionengine->transition(
+            $tx->id, $status, 'PROVIDER',
+            $status === 'FAILED' ? 'Provider reported failure' : null
+        );
+
+        return array('ok' => true, 'matched' => true, 'settled' => true, 'status' => $status);
+    }
+
     private function err($message, $code) {
         return array('ok' => false, 'error' => $message, 'code' => $code);
     }

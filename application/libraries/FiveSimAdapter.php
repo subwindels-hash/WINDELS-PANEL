@@ -484,6 +484,163 @@ class FiveSimAdapter implements NumberProviderInterface {
 
     /* ------------------------------ internals ----------------------------- */
 
+    /**
+     * The customer's order history: GET /user/orders?category=…&limit=…
+     *
+     * The docs allow activation or hosting only, and an unknown category is
+     * refused here — before any vendor call — rather than 400'd back.
+     * Optional params ride the query string only when the caller set them,
+     * and booleans are spelled true/false because that is what the endpoint
+     * documents (http_build_query would send 1).
+     *
+     * @return array{ok:bool, total?:int, orders?:array, error?:string}
+     */
+    public function orders($category = 'activation', $limit = null, $offset = null, $order = null, $reverse = null) {
+        $category = strtolower(trim((string)$category));
+        if ($category === '') $category = 'activation';
+        if (!in_array($category, array('activation', 'hosting'), true)) {
+            return array('ok' => false,
+                'error' => 'The vendor offers activation or hosting history only');
+        }
+
+        $query = array('category' => $category);
+        foreach (array('limit' => $limit, 'offset' => $offset, 'order' => $order) as $key => $value) {
+            if ($value !== null && $value !== '') $query[$key] = $value;
+        }
+        if ($reverse !== null) $query['reverse'] = $reverse ? 'true' : 'false';
+
+        $res = $this->call('orders', '/user/orders?'.$this->query_string($query));
+        if (empty($res['ok'])) return array('ok' => false, 'error' => $res['error']);
+
+        $data = $res['data'];
+        $rows = isset($data['Data']) && is_array($data['Data']) ? $data['Data'] : array();
+
+        $orders = array();
+        foreach ($rows as $row) {
+            if (!is_array($row)) continue;
+            $out = array(
+                'reference'  => isset($row['id']) ? (string)$row['id'] : null,
+                'msisdn'     => isset($row['phone']) ? (string)$row['phone'] : null,
+                'operator'   => isset($row['operator']) ? (string)$row['operator'] : null,
+                // The vendor speaks slugs ('facebook'); our vocabulary is the
+                // service code the rest of the panel stores ('FACEBOOK').
+                'service'    => $this->service_code((string)($row['product'] ?? '')),
+                'country'    => isset($row['country']) ? (string)$row['country'] : null,
+                'state'      => self::$state_map[strtoupper((string)($row['status'] ?? ''))] ?? 'RESERVED',
+                'raw_state'  => strtoupper((string)($row['status'] ?? '')),
+                'created_at' => $this->utc($row['created_at'] ?? null),
+                'expires_at' => $this->utc($row['expires'] ?? null),
+                'messages'   => $this->messages($row),
+            );
+            if (isset($row['price'])) {
+                $out['cost_vendor'] = (string)$row['price'];
+                $cost = $this->to_base((string)$row['price']);
+                if ($cost !== null) $out['cost'] = $cost;
+            }
+            $orders[] = $out;
+        }
+
+        return array(
+            'ok'     => true,
+            'total'  => isset($data['Total']) ? (int)$data['Total'] : count($orders),
+            'orders' => $orders,
+        );
+    }
+
+    /**
+     * The account's payment ledger: GET /user/payments?limit=…
+     *
+     * The vendor's amounts are in its own currency (RUB). A rouble figure must
+     * never be passed off as base currency, so `amount`/`balance` appear only
+     * when an operator has configured a conversion rate; the vendor-currency
+     * columns are always present.
+     *
+     * @return array{ok:bool, total?:int, payments?:array, types?:array,
+     *               providers?:array, error?:string}
+     */
+    public function payments($limit = null, $offset = null, $order = null, $reverse = null) {
+        $query = array();
+        foreach (array('limit' => $limit, 'offset' => $offset, 'order' => $order) as $key => $value) {
+            if ($value !== null && $value !== '') $query[$key] = $value;
+        }
+        if ($reverse !== null) $query['reverse'] = $reverse ? 'true' : 'false';
+
+        $res = $this->call('payments', '/user/payments'.$this->query_string($query, true));
+        if (empty($res['ok'])) return array('ok' => false, 'error' => $res['error']);
+
+        $data = $res['data'];
+        $rows = isset($data['Data']) && is_array($data['Data']) ? $data['Data'] : array();
+
+        $payments = array();
+        foreach ($rows as $row) {
+            if (!is_array($row)) continue;
+            $out = array(
+                'id'            => isset($row['ID']) ? (string)$row['ID'] : null,
+                'type'          => isset($row['TypeName']) ? (string)$row['TypeName'] : null,
+                'provider'      => isset($row['ProviderName']) ? (string)$row['ProviderName'] : null,
+                'amount_vendor' => isset($row['Amount']) ? (string)$row['Amount'] : null,
+                'balance_vendor'=> isset($row['Balance']) ? (string)$row['Balance'] : null,
+                'created_at'    => $this->utc($row['CreatedAt'] ?? null),
+            );
+            // Only when a rate is configured does the ledger speak base
+            // currency; without one the vendor columns above are the truth.
+            if ($out['amount_vendor'] !== null) {
+                $amount = $this->to_base($out['amount_vendor']);
+                if ($amount !== null) $out['amount'] = $amount;
+            }
+            if ($out['balance_vendor'] !== null) {
+                $balance = $this->to_base($out['balance_vendor']);
+                if ($balance !== null) $out['balance'] = $balance;
+            }
+            $payments[] = $out;
+        }
+
+        return array(
+            'ok'        => true,
+            'total'     => isset($data['Total']) ? (int)$data['Total'] : count($payments),
+            'payments'  => $payments,
+            'types'     => $this->name_column($data, 'PaymentTypes'),
+            'providers' => $this->name_column($data, 'PaymentProviders'),
+        );
+    }
+
+    /** A vendor slug → our service code ('facebook' → 'FACEBOOK'). */
+    private function service_code($slug) {
+        $slug = strtolower(trim((string)$slug));
+        if ($slug === '') return null;
+        foreach ($this->product_map as $code => $vendor_slug) {
+            if (strtolower((string)$vendor_slug) === $slug) return $code;
+        }
+        return strtoupper($slug);
+    }
+
+    /**
+     * A query string that spells booleans true/false and skips empty values.
+     * `$leading_q` keeps a caller with no params at all from emitting '?'.
+     */
+    private function query_string(array $query, $leading_q = false) {
+        $parts = array();
+        foreach ($query as $key => $value) {
+            if ($value === null || $value === '') continue;
+            $parts[] = rawurlencode((string)$key).'='.rawurlencode((string)$value);
+        }
+        $qs = implode('&', $parts);
+        return ($qs !== '' && $leading_q) ? '?'.$qs : $qs;
+    }
+
+    /** [ {Name: x}, … ] → ['x', …] for the ledger's type/provider tables. */
+    private function name_column(array $data, $key) {
+        $out = array();
+        if (isset($data[$key]) && is_array($data[$key])) {
+            foreach ($data[$key] as $row) {
+                if (is_array($row) && isset($row['Name']) && $row['Name'] !== '') {
+                    $out[] = (string)$row['Name'];
+                }
+            }
+        }
+        return $out;
+    }
+
     /** finish/cancel/ban/check all return the same order object. */
     private function order_call($action, $prefix, $reference) {
         $reference = trim((string)$reference);

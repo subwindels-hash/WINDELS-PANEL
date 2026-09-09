@@ -66,6 +66,8 @@ class FakeDb
     private $pending_order = array();
     private $pending_limit = null;
     private $auto_increment = array();
+    /** Sequence behind generated_public_id(), so generated ids never repeat. */
+    private $public_id_seq = 0;
     private $last_insert_id = 0;
     private $trans_depth = 0;
     private $trans_ok = true;
@@ -439,6 +441,16 @@ class FakeDb
                 throw new RuntimeException("FakeDb: unknown column {$table}.{$column}");
             }
         }
+        // public_id is assigned by the model layer, never by SQL: every
+        // MY_Model subclass sets it in create() via new_public_id(), so an
+        // insert that omits it is a fixture taking the same shortcut the
+        // production code takes — generate one, exactly as the model would.
+        // The NOT NULL and UNIQUE contract below is untouched, and an
+        // explicitly-null public_id is still refused like MySQL would.
+        if (isset($this->schema[$table]['columns']['public_id'])
+            && !array_key_exists('public_id', $data)) {
+            $data['public_id'] = $this->generated_public_id($table);
+        }
         foreach ($this->schema[$table]['columns'] as $column => $meta) {
             if ($meta['nullable'] || $meta['default'] || $meta['auto']) continue;
             if (!array_key_exists($column, $data) || $data[$column] === null) {
@@ -468,6 +480,18 @@ class FakeDb
         $this->last_insert_id = isset($row['id']) ? (int)$row['id'] : 0;
         $this->queries[] = array('op' => 'insert', 'table' => $table, 'data' => $data);
         return true;
+    }
+
+    /**
+     * A public_id for an insert that omitted one — the same job
+     * MY_Model::new_public_id() does in production. 'TST' marks it as
+     * generated (real ULIDs never start with a fixed prefix), the counter
+     * keeps it unique per run, and a collision with an explicitly supplied
+     * id is still impossible to miss: the UNIQUE probe in insert() throws.
+     */
+    private function generated_public_id($table)
+    {
+        return 'TST'.str_pad((string) (++$this->public_id_seq), 23, '0', STR_PAD_LEFT);
     }
 
     public function update($table, array $data = array())

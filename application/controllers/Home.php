@@ -312,6 +312,7 @@ class Home extends Public_Controller {
         // replies from, so the conversation stays answerable without leaving
         // the panel. Kept side-by-side deliberately: the mailbox copy works
         // when the panel cannot, and the row works when the mailbox cannot.
+        $contact_row_id = null;
         if ($queued && $this->db->table_exists('contact_messages')) {
             try {
                 $this->db->insert('contact_messages', array(
@@ -326,8 +327,28 @@ class Home extends Public_Controller {
                     'status'          => 'NEW',
                     'created_at'      => gmdate('Y-m-d H:i:s'),
                 ));
+                $contact_row_id = (int)$this->db->insert_id() ?: null;
             } catch (Throwable $e) {
                 log_message('error', 'contact message could not be recorded: '.$e->getMessage());
+            }
+        }
+
+        // The inbox half: beside the polled mailbox mail, the same message is
+        // readable — and answerable — in Admin → Inbox. The contact row id is
+        // the dedupe source, so a double-submitted form stores one row, and
+        // the two halves (contact_messages and inbox_messages) stay in sync
+        // by construction.
+        if ($queued) {
+            try {
+                $this->load->library('InboxService');
+                $this->inboxservice->deliver(
+                    'ADMIN', null, $support, $form['name'], $form['email'],
+                    '[Contact] '.$form['subject'],
+                    "From: {$form['name']} <{$form['email']}>\n\n{$form['message']}",
+                    'contact:'.(string) $contact_row_id
+                );
+            } catch (Throwable $e) {
+                log_message('error', 'contact message could not reach the staff inbox: '.$e->getMessage());
             }
         }
 

@@ -5,7 +5,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * Admin/Notifications — messages from the team, written by a super admin.
  *
  * Two recipients, one screen: every user at once (a maintenance window, a new
- * payment method, a price change) or one user by email ("your withdrawal is
+ * payment method, a price change) or one user by email ("your payout is
  * being looked at"). Both are in-app notifications — the bell in the topbar
  * and the Notifications page — because that is the surface every signed-in
  * customer already reads. Email stays out of the path: a broadcast that

@@ -136,10 +136,29 @@ class Inbox extends Admin_Controller {
         if (!$this->mailservice->enqueue_raw(
                 $msg->from_email, $subject, $html, $body, $msg->from_name, 'inbox.reply')) {
             $this->session->set_flashdata('error', 'Could not queue the reply. Try again.');
-        } else {
-            $this->session->set_flashdata('success',
-                'Reply queued to '.$msg->from_email.'. It sends with the next mail-queue run.');
+            redirect('admin/inbox/'.$public_id);
+            return;
         }
+
+        // The dashboard half: when the sender is a registered customer, the
+        // reply also lands in their dashboard inbox, so the conversation
+        // continues inside the panel whether or not they read their mailbox.
+        // 'aireply:' + the message's public id is the dedupe source — a
+        // double-submitted reply reaches them once.
+        try {
+            $user = $this->inboxservice->user_by_email((string) $msg->from_email);
+            if ($user) {
+                $this->inboxservice->deliver('USER', (int) $user->id, (string) $user->email,
+                    marvy_site_name(), $this->inboxservice->admin_address(),
+                    $subject, $body,
+                    'aireply:'.$public_id);
+            }
+        } catch (Throwable $e) {
+            log_message('error', 'inbox reply could not reach the customer dashboard: '.$e->getMessage());
+        }
+
+        $this->session->set_flashdata('success',
+            'Reply queued to '.$msg->from_email.'. It sends with the next mail-queue run.');
         redirect('admin/inbox/'.$public_id);
     }
 

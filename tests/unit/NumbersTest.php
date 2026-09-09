@@ -712,7 +712,7 @@ class NumbersTest extends TestCase
         $this->assertSame('BANNED', $banned['state']);
         $this->assertSame('2020-06-28 16:17:43', $banned['created_at'], 'UTC, not the vendor ISO string');
         $this->assertSame('2020-06-28 16:32:43', $banned['expires_at']);
-        $this->assertSame('420.00000000', $banned['cost'], '2 RUB at 20 naira each');
+        $this->assertSame('40.00000000', $banned['cost'], '2 RUB at 20 naira each');
 
         $received = $res['orders'][1];
         $this->assertSame('RECEIVED', $received['state']);
@@ -755,7 +755,9 @@ class NumbersTest extends TestCase
         $res = $adapter->payments();
 
         $this->assertSame('2000.00000000', $res['payments'][0]['amount']);
-        $this->assertSame('79', $res['payments'][1]['amount_vendor']);
+        $this->assertSame('21', $res['payments'][1]['amount_vendor'],
+            'the transaction amount stays in vendor currency');
+        $this->assertSame('79', $res['payments'][1]['balance_vendor']);
         $this->assertSame('1580.00000000', $res['payments'][1]['balance'], 'the running balance converts too');
     }
 

@@ -80,6 +80,10 @@ $nav_groups = $is_admin ? array(
         array('admin/messages',     'Customer messages',  'tickets.view',    'message-square'),
     )),
     array('System', array(
+        // Broadcasts are the super admin's alone by default (no role carries
+        // notifications.send), so the entry is gated on the same permission
+        // the controller enforces and simply does not render for anyone else.
+        array('admin/notifications', 'Notifications', 'notifications.send', 'bell'),
         array('admin/settings',     'Settings',   'settings.manage', 'settings'),
         array('admin/settings/flags','Feature flags','settings.manage', 'settings'),
         array('admin/categories',   'Categories & logs', 'audit.view',      'globe'),

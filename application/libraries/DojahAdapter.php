@@ -48,15 +48,23 @@ class DojahAdapter implements IdentityProviderInterface {
     const BASE_URL     = 'https://api.dojah.io';
     const SANDBOX_URL  = 'https://sandbox.dojah.io';
 
+    /** Dojah's documented API root — a relative provider_code joins onto it. */
+    const API_ROOT = '/api/v1';
+
     /**
      * Our lookup key → Dojah endpoint path and query parameter.
+     *
+     * Paths are Dojah's documented API reference endpoints, root included:
+     * BVN's documented lookup is /kyc/bvn/full (the bare /kyc/bvn is the
+     * deprecated shallow variant), and phone lookups are
+     * /kyc/phone_number/basic for every id type (docs.dojah.io).
      * Overridable per provider under retry_policy → dojah.endpoints.
      */
     private static $endpoints = array(
         'NIN:IDENTIFIER' => array('/api/v1/kyc/nin', 'nin'),
-        'BVN:IDENTIFIER' => array('/api/v1/kyc/bvn', 'bvn'),
-        'NIN:PHONE'      => array('/api/v1/kyc/nin/phone_number', 'phone_number'),
-        'BVN:PHONE'      => array('/api/v1/kyc/bvn/phone_number', 'phone_number'),
+        'BVN:IDENTIFIER' => array('/api/v1/kyc/bvn/full', 'bvn'),
+        'NIN:PHONE'      => array('/api/v1/kyc/phone_number/basic', 'phone_number'),
+        'BVN:PHONE'      => array('/api/v1/kyc/phone_number/basic', 'phone_number'),
     );
 
     /**
@@ -137,9 +145,15 @@ class DojahAdapter implements IdentityProviderInterface {
         }
         list($path, $param) = $this->endpoint_map[$key];
 
-        // Any explicit per-product override wins over the map.
+        // Any explicit per-product override wins over the map. A product's
+        // provider_code is relative to Dojah's documented API root (/api/v1) —
+        // the seeder stores 'kyc/bvn/full' and the adapter joins it. A code
+        // that already carries its own API prefix ('api/v2/…', '/api/v2/…') or
+        // an absolute path is used as written, never double-prefixed.
         if (!empty($p['provider_code'])) {
-            $path = '/'.ltrim((string)$p['provider_code'], '/');
+            $code = trim((string)$p['provider_code']);
+            $carries_root = ($code[0] === '/') || (strncasecmp($code, 'api/', 4) === 0);
+            $path = $carries_root ? '/'.ltrim($code, '/') : self::API_ROOT.'/'.ltrim($code, '/');
         }
 
         $res = $this->request($path.'?'.http_build_query(array($param => $identifier)));

@@ -86,6 +86,60 @@ class Webhooks extends MY_Controller {
         return $out;
     }
 
+    /**
+     * POST /webhook/vtpass — VTpass transaction-update push.
+     *
+     * Unlike every other gateway here, VTpass signs nothing: the push is an
+     * unauthenticated JSON POST, so it is treated purely as a hint. The only
+     * value taken from it is the request_id of the purchase it names; the
+     * provider is then asked through its own /requery before a single naira
+     * moves (VtuService::settle_from_provider_update), which is why this
+     * handler can safely acknowledge every push.
+     *
+     * The acknowledgement body is fixed by the docs: {"response":"success"} —
+     * anything else makes VTpass retry an event forever.
+     */
+    public function vtpass() {
+        if ($this->input->method(true) !== 'POST') {
+            return $this->respond(405, array('ok' => false, 'error' => 'method not allowed'));
+        }
+
+        $body = json_decode((string)(file_get_contents('php://input') ?: ''), true);
+
+        // The push names the purchase by the request_id we sent. Accept the
+        // documented wrapper and the spellings their samples have used.
+        $reference = null;
+        foreach (array($body['requestId'] ?? null, $body['request_id'] ?? null,
+                       $body['data']['requestId'] ?? null, $body['data']['request_id'] ?? null) as $candidate) {
+            if (is_string($candidate) && trim($candidate) !== '') { $reference = trim($candidate); break; }
+        }
+
+        if ($reference === null) {
+            // Nothing actionable in the push. Acknowledge (so VTpass stops
+            // retrying) and leave a trail for the operator.
+            log_message('error', 'vtpass webhook: push without a usable request_id');
+            return $this->respond(200, array('response' => 'success'));
+        }
+
+        try {
+            $this->load->library('VtuService');
+            $result = $this->vtuservice->settle_from_provider_update($reference);
+            if (empty($result['matched'])) {
+                // A probe, a stale replay, or a purchase that already settled:
+                // acknowledged and ignored — never a guess.
+                log_message('debug', 'vtpass webhook: no pending purchase for '.$reference);
+            } elseif (empty($result['settled']) && !empty($result['error'])) {
+                log_message('error', 'vtpass webhook: '.$reference.' — '.$result['error']);
+            }
+        } catch (Throwable $e) {
+            // A processing failure must not look like rejection: the cron's
+            // vtu_status sweep re-asks the provider anyway.
+            log_message('error', 'vtpass webhook threw for '.$reference.': '.$e->getMessage());
+        }
+
+        return $this->respond(200, array('response' => 'success'));
+    }
+
     private function respond($code, $body) {
         return $this->output->set_status_header($code)
             ->set_output(json_encode($body));

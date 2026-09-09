@@ -55,6 +55,83 @@ class Inbox extends Auth_Controller {
         ));
     }
 
+    /**
+     * GET /dashboard/inbox/compose — write to the team.
+     *
+     * Customers without a mail client (or without the patience for one) get
+     * the same conversation the contact form starts, inside the panel: the
+     * message lands in the staff inbox (Admin → Inbox) and the reply comes
+     * back here, into this inbox.
+     */
+    public function compose() {
+        $this->load->view('layouts/app', array(
+            'title'        => 'New message',
+            'nav_active'   => 'dashboard/inbox',
+            'content_view' => 'dashboard/inbox/compose',
+            'current_user' => $this->current_user,
+            'permissions'  => $this->auth->permissions(),
+            'unread'       => $this->dashboardstats->unread_count($this->current_user->id),
+        ));
+    }
+
+    /**
+     * POST /dashboard/inbox/send — deliver a composed message to the staff
+     * inbox. POST-only, and throttled per customer: one bucket each, so five
+     * chatty customers cannot spend anyone else's budget.
+     */
+    public function send() {
+        if ($this->input->method(true) !== 'POST') redirect('dashboard/inbox/compose');
+
+        $this->load->library('RateLimiter');
+        $ip     = $this->input->ip_address();
+        $bucket = RateLimiter::scope('inbox_to_admin', (string) $this->current_user->id);
+
+        if ($this->ratelimiter->too_many_failures($ip, $bucket, 10, 3600)) {
+            $retry = $this->ratelimiter->retry_after($ip, $bucket, 3600, 10);
+            $this->session->set_flashdata('error',
+                'You are sending messages too quickly. Try again in '
+                .max(1, (int) ceil($retry / 60)).' minute(s).');
+            redirect('dashboard/inbox/compose');
+            return;
+        }
+
+        $subject = trim((string) $this->input->post('subject'));
+        $body    = trim((string) $this->input->post('message'));
+        if ($subject === '' || mb_strlen($subject) > 150) {
+            $this->session->set_flashdata('error', 'Give the message a subject (150 characters or fewer).');
+            redirect('dashboard/inbox/compose');
+            return;
+        }
+        if ($body === '') {
+            $this->session->set_flashdata('error', 'Write a message before sending it.');
+            redirect('dashboard/inbox/compose');
+            return;
+        }
+
+        // The limiter counts sends, not failures: every send — successful or
+        // not — leaves a countable row, or the volume limit is imaginary.
+        $this->ratelimiter->record($bucket, $ip, false, 'INBOX_SENT', $this->input->user_agent());
+
+        $to = $this->inboxservice->admin_address();
+        $name = trim((string) $this->current_user->first_name.' '.$this->current_user->last_name)
+            ?: (string) $this->current_user->username;
+        $id = $this->inboxservice->deliver(
+            'ADMIN', null, $to !== '' ? $to : 'support@'.parse_url(site_url(), PHP_URL_HOST),
+            $name, (string) $this->current_user->email,
+            $subject, $body,
+            'umsg:'.$this->current_user->id.':'.time()
+        );
+
+        if ($id === null) {
+            $this->session->set_flashdata('error',
+                'Your message could not be delivered. Please try again in a moment.');
+        } else {
+            $this->session->set_flashdata('success',
+                'Message sent. The team\'s reply will arrive in this inbox.');
+        }
+        redirect('dashboard/inbox');
+    }
+
     /** GET /dashboard/inbox/:id — my one message; marks it read on open. */
     public function detail($public_id) {
         $msg = $this->inboxservice->find_for_user($public_id, $this->current_user->id);

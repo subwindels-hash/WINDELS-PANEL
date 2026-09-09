@@ -238,6 +238,12 @@ done
 cp "${ROOT}/storage/ticket_attachments/.htaccess" "${STAGE}/storage/ticket_attachments/.htaccess"
 cp "${ROOT}/storage/ticket_attachments/index.html" "${STAGE}/storage/ticket_attachments/index.html"
 
+# assets/uploads is runtime data, never deployment payload: whatever the
+# build machine's uploads directory happens to hold (a dev preview's test
+# images, an operator's local media) stays home. Rebuild it empty with only
+# the guard files, exactly like a fresh clone would have it.
+rm -rf "${STAGE}/assets/uploads"
+mkdir -p "${STAGE}/assets/uploads"
 cat > "${STAGE}/assets/uploads/.htaccess" <<'HT'
 # Uploaded files are data, never code.
 php_flag engine off
@@ -247,6 +253,7 @@ AddType text/plain .php .phtml .php3 .php4 .php5 .php7 .phps .cgi .pl .py .sh
 </IfModule>
 Options -ExecCGI -Indexes
 HT
+: > "${STAGE}/assets/uploads/index.html"
 
 # ---------------------------------------------------------------------------
 # 4. Strip what a running panel never reads

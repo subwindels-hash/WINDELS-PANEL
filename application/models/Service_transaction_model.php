@@ -278,4 +278,23 @@ class Service_transaction_model extends MY_Model {
                         ->order_by('created_at','ASC')->limit($limit)
                         ->get($this->table)->result();
     }
+
+    /**
+     * One still-settling transaction by its provider reference.
+     *
+     * The webhook path's lookup: a provider push names a purchase by the
+     * reference we sent it, and only a purchase that has not settled yet is
+     * worth asking the provider about. Terminal rows are invisible here, so a
+     * replayed or stale webhook is a no-op by construction.
+     */
+    public function pending_by_provider_reference($domain, $reference){
+        $reference = trim((string)$reference);
+        if ($reference === '') return null;
+        return $this->db->where('service_domain', $domain)
+                        ->where('provider_reference', $reference)
+                        ->where_in('status', array('PENDING', 'PROCESSING', 'IN_PROGRESS'))
+                        ->order_by('id', 'ASC')
+                        ->limit(1)
+                        ->get($this->table)->row();
+    }
 }

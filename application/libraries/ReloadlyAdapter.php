@@ -243,7 +243,7 @@ class ReloadlyAdapter implements GiftcardProviderInterface {
         return array(
             'ok'        => true,
             'status'    => in_array($vendor, array('SUCCESSFUL', 'SUCCESS'), true) ? 'PLACED'
-                            : ($vendor === 'FAILED' ? 'FAILED' : 'PENDING'),
+                            : (in_array($vendor, array('FAILED', 'REFUNDED'), true) ? 'FAILED' : 'PENDING'),
             'reference' => (string)$data['transactionId'],
             'cost'      => $this->cost_from($data),
             'error'     => null,
@@ -257,34 +257,55 @@ class ReloadlyAdapter implements GiftcardProviderInterface {
             ? '/countries/'.rawurlencode(strtoupper((string)$country)).'/products'
             : '/products';
 
-        $res = $this->request('GET', $path);
-        if (!empty($res['transport_error'])) {
-            return array('ok' => false, 'error' => $res['transport_error']);
-        }
-
-        $code = (int)$res['http_code'];
-        $data = json_decode((string)$res['body'], true);
-        if ($code < 200 || $code >= 300) {
-            return array('ok' => false, 'error' => $this->error_for($code, $data));
-        }
-
-        // Paginated responses wrap the list in `content`; unpaginated ones are
-        // the list. Accept both rather than depending on the account's setting.
-        if (is_array($data) && isset($data['content']) && is_array($data['content'])) {
-            $data = $data['content'];
-        }
-        if (!is_array($data)) {
-            return array('ok' => false, 'error' => 'The vendor returned an unusable catalogue');
-        }
-
+        // GET /products is paginated (size, page) with 13,000+ products behind
+        // it. A full page is followed, not trusted as the last; a short page
+        // ends the walk. includeRange/includeFixed are explicit because RANGE
+        // products must be asked for or they silently vanish from the
+        // catalogue. The page cap is a runaway guard, not a data limit: 100
+        // pages x 200 rows is far beyond any real catalogue.
+        $size = 200;
         $products = array();
-        foreach ($data as $row) {
-            if (!is_array($row) || empty($row['productId'])) continue;
-            // A product with no stated recipient currency cannot be described
-            // to a customer or priced against, so it is skipped rather than
-            // guessed into the catalogue as a dollar card.
-            if (empty($row['recipientCurrencyCode'])) continue;
-            foreach ($this->denominations($row) as $d) $products[] = $d;
+        $page = 1;
+        while ($page <= 100) {
+            $res = $this->request('GET', $path.'?'.http_build_query(array(
+                'size'          => $size,
+                'page'          => $page,
+                'includeRange'  => 'true',
+                'includeFixed'  => 'true',
+            )));
+            if (!empty($res['transport_error'])) {
+                return array('ok' => false, 'error' => $res['transport_error']);
+            }
+
+            $code = (int)$res['http_code'];
+            $data = json_decode((string)$res['body'], true);
+            if ($code < 200 || $code >= 300) {
+                return array('ok' => false, 'error' => $this->error_for($code, $data));
+            }
+
+            // Paginated responses wrap the list in `content`; unpaginated ones
+            // are the list. Accept both rather than depending on the account's
+            // setting.
+            if (is_array($data) && isset($data['content']) && is_array($data['content'])) {
+                $data = $data['content'];
+            }
+            if (!is_array($data)) {
+                return array('ok' => false, 'error' => 'The vendor returned an unusable catalogue');
+            }
+
+            foreach ($data as $row) {
+                if (!is_array($row) || empty($row['productId'])) continue;
+                // A product with no stated recipient currency cannot be
+                // described to a customer or priced against, so it is skipped
+                // rather than guessed into the catalogue as a dollar card.
+                if (empty($row['recipientCurrencyCode'])) continue;
+                foreach ($this->denominations($row) as $d) $products[] = $d;
+            }
+
+            // A short page is the last page — that is how the vendor says the
+            // catalogue ended.
+            if (count($data) < $size) break;
+            $page++;
         }
 
         return array('ok' => true, 'products' => $products);
@@ -352,8 +373,10 @@ class ReloadlyAdapter implements GiftcardProviderInterface {
         if ($type === 'RANGE') {
             return array(array_merge($common, array(
                 'face_value'     => null,
-                'min_face_value' => $this->number($row['minRecipientDenomination'] ?? null),
-                'max_face_value' => $this->number($row['maxRecipientDenomination'] ?? null),
+                'min_face_value' => $this->number($this->pick($row,
+                    array('minRecipientDenomination', 'minrecipientDenomination'))),
+                'max_face_value' => $this->number($this->pick($row,
+                    array('maxRecipientDenomination', 'maxrecipientDenomination'))),
                 'cost'           => null,
             )));
         }
@@ -697,5 +720,20 @@ class ReloadlyAdapter implements GiftcardProviderInterface {
 
     private function number($v) {
         return $v === null || !is_numeric($v) ? null : number_format((float)$v, 8, '.', '');
+    }
+
+    /**
+     * The first present key of a row, by several spellings.
+     *
+     * The catalogue endpoint has been observed spellings the same bound two
+     * ways ('maxRecipientDenomination' and 'maxrecipientDenomination'); a
+     * RANGE product whose upper bound is dropped over one letter's casing
+     * silently becomes unbuyable.
+     */
+    private function pick(array $row, array $keys) {
+        foreach ($keys as $key) {
+            if (isset($row[$key]) && $row[$key] !== '') return $row[$key];
+        }
+        return null;
     }
 }

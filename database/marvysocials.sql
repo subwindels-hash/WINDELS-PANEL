@@ -2511,6 +2511,9 @@ VALUES (56, 'blacklist.manage', 'system', 'Blacklist manage');
 INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
 VALUES (57, 'api.manage', 'system', 'Api manage');
 
+INSERT INTO `permissions` (`id`, `perm_key`, `category`, `description`)
+VALUES (58, 'notifications.send', 'notifications', 'Notifications send');
+
 -- role_permissions
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 VALUES (1, 1);
@@ -2682,6 +2685,9 @@ VALUES (1, 56);
 
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 VALUES (1, 57);
+
+INSERT INTO `role_permissions` (`role_id`, `permission_id`)
+VALUES (1, 58);
 
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 VALUES (2, 1);
@@ -3113,13 +3119,16 @@ INSERT INTO `email_templates` (`id`, `template_key`, `subject`, `body_html`, `bo
 VALUES (6, 'ticket.replied', 'Support ticket {{ticket_id}} updated', '<p>Our team replied to your ticket <strong>{{subject}}</strong>.</p><p><a href="{{ticket_url}}">View ticket</a></p>', 'Our team replied to your ticket {{subject}}.\nView ticket', '["ticket_id","subject","ticket_url"]', 1);
 
 INSERT INTO `email_templates` (`id`, `template_key`, `subject`, `body_html`, `body_text`, `variables`, `is_active`)
-VALUES (7, 'contact.reply_general', 'Re: {{subject}}', '<p>Hi {{name}},</p><p>Thanks for contacting {{site_name}} — here is where that stands.</p><p>{{reply}}</p><p>If anything above is unclear, just answer this email.</p>', 'Hi {{name}},\nThanks for contacting {{site_name}} — here is where that stands.\n{{reply}}\nIf anything above is unclear, just answer this email.', '["name","subject","site_name","reply"]', 1);
+VALUES (7, 'shop.digital_ready', 'Your download is ready: {{product}}', '<p>Hi {{username}},</p><p>Your purchase <strong>{{product}}</strong> (order {{order_id}}) is ready.</p><p><a href="{{downloads_url}}">Download it from My Downloads</a> — you can issue a fresh download link there at any time.</p>', 'Hi {{username}},\nYour purchase {{product}} (order {{order_id}}) is ready.\nDownload it from My Downloads — you can issue a fresh download link there at any time.', '["username","product","order_id","downloads_url"]', 1);
 
 INSERT INTO `email_templates` (`id`, `template_key`, `subject`, `body_html`, `body_text`, `variables`, `is_active`)
-VALUES (8, 'contact.reply_order', 'Re: {{subject}} — your order', '<p>Hi {{name}},</p><p>Thanks for the details about your order.</p><p>{{reply}}</p><p>You can follow the order from Dashboard → Orders; include the order ID (the short code starting with a hash) if you write back.</p>', 'Hi {{name}},\nThanks for the details about your order.\n{{reply}}\nYou can follow the order from Dashboard → Orders; include the order ID (the short code starting with a hash) if you write back.', '["name","subject","site_name","reply"]', 1);
+VALUES (8, 'contact.reply_general', 'Re: {{subject}}', '<p>Hi {{name}},</p><p>Thanks for contacting {{site_name}} — here is where that stands.</p><p>{{reply}}</p><p>If anything above is unclear, just answer this email.</p>', 'Hi {{name}},\nThanks for contacting {{site_name}} — here is where that stands.\n{{reply}}\nIf anything above is unclear, just answer this email.', '["name","subject","site_name","reply"]', 1);
 
 INSERT INTO `email_templates` (`id`, `template_key`, `subject`, `body_html`, `body_text`, `variables`, `is_active`)
-VALUES (9, 'contact.reply_billing', 'Re: {{subject}} — your payment', '<p>Hi {{name}},</p><p>Thanks for reaching out about your payment.</p><p>{{reply}}</p><p>Payments are credited to your wallet balance as soon as they are verified — you can watch the balance from Dashboard → Wallet.</p>', 'Hi {{name}},\nThanks for reaching out about your payment.\n{{reply}}\nPayments are credited to your wallet balance as soon as they are verified — you can watch the balance from Dashboard → Wallet.', '["name","subject","site_name","reply"]', 1);
+VALUES (9, 'contact.reply_order', 'Re: {{subject}} — your order', '<p>Hi {{name}},</p><p>Thanks for the details about your order.</p><p>{{reply}}</p><p>You can follow the order from Dashboard → Orders; include the order ID (the short code starting with a hash) if you write back.</p>', 'Hi {{name}},\nThanks for the details about your order.\n{{reply}}\nYou can follow the order from Dashboard → Orders; include the order ID (the short code starting with a hash) if you write back.', '["name","subject","site_name","reply"]', 1);
+
+INSERT INTO `email_templates` (`id`, `template_key`, `subject`, `body_html`, `body_text`, `variables`, `is_active`)
+VALUES (10, 'contact.reply_billing', 'Re: {{subject}} — your payment', '<p>Hi {{name}},</p><p>Thanks for reaching out about your payment.</p><p>{{reply}}</p><p>Payments are credited to your wallet balance as soon as they are verified — you can watch the balance from Dashboard → Wallet.</p>', 'Hi {{name}},\nThanks for reaching out about your payment.\n{{reply}}\nPayments are credited to your wallet balance as soon as they are verified — you can watch the balance from Dashboard → Wallet.', '["name","subject","site_name","reply"]', 1);
 
 -- faqs
 INSERT INTO `faqs` (`id`, `question`, `answer`, `category`, `sorting`, `is_active`)
@@ -3293,10 +3302,10 @@ INSERT INTO `identity_products` (`id`, `code`, `public_id`, `name`, `id_type`, `
 VALUES (1, 'NIN_BASIC', 'S5GZXRTRCTW5DZKH1Q9AEA79HW', 'NIN verification', 'NIN', 'IDENTIFIER', 'kyc/nin', 'Confirm a National Identification Number and return the registered name, date of birth and gender.', 0, 0);
 
 INSERT INTO `identity_products` (`id`, `code`, `public_id`, `name`, `id_type`, `lookup_field`, `provider_code`, `description`, `is_active`, `sorting`)
-VALUES (2, 'BVN_BASIC', '8CKPAEEPWT3BXV0P36F77FR5W8', 'BVN verification', 'BVN', 'IDENTIFIER', 'kyc/bvn', 'Confirm a Bank Verification Number against the NIBSS record.', 0, 1);
+VALUES (2, 'BVN_BASIC', '8CKPAEEPWT3BXV0P36F77FR5W8', 'BVN verification', 'BVN', 'IDENTIFIER', 'kyc/bvn/full', 'Confirm a Bank Verification Number against the NIBSS record.', 0, 1);
 
 INSERT INTO `identity_products` (`id`, `code`, `public_id`, `name`, `id_type`, `lookup_field`, `provider_code`, `description`, `is_active`, `sorting`)
-VALUES (3, 'NIN_PHONE', '3ZVMSKBXHRP4Z9T5PW4SY2KTKS', 'NIN by phone number', 'NIN', 'PHONE', 'kyc/nin/phone_number', 'Find the NIN record linked to a Nigerian phone number.', 0, 2);
+VALUES (3, 'NIN_PHONE', '3ZVMSKBXHRP4Z9T5PW4SY2KTKS', 'Identity by phone number', 'NIN', 'PHONE', 'kyc/phone_number/basic', 'Find the identity registered to a Nigerian phone number.', 0, 2);
 
 -- giftcard_brands
 INSERT INTO `giftcard_brands` (`id`, `code`, `public_id`, `name`, `redeem_instructions`, `is_active`, `sorting`)
