@@ -106,6 +106,30 @@ $suggested = min($max, max($min, 5000));
   </div>
 
   <aside class="space-y-6">
+    <?php if (!empty($va_available)): ?>
+    <div class="card">
+      <h3 class="card-title">Your bank account</h3>
+      <?php if (!empty($virtual_account)): ?>
+        <p class="muted text-sm mt-2">
+          Pay into your dedicated account any time — your wallet is credited
+          automatically once the bank confirms. No deposit needs to be opened first.
+        </p>
+        <dl class="stack mt-3" style="gap:.5rem">
+          <div><span class="muted text-xs">Bank</span><br><strong><?=htmlspecialchars($virtual_account->bank_name)?></strong></div>
+          <div><span class="muted text-xs">Account number</span><br><strong class="mono" style="font-size:1.1rem"><?=htmlspecialchars($virtual_account->account_number)?></strong></div>
+          <div><span class="muted text-xs">Account name</span><br><strong><?=htmlspecialchars($virtual_account->account_name)?></strong></div>
+        </dl>
+      <?php else: ?>
+        <p class="muted text-sm mt-2">
+          Generate a dedicated bank account and pay into it any time — your
+          wallet is credited automatically once the bank confirms the payment.
+        </p>
+        <?=form_open('dashboard/wallet/virtual-account', array('class'=>'stack mt-3'))?>
+          <button class="btn btn-secondary" type="submit">Generate my account number</button>
+        <?=form_close()?>
+      <?php endif; ?>
+    </div>
+    <?php endif; ?>
     <div class="card">
       <h3 class="card-title">Summary</h3>
       <dl class="mt-3 stack" style="gap:.5rem">

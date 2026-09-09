@@ -62,6 +62,23 @@ class Wallet extends Auth_Controller {
             log_message('error', 'wallet currency choice unavailable: '.$e->getMessage());
         }
 
+        // The customer's standing virtual account (when bank transfers are a
+        // payable method). Read from our own table only — no provider call on
+        // a page render; creation happens on the virtual-account form.
+        $va_available = false;
+        $virtual_account = null;
+        foreach ($methods as $m) {
+            if (strtolower((string)$m->code) === 'fundsvera') { $va_available = true; break; }
+        }
+        if ($va_available) {
+            try {
+                $this->load->model('Fundsvera_virtual_account_model');
+                $virtual_account = $this->Fundsvera_virtual_account_model->for_user($this->current_user->id);
+            } catch (Throwable $e) {
+                log_message('error', 'virtual account lookup failed: '.$e->getMessage());
+            }
+        }
+
         $this->load->view('layouts/app', array(
             'title' => 'Add Funds',
             'nav_active' => 'dashboard/add-funds',
@@ -73,6 +90,8 @@ class Wallet extends Auth_Controller {
             'methods' => $methods,
             'can_choose_currency' => $can_choose_currency,
             'currency_choices' => $currency_choices,
+            'va_available' => $va_available,
+            'virtual_account' => $virtual_account,
             'min_deposit' => $this->Setting_model->get('min_deposit', '500.00000000'),
             'max_deposit' => $this->Setting_model->get('max_deposit', '5000000.00000000'),
             'base_currency' => marvy_base_currency(),
@@ -191,10 +210,83 @@ class Wallet extends Auth_Controller {
         redirect('dashboard/wallet/deposits/'.$public_id);
     }
 
+    /**
+     * POST /dashboard/wallet/virtual-account — the customer's standing bank
+     * account for wallet top-ups.
+     *
+     * Without an amount: create the account on first use (or return the
+     * existing one) and land back on Add Funds, where it is shown. With an
+     * amount: also open a declared virtual-account deposit, so the payment
+     * has a quoted amount to be checked against when the bank reports it —
+     * the webhook (never this page) is what credits the wallet.
+     */
+    public function virtual_account() {
+        if ($this->input->method(true) !== 'POST') show_404();
+
+        $amount = trim((string)$this->input->post('amount', true));
+
+        try {
+            if ($amount !== '' && is_numeric($amount)) {
+                $res = $this->paymentservice->open_virtual_account_deposit($this->current_user, $amount);
+            } else {
+                $res = $this->paymentservice->virtual_account($this->current_user);
+            }
+        } catch (Throwable $e) {
+            log_message('error', 'virtual account request threw: '.$e->getMessage());
+            $this->session->set_flashdata('error',
+                'Could not set up the bank account right now — please try again shortly.');
+            redirect('dashboard/add-funds');
+            return;
+        }
+
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error'] ?? 'Could not set up the bank account.');
+            redirect('dashboard/add-funds');
+            return;
+        }
+
+        if (!empty($res['transaction'])) {
+            $tx = $res['transaction'];
+            $this->session->set_flashdata('success',
+                'Deposit '.substr($tx->public_id, 0, 12).'… is open — transfer '
+                .marvy_money($tx->amount, $tx->currency).' to your account below. Your wallet is '
+                .'credited automatically once the bank confirms the payment.');
+            redirect('dashboard/wallet/deposits/'.$tx->public_id);
+            return;
+        }
+
+        $account = $res['account'];
+        $this->session->set_flashdata('success',
+            'Your dedicated account '.htmlspecialchars($account->account_number)
+            .' ('.htmlspecialchars($account->bank_name).') is ready — pay into it any time and '
+            .'your wallet is credited automatically when the bank confirms.');
+        redirect('dashboard/add-funds');
+    }
+
     public function deposits($public_id = null) {
         $tx = $public_id
             ? $this->Payment_transaction_model->find_public_for_user($public_id, $this->current_user->id)
             : null;
+
+        // The customer has just come back from the provider's checkout — this
+        // URL is HostedGateway::return_url(). Settle the deposit NOW: a
+        // capture-step gateway (PayPal) can only be completed from here, and a
+        // self-settling gateway is asked directly whether the payment landed,
+        // so a late or missing webhook never keeps a paid deposit waiting.
+        // All money movement happens inside PaymentService (settle_hosted_
+        // return → confirm), which is idempotent — the webhook landing mid-
+        // view credits nothing twice. Failures are deliberately silent: an
+        // unsettleable deposit simply renders as it did before.
+        if ($tx && in_array($tx->status, array('CREATED', 'PENDING'), true)) {
+            try {
+                $this->paymentservice->settle_hosted_return($tx, 'RETURN');
+                $tx = $this->Payment_transaction_model->find_public_for_user($public_id, $this->current_user->id)
+                    ?: $tx;
+            } catch (Throwable $e) {
+                log_message('error', 'settle on return failed for '.$public_id.': '.$e->getMessage());
+            }
+        }
+
         $deposits = $this->Payment_transaction_model->for_user($this->current_user->id, 25);
 
         // A bank-transfer deposit is useless to the customer without the

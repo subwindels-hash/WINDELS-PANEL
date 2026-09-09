@@ -261,6 +261,193 @@ class PaymentService {
         }
     }
 
+    /**
+     * Settle a deposit the moment the customer comes back from the provider.
+     *
+     * Hosted gateways land the customer on their deposit page after paying
+     * (HostedGateway::return_url). Until now that page only re-read the row:
+     * the wallet moved when the webhook arrived, or when reconciliation asked
+     * the provider twenty minutes later, or when an admin clicked approve —
+     * never at the moment the paying customer was actually looking at it.
+     *
+     * What happens here depends on how the gateway finishes a charge:
+     *
+     *   - A CAPTURE-step gateway (PayPal) has not taken the money at all when
+     *     the customer returns: approval is only their signature. The return
+     *     is the one moment the approved order can be captured, so we capture
+     *     it and credit through confirm() — the webhook cannot do this for us
+     *     because a webhook that arrives before capture would credit money
+     *     PayPal never took (the approval event deliberately parses as
+     *     PENDING for exactly that reason).
+     *
+     *   - A gateway that finishes the charge itself (Paystack, Stripe, …) is
+     *     asked once, server-side, whether the payment completed. The webhook
+     *     remains the primary truth; this single question closes the gap when
+     *     it is late or was never configured. Nothing the customer's browser
+     *     sent is trusted — only the provider's own answer.
+     *
+     *   - A gateway with no status call (manual bank transfer, crypto
+     *     callbacks) is a quiet no-op: there is nothing to ask, and pretending
+     *     otherwise would move money on a guess.
+     *
+     * Confirmation goes through confirm() in every case, which is idempotent
+     * on the ledger — a webhook landing mid-settle cannot double-credit.
+     *
+     * @param object $tx     the payment transaction being viewed
+     * @param string $source audit source recorded on the transition
+     * @return array{ok:bool, transaction?:object, noop?:bool, captured?:bool,
+     *               verified?:bool, error?:string, code?:string}
+     */
+    public function settle_hosted_return($tx, $source = 'RETURN') {
+        if (!$tx) return array('ok'=>false,'error'=>'No deposit to settle','code'=>'NO_TRANSACTION');
+        if ($tx->status === self::STATUS_SUCCESS) {
+            return array('ok'=>true,'noop'=>true,'duplicate'=>true,'transaction'=>$tx);
+        }
+        if (!in_array($tx->status, array(self::STATUS_CREATED, self::STATUS_PENDING), true)) {
+            return array('ok'=>false,'error'=>'This deposit cannot be settled in '.$tx->status,
+                'code'=>'BAD_STATE');
+        }
+
+        $verifier = $this->return_verifier($tx);
+        $gateway  = $verifier['gateway'];
+        if (!$gateway) return array('ok'=>true,'noop'=>true,'transaction'=>$tx);
+        if (method_exists($gateway, 'is_configured') && !$gateway->is_configured()) {
+            return array('ok'=>true,'noop'=>true,'transaction'=>$tx);
+        }
+        $reference = $verifier['reference'];
+
+        // 1) Capture-step gateway: the money only moves when we capture the
+        //    approved order, and the customer's return is that moment.
+        if (method_exists($gateway, 'capture')) {
+            $capture = $gateway->capture($reference);
+            if (!empty($capture['ok'])) {
+                if (!$this->amount_covers_deposit($tx, $capture)) {
+                    $this->record_shortfall($tx, $capture);
+                    return array('ok'=>false,'code'=>'UNDERPAID',
+                        'error'=>'PayPal reports less money than this deposit was for — support will reconcile it.');
+                }
+                $res = $this->confirm($tx, $source, $capture['provider_tx_id'] ?? null);
+                if (!empty($res['ok'])) return array_merge($res, array('captured'=>true));
+                return $res;
+            }
+            // The capture can fail because the webhook won the race and
+            // PayPal already captured the order — fall through and ask the
+            // order's status before giving up. Anything else stays pending for
+            // the reconciliation sweep, which retries through verify().
+            log_message('error', 'settle_hosted_return: capture failed for '
+                .$tx->public_id.': '.($capture['error'] ?? 'unknown error'));
+        }
+
+        // 2) Self-settling gateway: one server-side question, and the answer
+        //    is the only thing that can credit anyone.
+        if (method_exists($gateway, 'verify')) {
+            $verdict = $gateway->verify($reference);
+            if (!empty($verdict['ok']) && strtoupper((string)($verdict['status'] ?? '')) === 'SUCCESS') {
+                if (!$this->amount_covers_deposit($tx, $verdict)) {
+                    $this->record_shortfall($tx, $verdict);
+                    return array('ok'=>false,'code'=>'UNDERPAID',
+                        'error'=>'The provider reports less money than this deposit was for — support will reconcile it.');
+                }
+                $res = $this->confirm($tx, $source, $verdict['provider_tx_id'] ?? null);
+                if (!empty($res['ok'])) return array_merge($res, array('verified'=>true));
+                return $res;
+            }
+            // No answer, or not finished: quiet. The webhook may still land,
+            // and reconciliation re-asks on its next sweep.
+            return array('ok'=>true,'noop'=>true,'transaction'=>$tx);
+        }
+
+        // 3) Nothing to ask — a quiet no-op.
+        return array('ok'=>true,'noop'=>true,'transaction'=>$tx);
+    }
+
+    /**
+     * The adapter (and the reference it should be asked) for a deposit being
+     * viewed on return.
+     *
+     * Resolution mirrors CronWorkers::verify_with_gateway() on purpose: a
+     * Fundsvera deposit paid by hosted card must be asked at the CARD gateway
+     * (Fundsvera never saw that charge), and PayPal is only addressable by its
+     * own order id. The two copies are kept separate because each is pinned by
+     * its own test suite (CronWorkersTest drives the worker against a service
+     * double; PaymentsTest drives the service against a CI double) — change
+     * one, change the other.
+     *
+     * @return array{gateway:?object, reference:?string}
+     */
+    private function return_verifier($tx) {
+        $meta = json_decode((string)($tx->metadata ?? ''), true);
+        $meta = is_array($meta) ? $meta : array();
+
+        // A card checkout opened on this deposit (see card_checkout()): the
+        // charge lives at the card gateway, so that is who gets asked, by the
+        // session/link id the provider returned.
+        if (!empty($meta['card_checkout']['provider'])) {
+            $card_code = strtolower((string)$meta['card_checkout']['provider']);
+            if (in_array($card_code, self::CARD_GATEWAY_CODES, true)) {
+                $card_method = $this->resolve_method($card_code);
+                if ($card_method) {
+                    $card_checkout = is_array($meta['card_checkout']) ? $meta['card_checkout'] : array();
+                    $key = $card_checkout['session_id'] ?? $card_checkout['link_id'] ?? null;
+                    return array(
+                        'gateway'   => $this->gateway_for_code($card_code, $card_method),
+                        'reference' => ($key !== null && $key !== '') ? (string)$key
+                            : (string)$tx->internal_reference,
+                    );
+                }
+            }
+        }
+
+        $code = strtolower(trim((string)$tx->provider));
+        if ($code === '' || !in_array($code, $this->implemented_gateways(), true)) {
+            return array('gateway'=>null,'reference'=>null);
+        }
+
+        $reference = null;
+        if ($code === 'paypal') {
+            // PayPal knows its own order id; our reference 404s at their end.
+            if (!empty($meta['checkout']['order_id'])) $reference = (string)$meta['checkout']['order_id'];
+        }
+        if ($reference === null) {
+            $reference = (string)(($tx->provider_tx_id ?? '') ?: ($tx->internal_reference ?? ''));
+        }
+        if ($reference === '') return array('gateway'=>null,'reference'=>null);
+
+        return array(
+            'gateway'   => $this->gateway_for_code($code, $this->resolve_method($code)),
+            'reference' => $reference,
+        );
+    }
+
+    /**
+     * Whether what the provider says arrived covers what we expected.
+     *
+     * Same policy as CronWorkers::amount_covers_deposit(): a gateway that
+     * reports no amount is trusted on the deposit row (the webhook path does),
+     * a reported amount below the deposit is a shortfall for staff — never a
+     * full credit for partial money.
+     */
+    private function amount_covers_deposit($tx, array $res) {
+        if (!isset($res['amount']) || $res['amount'] === null || $res['amount'] === '') return true;
+        return bccomp((string)$res['amount'], (string)$tx->amount, 8) >= 0;
+    }
+
+    /** Record a provider-reported shortfall on the transaction for staff. */
+    private function record_shortfall($tx, array $res) {
+        $meta = json_decode((string)($tx->metadata ?? ''), true);
+        $meta = is_array($meta) ? $meta : array();
+        $meta['reconciliation'] = array(
+            'underpaid'       => true,
+            'expected'        => (string)$tx->amount,
+            'provider_amount' => (string)($res['amount'] ?? ''),
+            'checked_at'      => gmdate('Y-m-d H:i:s'),
+        );
+        $this->ci->Payment_transaction_model->update_status($tx->id,
+            array('metadata' => json_encode($meta, JSON_UNESCAPED_SLASHES)));
+        log_message('error', 'settle_hosted_return: '.$tx->public_id.' is short — provider reports '
+            .($res['amount'] ?? '?').' against '.$tx->amount.'; left for staff');
+    }
+
     /** Mark a transaction failed (terminal). */
     public function mark_failed($tx_id, $reason = null) {
         $tx = $this->ci->Payment_transaction_model->find_by_id($tx_id);
@@ -405,6 +592,20 @@ class PaymentService {
         if (!$tx && !empty($event['metadata']['idempotency_key'])) {
             $tx = $this->ci->Payment_transaction_model->find_by_idempotency_key($event['metadata']['idempotency_key']);
         }
+        if (!$tx && !empty($event['metadata']['wallet_user_id'])) {
+            // A virtual-account credit: the customer pushed money to their
+            // standing bank account without opening a deposit first, so there
+            // is no transaction to match — FundsveraGateway resolved the
+            // account's OWNER instead. Record a deposit for exactly what the
+            // provider says arrived and credit it below, once.
+            $tx = $this->virtual_account_credit($event);
+            if (!$tx) {
+                $this->ci->db->where('id', $id)->update('payment_webhooks', array(
+                    'error' => 'retryable: could not record the virtual-account credit',
+                ));
+                return array('ok'=>false,'retryable'=>true,'error'=>'Could not record the virtual-account credit');
+            }
+        }
         if (!$tx) {
             // Accepted and logged, but there is nothing to reconcile — the
             // event references no transaction of ours. Treat it as processed
@@ -440,6 +641,71 @@ class PaymentService {
     }
 
     /* -------------------------------------------------------------- */
+
+    /**
+     * Record the deposit behind a spontaneous virtual-account credit.
+     *
+     * The amount is what the PROVIDER says arrived, never a figure the
+     * customer typed — a standing account has no quoted amount to check
+     * against. Exactly-once is anchored on the provider's own transaction
+     * reference (the webhook table already de-duplicates the event itself;
+     * this idempotency key additionally protects the replay path, where a
+     * stored-but-unprocessed event is re-run without record_once()).
+     *
+     * @return object|null the payment transaction, or null when the event
+     *                     carries no usable amount
+     */
+    private function virtual_account_credit(array $event) {
+        $user_id = (int)($event['metadata']['wallet_user_id'] ?? 0);
+        if ($user_id <= 0) return null;
+
+        $amount = $this->normalise_amount($event['amount'] ?? null);
+        if ($amount === null) {
+            log_message('error', 'fundsvera virtual-account credit without a usable amount: '
+                .json_encode($event['metadata']));
+            return null;
+        }
+
+        $trx_ref = trim((string)($event['provider_tx_id'] ?? ''));
+        $idem = 'payment:va:'.($trx_ref !== '' ? $trx_ref : $user_id.':'.($event['event_id'] ?? marvy_public_id()));
+
+        $existing = $this->ci->Payment_transaction_model->find_by_idempotency_key($idem);
+        if ($existing) return $existing;
+
+        // The method's fee/bonus rules apply to a bank-transfer credit exactly
+        // as they would to a declared deposit, when the row can be found.
+        $method = $this->resolve_method('fundsvera');
+        $fee    = $method ? $this->calculate_fee($method, $amount) : '0.00000000';
+        $bonus  = $method ? $this->calculate_bonus($method, $amount) : '0.00000000';
+
+        $public_id = marvy_public_id();
+        $tx = $this->persist_transaction(array(
+            'public_id'          => $public_id,
+            'internal_reference' => 'MVS-'.strtoupper($public_id),
+            'provider'           => 'fundsvera',
+            'payment_method'     => 'virtual_account',
+            'initiated_at'       => gmdate('Y-m-d H:i:s'),
+            'user_id'            => $user_id,
+            'payment_method_id'  => $method ? (int)$method->id : null,
+            'amount'             => $amount,
+            'fee'                => $fee,
+            'bonus'              => $bonus,
+            'credited_amount'    => bcadd(bcsub($amount, $fee, 8), $bonus, 8),
+            'currency'           => (string)($event['currency'] ?? marvy_base_currency()),
+            'status'             => self::STATUS_PENDING,
+            'idempotency_key'    => $idem,
+            'metadata'           => json_encode(array(
+                'virtual_account_no' => $event['metadata']['virtual_account_no'] ?? null,
+                'customer_email'     => $event['metadata']['customer_email'] ?? null,
+                'trx_ref'            => $trx_ref !== '' ? $trx_ref : null,
+                'purpose'            => 'virtual_account',
+            ), JSON_UNESCAPED_SLASHES),
+            'created_at'         => gmdate('Y-m-d H:i:s'),
+        ));
+        $this->transition($tx->id, null, self::STATUS_PENDING, 'WEBHOOK', 'Virtual account credit received');
+
+        return $this->ci->Payment_transaction_model->find_by_id($tx->id);
+    }
 
     public function calculate_fee($method, $amount) {
         $pct = (float)$method->fee_percent;
@@ -632,6 +898,116 @@ class PaymentService {
             'metadata'   => json_encode($meta, JSON_UNESCAPED_SLASHES),
             'updated_at' => gmdate('Y-m-d H:i:s'),
         ));
+    }
+
+    /**
+     * The customer's standing Fundsvera virtual account — created on first
+     * use, returned unchanged afterwards (their API does the same).
+     *
+     * A virtual account is "pay into this any time" banking: unlike a deposit
+     * there is nothing to initiate, and unlike a checkout there is no expiry.
+     * Every credit the bank reports against it is settled by the webhook
+     * through confirm() — see FundsveraGateway::parse_event, which resolves
+     * the account number to its owner.
+     *
+     * @return array{ok:bool, account?:object, existing?:bool, error?:string, code?:string}
+     */
+    public function virtual_account($user) {
+        $method = $this->resolve_method('fundsvera');
+        if (!$method || !(int)$method->is_active) {
+            return array('ok'=>false,'error'=>'Bank transfer deposits are not available right now.',
+                'code'=>'METHOD_INACTIVE');
+        }
+        $gateway = $this->gateway_for_code('fundsvera', $method);
+        if (method_exists($gateway, 'is_configured') && !$gateway->is_configured()) {
+            return array('ok'=>false,'error'=>'Bank transfer deposits are not configured yet.',
+                'code'=>'METHOD_INACTIVE');
+        }
+        return $gateway->create_virtual_account($user);
+    }
+
+    /**
+     * Open a deposit the customer intends to settle into their standing
+     * virtual account.
+     *
+     * No provider call is made — the account already exists, so there is
+     * nothing to initiate. What this does is record the intent so the payment
+     * has a quoted amount to be checked against: the fundsvera_checkouts row
+     * (marked as a virtual-account row by its missing expiry) is what the
+     * webhook matches and amount-checks, exactly as it does for a
+     * secured-checkout deposit. A credit that arrives with no open intent
+     * still credits the owner — see virtual_account_credit().
+     *
+     * @param object $user
+     * @param string|float $amount
+     * @return array{ok:bool, transaction?:object, account?:object, error?:string, code?:string}
+     */
+    public function open_virtual_account_deposit($user, $amount) {
+        $method = $this->resolve_method('fundsvera');
+        if (!$method || !(int)$method->is_active) {
+            return array('ok'=>false,'error'=>'Bank transfer deposits are not available right now.',
+                'code'=>'METHOD_INACTIVE');
+        }
+
+        $amount = $this->normalise_amount($amount);
+        if ($amount === null) return array('ok'=>false,'error'=>'Invalid amount','code'=>'BAD_AMOUNT');
+        if ($method->min_amount !== null && bccomp($amount, (string)$method->min_amount, 8) < 0)
+            return array('ok'=>false,'error'=>'Minimum is '.$method->min_amount,'code'=>'AMOUNT_TOO_LOW');
+        if ($method->max_amount !== null && bccomp($amount, (string)$method->max_amount, 8) > 0)
+            return array('ok'=>false,'error'=>'Maximum is '.$method->max_amount,'code'=>'AMOUNT_TOO_HIGH');
+
+        // The account the customer will pay into — created on first use.
+        $va = $this->virtual_account($user);
+        if (empty($va['ok'])) return $va;
+        $account = $va['account'];
+
+        $fee   = $this->calculate_fee($method, $amount);
+        $bonus = $this->calculate_bonus($method, $amount);
+
+        $public_id = marvy_public_id();
+        $tx = $this->persist_transaction(array(
+            'public_id'          => $public_id,
+            'internal_reference' => 'MVS-'.strtoupper($public_id),
+            'provider'           => 'fundsvera',
+            'payment_method'     => 'virtual_account',
+            'initiated_at'       => gmdate('Y-m-d H:i:s'),
+            'user_id'            => $user->id,
+            'payment_method_id'  => (int)$method->id,
+            'amount'             => $amount,
+            'fee'                => $fee,
+            'bonus'              => $bonus,
+            'credited_amount'    => bcadd(bcsub($amount, $fee, 8), $bonus, 8),
+            'currency'           => marvy_base_currency(),
+            'status'             => self::STATUS_PENDING,
+            'idempotency_key'    => 'va-deposit:'.$user->id.':'.$public_id,
+            'metadata'           => json_encode(array(
+                'virtual_account' => $account->account_number ?? null,
+                'purpose'         => 'virtual_account',
+            ), JSON_UNESCAPED_SLASHES),
+            'created_at'         => gmdate('Y-m-d H:i:s'),
+        ));
+        $this->transition($tx->id, null, self::STATUS_PENDING, 'SYSTEM', 'Virtual account deposit opened');
+
+        // The row the webhook validates against. No checkout_url and no
+        // expires_at — a standing account never closes — which is exactly how
+        // Fundsvera_checkout_model::open_virtual_account_for_user() finds it.
+        $this->ci->load->model('Fundsvera_checkout_model');
+        $this->ci->Fundsvera_checkout_model->open(array(
+            'payment_transaction_id' => $tx->id,
+            'user_id'                => $user->id,
+            'request_id'             => 'MVS-'.strtoupper($public_id),
+            'expected_amount'        => $amount,
+            'currency'               => marvy_base_currency(),
+            'account_number'         => $account->account_number ?? null,
+            'account_name'           => $account->account_name ?? null,
+            'bank_name'              => $account->bank_name ?? null,
+        ));
+
+        return array(
+            'ok'          => true,
+            'transaction' => $this->ci->Payment_transaction_model->find_by_id($tx->id),
+            'account'     => $account,
+        );
     }
 
     /**

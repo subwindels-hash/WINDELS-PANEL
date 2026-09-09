@@ -411,7 +411,15 @@ class FundsveraGateway implements GatewayInterface {
         // references map to our rows.
         $resolved = $this->resolve_transaction($request_id, $trx_ref, $data, $status);
         if ($resolved) {
-            $event['metadata']['payment_transaction_id'] = (int)$resolved['transaction_id'];
+            if (!empty($resolved['transaction_id'])) {
+                $event['metadata']['payment_transaction_id'] = (int)$resolved['transaction_id'];
+            }
+            if (!empty($resolved['wallet_user_id'])) {
+                // A spontaneous virtual-account credit: no deposit of ours is
+                // involved, but the account number names whose wallet the
+                // money belongs to.
+                $event['metadata']['wallet_user_id'] = (int)$resolved['wallet_user_id'];
+            }
             if (!empty($resolved['underpaid'])) {
                 // Confirmed by the bank but short of what we quoted. Recording
                 // it as a success would credit a full deposit for a partial
@@ -528,48 +536,107 @@ class FundsveraGateway implements GatewayInterface {
     /**
      * Find the payment this event belongs to and check the amount.
      *
-     * @return array{transaction_id:int, underpaid:bool}|null
+     * @return array{transaction_id:?int, underpaid?:bool, wallet_user_id?:int}|null
+     *         a checkout-backed answer carries transaction_id; a spontaneous
+     *         virtual-account credit carries wallet_user_id (PaymentService
+     *         records the deposit); null means nobody to settle.
      */
     private function resolve_transaction($request_id, $trx_ref, array $data, $status = 'SUCCESS') {
         $this->ci->load->model('Fundsvera_checkout_model');
 
         $row = $this->checkout_row($request_id, $trx_ref);
 
-        if ($row) {
-            $paid = isset($data['amount_paid']) ? (string)$data['amount_paid'] : '0';
-            $underpaid = bccomp($paid, (string)$row->expected_amount, 8) < 0;
-
-            // A terminal failure closes the checkout row too, so support sees
-            // FAILED rather than a PENDING row that hides the real outcome.
-            if ($status === 'FAILED') {
-                $this->ci->Fundsvera_checkout_model->record_result($row->id, array(
-                    'status'      => 'FAILED',
-                    'amount_paid' => $paid,
-                    'trx_ref'     => $trx_ref !== '' ? $trx_ref : $row->trx_ref,
-                ));
-                return array('transaction_id' => (int)$row->payment_transaction_id, 'underpaid' => false);
+        if (!$row) {
+            // A virtual-account credit has no checkout row of its own: the
+            // customer pushed money to their standing account. What it CAN
+            // match is a virtual-account deposit they declared ("I will pay
+            // ₦X in"), which carries an expected amount on exactly the same
+            // checkout machinery — so it settles first, with the same amount
+            // check. With no declared deposit, the OWNER is the answer.
+            $va = $this->virtual_account_checkout($data);
+            if ($va === null) return null;
+            if (!empty($va['checkout'])) {
+                return $this->settle_checkout_row($va['checkout'], $data, $trx_ref, $status);
             }
+            return array('transaction_id' => null, 'wallet_user_id' => (int)$va['wallet_user_id']);
+        }
 
+        return $this->settle_checkout_row($row, $data, $trx_ref, $status);
+    }
+
+    /**
+     * Settle a webhook against a checkout row: record what the bank reported
+     * and answer with the deposit it belongs to.
+     *
+     * @return array{transaction_id:int, underpaid:bool}
+     */
+    private function settle_checkout_row($row, array $data, $trx_ref, $status) {
+        $paid = isset($data['amount_paid']) ? (string)$data['amount_paid'] : '0';
+        $underpaid = bccomp($paid, (string)$row->expected_amount, 8) < 0;
+
+        // A terminal failure closes the checkout row too, so support sees
+        // FAILED rather than a PENDING row that hides the real outcome.
+        if ($status === 'FAILED') {
             $this->ci->Fundsvera_checkout_model->record_result($row->id, array(
-                'status'            => $underpaid ? 'FAILED' : 'PAID',
-                'amount_paid'       => $paid,
-                'settlement_amount' => isset($data['settlement_amount']) ? (string)$data['settlement_amount'] : null,
-                'provider_fee'      => isset($data['fee']) ? (string)$data['fee'] : null,
-                'trx_ref'           => $trx_ref !== '' ? $trx_ref : $row->trx_ref,
-                'paid_at'           => $underpaid ? null : gmdate('Y-m-d H:i:s'),
+                'status'      => 'FAILED',
+                'amount_paid' => $paid,
+                'trx_ref'     => $trx_ref !== '' ? $trx_ref : $row->trx_ref,
             ));
-
-            return array('transaction_id' => (int)$row->payment_transaction_id, 'underpaid' => $underpaid);
+            return array('transaction_id' => (int)$row->payment_transaction_id, 'underpaid' => false);
         }
 
-        // A virtual-account credit has no checkout row: the customer pushed
-        // money to their standing account without opening a deposit first.
+        $this->ci->Fundsvera_checkout_model->record_result($row->id, array(
+            'status'            => $underpaid ? 'FAILED' : 'PAID',
+            'amount_paid'       => $paid,
+            'settlement_amount' => isset($data['settlement_amount']) ? (string)$data['settlement_amount'] : null,
+            'provider_fee'      => isset($data['fee']) ? (string)$data['fee'] : null,
+            'trx_ref'           => $trx_ref !== '' ? $trx_ref : $row->trx_ref,
+            'paid_at'           => $underpaid ? null : gmdate('Y-m-d H:i:s'),
+        ));
+
+        return array('transaction_id' => (int)$row->payment_transaction_id, 'underpaid' => $underpaid);
+    }
+
+    /**
+     * The owner behind a virtual-account credit, and any deposit they declared.
+     *
+     * A credit against a standing account names the customer by account
+     * number, not by reference. Resolving the owner here (rather than in
+     * PaymentService) keeps every mapping from provider vocabulary to our
+     * rows in the adapter, like the checkout matching above.
+     *
+     * @return array{checkout:object}|array{wallet_user_id:int}|null
+     *         'checkout' when a declared virtual-account deposit is waiting,
+     *         'wallet_user_id' for a spontaneous credit, null when the
+     *         account number matches nobody.
+     */
+    private function virtual_account_checkout(array $data) {
         $va = $data['customer']['virtual_account_no'] ?? null;
-        if ($va) {
-            log_message('info', 'fundsvera: unsolicited virtual-account credit to '.$va
-                .' — recorded, awaiting operator reconciliation');
+        if ($va === null || trim((string)$va) === '') return null;
+
+        $this->ci->load->model('Fundsvera_virtual_account_model');
+        $owner = null;
+        if (isset($this->ci->Fundsvera_virtual_account_model)
+            && method_exists($this->ci->Fundsvera_virtual_account_model, 'by_account_number')) {
+            $owner = $this->ci->Fundsvera_virtual_account_model->by_account_number($va);
         }
-        return null;
+        if (!$owner) {
+            log_message('info', 'fundsvera: virtual-account credit to unknown account '.$va
+                .' — ignored; no wallet is tied to that account number');
+            return null;
+        }
+
+        // A declared virtual-account deposit settles first: it carries the
+        // quoted amount the payment is checked against.
+        if (method_exists($this->ci->Fundsvera_checkout_model, 'open_virtual_account_for_user')) {
+            $open = $this->ci->Fundsvera_checkout_model->open_virtual_account_for_user((int)$owner->user_id);
+            if ($open) return array('checkout' => $open);
+        }
+
+        // No declared deposit waiting: a spontaneous credit. The owner is the
+        // answer — PaymentService records a deposit for what the provider
+        // says arrived and credits it exactly once.
+        return array('wallet_user_id' => (int)$owner->user_id);
     }
 
     /** The checkout row a webhook or reference belongs to, or null. */

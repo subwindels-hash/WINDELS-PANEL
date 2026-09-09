@@ -189,12 +189,12 @@
   <?php endif; ?>
 </div>
 
-<?php if (!empty($active_deposit) && $active_deposit->status === 'PENDING'): ?>
+<?php if (!empty($active_deposit) && in_array($active_deposit->status, array('CREATED', 'PENDING'), true)): ?>
 <script <?=csp_nonce_attr()?>>
 // A pending deposit used to sit on screen until a manual refresh even after
 // the webhook had credited it. Poll the status endpoint and reload the page
-// the moment it stops being PENDING — bounded so a forgotten tab cannot poll
-// for ever.
+// the moment it stops being open (CREATED/PENDING) — bounded so a forgotten
+// tab cannot poll for ever.
 (function () {
   var ref = <?=json_encode(($active_deposit->internal_reference ?: $active_deposit->public_id))?>;
   var url = <?=json_encode(site_url('api/payments/'.($active_deposit->internal_reference ?: $active_deposit->public_id)))?>;
@@ -207,7 +207,7 @@
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (body) {
         var status = body && body.success && body.data ? String(body.data.status) : '';
-        if (status && status !== 'PENDING') { stop(); location.reload(); }
+        if (status && status !== 'PENDING' && status !== 'CREATED') { stop(); location.reload(); }
       })
       .catch(function () { /* transient — try again next tick */ });
   }

@@ -928,6 +928,17 @@ class CronWorkers {
             }
         }
 
+        // PayPal is only addressable through the provider's own order id —
+        // our internal reference 404s at their end, which would read as an
+        // outage and hold a genuinely paid deposit open for ever. The order id
+        // is stored on the checkout metadata at initiation;
+        // PaymentService::settle_hosted_return() resolves it the same way for
+        // the return capture.
+        $paypal_order_id = null;
+        if ($code === 'paypal' && is_array($meta) && !empty($meta['checkout']['order_id'])) {
+            $paypal_order_id = (string)$meta['checkout']['order_id'];
+        }
+
         // Only adapters that can ask the provider a question take part; the
         // rest fall through to the age-out rule below.
         if (!method_exists($gateway, 'verify')) return $none;
@@ -935,7 +946,7 @@ class CronWorkers {
 
         // The reference we gave the provider at initiation. Without one there
         // is nothing to look up.
-        $reference = $card_ref ?: ($tx->provider_tx_id ?: $tx->internal_reference);
+        $reference = $card_ref ?: ($paypal_order_id ?: ($tx->provider_tx_id ?: $tx->internal_reference));
         if (!$reference) return $none;
 
         $res = $gateway->verify($reference);

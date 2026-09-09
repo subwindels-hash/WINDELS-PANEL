@@ -168,6 +168,7 @@ $route['dashboard/favorites/add/(:any)'] = 'dashboard/favorites/add/$1';
 $route['dashboard/favorites/remove/(:any)'] = 'dashboard/favorites/remove/$1';
 $route['dashboard/add-funds'] = 'dashboard/wallet/add_funds';
 $route['dashboard/wallet/deposit'] = 'dashboard/wallet/deposit';
+$route['dashboard/wallet/virtual-account'] = 'dashboard/wallet/virtual_account';
 $route['dashboard/wallet/deposits'] = 'dashboard/wallet/deposits';
 // A Fundsvera deposit can be paid by card via a hosted card gateway. Must come
 // before the generic :any route or "card" would be treated as a deposit id.
@@ -479,6 +480,9 @@ $route['webhook/(:any)'] = 'webhooks/index/$1';
 // operator pastes into their Fundsvera dashboard is stable and greppable.
 $route['api/payments/webhooks/fundsvera'] = 'webhooks/index/fundsvera';
 $route['api/payments/fundsvera/initialize'] = 'payments/initialize';
+// The standing bank-account endpoint must sit above the api/payments/(:any)
+// catch-all below, or "fundsvera" would be read as a payment reference.
+$route['api/payments/fundsvera/virtual-account'] = 'payments/virtual_account';
 $route['api/payments/history'] = 'payments/history';
 $route['api/payments/(:any)'] = 'payments/show/$1';
 

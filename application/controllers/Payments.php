@@ -76,6 +76,68 @@ class Payments extends MY_Controller {
         ));
     }
 
+    /**
+     * POST /api/payments/fundsvera/virtual-account
+     *
+     * The customer's standing bank account for wallet top-ups: created on
+     * first call, returned unchanged afterwards. Any amount pushed to it is
+     * credited by the provider's webhook — never by this endpoint.
+     *
+     * Body: {amount?} — with an amount, a declared virtual-account deposit is
+     * opened too (a quoted amount the bank's credit is checked against) and
+     * its reference is returned alongside the account.
+     */
+    public function virtual_account() {
+        if ($this->input->method(true) !== 'POST') return $this->json_error(405, 'METHOD', 'POST required.');
+
+        $user = $this->require_customer();
+        if (!$user) return;
+
+        // One account per customer per burst: creation is an outbound API call.
+        $this->load->library('RateLimiter');
+        $bucket = RateLimiter::scope('payinit', (string)$user->id);
+        if ($this->ratelimiter->too_many_failures($this->input->ip_address(), $bucket, 10, 300)) {
+            return $this->json_error(429, 'RATE_LIMITED', 'Too many requests. Try again shortly.');
+        }
+
+        $payload = $this->json_input();
+        $amount  = $payload['amount'] ?? $this->input->post('amount');
+
+        try {
+            $res = ($amount !== null && $amount !== '' && is_numeric($amount))
+                ? $this->paymentservice->open_virtual_account_deposit($user, $amount)
+                : $this->paymentservice->virtual_account($user);
+        } catch (Throwable $e) {
+            log_message('error', 'virtual-account endpoint threw: '.$e->getMessage());
+            return $this->json_error(500, 'VA_FAILED', 'The bank account service is unavailable right now.');
+        }
+
+        if (empty($res['ok'])) {
+            $this->ratelimiter->record($this->input->ip_address(), $bucket, false, $res['code'] ?? 'VA_FAILED');
+            return $this->json_error(422, $res['code'] ?? 'VA_FAILED', $res['error']);
+        }
+
+        $account = $res['account'];
+        $data = array(
+            'account_number' => (string)$account->account_number,
+            'account_name'   => (string)$account->account_name,
+            'bank_name'      => (string)$account->bank_name,
+            'status'         => (string)($account->account_status ?? 'Active'),
+            'note'           => 'Pay into this account any time. Your wallet is credited when the bank '
+                               .'confirms the payment — not when you return to this site.',
+        );
+        if (!empty($res['transaction'])) {
+            $tx = $res['transaction'];
+            $data['deposit'] = array(
+                'reference' => $tx->internal_reference ?: $tx->public_id,
+                'amount'    => (string)$tx->amount,
+                'currency'  => $tx->currency,
+                'status'    => $tx->status,
+            );
+        }
+        return $this->json_ok($data);
+    }
+
     /** GET /api/payments/:reference — status of one payment. */
     public function show($reference = null) {
         $user = $this->require_customer();

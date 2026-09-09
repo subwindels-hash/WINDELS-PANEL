@@ -23,6 +23,21 @@ class PaypalGateway extends HostedGateway {
     const LIVE_BASE_URL    = 'https://api-m.paypal.com';
     const SANDBOX_BASE_URL = 'https://api-m.sandbox.paypal.com';
 
+    /**
+     * Currencies PayPal can actually settle for a merchant account.
+     *
+     * PayPal does not settle NGN (the panel's base currency): an order created
+     * in naira is refused at capture time — after the customer has already
+     * approved it — which is the worst possible moment to fail. Refusing at
+     * initiation, before any provider call, is the honest behaviour; the list
+     * is PayPal's own documented set of supported currencies.
+     */
+    const SETTLEABLE_CURRENCIES = array(
+        'AUD', 'BRL', 'CAD', 'CHF', 'CZK', 'DKK', 'EUR', 'GBP', 'HKD', 'HUF',
+        'ILS', 'JPY', 'MXN', 'MYR', 'NOK', 'NZD', 'PHP', 'PLN', 'SEK', 'SGD',
+        'THB', 'TWD', 'USD',
+    );
+
     public function code() { return 'paypal'; }
 
     public function config() {
@@ -47,6 +62,15 @@ class PaypalGateway extends HostedGateway {
         $cfg = $this->config();
         if (empty($cfg['enabled']))  return $this->fail('PROVIDER_DISABLED', 'PayPal is currently unavailable.');
         if (!$this->is_configured()) return $this->not_configured();
+
+        $currency = strtoupper(trim((string)$transaction->currency));
+        if (!in_array($currency, self::SETTLEABLE_CURRENCIES, true)) {
+            // Refused before a single provider call: nothing has been asked of
+            // PayPal, so nothing can be half-created there.
+            return $this->fail('CURRENCY_UNSUPPORTED',
+                'PayPal cannot settle '.($currency ?: 'that currency').'. Pay with a card or '
+                .'bank-transfer method, or choose a PayPal-supported currency such as USD.');
+        }
 
         $token = $this->access_token($cfg);
         if (empty($token['ok'])) return $this->fail('PROVIDER_ERROR', $token['error']);
@@ -144,10 +168,16 @@ class PaypalGateway extends HostedGateway {
         $type = (string)($body['event_type'] ?? '');
         $res  = isset($body['resource']) && is_array($body['resource']) ? $body['resource'] : array();
 
-        $success = in_array($type, array('PAYMENT.CAPTURE.COMPLETED', 'CHECKOUT.ORDER.APPROVED', 'CHECKOUT.ORDER.COMPLETED'), true)
+        $success = in_array($type, array('PAYMENT.CAPTURE.COMPLETED', 'CHECKOUT.ORDER.COMPLETED'), true)
             && strtoupper((string)($res['status'] ?? 'COMPLETED')) !== 'DECLINED';
+        // CHECKOUT.ORDER.APPROVED is deliberately NOT a success: an approval is
+        // the customer's signature, not a payment — the money only moves when
+        // the order is captured (see capture()/verify()). Crediting on the
+        // approval event would hand out wallet balance for money PayPal never
+        // took. It parses as PENDING and the capture path settles it.
         $failed = in_array($type, array('PAYMENT.CAPTURE.DENIED', 'PAYMENT.CAPTURE.REVERSED',
-                                        'PAYMENT.CAPTURE.REFUNDED', 'CHECKOUT.ORDER.VOIDED'), true);
+                                        'PAYMENT.CAPTURE.REFUNDED', 'CHECKOUT.ORDER.VOIDED',
+                                        'CHECKOUT.ORDER.DECLINED'), true);
 
         // custom_id on the capture, reference_id on the order — whichever the
         // event carries is our own reference.
@@ -171,6 +201,130 @@ class PaypalGateway extends HostedGateway {
 
     /** @var array{token:string,expires:int}|null token cached for this adapter instance */
     private $token_cache = null;
+
+    /**
+     * Capture an approved order — the step that actually moves the money.
+     *
+     * PayPal's hosted flow is two-phase: the customer APPROVES the order on
+     * PayPal's site, but the charge only happens when we capture it. The
+     * approval webhook deliberately credits nothing; the capture — triggered
+     * here from the customer's return (PaymentService::settle_hosted_return)
+     * or by verify() during reconciliation — is what completes the payment.
+     *
+     * PayPal-Request-Id is the documented idempotency key: a retried capture
+     * with the same request id is safe, so a network blip mid-capture cannot
+     * double-charge the customer.
+     *
+     * @return array{ok:bool, status?:string, provider_tx_id?:string, amount?:string,
+     *               currency?:string, error?:string, code?:string}
+     */
+    public function capture($order_id) {
+        $order_id = trim((string)$order_id);
+        if ($order_id === '') return $this->fail('BAD_ORDER', 'No PayPal order to capture.');
+
+        $cfg = $this->config();
+        if (empty($cfg['enabled']))  return $this->fail('PROVIDER_DISABLED', 'PayPal is currently unavailable.');
+        if (!$this->is_configured()) return $this->not_configured();
+
+        $token = $this->access_token($cfg);
+        if (empty($token['ok'])) return $this->fail('PROVIDER_ERROR', $token['error']);
+
+        $res = $this->post_json($cfg['base_url'].'/v2/checkout/orders/'.rawurlencode($order_id).'/capture', array(), array(
+            'Authorization: Bearer '.$token['token'],
+            'PayPal-Request-Id: capture-'.$order_id,
+            'Prefer: return=representation',
+        ));
+        if (empty($res['ok'])) {
+            return $this->fail('CAPTURE_FAILED',
+                $res['error'] ?: 'PayPal refused the capture. Try again shortly.');
+        }
+        return $this->order_verdict($res['body']);
+    }
+
+    /**
+     * Ask PayPal what happened to one order (by PayPal's own order id).
+     *
+     * Unlike the other hosted gateways, PayPal never finishes a charge on its
+     * own: an APPROVED order still has to be captured by us. So verify() is
+     * not a passive status read — when it finds an approved order it captures
+     * it, which is what lets the reconciliation sweep settle a PayPal deposit
+     * whose return never landed.
+     *
+     * @param string $order_id PayPal's own order id (metadata.checkout.order_id)
+     * @return array{ok:bool, status?:string, provider_tx_id?:string, amount?:string,
+     *               currency?:string, error?:string}
+     *         status is SUCCESS | FAILED | PENDING
+     */
+    public function verify($order_id) {
+        $order_id = trim((string)$order_id);
+        if ($order_id === '') return array('ok' => false, 'error' => 'No PayPal order to verify.');
+
+        $cfg = $this->config();
+        if (!$this->is_configured()) {
+            return array('ok' => false, 'unsupported' => true, 'error' => 'PayPal is not configured');
+        }
+
+        $token = $this->access_token($cfg);
+        if (empty($token['ok'])) return array('ok' => false, 'error' => $token['error']);
+
+        $res = $this->get_json($cfg['base_url'].'/v2/checkout/orders/'.rawurlencode($order_id),
+            array('Authorization: Bearer '.$token['token']));
+        if (empty($res['ok'])) {
+            // Transport/HTTP failure is an outage, not a verdict: the caller
+            // must treat it as "ask again later", never as failed.
+            return array('ok' => false, 'error' => $res['error'] ?: 'Could not reach PayPal.');
+        }
+
+        $status = strtoupper((string)($res['body']['status'] ?? ''));
+        if ($status === 'APPROVED') {
+            // The buyer signed; the capture is our step, so verify finishes it.
+            $capture = $this->capture($order_id);
+            if (empty($capture['ok'])) {
+                // The order exists and is approved — a capture hiccup is not a
+                // failure verdict. Report pending so the caller retries.
+                return array('ok' => true, 'status' => 'PENDING',
+                    'provider_tx_id' => (string)($res['body']['purchase_units'][0]['reference_id']
+                        ?? $res['body']['purchase_units'][0]['custom_id'] ?? null),
+                    'detail' => 'APPROVED (capture pending)');
+            }
+            return $capture;
+        }
+
+        return $this->order_verdict($res['body']);
+    }
+
+    /**
+     * Normalise an order body (from GET or from the capture response, which
+     * with `Prefer: return=representation` is the full order) into the verdict
+     * shape every adapter's verify() answers with.
+     */
+    private function order_verdict(array $body) {
+        $units = isset($body['purchase_units'][0]) && is_array($body['purchase_units'][0])
+            ? $body['purchase_units'][0] : array();
+        $captures = isset($units['payments']['captures'][0]) && is_array($units['payments']['captures'][0])
+            ? $units['payments']['captures'][0] : array();
+
+        $status = strtoupper((string)($body['status'] ?? ''));
+        // COMPLETED = captured (paid). VOIDED is the terminal failure. CREATED
+        // and anything unknown is still in flight — never guess a failure.
+        $verdict = $status === 'COMPLETED' ? 'SUCCESS'
+            : ($status === 'VOIDED' ? 'FAILED' : 'PENDING');
+
+        return array(
+            'ok'             => true,
+            'status'         => $verdict,
+            // custom_id is OUR reference — the value that matches the deposit.
+            'provider_tx_id' => (string)($captures['custom_id']
+                ?? ($units['custom_id'] ?? ($units['reference_id'] ?? ''))) ?: null,
+            'amount'         => isset($captures['amount']['value'])
+                ? (string)$captures['amount']['value']
+                : (isset($units['amount']['value']) ? (string)$units['amount']['value'] : null),
+            'currency'       => isset($captures['amount']['currency_code'])
+                ? strtoupper((string)$captures['amount']['currency_code'])
+                : (isset($units['amount']['currency_code']) ? strtoupper((string)$units['amount']['currency_code']) : null),
+            'detail'         => $status ?: null,
+        );
+    }
 
     /**
      * OAuth2 client-credentials token.

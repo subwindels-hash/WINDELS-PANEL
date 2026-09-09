@@ -31,6 +31,25 @@ class Fundsvera_checkout_model extends MY_Model {
         return $this->db->where('trx_ref', $trx_ref)->get($this->table)->row();
     }
 
+    /**
+     * The customer's oldest declared virtual-account deposit still waiting.
+     *
+     * A virtual-account deposit (PaymentService::open_virtual_account_deposit)
+     * opens a checkout row like a secured-checkout does, except it never
+     * expires — a standing account has no window. `expires_at IS NULL` is
+     * precisely what marks those rows, so this finds them and nothing else.
+     * Oldest first: a customer with two declared deposits is settling them in
+     * the order they declared them.
+     */
+    public function open_virtual_account_for_user($user_id) {
+        return $this->db->where('user_id', (int)$user_id)
+                        ->where('status', 'PENDING')
+                        ->where('expires_at IS NULL', null, false)
+                        ->order_by('id', 'ASC')
+                        ->limit(1)
+                        ->get($this->table)->row();
+    }
+
     public function for_transaction($payment_transaction_id) {
         return $this->db->where('payment_transaction_id', (int)$payment_transaction_id)
                         ->order_by('id', 'DESC')->limit(1)
