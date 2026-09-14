@@ -26,6 +26,10 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *   - **Wallet adjustments go through LedgerService, never a balance write.**
  *     A manual correction is still double-entry, still idempotent, still
  *     floored at zero. `actor_id` and `note` record who and why.
+ *   - **Accounts that touched money are never deleted — only suspended.**
+ *     Deletion exists for spam, duplicate and never-used registrations; the
+ *     moment an order, payment or ledger row exists the account is part of
+ *     the books, and delete_user() refuses with the blocker named.
  *
  * Password hashes, MFA secrets and API keys are never read by this service.
  * Staff can suspend an account or correct a balance; they cannot become the
@@ -356,6 +360,73 @@ class UserAdminService {
         }
         return array('ok' => true, 'error' => null, 'code' => null,
             'before' => null, 'after' => array('forced_at' => $now, 'actor' => (int)$actor->id));
+    }
+
+    /**
+     * Permanently delete a customer account.
+     *
+     * A deleted row is unrecoverable, so deletion is reserved for accounts
+     * that never entered the money trail: one order, payment or ledger
+     * movement makes the user row load-bearing for accounting, and the
+     * foreign keys on orders, payment_transactions and wallet_transactions
+     * would block the delete outright — the checks run here first so the
+     * refusal can be explained in words. A funded wallet is blocked the same
+     * way regardless of how it got funded.
+     *
+     * Everything left hangs off CASCADE keys by design: sessions, refresh
+     * tokens, MFA, wallets, tickets, notifications and API keys fall with the
+     * user row. The actor's audit row stays on the staff side because the
+     * audit log's actor reference detaches rather than cascades.
+     */
+    public function delete_user($actor, $user) {
+        if ($guard = $this->guard_self($actor, $user, 'account')) return $guard;
+        if ((string)$user->role !== 'CUSTOMER') {
+            return $this->err('STAFF',
+                'Staff accounts are never deleted from the customer file. '
+                .'Remove the role on Admin → Staff first.');
+        }
+
+        // Any of these makes the row part of the books: suspend, never delete.
+        $funds = 0.0; $ledger_rows = 0;
+        $wallets = $this->ci->db->where('user_id', $user->id)->get('wallets')->result();
+        foreach ($wallets as $w) {
+            $funds += (float)$w->balance;
+            $ledger_rows += (int)$this->ci->db
+                ->where('wallet_id', $w->id)->count_all_results('wallet_transactions');
+        }
+        if ($funds > 0.0) {
+            return $this->err('HAS_FUNDS',
+                'The wallet still holds money. Refund or adjust the balance to zero before an account can be deleted.');
+        }
+        if ($ledger_rows > 0) {
+            return $this->err('HAS_LEDGER',
+                'This account has '.$ledger_rows.' ledger movement'.($ledger_rows === 1 ? '' : 's').
+                '. Ledger history must survive for accounting — suspend the account instead.');
+        }
+        $orders = (int)$this->ci->db->where('user_id', $user->id)->count_all_results('orders');
+        if ($orders > 0) {
+            return $this->err('HAS_ORDERS',
+                'This account has '.$orders.' order'.($orders === 1 ? '' : 's').
+                '. Order history must survive for accounting — suspend the account instead.');
+        }
+        $payments = (int)$this->ci->db->where('user_id', $user->id)->count_all_results('payment_transactions');
+        if ($payments > 0) {
+            return $this->err('HAS_PAYMENTS',
+                'This account has '.$payments.' payment'.($payments === 1 ? '' : 's').
+                ' on record. Payment history must survive for accounting — suspend the account instead.');
+        }
+
+        $this->ci->db->trans_start();
+        $this->ci->db->where('id', (int)$user->id)->delete('users');
+        $this->ci->db->trans_complete();
+
+        return array(
+            'ok' => true, 'error' => null, 'code' => null,
+            'before' => array(
+                'username' => $user->username, 'email' => $user->email,
+                'status' => $user->status, 'role' => $user->role),
+            'after'  => array('deleted' => true),
+        );
     }
 
     /* ------------------------------ helpers ----------------------------- */

@@ -19,19 +19,29 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *   - **Write a balance.** Adjustments go through UserAdminService →
  *     LedgerService, so a manual correction is double-entry and idempotent
  *     like every other movement.
- *   - **Handle a password.** No password hash is ever loaded or displayed;
- *     staff can only email the customer's own reset link. The transaction PIN
- *     is the one credential staff can read back, because the operator asked
- *     for exactly that: the directory and the customer file show it to staff
- *     holding `users.edit` (from its encrypted copy), and every exposure is
- *     audited. `mfa_disable` removes a customer's two-factor without a code —
- *     the lost-device case — and `email_verify` vouches for an address that
- *     never got its confirmation mail; both are `users.edit`, POST-only,
- *     audited against the acting staff member and notified to the customer.
- *     Explicitly permitted staff may open a short-lived, audited, read-only
- *     dashboard view; that session cannot submit changes.
- *   - **Delete anyone.** Accounts carry ledger history; they are suspended or
- *     banned, never removed.
+ *   - **Read a password.** No password hash is ever loaded or displayed;
+ *     the credential leaves the panel in exactly two, operator-sanctioned
+ *     directions: the customer's own reset link by email, or a direct
+ *     replacement set from this file for the at-the-counter case
+ *     (`set_password` — `users.edit`, POST-only, customer-role targets only,
+ *     password and hash never recorded anywhere, every refresh token
+ *     revoked, and the customer notified in-app and by email so the change
+ *     cannot happen silently). The transaction PIN is the one credential
+ *     staff can read back, because the operator asked for exactly that: the
+ *     directory and the customer file show it to staff holding `users.edit`
+ *     (from its encrypted copy), and every exposure is audited. `mfa_disable`
+ *     removes a customer's two-factor without a code — the lost-device case —
+ *     and `email_verify` vouches for an address that never got its
+ *     confirmation mail; both are `users.edit`, POST-only, audited against
+ *     the acting staff member and notified to the customer. Explicitly
+ *     permitted staff may open a short-lived, audited dashboard view; a
+ *     read-only session cannot submit changes.
+ *   - **Delete an account with history.** One order, payment or ledger
+ *     movement makes the user record load-bearing for accounting and it is
+ *     suspended — never deleted. Only an account that never entered the
+ *     money trail may be removed (`delete` — `users.edit`, POST-only,
+ *     customer-role targets only, who/what preserved in the audit log and
+ *     the customer informed by email).
  */
 class Users extends Admin_Controller {
 
@@ -533,6 +543,100 @@ class Users extends Admin_Controller {
         $this->audit('user.password_reset_queued', $user, null, array('email' => $user->email));
         $this->done($user, 'A password-reset link was queued for '.$user->email
             .'. Delivery status is available in Admin → Mail queue.');
+    }
+
+    /**
+     * POST /admin/customers/:id/password — set a customer's password directly.
+     *
+     * The reset-link flow above stays the default, but the operator asked for
+     * the counter case: the customer is on the phone or in the shop, cannot
+     * open mail, and needs a working credential read back to them. So staff
+     * holding `users.edit` may choose the password — POST-only, customer-role
+     * targets only (a staff credential is changed from Admin → Staff, never
+     * from this file), validated and confirmed like the customer's own change
+     * form, hashed with the same Argon2id/bcrypt path, and every refresh
+     * token is revoked so the old credential signs out everywhere.
+     *
+     * The audit row records THAT the password was replaced by an administrator
+     * — never the password and never the hash — and the customer is notified
+     * in-app and by email so a rogue change cannot pass silently.
+     */
+    public function set_password($public_id) {
+        $user = $this->guard($public_id, 'users.edit');
+        if ($user->role !== 'CUSTOMER') {
+            return $this->fail($user,
+                'This action is for customer accounts. Staff credentials are managed from Admin → Staff.');
+        }
+
+        $new     = (string)$this->input->post('new_password');
+        $confirm = (string)$this->input->post('confirm_password');
+        if (strlen($new) < 8) {
+            return $this->fail($user, 'The new password must be at least 8 characters.');
+        }
+        if ($confirm === '' || $confirm !== $new) {
+            return $this->fail($user, 'The two password entries do not match.');
+        }
+
+        $this->load->library('AuthService');
+        $res = $this->authservice->force_set_password($user, $new);
+        if (empty($res['ok'])) return $this->fail($user, $res['error']);
+
+        // The audit trail keeps the fact of the change — never the secret.
+        $this->audit('user.password_set', $user, null, array(
+            'password'         => 'replaced by administrator',
+            'sessions_revoked' => true,
+        ));
+        $this->notify_customer($user, 'Your password was changed',
+            'An administrator set a new password for your account. If you asked support for this '
+            .'change, sign in with the password they gave you — every other session was signed out. '
+            .'If you did NOT request this, contact support immediately.');
+        $this->done($user, 'Password changed for '.$user->username
+            .'. All existing sessions were signed out and the customer was notified.');
+    }
+
+    /**
+     * POST /admin/customers/:id/delete — permanently delete a customer
+     * account that never entered the ledger.
+     *
+     * Deleting is the one action on this screen that cannot be undone, so
+     * the rules live in the service (delete_user): one order, payment or
+     * ledger movement makes the account part of the books and it can only be
+     * suspended, while a clean account falls with its sessions, keys and
+     * wallet. The customer file disappears with the row — success redirects
+     * to the directory, and the audit row keeps who the account was, under
+     * the acting staff member's name. The customer hears it by email; an
+     * in-app notice would be deleted with the account it sits on.
+     */
+    public function delete($public_id) {
+        $user = $this->guard($public_id, 'users.edit');
+        $res = $this->useradminservice->delete_user($this->current_user, $user);
+        if (empty($res['ok'])) return $this->fail($user, $res['error']);
+
+        $this->audit('user.deleted', $user, $res['before'], $res['after']);
+        try {
+            $this->load->library('MailService');
+            $this->mailservice->enqueue_raw(
+                $user->email,
+                'Your MarvySocials account was deleted',
+                '<p>Hi '.htmlspecialchars((string)$user->username).',</p><p>'.
+                    'Your MarvySocials account was permanently deleted by an administrator. '.
+                    'Your sign-in, sessions and security keys no longer work. '.
+                    'If you believe this was a mistake, contact support immediately.</p>',
+                'Hi '.$user->username.",\n\nYour MarvySocials account was permanently deleted by an "
+                ."administrator. Your sign-in, sessions and security keys no longer work. If you "
+                ."believe this was a mistake, contact support immediately.",
+                $user->username,
+                'security.account_notice'
+            );
+        } catch (Throwable $e) {
+            log_message('error', 'account deletion email failed: '.$e->getMessage());
+        }
+
+        $this->session->set_flashdata('success',
+            'Customer "'.$user->username.'" ('.$user->email.') was permanently deleted — sessions, '
+            .'security keys and wallet fell with the account. The deletion is audited under your '
+            .'name and the customer was emailed.');
+        return redirect('admin/customers');
     }
 
     /* ------------------------------ helpers ----------------------------- */

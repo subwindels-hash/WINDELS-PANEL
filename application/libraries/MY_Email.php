@@ -5,16 +5,8 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * MY_Email — a hardened SMTP greeting for shared hosting.
  *
  * CI3 loads this automatically (subclass_prefix = MY_) whenever a caller
- * does `$this->load->library('email')`. It changes two things about the SMTP
- * handshake, both driven by a production failure in which the panel's mail
- * queue logged:
- *
- *     from: 503 HELO or EHLO required
- *     The following SMTP error was encountered: 503 HELO or EHLO required
- *     quit: 221 server315.web-hosting.com closing connection
- *
- * i.e. the server processed MAIL FROM while believing no EHLO/HELO had been
- * sent. Two stock-CI3 behaviours produce that class of failure:
+ * does `$this->load->library('email')`. It changes three things about the
+ * SMTP handshake, all driven by production mail-queue failures:
  *
  *   1. **A junk greeting name under cron.** CI3's `_get_hostname()` returns
  *      `$_SERVER['SERVER_NAME']`, which does not exist in a cron/CLI request —
@@ -28,8 +20,22 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *      HELO. Stock CI3 treats a refused EHLO as a failed connection and
  *      surfaces the refusal — and on hosts whose Exim answers EHLO harshly the
  *      conversation never reaches the greeting the server would have accepted.
- *      The fallback applies only when authentication is not configured (AUTH
- *      requires the EHLO-advertised capabilities).
+ *
+ *   3. **An undiagnosed silent drop, behind the classic report:**
+ *
+ *          hello: hello: Unable to send email using PHP SMTP. Your server
+ *          might not be configured to send mail using this method.
+ *
+ *      Two greeting attempts with EMPTY replies, then CI3's generic tail.
+ *      An empty reply to EHLO on a socket that also produced no banner means
+ *      the port never spoke SMTP at the byte level — the textbook cause is a
+ *      port/encryption mismatch: the operator pointed plain/STARTTLS config
+ *      at an implicit-SSL port (465), so the server was waiting for a TLS
+ *      ClientHello while the client sent `EHLO` in cleartext, and every
+ *      greeting vanished into an ignored or reset connection. Stock CI3
+ *      never says any of that; each handshake stage below records a
+ *      machine-readable `handshake_failure` plus a `mail: <code> — …` error
+ *      line that MailService turns into a retry and an operator hint.
  */
 class MY_Email extends CI_Email {
 
@@ -38,6 +44,25 @@ class MY_Email extends CI_Email {
      * Set by MailService before send; public so the caller can pin it.
      */
     public $helo_host = '';
+
+    /**
+     * Machine-readable handshake diagnosis, set when the connection dies
+     * before/during the greeting or TLS setup:
+     *
+     *   ''                       no handshake failure observed
+     *   'no-smtp-banner'         TCP connected but the server never sent an
+     *                            SMTP banner (port speaks another protocol)
+     *   'silent-greeting'        the server closed the connection in reply
+     *                            to EHLO/HELO without saying anything
+     *   'starttls-refused'       the server answered STARTTLS with an error
+     *   'tls-negotiation-failed' stream_socket_enable_crypto() failed
+     *
+     * MailService keys the crypto-swap retry and the operator hint on this;
+     * public so the caller can read it after send() returns FALSE.
+     *
+     * @var string
+     */
+    public $handshake_failure = '';
 
     /** @var bool tracks that the connection passed a greeting (see fallback). */
     private $_greeted = false;
@@ -53,15 +78,41 @@ class MY_Email extends CI_Email {
     }
 
     /**
-     * CI3's SMTP connect, with the RFC 5321 §4.1.4 EHLO→HELO fallback.
+     * Drop the current connection so a retry starts from a clean socket.
      *
-     * Identical to the parent except that a refused EHLO is retried as HELO
-     * (when no authentication is configured) before the connect is reported
-     * as failed. `_greeted` is exposed so MailService's failure summary can
-     * tell a "503 HELO or EHLO required" apart from a real greeting failure.
+     * No QUIT is sent: reset_connection() is only called after a handshake
+     * failure, i.e. on a socket whose peer stopped talking (the silent-drop
+     * case would block on the reply read for the full smtp_timeout). The
+     * HELO fallback may have disabled `_smtp_auth` for the old session —
+     * recompute it from the configured credentials so the retry can
+     * authenticate again. Message state (from/to/subject/body) is NOT
+     * touched; callers re-prime via clear() + the usual setters.
+     */
+    public function reset_connection() {
+        if (is_resource($this->_smtp_connect)) {
+            @fclose($this->_smtp_connect);
+        }
+        $this->_smtp_connect = '';
+        $this->_greeted = false;
+        $this->handshake_failure = '';
+        $this->_smtp_auth = isset($this->smtp_user[0], $this->smtp_pass[0]);
+    }
+
+    /**
+     * CI3's SMTP connect, with the RFC 5321 §4.1.4 EHLO→HELO fallback and a
+     * diagnosis for every way the handshake can die.
+     *
+     * Same shape as the parent except: a refused EHLO is retried as HELO
+     * before the connect is reported as failed, an empty banner aborts the
+     * attempt immediately (two greeting timeouts would only repeat what the
+     * missing banner already proved — the port is not plain SMTP), a refused
+     * STARTTLS is checked (stock CI3 ignores the reply and lets the crypto
+     * call fail), and each failure records `handshake_failure` + a
+     * `mail: <code>` debug line for MailService's summary.
      */
     protected function _smtp_connect() {
         $this->_greeted = false;
+        $this->handshake_failure = '';
 
         if (is_resource($this->_smtp_connect)) {
             return TRUE;
@@ -77,13 +128,41 @@ class MY_Email extends CI_Email {
         }
 
         stream_set_timeout($this->_smtp_connect, $this->smtp_timeout);
-        $this->_set_error_message($this->_get_smtp_data());
+
+        $banner = $this->_get_smtp_data();
+        $this->_set_error_message($banner);
+
+        if (trim($banner) === '') {
+            // The server accepted TCP but never spoke SMTP. Named for the
+            // operator's log, this is the "hello: hello: Unable to send
+            // email using PHP SMTP" report: usually an implicit-SSL port
+            // (465) reached with plain/STARTTLS settings — the server sat
+            // waiting for a TLS ClientHello the client never sent. Bailing
+            // now skips two pointless greeting timeouts per queued message.
+            $this->handshake_failure = 'no-smtp-banner';
+            $this->_set_error_message(
+                'mail: no-smtp-banner — the server accepted the connection but never sent an SMTP '
+                .'banner. This port is not speaking plain SMTP: pair port 465 with '
+                .'VP_MAIL_CRYPTO=ssl (implicit TLS from the first byte), or port 587 with '
+                .'VP_MAIL_CRYPTO=tls (plain banner + STARTTLS).'
+            );
+            return FALSE;
+        }
 
         if ($this->smtp_crypto === 'tls') {
             if ( ! $this->_hello()) {
                 return FALSE;
             }
-            $this->_send_command('starttls');
+
+            if ( ! $this->_send_command('starttls')) {
+                $this->handshake_failure = 'starttls-refused';
+                $this->_set_error_message(
+                    'mail: starttls-refused — the server refused STARTTLS on this port. This host '
+                    .'likely expects implicit TLS instead: set VP_MAIL_CRYPTO=ssl with '
+                    .'VP_MAIL_PORT=465 (the pairing cPanel → Email Accounts → Connect Devices lists).'
+                );
+                return FALSE;
+            }
 
             /**
              * STREAM_CRYPTO_METHOD_TLS_CLIENT is quite the mess ...
@@ -97,10 +176,16 @@ class MY_Email extends CI_Email {
             $method = is_php('5.6')
                 ? STREAM_CRYPTO_METHOD_TLSv1_0_CLIENT | STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT | STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT
                 : STREAM_CRYPTO_METHOD_TLS_CLIENT;
-            $crypto = stream_socket_enable_crypto($this->_smtp_connect, TRUE, $method);
+            $crypto = @stream_socket_enable_crypto($this->_smtp_connect, TRUE, $method);
 
             if ($crypto !== TRUE) {
-                $this->_set_error_message('lang:email_smtp_error', $this->_get_smtp_data());
+                $this->handshake_failure = 'tls-negotiation-failed';
+                $this->_set_error_message(
+                    'mail: tls-negotiation-failed — TLS negotiation failed after the server accepted '
+                    .'STARTTLS. Check VP_MAIL_HOST / VP_MAIL_PORT / VP_MAIL_CRYPTO against cPanel → '
+                    .'Email Accounts → Connect Devices; if this is port 465, use VP_MAIL_CRYPTO=ssl '
+                    .'(implicit TLS, no STARTTLS).'
+                );
                 return FALSE;
             }
         }
@@ -152,11 +237,30 @@ class MY_Email extends CI_Email {
         return FALSE;
     }
 
-    /** Send one greeting command and read its reply. */
+    /**
+     * Send one greeting command and read its reply.
+     *
+     * An EMPTY reply is the silent-drop signature — the server closed the
+     * connection without answering, which is what the classic
+     * "hello: hello: Unable to send email using PHP SMTP" debug tail shows
+     * (two empty hello lines). Record it as such; a port that swallows
+     * greetings is a port speaking a different protocol (implicit SSL vs
+     * STARTTLS), not a server that "is not configured to send mail".
+     */
     private function _greet($word) {
         $this->_send_data($word.' '.$this->_get_hostname());
         $reply = $this->_get_smtp_data();
         $this->_debug_msg[] = '<pre>hello: '.$reply.'</pre>';
+
+        if (trim($reply) === '' && $this->handshake_failure === '') {
+            $this->handshake_failure = 'silent-greeting';
+            $this->_set_error_message(
+                'mail: silent-greeting — the server closed the connection without answering the '
+                .'SMTP greeting (empty reply to '.$word.'). The port is speaking a different '
+                .'protocol: pair port 465 with VP_MAIL_CRYPTO=ssl, or port 587 with '
+                .'VP_MAIL_CRYPTO=tls.'
+            );
+        }
         return ((int) self::substr($reply, 0, 3) === 250);
     }
 

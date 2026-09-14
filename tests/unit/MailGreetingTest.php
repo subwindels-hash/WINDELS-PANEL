@@ -14,6 +14,7 @@ class _MailGreetingScriptedSmtp
     private static $live = array();
     public $context;
     private $behavior;
+    private $crypto = '';
     private $rx = '';
     private $tx = '';
     private $transcript = array();
@@ -27,11 +28,31 @@ class _MailGreetingScriptedSmtp
         foreach (self::$live as $s) $out = array_merge($out, $s->transcript);
         return implode("\n", $out);
     }
+    /** How many scripted connections were opened across the test. */
+    public static function connections() { return count(self::$live); }
 
     public function stream_open($path, $mode, $options, &$opened_path) {
         $rest = substr((string)$path, strlen('scriptedsmtp://'));
-        $this->behavior = strtok($rest, ':') ?: 'ok';
-        $this->tx = "220 script-smtp.test ESMTP test server\r\n";
+        // The test email seam appends ";<crypto>" to the URL so the script
+        // can tell which encryption scheme the attempt was (the wrapper
+        // bypasses real TLS, so the marker stands in for it).
+        $parts = explode(';', $rest);
+        $this->behavior = strtok($parts[0], ':') ?: 'ok';
+        $this->crypto = isset($parts[1]) ? $parts[1] : '';
+
+        // A port that never speaks SMTP: the client-visible signature is an
+        // empty banner, modelled as a connection that is already gone (a real
+        // firewalled/implicit-SSL port would just hold the socket silently,
+        // which the empty banner reads identically to the client but would
+        // block the scripted wrapper's reads).
+        //
+        //   silent-close  — always silent, no matter the crypto marker
+        //   implicit-ssl  — silent unless the connection marker says ssl
+        //                   (an implicit-SSL port reached as plain text)
+        $silent = $this->behavior === 'silent-close'
+            || ($this->behavior === 'implicit-ssl' && $this->crypto !== 'ssl');
+        $this->closed = $silent;
+        $this->tx = $silent ? '' : "220 script-smtp.test ESMTP test server\r\n";
         self::$live[] = $this;
         return true;
     }
@@ -59,6 +80,8 @@ class _MailGreetingScriptedSmtp
     }
 
     private function respond($line) {
+        // A silent connection swallows anything the client still writes.
+        if ($this->closed && $this->tx === '') return;
         if ($this->inData) {
             if ($line === '.') { $this->inData = false; $this->say('250 OK: queued'); }
             return;
@@ -79,6 +102,14 @@ class _MailGreetingScriptedSmtp
         if ($cmd === 'EHLO' || $cmd === 'HELO') {
             if ($this->behavior === 'strict-helo' && $cmd === 'EHLO') {
                 $this->say('500 5.5.1 Command unrecognized');
+                return;
+            }
+            if ($this->behavior === 'banner-then-close') {
+                // The server sent a banner, then closed the moment it was
+                // greeted — the wire-level signature of the classic
+                // "hello: hello: Unable to send email using PHP SMTP" log,
+                // produced by a library that cannot see WHY it happened.
+                $this->closed = true;
                 return;
             }
             $this->say('250-script-smtp.test Hello '.substr($line, 5));
@@ -127,6 +158,10 @@ class _MailGreetingScriptedSmtp
  *     required, instead of failing the send
  *   - a genuine "503 HELO or EHLO required" on MAIL FROM fails fast and is
  *     reported with an operator hint, not a hang or a generic message
+ *   - a port that never speaks SMTP (the classic "hello: hello: Unable to
+ *     send email using PHP SMTP" failure) is diagnosed by name, retried
+ *     once with the alternate crypto/port pairing, and reported with the
+ *     .env fix — never with CI3's generic tail
  */
 class MailGreetingTest extends TestCase
 {
@@ -174,11 +209,15 @@ class MailGreetingTest extends TestCase
         }
 
         // The real greeting logic with only the socket open redirected at the
-        // scripted wrapper (fsockopen cannot use custom stream wrappers).
+        // scripted wrapper (fsockopen cannot use custom stream wrappers). The
+        // attempt's crypto scheme rides along as a ";<crypto>" marker — the
+        // wrapper performs no real TLS, so the marker is how scripted
+        // behaviors such as implicit-ssl tell one pairing from another.
         if (!class_exists('_MailGreetingTestEmail', false)) {
             eval('class _MailGreetingTestEmail extends MY_Email {
                 protected function _open_smtp_socket($ssl) {
-                    return fopen($this->smtp_host, "r+"); // scriptedsmtp://<behavior>
+                    $marker = ($this->smtp_crypto !== "") ? ";".$this->smtp_crypto : "";
+                    return fopen($this->smtp_host.$marker, "r+"); // scriptedsmtp://<behavior>[;<crypto>]
                 }
             }');
         }
@@ -276,9 +315,9 @@ class MailGreetingTest extends TestCase
 
     /* ------------------------------------------------------------------ */
 
-    private function smtpConfig($behavior, $user = '', $pass = '')
+    private function smtpConfig($behavior, $user = '', $pass = '', array $overrides = array())
     {
-        return array(
+        return array_merge(array(
             'protocol'    => 'smtp',
             'smtp_host'   => 'scriptedsmtp://'.$behavior,
             'smtp_port'   => 25,
@@ -289,7 +328,7 @@ class MailGreetingTest extends TestCase
             'mailtype'    => 'text',
             'newline'     => "\r\n",
             'crlf'        => "\r\n",
-        );
+        ), $overrides);
     }
 
     private function email($behavior, $user = '', $pass = '', $helo = 'www.marvysocials.com')
@@ -305,9 +344,9 @@ class MailGreetingTest extends TestCase
     }
 
     /** Run the real MailService::deliver() against the scripted server. */
-    private function deliver($behavior)
+    private function deliver($behavior, array $overrides = array())
     {
-        $GLOBALS['__mt_smtp'] = $this->smtpConfig($behavior);
+        $GLOBALS['__mt_smtp'] = $this->smtpConfig($behavior, '', '', $overrides);
         $mail = (object)array(
             'to_email'  => 'customer@example.test',
             'to_name'   => 'Customer',
@@ -395,5 +434,86 @@ class MailGreetingTest extends TestCase
         $this->assertTrue($sent);
         $this->assertStringNotContainsString('C: AUTH', $wire);
         $this->assertStringContainsString('C: EHLO', $wire);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* The "hello: hello: Unable to send email using PHP SMTP" failure: a   */
+    /* port that never speaks SMTP to a client with the wrong encryption    */
+    /* pairing. The panel must say WHAT happened (not CI3's generic tail),  */
+    /* retry the other pairing once, and name the .env fix when rescued.    */
+    /* ------------------------------------------------------------------ */
+
+    public function testImplicitSslPortReachedAsPlaintextIsRescuedByCryptoSwap()
+    {
+        // VP_MAIL_CRYPTO=tls (the .env default) pointed at an implicit-SSL
+        // server: no banner, greetings vanish. The panel must swap to
+        // ssl/465 once, deliver, and tell the operator what to persist.
+        // Credentials are configured: the swapped connection MUST still
+        // authenticate (the HELO fallback disabled _smtp_auth on the dead
+        // session; reset_connection() re-arms it from the credentials).
+        $res = $this->deliver('implicit-ssl', array(
+            'smtp_crypto' => 'tls', 'smtp_port' => 587,
+            'smtp_user'   => 'user@marvy.test', 'smtp_pass' => 'secret',
+        ));
+        $wire = _MailGreetingScriptedSmtp::transcript();
+
+        $this->assertTrue($res['ok'], 'the crypto-swap retry must rescue a mispaired pairing');
+        $this->assertSame('smtp', $res['transport']);
+        $this->assertStringContainsString('465', $res['note'] ?? '');
+        $this->assertStringContainsString('VP_MAIL_CRYPTO=ssl', $res['note'] ?? '');
+        $this->assertSame(2, _MailGreetingScriptedSmtp::connections(),
+            'exactly one bounded retry — the mispaired attempt plus the swap');
+        $this->assertStringContainsString('C: AUTH LOGIN', $wire,
+            'the rescued connection must authenticate with the configured credentials');
+        $this->assertStringContainsString('S: 250 OK: queued', $wire,
+            'the swapped connection must complete the delivery');
+    }
+
+    public function testStarttlsRefusalIsRescuedByCryptoSwap()
+    {
+        // The scripted server answers STARTTLS with 454 (TLS not available).
+        // The failure must be diagnosed by name, not by CI3's generic tail,
+        // then rescued by the ssl/465 swap.
+        $res = $this->deliver('ok', array('smtp_crypto' => 'tls', 'smtp_port' => 587));
+        $wire = _MailGreetingScriptedSmtp::transcript();
+
+        $this->assertStringContainsString('C: STARTTLS', $wire);
+        $this->assertStringContainsString('S: 454 TLS not available', $wire);
+        $this->assertTrue($res['ok'], 'a refused STARTTLS must trigger the ssl/465 fallback');
+        $this->assertStringContainsString('starttls-refused', $res['note'] ?? '');
+        $this->assertStringContainsString('ssl', $res['note'] ?? '');
+        $this->assertSame(2, _MailGreetingScriptedSmtp::connections());
+    }
+
+    public function testSilentPortFailsWithDiagnosisNotGenericTail()
+    {
+        // silent-close never speaks on either pairing: both attempts fail.
+        // The reported reason must be the handshake diagnosis (the fixable
+        // part), never CI3's "Unable to send email using PHP SMTP" tail.
+        $res = $this->deliver('silent-close', array('smtp_crypto' => 'tls', 'smtp_port' => 587));
+
+        $this->assertFalse($res['ok']);
+        $this->assertStringContainsString('no-smtp-banner', $res['error']);
+        $this->assertStringNotContainsString('Unable to send email using PHP SMTP', $res['error'],
+            'the generic CI3 tail must never outrank the actual diagnosis');
+        $this->assertStringContainsString('465', $res['hint']);
+        $this->assertStringContainsString('587', $res['hint']);
+        $this->assertSame(2, _MailGreetingScriptedSmtp::connections(),
+            'a handshake failure retries once, then reports');
+    }
+
+    public function testSilentGreetingYieldsThePairingHint()
+    {
+        // banner-then-close: banner arrives, both greetings are dropped —
+        // the exact "hello: hello: …" log shape. Even on a connection whose
+        // crypto never negotiates (plain), the summary must name the silent
+        // greeting and its port/encryption pairing rule.
+        $res = $this->deliver('banner-then-close');
+
+        $this->assertFalse($res['ok']);
+        $this->assertStringContainsString('silent-greeting', $res['error']);
+        $this->assertStringNotContainsString('Unable to send email using PHP SMTP', $res['error']);
+        $this->assertStringContainsString('465', $res['hint']);
+        $this->assertStringContainsString('587', $res['hint']);
     }
 }

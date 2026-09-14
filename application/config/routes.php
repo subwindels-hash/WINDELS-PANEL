@@ -361,6 +361,11 @@ $route['admin/customers/(:any)/pin-unlock'] = 'admin/users/pin_unlock/$1';
 $route['admin/customers/(:any)/mfa-disable'] = 'admin/users/mfa_disable/$1';
 $route['admin/customers/(:any)/email-verify'] = 'admin/users/email_verify/$1';
 $route['admin/customers/(:any)/password-reset'] = 'admin/users/password_reset/$1';
+// Direct set for the at-the-counter case: POST-only, users.edit, customer
+// targets only, audited against the staff member, customer notified.
+$route['admin/customers/(:any)/password'] = 'admin/users/set_password/$1';
+// Delete a never-used customer account (accounts with ledger history can only be suspended).
+$route['admin/customers/(:any)/delete'] = 'admin/users/delete/$1';
 $route['admin/customers/(:any)/force-logout'] = 'admin/users/force_logout/$1';
 $route['admin/customers/(:any)/revoke-keys'] = 'admin/users/revoke_keys/$1';
 $route['admin/customers/(:any)'] = 'admin/users/detail/$1';
