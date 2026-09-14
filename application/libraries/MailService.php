@@ -38,7 +38,7 @@ class MailService {
         $variables = array_merge($this->global_variables(), $variables);
         $subject = $this->interpolate($row->subject, $variables);
         $html    = $this->interpolate($row->body_html, $variables);
-        $text    = $row->body_text ? $this->interpolate($row->body_text, $variables) : trim(strip_tags($html));
+        $text    = $row->body_text ? $this->interpolate($row->body_text, $variables) : self::readable_text($html);
 
         return $this->enqueue_raw($to, $subject, $html, $text, $to_name, $template_key);
     }
@@ -92,9 +92,95 @@ class MailService {
         ));
 
         if ($ok && env_bool('MAIL_LOG')) {
-            log_message('info', "mail queued to {$to} <{$subject}>\n".strip_tags($body_html));
+            $this->write_mail_log("queued to {$to} <{$subject}>\n".self::readable_text($body_html));
         }
         return $ok;
+    }
+
+    /**
+     * Flatten HTML to text WITHOUT throwing away the links.
+     *
+     * A bare strip_tags() keeps the anchor text and discards the href, so
+     * "<a href="…/reset-password/TOKEN">Reset password</a>" collapses to the
+     * words "Reset password" and the token — the only thing the message exists
+     * to carry — is gone. That silently emptied both the plain-text alternative
+     * part of every email and the logged copy of a reset link.
+     *
+     * Each link is rendered as "text (url)". Angle brackets are deliberately
+     * NOT used as the delimiter: "<https://…>" is indistinguishable from a tag
+     * to strip_tags(), which would remove the URL again on the very next line.
+     */
+    public static function readable_text($html) {
+        $out = (string)$html;
+        $out = preg_replace_callback(
+            '/<a\b[^>]*href\s*=\s*["\']([^"\']*)["\'][^>]*>(.*?)<\/a>/is',
+            function ($m) {
+                $href = trim($m[1]);
+                $text = trim(strip_tags($m[2]));
+                if ($href === '') return $text;
+                // Don't print the URL twice when it is already the link text.
+                if ($text === '' || $text === $href) return $href;
+                return $text.' ('.$href.')';
+            },
+            $out
+        );
+        // Keep the line structure the reader expects from block elements.
+        $out = preg_replace('/<(br|\/p|\/div|\/li|\/tr|\/h[1-6])\b[^>]*>/i', "\n", $out);
+        $out = strip_tags($out);
+        $out = html_entity_decode($out, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        // Collapse the blank-line pileup the tag removal leaves behind.
+        $out = preg_replace('/[ \t]+/', ' ', $out);
+        $out = preg_replace('/\n{3,}/', "\n\n", $out);
+        return trim($out);
+    }
+
+    /**
+     * Write an outbound-mail payload somewhere an operator can actually read.
+     *
+     * This deliberately does NOT go through log_message('info'). CI3 grades
+     * levels ERROR=1, DEBUG=2, INFO=3 and only writes a level whose number is
+     * <= the configured threshold — and config/config.php sets that threshold
+     * to 1 in production and 2 with APP_DEBUG on. INFO is 3, so it is above
+     * the threshold in BOTH cases: every 'info' line this class ever wrote was
+     * discarded before it reached a file.
+     *
+     * That is what made the `log` transport a black hole. deliver() reported
+     * ok=true, the queue row was marked SENT, and the message existed nowhere
+     * at all — no inbox, no log, nothing to retry — which is exactly how a
+     * password-reset link goes missing without leaving a trace.
+     *
+     * So the payload is appended to its own file (storage/logs/mail.log, which
+     * needs no threshold to be readable), and log_message('error') is the
+     * fallback when that path is not writable — 'error' being the one level
+     * this panel always emits.
+     *
+     * @return bool whether the payload was persisted somewhere
+     */
+    private function write_mail_log($message) {
+        $line = '['.gmdate('Y-m-d H:i:s').' UTC] '.$message."\n\n";
+
+        $path = null;
+        try {
+            if (class_exists('Env') || is_file(APPPATH.'core/Env.php')) {
+                require_once APPPATH.'core/Env.php';
+                $paths = Env::writable_paths();
+                if (!empty($paths['logs'])) $path = rtrim($paths['logs'], '/').'/mail.log';
+            }
+        } catch (Throwable $e) {
+            $path = null;
+        }
+
+        if ($path !== null) {
+            $dir = dirname($path);
+            if (!is_dir($dir)) @mkdir($dir, 0775, true);
+            if (@file_put_contents($path, $line, FILE_APPEND | LOCK_EX) !== false) {
+                return true;
+            }
+        }
+
+        // Last resort: the only level this panel's threshold always writes.
+        log_message('error', 'mail[log] '.$message);
+        return false;
     }
 
     /**
@@ -118,11 +204,31 @@ class MailService {
         $transport = $this->transport();
 
         if ($transport === 'log' || env_bool('MAIL_LOG')) {
-            log_message('info', sprintf(
-                "mail[log] to=%s subject=%s\n%s",
-                $mail->to_email, $mail->subject, strip_tags((string)$mail->body_html)
+            $written = $this->write_mail_log(sprintf(
+                "to=%s subject=%s\n%s",
+                $mail->to_email, $mail->subject,
+                // Flatten the HTML (link-preserving) in preference to the
+                // stored body_text: rows queued before migration 041 have a
+                // text part whose URLs were stripped, and this logged copy is
+                // the operator's last resort for a reset link that never
+                // arrived — it has to contain the actual URL.
+                trim((string)$mail->body_html) !== ''
+                    ? self::readable_text((string)$mail->body_html)
+                    : (string)$mail->body_text
             ));
-            if ($transport === 'log') return array('ok'=>true, 'transport'=>'log');
+            if ($transport === 'log') {
+                // Only claim success when the payload is actually readable
+                // somewhere. A 'log' transport that cannot write is a message
+                // that vanished, and reporting ok=true would mark the queue
+                // row SENT and destroy the last copy of a reset link.
+                return $written
+                    ? array('ok'=>true, 'transport'=>'log')
+                    : array('ok'=>false, 'transport'=>'log',
+                            'error'=>'the log transport could not write the message anywhere',
+                            'hint'=>'storage/logs is not writable, so nothing was delivered and nothing '
+                                .'was recorded. Fix the permissions, or set Admin → Settings → Email → '
+                                .'Transport to "mail" (cPanel sendmail) to send real email.');
+            }
         }
 
         if ($transport !== 'smtp' && $transport !== 'mail') {
@@ -171,6 +277,26 @@ class MailService {
      */
     private function prime_message($mail) {
         $this->ci->email->clear(true);
+        // Pin the protocol to the transport this panel actually resolved.
+        //
+        // config/email.php builds the library's protocol from VP_MAIL_DRIVER
+        // alone, while transport() lets the admin-editable `mail_transport`
+        // setting win. When they disagree the panel used to send through the
+        // .env protocol while REPORTING the settings one: an operator who
+        // switched Admin → Settings → Email → Transport to "smtp" and entered
+        // their cPanel credentials still had every message handed to PHP
+        // mail(), which many shared hosts silently blackhole — mail() returns
+        // true, the queue row goes SENT, and the reset link is never
+        // delivered. Setting it here makes the reported transport the one that
+        // is used.
+        $transport = $this->transport();
+        if ($transport === 'smtp' || $transport === 'mail') {
+            if (method_exists($this->ci->email, 'set_protocol')) {
+                $this->ci->email->set_protocol($transport);
+            } else {
+                $this->ci->email->protocol = $transport;
+            }
+        }
         // Greet the server with the panel's real domain, never the stock
         // 'localhost.localdomain' a cron request has for SERVER_NAME:
         // cPanel Exim setups with strict HELO checks reject or mislog a

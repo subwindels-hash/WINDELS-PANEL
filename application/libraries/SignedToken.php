@@ -99,6 +99,47 @@ class SignedToken {
         return $payload;
     }
 
+    /**
+     * Decode a token's claims WITHOUT checking the signature.
+     *
+     * The returned array is UNTRUSTED and must never authorise anything. It
+     * exists for the one case where the fingerprint that the signature is
+     * bound to cannot be known until the subject has been read: a
+     * password-reset token is signed with a fragment of the user's current
+     * password hash, so the user row has to be located before verify() can be
+     * called with the right fingerprint. Every caller must follow this with a
+     * real verify() before acting.
+     *
+     * Structural checks (shape, purpose, expiry) still apply, so an expired or
+     * malformed token is rejected here rather than being handed on.
+     *
+     * @return array|null the claims, or null when the token cannot be read
+     */
+    public function peek($token, $expected_purpose = null) {
+        if (!is_string($token) || substr_count($token, '.') !== 1) {
+            return null;
+        }
+        list($body, $sig) = explode('.', $token, 2);
+        if ($body === '' || $sig === '') {
+            return null;
+        }
+        $raw = $this->url_safe_decode($body);
+        if ($raw === false || $raw === null) {
+            return null;
+        }
+        $payload = json_decode($raw, true);
+        if (!is_array($payload) || empty($payload['sub']) || empty($payload['purpose'])) {
+            return null;
+        }
+        if (!isset($payload['exp']) || (int)$payload['exp'] < time()) {
+            return null;
+        }
+        if ($expected_purpose !== null && $payload['purpose'] !== (string)$expected_purpose) {
+            return null;
+        }
+        return $payload;
+    }
+
     /* ------------------------------- internals ------------------------------- */
 
     private function sign($body, $fingerprint) {

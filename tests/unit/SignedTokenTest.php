@@ -72,6 +72,55 @@ class SignedTokenTest extends TestCase
         $this->assertNull($t->verify($token, 'reset-password'));
     }
 
+    /**
+     * The reset flow's actual sequence, and the bug it used to hide.
+     *
+     * AuthService::begin_password_reset() signs the token with the user's
+     * password fingerprint, but reset_password() cannot know that fingerprint
+     * until it has looked the user up — and the subject it needs for that
+     * lookup lives inside the token. It used to call verify() with NO
+     * fingerprint to read the subject, which can never match a token signed
+     * with one, so every reset link died as INVALID_OR_EXPIRED_TOKEN and
+     * password reset did not work for any account at all.
+     *
+     * peek() reads the claims without authorising anything, so the lookup can
+     * happen before the real, fingerprint-bound verify().
+     */
+    public function testPeekReadsTheSubjectOfAFingerprintBoundToken()
+    {
+        $t = new SignedToken('test-signing-key');
+        $fp = 'abc123def456';
+        $token = $t->issue('user_01', 'reset-password', 600, $fp);
+
+        // The unauthenticated read the user lookup depends on.
+        $claims = $t->peek($token, 'reset-password');
+        $this->assertIsArray($claims,
+            'peek() must read a fingerprint-bound token — the whole reset flow depends on it');
+        $this->assertSame('user_01', $claims['sub']);
+
+        // And the authorising check still requires the right fingerprint.
+        $this->assertIsArray($t->verify($token, 'reset-password', $fp));
+        $this->assertNull($t->verify($token, 'reset-password', 'changed-fingerprint'),
+            'peek() must not weaken the single-use binding');
+    }
+
+    public function testPeekStillRejectsExpiredAndMismatchedTokens()
+    {
+        $t = new SignedToken('test-signing-key');
+
+        $expired = $this->issue_with_ttl($t, 'user_01', 'reset-password', -10);
+        $this->assertNull($t->peek($expired, 'reset-password'),
+            'an expired token must not be readable even unauthenticated');
+
+        $token = $t->issue('user_01', 'verify-email', 600);
+        $this->assertNull($t->peek($token, 'reset-password'),
+            'peek() must honour the expected purpose');
+
+        $this->assertNull($t->peek('garbage', 'reset-password'));
+        $this->assertNull($t->peek('a.b.c', 'reset-password'));
+        $this->assertNull($t->peek('', 'reset-password'));
+    }
+
     public function testMalformedTokensRejected()
     {
         $t = new SignedToken('test-signing-key');
