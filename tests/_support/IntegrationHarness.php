@@ -679,6 +679,14 @@ class HarnessMailService
         $this->h->sent_mail[] = array('to' => $to, 'template' => $key, 'vars' => $vars);
         return array('ok' => true);
     }
+    public function enqueue_password_reset($user, $token)
+    {
+        $this->h->sent_mail[] = array(
+            'to' => $user->email, 'template' => 'auth.password_reset',
+            'vars' => array('username' => $user->username, 'reset_url_token' => $token),
+        );
+        return true;
+    }
     public function enqueue_raw($to, $subject, $html, $text = null, $to_name = null)
     {
         $this->h->sent_mail[] = array('to' => $to, 'subject' => $subject);

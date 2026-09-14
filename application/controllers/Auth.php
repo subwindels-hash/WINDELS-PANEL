@@ -482,14 +482,18 @@ class Auth extends MY_Controller {
         $result = $this->auth->begin_password_reset($this->input->post('identifier', true), $ip);
         if (!empty($result['token'])) {
             $user = $result['user'];
-            $url = site_url('reset-password/' . $result['token']);
-            $this->mailservice->enqueue_template(
-                $user->email, 'auth.password_reset',
-                array('username' => $user->username, 'reset_url' => $url),
-                $user->username
-            );
+            // MailService owns the reset template and URL construction. The
+            // admin-triggered reset uses this exact helper too, so neither
+            // entry point can issue a token without actually queueing it.
+            if (!$this->mailservice->enqueue_password_reset($user, $result['token'])) {
+                // Keep the browser response enumeration-safe, but leave an
+                // actionable server-side error instead of silently claiming a
+                // message exists when the template/queue insert failed.
+                log_message('error', 'password reset mail could not be queued for user '.$user->public_id);
+            }
             if (getenv('APP_ENV') !== 'production') {
-                $this->session->set_flashdata('dev_link', $url);
+                $this->session->set_flashdata('dev_link',
+                    site_url('reset-password/' . $result['token']));
             }
             $this->ratelimiter->record($bucket, $ip, true, null, $this->input->user_agent());
         }

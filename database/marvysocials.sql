@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 39), roles,
+-- foreign keys, migration bookkeeping (version 40), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first-login accounts. No migration,
 -- seed or installer command has to run afterwards.
@@ -2302,6 +2302,18 @@ ADD COLUMN source VARCHAR(16) NOT NULL DEFAULT 'contact' COMMENT 'Who opened it:
 
 CREATE INDEX idx_t_source_created ON tickets (source, created_at);
 
+-- ---------------------------------------------------------------------
+-- migration 040_admin_customer_access
+-- ---------------------------------------------------------------------
+
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id
+  FROM roles r
+  JOIN permissions p ON p.perm_key = 'users.impersonate'
+  LEFT JOIN role_permissions rp
+    ON rp.role_id = r.id AND rp.permission_id = p.id
+ WHERE r.name = 'ADMIN' AND rp.role_id IS NULL;
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -2316,7 +2328,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (39);
+INSERT INTO migrations (version) VALUES (40);
 
 -- ======================================================================
 -- CORE DATA
@@ -2697,6 +2709,9 @@ VALUES (2, 2);
 
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 VALUES (2, 3);
+
+INSERT INTO `role_permissions` (`role_id`, `permission_id`)
+VALUES (2, 4);
 
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 VALUES (2, 5);

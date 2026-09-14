@@ -70,6 +70,15 @@ class SeedTest extends TestCase
         $this->assertSame(array(), Core_seeder::role_matrix()['CUSTOMER'], 'customers hold no admin permissions');
     }
 
+    public function testAdminCanAccessCustomerAccountsButStaffNeedsAnExplicitGrant()
+    {
+        $matrix = Core_seeder::role_matrix();
+        $this->assertContains('users.impersonate', $matrix['ADMIN'],
+            'an operational administrator must be able to use dashboard customer access');
+        $this->assertNotContains('users.impersonate', $matrix['STAFF'],
+            'customer account access remains a sharper, explicitly delegated support permission');
+    }
+
     public function testStaffCannotRefundOrChangeSettings()
     {
         $staff = Core_seeder::role_matrix()['STAFF'];

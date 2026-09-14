@@ -4,6 +4,57 @@ $has   = function ($k) use ($perms) { return in_array('*', $perms, true) || in_a
 $healthy = (int)($health['HEALTHY'] ?? 0);
 ?>
 <?php $ov = $overview ?? array(); ?>
+
+<?php if ($has('users.impersonate')): ?>
+<div class="card mb-4" style="border-color:var(--color-warning,#f59e0b)">
+  <div class="row justify-between" style="gap:1rem;align-items:flex-start;flex-wrap:wrap">
+    <div style="max-width:34rem">
+      <h2 class="card-title mb-1">Customer account access</h2>
+      <p class="muted text-sm mb-0">
+        Open a customer dashboard by email, username or six-digit account ID. This starts a 30-minute
+        audited session; use the persistent banner to return to your admin account.
+      </p>
+    </div>
+  </div>
+  <form method="post" action="<?=site_url('admin/customer-access')?>" class="mt-3">
+    <input type="hidden" name="<?=htmlspecialchars($this->security->get_csrf_token_name())?>"
+           value="<?=htmlspecialchars($this->security->get_csrf_hash())?>" readonly>
+    <div class="grid grid-2" style="gap:.75rem;align-items:end">
+      <label class="field mb-0">
+        <span class="label">Customer</span>
+        <input class="input" name="identifier" required maxlength="255"
+               autocomplete="off" placeholder="Email, username or account ID">
+      </label>
+      <label class="field mb-0">
+        <span class="label">Reason for access</span>
+        <input class="input" name="reason" required minlength="5" maxlength="500"
+               placeholder="Ticket number and action requested by the customer">
+      </label>
+    </div>
+    <fieldset class="mt-3" style="border:0;padding:0;margin-left:0;margin-right:0">
+      <legend class="label" style="padding:0">Access level</legend>
+      <div class="row" style="gap:1rem;flex-wrap:wrap">
+        <label class="row text-sm" style="gap:.4rem">
+          <input type="radio" name="mode" value="READ_ONLY" checked>
+          <span><strong>Read-only</strong> — diagnose without making changes</span>
+        </label>
+        <label class="row text-sm" style="gap:.4rem">
+          <input type="radio" name="mode" value="FULL_ACCESS">
+          <span><strong>Full access</strong> — act on the customer's behalf</span>
+        </label>
+      </div>
+    </fieldset>
+    <div class="row mt-3" style="gap:.75rem;align-items:center;flex-wrap:wrap">
+      <label class="row text-xs" style="gap:.4rem;flex:1;min-width:16rem">
+        <input type="checkbox" name="confirm" value="1" required>
+        <span>I confirm this access is authorized and understand every action is recorded against my admin account.</span>
+      </label>
+      <button class="btn btn-warning" type="submit">Open customer account</button>
+    </div>
+  </form>
+</div>
+<?php endif; ?>
+
 <div class="ws-stat-grid">
   <div class="card"><div class="muted text-sm">Total users</div><div class="text-2xl font-bold"><?=number_format((int)($ov['users_total'] ?? 0))?></div>
     <div class="hint"><?=number_format((int)($ov['users_today'] ?? 0))?> new today · <?=number_format((int)($ov['users_suspended'] ?? 0))?> suspended</div></div>
