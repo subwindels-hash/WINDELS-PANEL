@@ -150,9 +150,10 @@ $pin_revealable = $pin_set && !empty($user->pin_cipher);
 <div class="card mb-4">
   <h3 style="font-size:1rem;font-weight:600" class="mb-1">Credentials</h3>
   <p class="muted text-xs mb-3">
-    Passwords are stored as one-way hashes and can only be reset — never displayed. The security PIN is
-    stored encrypted as well, so staff can read it back when a customer asks; every reveal is recorded in
-    the audit log with who asked.
+    Passwords are stored as one-way hashes and can only be reset or replaced — never displayed. Setting
+    a new password here signs the customer out everywhere and emails them about the change; every such
+    change is recorded in the audit log under your name. The security PIN is stored encrypted as well,
+    so staff can read it back when a customer asks; every reveal is recorded in the audit log with who asked.
   </p>
 
   <div class="row mb-3" style="gap:1.25rem;flex-wrap:wrap">
@@ -195,6 +196,24 @@ $pin_revealable = $pin_set && !empty($user->pin_cipher);
       <?=$csrf()?>
       <button class="btn btn-secondary btn-sm" type="submit">Email a password-reset link</button>
     </form>
+    <?php if ($user->role === 'CUSTOMER'): ?>
+    <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/password')?>"
+          class="row mb-0" style="gap:.4rem;margin:0;align-items:flex-end">
+      <?=$csrf()?>
+      <label class="field mb-0" style="min-width:10rem">
+        <span class="label" style="font-size:.7rem">New password</span>
+        <input class="input" style="padding:.35rem .55rem" type="password" name="new_password"
+               required minlength="8" autocomplete="new-password" placeholder="At least 8 characters">
+      </label>
+      <label class="field mb-0" style="min-width:10rem">
+        <span class="label" style="font-size:.7rem">Repeat it</span>
+        <input class="input" style="padding:.35rem .55rem" type="password" name="confirm_password"
+               required minlength="8" autocomplete="new-password">
+      </label>
+      <button class="btn btn-warning btn-sm" type="submit"
+              data-confirm="Set this password for <?=htmlspecialchars($user->username)?>? They will be signed out on every device and emailed about the change, recorded under your name.">Set password</button>
+    </form>
+    <?php endif; ?>
     <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/force-logout')?>" style="margin:0"
           data-confirm="Revoke refresh tokens for this account?" >
       <?=$csrf()?>
@@ -271,6 +290,25 @@ $pin_revealable = $pin_set && !empty($user->pin_cipher);
       <span>I understand this switches my effective identity to this customer and I must use the warning banner to return to my staff account.</span>
     </label>
     <button class="btn btn-warning btn-sm" type="submit">Start impersonation</button>
+  </form>
+</div>
+<?php endif; ?>
+
+<?php if (!$self && $can_edit && $user->role === 'CUSTOMER'): ?>
+<div class="card mb-4" style="border-color:var(--color-danger,#dc2626)">
+  <h3 style="font-size:1rem;font-weight:600" class="mb-1">Delete this account</h3>
+  <p class="muted text-xs mb-3">
+    Permanently removes the customer and everything tied to the sign-in: sessions, security keys,
+    wallet and contact details. Only an account that never touched the ledger can be deleted — one
+    order, payment or wallet movement makes it part of the books, and the honest action left is
+    <em>Suspend</em>. Deletion is immediate, cannot be undone, emails the customer, and is recorded
+    in the audit log under your name.
+  </p>
+  <form method="post" action="<?=site_url('admin/customers/'.$user->public_id.'/delete')?>" style="margin:0">
+    <?=$csrf()?>
+    <button class="btn btn-danger btn-sm" type="submit"
+            data-confirm="Permanently delete <?=htmlspecialchars($user->username)?>? Every session and key dies with the account, the customer is emailed, and this cannot be undone.">
+      Delete account permanently</button>
   </form>
 </div>
 <?php endif; ?>

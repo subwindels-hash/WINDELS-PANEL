@@ -507,6 +507,33 @@ class AuthService {
         return array('ok' => true);
     }
 
+    /**
+     * Administrator-set password change — no current password required,
+     * because the acting staff member is the authority (the admin controller
+     * gates this path on users.edit, makes it POST-only, audits it against
+     * the staff member and notifies the customer; see
+     * admin/Users::set_password).
+     *
+     * Side effects deliberately mirror reset_password(): the hash rotates and
+     * every outstanding refresh token dies, so any session or device holding
+     * the old credential is signed out at its next refresh. Reset tokens are
+     * fingerprint-bound to the hash, which also retires every reset link
+     * issued before the change.
+     */
+    public function force_set_password($user, $new_password) {
+        if (!is_string($new_password) || strlen($new_password) < 8) {
+            return array('ok' => false, 'error' => 'The new password must be at least 8 characters.');
+        }
+        $this->ci->db->where('id', $user->id)->update('users', array(
+            'password_hash' => $this->hash_password($new_password),
+            'updated_at'    => gmdate('Y-m-d H:i:s'),
+        ));
+        $this->ci->db->where('user_id', $user->id)
+            ->where('revoked_at IS NULL')
+            ->update('refresh_tokens', array('revoked_at' => gmdate('Y-m-d H:i:s')));
+        return array('ok' => true);
+    }
+
     /* -------------------------------------------------------------- */
     /* MFA enrolment                                                  */
     /* -------------------------------------------------------------- */

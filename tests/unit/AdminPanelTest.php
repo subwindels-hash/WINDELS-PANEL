@@ -258,10 +258,12 @@ class AdminPanelTest extends TestCase
             // wallet_currency sets what an empty wallet may hold (module 37).
             // mfa_disable is the operator's out when a customer loses their
             // authenticator; email_verify vouches for an address the
-            // confirmation mail never reached.
+            // confirmation mail never reached; set_password replaces a
+            // customer credential at the counter (secret never recorded,
+            // sessions killed, customer notified).
             'Users.php'    => array('status','role','price_group','adjust','wallet_currency','impersonate',
                                     'pin_reset','pin_reveal','pin_unlock','mfa_disable','email_verify',
-                                    'force_logout','revoke_keys','password_reset'),
+                                    'force_logout','revoke_keys','password_reset','set_password','delete'),
             // Operations refunds through the schedulers' own cancel paths.
             'Operations.php' => array('refill_request','cancel','dripfeed_action','subscription_action'),
         );

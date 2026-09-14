@@ -131,27 +131,7 @@ class MailService {
 
         try {
             $this->ci->load->library('email');
-            $this->ci->email->clear(true);
-            // Greet the server with the panel's real domain, never the stock
-            // 'localhost.localdomain' a cron request has for SERVER_NAME:
-            // cPanel Exim setups with strict HELO checks reject or mislog a
-            // junk greeting name, and that is the class of failure the
-            // "503 HELO or EHLO required" queue errors came from.
-            if (property_exists($this->ci->email, 'helo_host')) {
-                $this->ci->email->helo_host = $this->helo_host();
-            }
-            // DB settings win (admin-editable); .env supplies the initial
-            // defaults (VP_MAIL_FROM_ADDRESS / VP_MAIL_FROM_NAME).
-            $from_email = class_exists('Env') ? (string) Env::get('MAIL_FROM_ADDRESS', '') : '';
-            $from_name  = class_exists('Env') ? (string) Env::get('MAIL_FROM_NAME', '') : '';
-            $this->ci->email->from(
-                $this->ci->Setting_model->get('mail_from_email', $from_email !== '' ? $from_email : 'no-reply@marvy.local'),
-                $this->ci->Setting_model->get('mail_from_name',  $from_name  !== '' ? $from_name  : 'MarvySocials')
-            );
-            $this->ci->email->to($mail->to_email);
-            $this->ci->email->subject($mail->subject);
-            $this->ci->email->message($mail->body_html);
-            if (!empty($mail->body_text)) $this->ci->email->set_alt_message($mail->body_text);
+            $this->prime_message($mail);
 
             if (!$this->ci->email->send(false)) {
                 // CI3's SMTP client records the whole conversation in its
@@ -160,7 +140,16 @@ class MailService {
                 // old behaviour) told the operator the mail server said hello,
                 // and nothing about why the send failed. Read the buffer back
                 // and surface the actual failure plus a cPanel-oriented hint.
+                // The summary is captured BEFORE any retry — a retry clears
+                // the debug buffer for its own transcript.
                 $summary = $this->smtp_failure_summary();
+
+                $swap = $this->retry_alternate_crypto($mail);
+                if (is_array($swap) && !empty($swap['ok'])) return $swap;
+                if (is_array($swap) && !empty($swap['hint'])) {
+                    $summary['hint'] = trim((string)$summary['hint'].' '.$swap['hint']);
+                }
+
                 return array(
                     'ok'        => false,
                     'transport' => $transport,
@@ -172,6 +161,127 @@ class MailService {
         } catch (Exception $e) {
             return array('ok'=>false, 'transport'=>$transport, 'error'=>$e->getMessage());
         }
+    }
+
+    /**
+     * Load one queued message onto the CI3 email instance: a clean slate,
+     * the pinned greeting name, sender identity, recipient and bodies.
+     * Used for the first attempt and again after a crypto-swap retry (which
+     * re-opens the connection on the same instance).
+     */
+    private function prime_message($mail) {
+        $this->ci->email->clear(true);
+        // Greet the server with the panel's real domain, never the stock
+        // 'localhost.localdomain' a cron request has for SERVER_NAME:
+        // cPanel Exim setups with strict HELO checks reject or mislog a
+        // junk greeting name, and that is the class of failure the
+        // "503 HELO or EHLO required" queue errors came from.
+        if (property_exists($this->ci->email, 'helo_host')) {
+            $this->ci->email->helo_host = $this->helo_host();
+        }
+        // DB settings win (admin-editable); .env supplies the initial
+        // defaults (VP_MAIL_FROM_ADDRESS / VP_MAIL_FROM_NAME).
+        $from_email = class_exists('Env') ? (string) Env::get('MAIL_FROM_ADDRESS', '') : '';
+        $from_name  = class_exists('Env') ? (string) Env::get('MAIL_FROM_NAME', '') : '';
+        $this->ci->email->from(
+            $this->ci->Setting_model->get('mail_from_email', $from_email !== '' ? $from_email : 'no-reply@marvy.local'),
+            $this->ci->Setting_model->get('mail_from_name',  $from_name  !== '' ? $from_name  : 'MarvySocials')
+        );
+        $this->ci->email->to($mail->to_email);
+        $this->ci->email->subject($mail->subject);
+        $this->ci->email->message($mail->body_html);
+        if (!empty($mail->body_text)) $this->ci->email->set_alt_message($mail->body_text);
+    }
+
+    /**
+     * One bounded retry with the OTHER encryption/port pairing, only when
+     * the first attempt died at the handshake in a way that means "this
+     * port speaks a different protocol" (MY_Email::handshake_failure).
+     *
+     * The failure that motivated it — the queue logging
+     *
+     *     hello: hello: Unable to send email using PHP SMTP. Your server
+     *     might not be configured to send mail using this method.
+     *
+     * is what port 465 (implicit SSL) does to a client configured for
+     * 587/tls: TCP connects, the server waits for a TLS ClientHello, every
+     * cleartext greeting is ignored or reset. cPanel gives the operator
+     * BOTH pairings (465⇔ssl, 587⇔tls) and mis-picking one is the single
+     * most common shared-hosting mail failure — so the panel swaps once,
+     * and when the swap lands it says exactly what to persist. Auth and
+     * relay failures (server answered 4xx/5xx: SMTP was reached fine) never
+     * trigger a swap.
+     *
+     * @return array|null  a deliver()-shaped success result when the swap
+     *                     delivered the message; array('ok'=>false,'hint'=>…)
+     *                     when the swap was attempted and also refused;
+     *                     null when no swap applies (not an SMTP handshake
+     *                     failure, or the email class cannot be re-armed)
+     */
+    private function retry_alternate_crypto($mail) {
+        $email = $this->ci->email;
+        if (!is_object($email)
+            || !property_exists($email, 'handshake_failure')
+            || !method_exists($email, 'reset_connection')
+            || (string)$email->handshake_failure === ''
+            || $email->protocol !== 'smtp') {
+            return null;
+        }
+        $diagnosis = (string)$email->handshake_failure;
+
+        list($crypto, $port, $label, $env_pair) =
+            $this->alternate_crypto_pairing($email->smtp_crypto, (int)$email->smtp_port);
+
+        $email->smtp_crypto = $crypto;
+        $email->smtp_port   = $port;
+        $email->reset_connection();
+        $this->prime_message($mail);
+
+        if (!$email->send(false)) {
+            log_message('error',
+                "mail: {$diagnosis} on the configured pairing and the {$label} fallback both failed");
+            return array(
+                'ok'   => false,
+                'hint' => 'The panel also retried with '.$label
+                    .' and the server still dropped the handshake — so the fix is the host, port '
+                    .'and encryption settings themselves (or a firewall on outbound SMTP), not a '
+                    .'temporary failure.',
+            );
+        }
+
+        log_message('error',
+            "mail: delivered via the {$label} fallback after the configured pairing failed ({$diagnosis}) — persist {$env_pair} in .env");
+
+        return array(
+            'ok'        => true,
+            'transport' => 'smtp',
+            'note'      => 'SMTP refused the configured pairing at the handshake ('.$diagnosis
+                .') and only accepted the message after switching to '.$label
+                .'. Persist '.$env_pair.' in .env so the panel does not rely on the fallback.',
+        );
+    }
+
+    /**
+     * The opposite encryption/port pairing of the configured one. Port and
+     * crypto travel together in every cPanel mail doc: 465 is implicit SSL,
+     * 587 is STARTTLS — sending either protocol at the other's port is the
+     * silent-drop failure. An unset crypto picks the pairing the port is
+     * NOT the conventional home of (587 → try implicit SSL on 465 first).
+     *
+     * @return array{0:string,1:int,2:string,3:string}
+     *         crypto, port, human label, the .env pair to persist
+     */
+    private function alternate_crypto_pairing($crypto, $port) {
+        $crypto = strtolower(trim((string)$crypto));
+        if ($crypto === 'ssl') {
+            return array('tls', 587, 'STARTTLS (tls) on port 587', 'VP_MAIL_CRYPTO=tls and VP_MAIL_PORT=587');
+        }
+        if ($crypto === 'tls') {
+            return array('ssl', 465, 'implicit SSL (ssl) on port 465', 'VP_MAIL_CRYPTO=ssl and VP_MAIL_PORT=465');
+        }
+        return $port === 465
+            ? array('tls', 587, 'STARTTLS (tls) on port 587', 'VP_MAIL_CRYPTO=tls and VP_MAIL_PORT=587')
+            : array('ssl', 465, 'implicit SSL (ssl) on port 465', 'VP_MAIL_CRYPTO=ssl and VP_MAIL_PORT=465');
     }
 
     /**
@@ -192,25 +302,80 @@ class MailService {
      */
     public function smtp_failure_summary() {
         $raw = (string) $this->ci->email->print_debugger(array());
-        $raw = str_ireplace(array('<br />', '<br>'), "\n", $raw);
+        // Every <pre>/<br> boundary is a LINE boundary. CI3 wraps greeting
+        // echoes in <pre> WITHOUT a trailing <br />, so strip_tags alone
+        // glues the next entry onto them — that merging is precisely why a
+        // failed send pastes as one long line:
+        // "hello: hello: Unable to send email using PHP SMTP. …".
+        $raw = str_ireplace(array('<br />', '<br>', '<pre>', '</pre>'), "\n", $raw);
         $raw = strip_tags($raw);
         $lines = preg_split('/\r\n|\r|\n/', $raw);
 
+        // Pass 1 — MY_Email's own stage diagnosis ("mail: no-smtp-banner — …")
+        // names both the failure and the fix. It outranks anything the wire
+        // produced, including the server's own reply codes, because a refusal
+        // of STARTTLS (server: "454", library: "the following SMTP error was
+        // encountered") is a symptom; the diagnosis says what it MEANS.
         $reason = '';
         foreach ((array) $lines as $line) {
             $line = trim($line);
-            if ($line === '' || $this->is_smtp_exchange($line)) continue;
-            // The server's own reply is the truth: "from: 503 HELO or EHLO
-            // required" explains more than CI3's generic lang keys do, so
-            // prefer the first server reply carrying a failure code.
-            if (preg_match('/^[a-z_]*:?\s*[45]\d{2}[\s-]/i', $line)) {
+            if (stripos($line, 'mail: ') === 0) {
                 $reason = $line;
                 break;
             }
-            $reason = $line; // fallback: keep the last meaningful line
         }
+
         if ($reason === '') {
-            $reason = 'The SMTP server rejected the message without a usable explanation.';
+            $generic_tail = '';
+            $silent_hello = false;
+
+            // Pass 2 — the wire transcript.
+            foreach ((array) $lines as $line) {
+                $line = trim($line);
+                if ($line === '' || $this->is_smtp_exchange($line)) continue;
+
+                // "hello:" with nothing after it is a greeting the server
+                // dropped silently (connection closed in reply to EHLO/HELO)
+                // — the signature behind the classic "hello: hello: Unable
+                // to send email using PHP SMTP" report. Remember it for the
+                // fallback reason below.
+                if (preg_match('/^hello:\s*$/i', $line)) {
+                    $silent_hello = true;
+                    continue;
+                }
+
+                // CI3 always ends a failed send with "Unable to send email
+                // using PHP SMTP. Your server might not be configured to send
+                // mail using this method." — or, when the email language
+                // file never loaded, the raw lang key "email_send_failure_smtp".
+                // It is the tail of EVERY SMTP failure and explains none of
+                // them — never let it outrank a real line.
+                if (stripos($line, 'unable to send email using php') === 0
+                    || preg_match('/^email_send_failure_(smtp|phpmail|sendmail)$/i', $line)) {
+                    $generic_tail = $line;
+                    continue;
+                }
+
+                // The server's own reply is the truth: "from: 503 HELO or EHLO
+                // required" explains more than CI3's generic lang keys do, so
+                // prefer the first server reply carrying a failure code.
+                if (preg_match('/^[a-z_]*:?\s*[45]\d{2}[\s-]/i', $line)) {
+                    $reason = $line;
+                    break;
+                }
+                $reason = $line; // fallback: keep the last meaningful line
+            }
+
+            if ($reason === '') {
+                if ($silent_hello) {
+                    $reason = 'The mail server closed the connection without answering the SMTP '
+                        .'greeting (empty reply to EHLO/HELO).';
+                } elseif ($generic_tail !== '') {
+                    $reason = $generic_tail;
+                } else {
+                    $reason = 'The SMTP server rejected the message without a usable explanation.';
+                }
+            }
         }
 
         // What the operator should actually check, mapped from the failure.
@@ -235,6 +400,30 @@ class MailService {
                 .'Admin → Settings → Email → Transport (cPanel\'s sendmail needs no SMTP host, port or credentials '
                 .'and works out of the box), or check that the SMTP host/port are the mail-submission endpoint from '
                 .'cPanel → Email Accounts → Connect Devices.';
+        } elseif (strpos($lower, 'no-smtp-banner') !== false
+            || strpos($lower, 'silent-greeting') !== false
+            || strpos($lower, 'closed the connection without answering') !== false) {
+            // The port-and-crypto mispairing — the "hello: hello: Unable to
+            // send email using PHP SMTP" report. retry_alternate_crypto()
+            // already tried the other pairing once; the hint states the rule
+            // so the operator fixes the configured one.
+            $hint = 'The server answered TCP but never spoke SMTP back — port and encryption are '
+                .'mispaired. They must travel together: port 587 with VP_MAIL_CRYPTO=tls, port 465 '
+                .'with VP_MAIL_CRYPTO=ssl (cPanel → Email Accounts → Connect Devices lists both '
+                .'pairings). The bearer symptom of this is "hello: hello: Unable to send email '
+                .'using PHP SMTP" in the queue log.';
+        } elseif (strpos($lower, 'starttls-refused') !== false
+            || (strpos($lower, 'starttls') !== false
+                && (strpos($lower, '454') !== false
+                    || strpos($lower, 'refused') !== false
+                    || strpos($lower, 'not available') !== false))) {
+            $hint = 'This host does not accept STARTTLS on that port — it expects implicit SSL '
+                .'instead: set VP_MAIL_CRYPTO=ssl with VP_MAIL_PORT=465. (Or switch the transport '
+                .'to "mail": cPanel\'s sendmail needs no SMTP host, port or credentials at all.)';
+        } elseif (strpos($lower, 'tls-negotiation-failed') !== false) {
+            $hint = 'The server accepted STARTTLS but the TLS handshake itself failed. Check that '
+                .'VP_MAIL_HOST is exactly the mail host cPanel names for the account and that '
+                .'VP_MAIL_PORT=587 pairs with VP_MAIL_CRYPTO=tls.';
         } elseif (strpos($lower, 'starttls') !== false
             || strpos($lower, 'unable to connect') !== false
             || strpos($lower, 'error: #(') !== false

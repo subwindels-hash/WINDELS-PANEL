@@ -244,8 +244,12 @@ class Content extends Admin_Controller {
             if (!empty($res['hint'])) $flash .= ' — '.(string)$res['hint'];
             $this->session->set_flashdata('error', $flash);
         } else {
-            $this->session->set_flashdata('success', 'Test message accepted by the '
-                .$res['transport'].' transport. Check '.$to.'.');
+            $flash = 'Test message accepted by the '.$res['transport'].' transport. Check '.$to.'.';
+            // A rescued send (e.g. the SMTP crypto-swap fallback had to fix
+            // the port/encryption pairing) leaves a note naming the .env
+            // values to persist — append it or the fix stays invisible.
+            if (!empty($res['note'])) $flash .= ' '.mb_substr((string)$res['note'], 0, 300);
+            $this->session->set_flashdata('success', $flash);
         }
         redirect('admin/mail-queue');
     }

@@ -509,4 +509,189 @@ class AdminUsersTest extends TestCase
         $this->assertStringContainsString('value="ADMIN"', $view);
         $this->assertStringContainsString('minlength="8"', $view);
     }
+
+    /* ==================== admin-set customer password ==================== */
+
+    /**
+     * The operator's counter case: a customer on the phone who cannot open
+     * mail needs a credential read back to them, so staff holding users.edit
+     * may SET the password from the customer file — POST-only, customer-role
+     * targets only, audited without the secret, and the customer notified.
+     */
+    public function testAdminSetCustomerPasswordIsWiredWithItsGuards()
+    {
+        $routes     = file_get_contents(self::$root.'/application/config/routes.php');
+        $controller = file_get_contents(self::$root.'/application/controllers/admin/Users.php');
+        $service    = file_get_contents(self::$root.'/application/libraries/AuthService.php');
+        $view       = file_get_contents(self::$root.'/application/views/admin/users/detail.php');
+
+        $this->assertStringContainsString(
+            "admin/customers/(:any)/password'] = 'admin/users/set_password", $routes);
+        $this->assertStringContainsString('function set_password(', $controller);
+        $this->assertStringContainsString("guard(\$public_id, 'users.edit')", $controller,
+            'the direct set rides the same POST+permission guard as every mutation');
+        $this->assertStringContainsString("\$user->role !== 'CUSTOMER'", $controller,
+            'a staff credential must never be set from the customer file');
+        $this->assertStringContainsString('force_set_password(', $controller);
+        $this->assertStringContainsString("'user.password_set'", $controller,
+            'the change is attributed to the acting staff member');
+        $this->assertStringContainsString('notify_customer(', $controller,
+            'a password change the customer does not hear about is a silent takeover');
+
+        $this->assertStringContainsString('function force_set_password(', $service);
+        $this->assertStringContainsString('refresh_tokens', $service,
+            'sessions holding the old credential must die with the rotation');
+        $this->assertStringContainsString('hash_password(', $service);
+
+        $this->assertStringContainsString('name="new_password"', $view);
+        $this->assertStringContainsString('name="confirm_password"', $view);
+        $this->assertStringContainsString("/password')", $view, 'the form posts to the new route');
+        // The controller holds no hash column and the audit carries no secret:
+        // the file-level no-credentials scan above already pins both of these.
+    }
+
+    /**
+     * The behavioral contract of AuthService::force_set_password, exercised
+     * against the real harness (not a source scan): the hash rotates to the
+     * new credential, the old one stops verifying, an outstanding refresh
+     * session is revoked, and a short password is refused without touching
+     * anything.
+     */
+    public function testForceSetPasswordRotatesHashAndRevokesSessions()
+    {
+        list($app, , , $customer) = $this->app();
+        $old_hash = $app->db->where('id', $customer->id)->get('users')->row()->password_hash;
+        $this->assertTrue(password_verify('Str0ng!pass1', $old_hash), 'fixture sanity');
+
+        // An outstanding device session that must die with the rotation.
+        $app->db->insert('refresh_tokens', array(
+            'user_id'    => (int)$customer->id,
+            'token_hash' => hash('sha256', 'device-session-before'),
+            'expires_at' => gmdate('Y-m-d H:i:s', time() + 86400),
+            'revoked_at' => null,
+            'created_at' => gmdate('Y-m-d H:i:s'),
+        ));
+
+        $app->library('AuthService');
+
+        $short = $app->authservice->force_set_password($customer, 'short');
+        $this->assertFalse($short['ok']);
+        $this->assertTrue(password_verify('Str0ng!pass1',
+            $app->db->where('id', $customer->id)->get('users')->row()->password_hash),
+            'a refused change must not rotate anything');
+
+        $res = $app->authservice->force_set_password($customer, 'Counter-Set-99!');
+        $this->assertTrue($res['ok']);
+
+        $row = $app->db->where('id', $customer->id)->get('users')->row();
+        $this->assertTrue(password_verify('Counter-Set-99!', $row->password_hash),
+            'the new credential must sign in');
+        $this->assertFalse(password_verify('Str0ng!pass1', $row->password_hash),
+            'the old credential must stop working');
+
+        $rt = $app->db->where('user_id', $customer->id)->get('refresh_tokens')->row();
+        $this->assertNotNull($rt->revoked_at,
+            'the refresh session holding the old credential must be revoked');
+    }
+
+
+    /* ==================== customer account deletion ==================== */
+
+    /**
+     * Deleting is the one admin action that cannot be undone, so the wiring
+     * pins every guard in both layers: POST+permission at the controller,
+     * customer-role-only plus the ledger-untouched preconditions in the
+     * service, and the audit row that keeps who the account was.
+     */
+    public function testAccountDeletionIsWiredWithItsGuards()
+    {
+        $routes     = file_get_contents(self::$root.'/application/config/routes.php');
+        $controller = file_get_contents(self::$root.'/application/controllers/admin/Users.php');
+        $service    = file_get_contents(self::$root.'/application/libraries/UserAdminService.php');
+        $view       = file_get_contents(self::$root.'/application/views/admin/users/detail.php');
+
+        $this->assertStringContainsString(
+            "admin/customers/(:any)/delete'] = 'admin/users/delete", $routes);
+        $this->assertStringContainsString('function delete(', $controller);
+        $this->assertStringContainsString("'user.deleted'", $controller,
+            'an account that vanishes without an audit row is a silent removal');
+        $this->assertStringContainsString("redirect('admin/customers')", $controller,
+            'the customer file is gone with the row — success must land on the directory');
+
+        $this->assertStringContainsString('function delete_user(', $service);
+        $this->assertStringContainsString("(string)\$user->role !== 'CUSTOMER'", $service,
+            'a staff account must never be deletable from the customer file');
+        foreach (array("'HAS_FUNDS'", "'HAS_LEDGER'", "'HAS_ORDERS'", "'HAS_PAYMENTS'") as $code) {
+            $this->assertStringContainsString($code, $service,
+                'every form of money history must have its own named refusal');
+        }
+        $this->assertStringContainsString("count_all_results('order", $service);
+        $this->assertStringContainsString("count_all_results('wallet_transactions')", $service);
+        $this->assertStringContainsString('->delete(\'users\')', $service);
+
+        $this->assertStringContainsString("'/delete')?>", $view, 'the form posts to the delete route');
+        $this->assertStringContainsString('Delete account permanently', $view);
+        $this->assertStringContainsString('btn-danger', $view);
+    }
+
+    /**
+     * The behavioral contract, on the real harness: a never-used account
+     * disappears for good, while an account with a ledger movement or an
+     * order on record refuses and stays — and neither staff nor the actor
+     * themselves can be the target.
+     */
+    public function testOnlyLedgerUntouchedAccountsCanBeDeleted()
+    {
+        // A clean registration — the spam/duplicate/typo case — is gone for real.
+        $app = new IntegrationHarness();
+        $app->seed_minimal();
+        $admin = $app->register('admin1', 'admin@x.test', 'Str0ng!pass1', 'ADMIN');
+        $ghost = $app->register('ghost', 'ghost@x.test');
+        $app->library(array('LedgerService', 'UserAdminService'));
+        $app->model(array('User_model', 'Wallet_model', 'Wallet_transaction_model'));
+        $this->assertNotNull($app->db->where('id', $ghost->id)->get('users')->row(), 'fixture sanity');
+
+        $res = $app->useradminservice->delete_user($admin, $ghost);
+        $this->assertTrue($res['ok'], $res['ok'] ? '' : $res['error']);
+        $this->assertNull($app->db->where('id', $ghost->id)->get('users')->row(),
+            'deletion is a real removal — no ghost row left to sign in with');
+
+        // Money sitting in the wallet is the first refusal, whatever shape the history has.
+        list($app, , $admin, $customer) = $this->app('750'); // wallet credited
+        $res = $app->useradminservice->delete_user($admin, $customer);
+        $this->assertFalse($res['ok']);
+        $this->assertSame('HAS_FUNDS', $res['code']);
+
+        // Even spent to zero, one ledger movement makes the account part of the books forever.
+        $app->db->where('user_id', $customer->id)->update('wallets', array('balance' => '0.00000000'));
+        $res = $app->useradminservice->delete_user($admin, $customer);
+        $this->assertFalse($res['ok']);
+        $this->assertSame('HAS_LEDGER', $res['code']);
+        $this->assertNotNull($app->db->where('id', $customer->id)->get('users')->row(),
+            'a refused deletion must not half-apply');
+
+        // Same story for an order on record: suspend, never delete.
+        $app = new IntegrationHarness();
+        $app->seed_minimal();
+        $admin = $app->register('admin2', 'admin2@x.test', 'Str0ng!pass1', 'ADMIN');
+        $buyer = $app->register('buyer', 'buyer@x.test');
+        $app->library(array('LedgerService', 'UserAdminService'));
+        $app->model(array('User_model', 'Wallet_model', 'Wallet_transaction_model'));
+        $app->db->insert('orders', array(
+            'user_id' => (int)$buyer->id, 'service_id' => 1,
+            'link' => 'https://x.test/p', 'quantity' => 100,
+            'charge' => '2.00000000', 'rate_at_order' => '20.00000000',
+        ));
+        $res = $app->useradminservice->delete_user($admin, $buyer);
+        $this->assertFalse($res['ok']);
+        $this->assertSame('HAS_ORDERS', $res['code']);
+
+        // Neither yourself nor a colleague is a valid target.
+        $this->assertSame('SELF', $app->useradminservice->delete_user($admin, $admin)['code']);
+        $staff = $app->register('backup_admin', 'backup@x.test', 'Str0ng!pass1', 'STAFF');
+        $this->assertSame('STAFF',
+            $app->useradminservice->delete_user($admin, $staff)['code'],
+            'staff identities are removed by re-grading, never deleted from the customer file');
+    }
+
 }
