@@ -78,10 +78,10 @@ class Core_seeder extends Seeder {
         return array(
             'SUPER_ADMIN' => '*',
             'ADMIN'       => array(
-                // users.impersonate is intentionally not a default operational
-                // grant. A SUPER_ADMIN may delegate it explicitly in the RBAC
-                // matrix after accepting the read-only support policy.
-                'reports.view','users.view','users.edit','staff.manage','pricing.manage',
+                // Administrators can enter an audited customer session from
+                // the dashboard. STAFF has no account access by default and
+                // gains this sharper permission only through an explicit grant.
+                'reports.view','users.view','users.edit','users.impersonate','staff.manage','pricing.manage',
                 'services.view','services.manage','categories.manage',
                 'providers.view','providers.manage','providers.sync',
                 'orders.view','orders.edit','orders.refund','orders.cancel','orders.refill',

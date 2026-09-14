@@ -16,11 +16,14 @@ in the audit trail, and the session dies after 30 minutes no matter what.
 
 ## Operator workflow
 
-1. Open **Admin → Customers**, select an active customer, and find
-   **Customer impersonation**.
+1. On the **Admin Dashboard**, use **Customer account access** and find the
+   account by email, username or six-digit account ID. The same form is also
+   available under **Admin → Customers → customer file**.
 2. Pick the access level — *Read-only* or *Full access* — enter a specific
    support reason (preferably including the ticket reference), acknowledge the
-   identity switch, and submit the CSRF-protected form.
+   identity switch, and submit the CSRF-protected form. `ADMIN` receives
+   `users.impersonate` by default; `STAFF` needs an explicit grant in Roles and
+   permissions.
 3. The browser opens the customer's dashboard. A red persistent banner names
    the mode in plain words, identifies the operator and customer, shows the
    approximate hard-expiry time, and contains the exit action.

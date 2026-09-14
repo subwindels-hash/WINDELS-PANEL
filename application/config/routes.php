@@ -340,6 +340,9 @@ $route['admin/providers/detail/(:any)'] = 'admin/providers/detail/$1';
 $route['admin/providers/(:any)'] = 'admin/providers/detail/$1';
 $route['admin/customers'] = 'admin/users/customers';
 $route['admin/wallets'] = 'admin/users/wallets';
+// Dashboard quick access: resolve email, username or six-digit account ID,
+// then enter the same audited support session as the customer-file action.
+$route['admin/customer-access'] = 'admin/users/customer_access';
 // Action routes must precede the catch-all detail route below.
 $route['admin/customers/(:any)/impersonate'] = 'admin/users/impersonate/$1';
 $route['admin/customers/(:any)/status'] = 'admin/users/status/$1';

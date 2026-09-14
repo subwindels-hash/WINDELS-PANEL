@@ -2224,7 +2224,7 @@ COMMENT 'Shipping charge included in gross_amount; base currency';
 CREATE TABLE IF NOT EXISTS inbox_messages (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   public_id CHAR(26) NOT NULL UNIQUE,
-  owner_type VARCHAR(8) NOT NULL COMMENT 'ADMIN = the staff inbox (owner_id NULL, shared by all staff); USER = one customer's inbox',
+  owner_type VARCHAR(8) NOT NULL COMMENT 'ADMIN = the staff inbox (owner_id NULL, shared by all staff); USER = one customers inbox',
   owner_id BIGINT UNSIGNED NULL COMMENT 'users.id when owner_type is USER',
   to_email VARCHAR(255) NOT NULL COMMENT 'the address the mail was addressed to (lowercased) — the routing key',
   from_email VARCHAR(255) NULL,
@@ -2242,5 +2242,39 @@ CREATE TABLE IF NOT EXISTS inbox_messages (
   INDEX idx_inbox_to (to_email, id),
   CONSTRAINT fk_inbox_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- migration 038_time_range_indexes
+-- ---------------------------------------------------------------------
+
+CREATE INDEX idx_stx_created
+ON service_transactions (created_at, status, amount, refunded_amount);
+
+CREATE INDEX idx_ord_created
+ON orders (created_at, status, charge, refunded_amount);
+
+CREATE INDEX idx_ptx_created
+ON provider_transactions (created_at, provider_id, status, latency_ms);
+
+-- ---------------------------------------------------------------------
+-- migration 039_ticket_source
+-- ---------------------------------------------------------------------
+
+ALTER TABLE tickets
+ADD COLUMN source VARCHAR(16) NOT NULL DEFAULT 'contact' COMMENT 'Who opened it: contact (the form) or assistant (auto-escalated unanswerable question)';
+
+CREATE INDEX idx_t_source_created ON tickets (source, created_at);
+
+-- ---------------------------------------------------------------------
+-- migration 040_admin_customer_access
+-- ---------------------------------------------------------------------
+
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id
+  FROM roles r
+  JOIN permissions p ON p.perm_key = 'users.impersonate'
+  LEFT JOIN role_permissions rp
+    ON rp.role_id = r.id AND rp.permission_id = p.id
+ WHERE r.name = 'ADMIN' AND rp.role_id IS NULL;
 
 SET FOREIGN_KEY_CHECKS = 1;

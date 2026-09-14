@@ -365,6 +365,7 @@ class ImpersonationTest extends TestCase
         $stop = file_get_contents(self::$root.'/application/controllers/Impersonation.php');
         $layout = ShellSource::app(self::$root);
         $detail = file_get_contents(self::$root.'/application/views/admin/users/detail.php');
+        $dashboard = file_get_contents(self::$root.'/application/views/admin/dashboard.php');
 
         $action = strpos($routes, "admin/customers/(:any)/impersonate");
         $catch_all = strpos($routes, "admin/customers/(:any)']");
@@ -372,6 +373,7 @@ class ImpersonationTest extends TestCase
         $this->assertNotFalse($catch_all);
         $this->assertLessThan($catch_all, $action, 'action route must precede the customer detail catch-all');
         $this->assertStringContainsString("impersonation/stop'] = 'impersonation/stop", $routes);
+        $this->assertStringContainsString("admin/customer-access'] = 'admin/users/customer_access", $routes);
 
         $this->assertStringContainsString("method === 'GET' || \$method === 'HEAD'", $core);
         $this->assertStringContainsString("\$path === 'dashboard' || strpos(\$path, 'dashboard/') === 0", $core);
@@ -396,6 +398,10 @@ class ImpersonationTest extends TestCase
         $this->assertStringContainsString("site_url('impersonation/stop')", $layout);
         $this->assertStringContainsString("\$has('users.impersonate')", $detail);
         $this->assertStringContainsString('name="confirm"', $detail);
+        $this->assertStringContainsString("\$has('users.impersonate')", $dashboard);
+        $this->assertStringContainsString("site_url('admin/customer-access')", $dashboard);
+        $this->assertStringContainsString('name="identifier"', $dashboard);
+        $this->assertStringContainsString('Customer account access', $dashboard);
 
         // Full-access mode is pinned the same way: the controller must ask for
         // it explicitly, the form must offer it as a choice, the banner must

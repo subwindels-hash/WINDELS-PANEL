@@ -282,18 +282,45 @@ class Users extends Admin_Controller {
     }
 
     /**
-     * POST /admin/customers/:id/impersonate — enter the customer's dashboard.
-     *
-     * Read-only (diagnostic lens) or full-access (act on their behalf) is
-     * chosen on the form; anything other than the full-access constant falls
-     * back to read-only, so a mangled or absent field can never widen the
-     * session. The service independently repeats the role, permission, target,
-     * reason and session checks. This controller gate keeps the route
-     * conventional; it is not the only thing protecting the identity switch.
+     * POST /admin/customers/:id/impersonate — enter the customer's dashboard
+     * from their customer file.
      */
     public function impersonate($public_id) {
         if ($this->input->method(true) !== 'POST') show_404();
         $user = $this->guard($public_id, 'users.impersonate');
+        $this->start_impersonation($user, 'admin/customers/'.$user->public_id);
+    }
+
+    /**
+     * POST /admin/customer-access — find and enter an account directly from
+     * the admin dashboard.
+     *
+     * This is deliberately the same audited impersonation service as the
+     * customer-file action, not a password bypass or a second kind of session.
+     * The identifier can be an email, username or six-digit account ID. The
+     * service still re-checks role, status, permission, confirmation, reason,
+     * mode and audit availability before switching identities.
+     */
+    public function customer_access() {
+        if ($this->input->method(true) !== 'POST') show_404();
+        $this->require_perm('users.impersonate');
+
+        $identifier = trim((string)$this->input->post('identifier', true));
+        $user = $identifier === '' ? null : $this->User_model->find_by_identifier($identifier);
+        if (!$user) {
+            $this->session->set_flashdata('error',
+                'No customer account matched that email, username or account ID.');
+            return redirect('admin');
+        }
+
+        $this->start_impersonation($user, 'admin');
+    }
+
+    /** Shared request-to-service bridge for both impersonation entry points. */
+    private function start_impersonation($user, $return_path) {
+        // Anything other than the explicit full-access value resolves to the
+        // fail-safe read-only mode. A missing or mangled field never widens a
+        // support session.
         $mode = $this->input->post('mode', true) === ImpersonationService::MODE_FULL_ACCESS
             ? ImpersonationService::MODE_FULL_ACCESS
             : ImpersonationService::MODE_READ_ONLY;
@@ -307,7 +334,10 @@ class Users extends Admin_Controller {
             $this->request_id,
             $mode
         );
-        if (empty($res['ok'])) return $this->fail($user, $res['error']);
+        if (empty($res['ok'])) {
+            $this->session->set_flashdata('error', $res['error']);
+            return redirect($return_path);
+        }
 
         $this->session->set_flashdata('success', $mode === ImpersonationService::MODE_FULL_ACCESS
             ? 'Full-access impersonation started. You are acting as this customer and every action is '
@@ -475,22 +505,34 @@ class Users extends Admin_Controller {
     }
 
     /**
-     * POST /admin/customers/:id/password-reset — send a reset link.
+     * POST /admin/customers/:id/password-reset — queue a reset link.
      *
      * Deliberately issues the customer's own reset flow rather than setting a
      * password the operator would then know. Staff never handle a customer
-     * credential.
+     * credential. A prior implementation stopped after issuing the token and
+     * displayed "emailed" without creating an email_queue row; queueing and
+     * its failure are now explicit.
      */
     public function password_reset($public_id) {
         $user = $this->guard($public_id, 'users.edit');
 
         $res = $this->auth->begin_password_reset($user->email, $this->input->ip_address());
-        if (empty($res['ok'])) {
+        if (empty($res['ok']) || empty($res['token']) || empty($res['user'])) {
             return $this->fail($user, $res['error'] ?? 'Could not start a password reset.');
         }
 
-        $this->audit('user.password_reset_sent', $user, null, array('email' => $user->email));
-        $this->done($user, 'A password-reset link has been emailed to '.$user->email.'.');
+        $this->load->library('MailService');
+        if (!$this->mailservice->enqueue_password_reset($res['user'], $res['token'])) {
+            $this->audit('user.password_reset_queue_failed', $user, null,
+                array('email' => $user->email));
+            return $this->fail($user,
+                'The reset link could not be queued. Check that the auth.password_reset email template '
+                .'is active, then review Admin → Mail queue.');
+        }
+
+        $this->audit('user.password_reset_queued', $user, null, array('email' => $user->email));
+        $this->done($user, 'A password-reset link was queued for '.$user->email
+            .'. Delivery status is available in Admin → Mail queue.');
     }
 
     /* ------------------------------ helpers ----------------------------- */

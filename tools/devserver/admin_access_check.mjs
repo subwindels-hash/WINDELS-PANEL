@@ -96,6 +96,10 @@ const opsHome = await ops.get('/admin');
 check('the new administrator signs in and reaches the admin area',
   opsHome.status === 200 && /ws-app-shell/.test(opsHome.text),
   `status=${opsHome.status}`);
+check('an ADMIN gets customer account access on the dashboard',
+  /Customer account access/.test(opsHome.text)
+  && opsHome.text.includes('admin/customer-access'),
+  'dashboard quick-access form missing for ADMIN');
 
 const dup = await admin.postForm('/admin/administrators/create', {
   username: opsUsername, email: `other${stamp}@example.test`, password: 'Whatever-99', role: 'ADMIN',
@@ -198,7 +202,7 @@ await cust.postForm('/register', {
   password: 'Cust!Pass99', password_confirm: 'Cust!Pass99', terms: '1', accept_terms: '1',
 });
 const custRow = withDb((db) => db.prepare(
-  'SELECT id, public_id, username FROM users WHERE username = ?').get(`imp${stamp}`));
+  'SELECT id, public_id, username, user_code FROM users WHERE username = ?').get(`imp${stamp}`));
 check('a test customer exists', !!custRow);
 
 const file = await admin.get(`/admin/customers/${custRow.public_id}`);
@@ -207,21 +211,34 @@ check('the customer file offers impersonation with a mode choice',
   && file.text.includes('value="FULL_ACCESS"')
   && file.text.includes('value="READ_ONLY"'));
 
-// --- read-only leg -------------------------------------------------------
-const roStart = await admin.postForm(`/admin/customers/${custRow.public_id}/impersonate`, {
+const resetRequest = await admin.postForm(`/admin/customers/${custRow.public_id}/password-reset`, {},
+  { fromHtml: file.text });
+check('the admin password-reset action reports a queued message',
+  /password-reset link was queued/.test(resetRequest.text));
+const resetMail = withDb((db) => db.prepare(
+  "SELECT to_email, body_html, status FROM email_queue WHERE template_key = 'auth.password_reset'"
+  + ' AND to_email = ? ORDER BY id DESC LIMIT 1').get(`imp${stamp}@example.test`));
+check('the reset email exists in the delivery queue with a usable link',
+  !!resetMail && ['QUEUED', 'SENDING', 'SENT'].includes(resetMail.status)
+  && resetMail.body_html.includes('/reset-password/'), JSON.stringify(resetMail));
+
+// --- read-only leg, entered by an operational ADMIN (not SUPER_ADMIN) -----
+const adminRoleHome = await relogin.get('/admin');
+const roStart = await relogin.postForm('/admin/customer-access', {
+  identifier: custRow.user_code || custRow.username,
   mode: 'READ_ONLY', reason: 'Diagnosing why ticket T-1 does not show', confirm: '1',
-}, { fromHtml: file.text });
-check('read-only impersonation starts',
+}, { fromHtml: adminRoleHome.text });
+check('an ADMIN can start dashboard customer access',
   roStart.status === 200 && /viewing this account as an administrator/.test(roStart.text));
 check('the read-only shell greys out every form', /impersonation-read-only/.test(roStart.text));
 check('and does not claim full access', !/act on their behalf/.test(roStart.text));
 
-const roWrite = await admin.raw('/dashboard/tickets/create', {
+const roWrite = await relogin.raw('/dashboard/tickets/create', {
   method: 'POST',
   headers: { 'content-type': 'application/x-www-form-urlencoded' },
   body: new URLSearchParams({
     ...(() => {
-      const t = admin.csrfFrom(roStart.text) || admin.csrfFrom(file.text) || {};
+      const t = relogin.csrfFrom(roStart.text) || relogin.csrfFrom(file.text) || {};
       return t.name ? { [t.name]: t.value } : {};
     })(),
     subject: 'should never exist', message: 'blocked write attempt',
@@ -232,19 +249,23 @@ check('a write is rejected with 403 and the read-only reason',
 check('no ticket leaked through', !withDb((db) => db.prepare(
   "SELECT id FROM tickets WHERE subject = 'should never exist'").get()));
 
-const roAdmin = await admin.get('/admin');
+const roAdmin = await relogin.get('/admin');
 check('the admin area stays unreachable', roAdmin.status === 403, `status=${roAdmin.status}`);
 
-await admin.get('/dashboard');
-await admin.postForm('/impersonation/stop', {}, { fromHtml: admin.last.text });
-check('stopping restores the staff session', (await admin.get('/admin')).status === 200);
+await relogin.get('/dashboard');
+await relogin.postForm('/impersonation/stop', {}, { fromHtml: relogin.last.text });
+check('stopping restores the ADMIN session', (await relogin.get('/admin')).status === 200);
 
-// --- full-access leg -----------------------------------------------------
-const file2 = await admin.get(`/admin/customers/${custRow.public_id}`);
-const faStart = await admin.postForm(`/admin/customers/${custRow.public_id}/impersonate`, {
+// --- full-access leg, started directly on the admin dashboard ------------
+const dashboardAccess = await admin.get('/admin');
+check('the admin dashboard exposes direct customer account access',
+  /Customer account access/.test(dashboardAccess.text)
+  && dashboardAccess.text.includes('admin/customer-access'));
+const faStart = await admin.postForm('/admin/customer-access', {
+  identifier: custRow.username,
   mode: 'FULL_ACCESS', reason: 'Placing order T-2091 on the customer request', confirm: '1',
-}, { fromHtml: file2.text });
-check('full-access impersonation starts',
+}, { fromHtml: dashboardAccess.text });
+check('dashboard full-access login starts',
   faStart.status === 200 && /Full access/.test(faStart.text) && /act on their behalf/.test(faStart.text));
 check('the full-access shell does not grey out forms',
   /impersonation-full-access/.test(faStart.text) && !/impersonation-read-only/.test(faStart.text));

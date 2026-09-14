@@ -44,6 +44,36 @@ class MailService {
     }
 
     /**
+     * Queue the standard password-reset message.
+     *
+     * Keeping URL construction and template selection here prevents the two
+     * entry points (self-service Forgot password and Admin → Customers) from
+     * drifting. The admin action previously issued a valid token and then
+     * claimed it had emailed it without ever inserting an email_queue row.
+     *
+     * @param object $user  User row with email and username
+     * @param string $token Signed reset token from AuthService
+     * @return bool
+     */
+    public function enqueue_password_reset($user, $token) {
+        if (!is_object($user) || empty($user->email) || empty($user->username)
+            || !is_string($token) || trim($token) === '') {
+            log_message('error', 'mail: refused incomplete password-reset message');
+            return false;
+        }
+
+        return $this->enqueue_template(
+            $user->email,
+            'auth.password_reset',
+            array(
+                'username'  => $user->username,
+                'reset_url' => site_url('reset-password/' . $token),
+            ),
+            $user->username
+        );
+    }
+
+    /**
      * Enqueue a raw (already-rendered) email.
      */
     public function enqueue_raw($to, $subject, $body_html, $body_text = null,

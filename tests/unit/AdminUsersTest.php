@@ -381,6 +381,24 @@ class AdminUsersTest extends TestCase
         $this->assertStringContainsString("'users.edit'", $src);
     }
 
+    /**
+     * Regression: Admin → Customers used to issue a signed reset token, skip
+     * MailService entirely, and flash "emailed". No queue row meant there was
+     * nothing a cron worker could ever deliver.
+     */
+    public function testAdminPasswordResetActuallyQueuesTheStandardTemplate()
+    {
+        $controller = file_get_contents(self::$root.'/application/controllers/admin/Users.php');
+        $mail = file_get_contents(self::$root.'/application/libraries/MailService.php');
+
+        $this->assertStringContainsString('enqueue_password_reset(', $controller);
+        $this->assertStringContainsString('password_reset_queue_failed', $controller,
+            'a failed queue insert must not be reported as a sent message');
+        $this->assertStringContainsString("'auth.password_reset'", $mail);
+        $this->assertStringContainsString("site_url('reset-password/' . \$token)", $mail);
+        $this->assertStringContainsString("'reset_url'", $mail);
+    }
+
     /* ===================== administrator creation ======================== */
 
     /**
