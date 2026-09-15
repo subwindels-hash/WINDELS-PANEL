@@ -541,8 +541,10 @@ class Users extends Admin_Controller {
         }
 
         $this->audit('user.password_reset_queued', $user, null, array('email' => $user->email));
-        $this->done($user, 'A password-reset link was queued for '.$user->email
-            .'. Delivery status is available in Admin → Mail queue.');
+        $this->done($user, ($this->mailservice->last_send_was_immediate()
+                ? 'A password-reset link was sent to '.$user->email.'.'
+                : 'A password-reset link was queued for '.$user->email.'.')
+            .' Delivery status is available in Admin → Mail queue.');
     }
 
     /**

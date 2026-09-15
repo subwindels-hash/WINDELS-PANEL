@@ -89,7 +89,9 @@ class Tickets extends Admin_Controller {
             'status' => 'REPLIED',
         ), 'contact_messages');
         $this->session->set_flashdata('success',
-            'Reply queued for '.htmlspecialchars($res['row']->email).'.');
+            (isset($this->mailservice) && $this->mailservice->last_send_was_immediate()
+                ? 'Reply sent to ' : 'Reply queued for ')
+            .htmlspecialchars($res['row']->email).'.');
         redirect('admin/messages');
     }
 

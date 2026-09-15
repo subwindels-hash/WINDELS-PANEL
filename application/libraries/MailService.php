@@ -25,9 +25,10 @@ class MailService {
      * @param string $template_key  e.g. "auth.verify_email"
      * @param array  $variables     merged into {{placeholders}}
      * @param string $to_name
+     * @param bool|null $urgent     null decides automatically (web = now)
      * @return bool
      */
-    public function enqueue_template($to, $template_key, array $variables = array(), $to_name = null, $urgent = false) {
+    public function enqueue_template($to, $template_key, array $variables = array(), $to_name = null, $urgent = null) {
         $row = $this->ci->db->where('template_key', $template_key)
             ->where('is_active', 1)->get('email_templates')->row();
         if (!$row) {
@@ -79,11 +80,13 @@ class MailService {
     /**
      * Enqueue a raw (already-rendered) email.
      *
-     * @param bool $urgent deliver on this request instead of waiting for the
-     *                     email_queue worker (see flush_now())
+     * @param bool|null $urgent deliver on this request instead of waiting for
+     *                          the email_queue worker (see flush_now()).
+     *                          null (the default) decides automatically — see
+     *                          send_immediately_by_default().
      */
     public function enqueue_raw($to, $subject, $body_html, $body_text = null,
-                                 $to_name = null, $template_key = null, $urgent = false) {
+                                 $to_name = null, $template_key = null, $urgent = null) {
         $ok = (bool) $this->ci->db->insert('email_queue', array(
             'to_email'     => strtolower(trim($to)),
             'to_name'      => $to_name,
@@ -103,13 +106,64 @@ class MailService {
             $this->write_mail_log("queued to {$to} <{$subject}>\n".self::readable_text($body_html));
         }
 
-        // Time-critical mail (password reset, email verification) is delivered
-        // on this request rather than waiting up to five minutes for the
-        // worker. The row is still a queue row, so a failure here retries and
-        // reports exactly like any other message.
-        if ($ok && $urgent) $this->flush_now($id);
+        if ($urgent === null) $urgent = $this->send_immediately_by_default();
+
+        // Time-critical mail is delivered on this request rather than waiting
+        // for the worker. The row is still a queue row, so a failure here
+        // retries and reports exactly like any other message.
+        $this->last_send_was_immediate = ($ok && $urgent) ? $this->flush_now($id) : false;
 
         return $ok;
+    }
+
+    /**
+     * Did the last enqueue actually deliver, rather than leave a queue row?
+     *
+     * Screens use this to describe what happened truthfully: "sent" when the
+     * message is gone, "queued" when it is still waiting. Telling an operator
+     * a reply was sent when it is sitting in a queue — or that it was queued
+     * when it already went — is how the original report started.
+     */
+    public function last_send_was_immediate() {
+        return (bool)$this->last_send_was_immediate;
+    }
+    private $last_send_was_immediate = false;
+
+    /**
+     * Should a message with no explicit preference go out on this request?
+     *
+     * Yes for web requests — that is where a human just pressed "Send" and is
+     * now looking at a screen that says the message was sent. An operator
+     * replying from Admin → Messages, a customer triggering a receipt, a
+     * contact form: all of them read "Queued for five minutes" as broken,
+     * because from where they sit it is.
+     *
+     * No while a scheduled job is running — on the CLI, or inside the
+     * heartbeat, which runs jobs during an ordinary web request and so would
+     * otherwise look exactly like a human pressing Send. Two reasons, and both
+     * matter:
+     *
+     *   - email_queue() is already looping over claimed rows and sending
+     *     them. A job that enqueues mail (PIN rotation issues a new PIN to
+     *     every user whose PIN aged out) would otherwise send each message
+     *     inline, one SMTP handshake at a time, inside a job that is supposed
+     *     to be a bounded batch — and smtp_timeout is 15s per message, so a
+     *     slow mail host turns a 200-user rotation into an hour-long job that
+     *     overlaps its own next tick.
+     *   - the batch is not waiting on a human. Nobody is watching a screen,
+     *     so there is nothing to be immediate for.
+     *
+     * Callers that know better still win: pass true or false explicitly.
+     */
+    private function send_immediately_by_default() {
+        if ($this->is_cli_context()) return false;
+        if (class_exists('JobRunner') && JobRunner::is_running_job()) return false;
+        return true;
+    }
+
+    /** Seam: overridden in tests, which themselves run under the CLI SAPI. */
+    protected function is_cli_context() {
+        return class_exists('Env') && Env::is_cli();
     }
 
     /**

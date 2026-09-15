@@ -141,10 +141,13 @@ class MailImmediateDeliveryTest extends TestCase
         return new class($outcome) extends MailService {
             public $outcome;
             public $delivered = 0;
+            /** The suite runs under the CLI SAPI; these tests are about web requests. */
+            public $cli = false;
             public function __construct($outcome) {
                 parent::__construct();
                 $this->outcome = $outcome;
             }
+            protected function is_cli_context() { return $this->cli; }
             public function deliver($mail) {
                 $this->delivered++;
                 if ($this->outcome instanceof Throwable) throw $this->outcome;
@@ -189,14 +192,80 @@ class MailImmediateDeliveryTest extends TestCase
         $this->assertSame('SENT', $this->row()->status);
     }
 
-    /** Bulk mail keeps its batching — only auth mail pays the inline cost. */
-    public function testANonUrgentMessageIsLeftForTheWorker()
+    /** A caller that explicitly opts out still batches. */
+    public function testAnExplicitlyNonUrgentMessageIsLeftForTheWorker()
     {
         $svc = $this->service(array('ok' => true, 'transport' => 'smtp'));
-        $svc->enqueue_raw('customer@example.test', 'Monthly news', '<p>hi</p>');
+        $svc->enqueue_raw('customer@example.test', 'Monthly news', '<p>hi</p>',
+            null, null, null, false);
 
-        $this->assertSame(0, $svc->delivered, 'ordinary mail must not block the request');
+        $this->assertSame(0, $svc->delivered, 'an explicit false must be honoured');
         $this->assertSame('QUEUED', $this->row()->status);
+    }
+
+    /**
+     * The default for a web request is "send it now".
+     *
+     * This is the fix for the report that a message sent from the panel sat
+     * in Queued: every operator-facing Send button (Admin → Messages reply,
+     * contact form, account notices) went through enqueue_raw() with no
+     * urgency flag and therefore waited for the worker, while the screen the
+     * operator was looking at said the message had been sent.
+     */
+    public function testMailSentFromAWebRequestGoesOutImmediatelyByDefault()
+    {
+        $svc = $this->service(array('ok' => true, 'transport' => 'smtp'));
+        $svc->enqueue_raw('customer@example.test', 'Re: your question', '<p>an answer</p>');
+
+        $this->assertSame(1, $svc->delivered,
+            'a human pressed Send and is watching — it must not wait for cron');
+        $this->assertSame('SENT', $this->row()->status);
+    }
+
+    /**
+     * ...but a message enqueued *by a running job* must not be sent inline.
+     *
+     * PIN rotation issues a new PIN to every user whose PIN aged out, from
+     * inside a cron job. Sending each one inline would put an SMTP handshake
+     * per user (smtp_timeout 15s) inside a batch that is supposed to be
+     * bounded — and the heartbeat runs that batch during someone's page load.
+     */
+    public function testMailEnqueuedInsideARunningJobIsLeftForTheQueue()
+    {
+        require_once self::$root.'/application/libraries/JobRunner.php';
+        $svc = $this->service(array('ok' => true, 'transport' => 'smtp'));
+
+        $ran = false;
+        (new ReflectionClass('JobRunner')); // ensure the class is loaded
+        $this->inJob(function () use ($svc, &$ran) {
+            $svc->enqueue_raw('customer@example.test', 'Your new PIN', '<p>1234</p>');
+            $ran = true;
+        });
+
+        $this->assertTrue($ran);
+        $this->assertSame(0, $svc->delivered,
+            'a batch must not pay an SMTP handshake per recipient inline');
+        $this->assertSame('QUEUED', $this->row()->status);
+    }
+
+    /** The cron CLI keeps batching: nobody is watching a screen there. */
+    public function testMailEnqueuedOnTheCliIsLeftForTheQueue()
+    {
+        $svc = $this->service(array('ok' => true, 'transport' => 'smtp'));
+        $svc->cli = true;
+        $svc->enqueue_raw('customer@example.test', 'Nightly digest', '<p>hi</p>');
+
+        $this->assertSame(0, $svc->delivered, 'CLI/cron mail must not send inline');
+        $this->assertSame('QUEUED', $this->row()->status);
+    }
+
+    /** Run $fn with JobRunner reporting that a job is in progress. */
+    private function inJob(callable $fn)
+    {
+        $prop = new ReflectionProperty('JobRunner', 'in_job');
+        $prop->setAccessible(true);
+        $prop->setValue(null, $prop->getValue() + 1);
+        try { $fn(); } finally { $prop->setValue(null, $prop->getValue() - 1); }
     }
 
     /** A failed immediate attempt must retry later, not be lost or marked sent. */
@@ -218,7 +287,9 @@ class MailImmediateDeliveryTest extends TestCase
     public function testARowAlreadyClaimedIsNotSentTwice()
     {
         $svc = $this->service(array('ok' => true, 'transport' => 'smtp'));
-        $svc->enqueue_raw('customer@example.test', 'Reset', '<p>x</p>');
+        // Park it in the queue without sending, so the row exists to contend for.
+        $svc->enqueue_raw('customer@example.test', 'Reset', '<p>x</p>',
+            null, null, null, false);
 
         // The cron worker claims it first.
         $this->ci->db->where('id', 1)->update('email_queue', array('status' => 'SENDING'));

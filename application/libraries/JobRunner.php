@@ -50,6 +50,20 @@ class JobRunner {
      *
      * @return array{ok:bool, skipped?:bool, processed?:int, failed?:int, message?:string, error?:string}
      */
+    /**
+     * True while a scheduled job is executing, anywhere in this process.
+     *
+     * The heartbeat runs jobs inside an ordinary web request, so "is this the
+     * CLI" is not enough to tell batch work apart from a human pressing Send.
+     * MailService reads this to decide whether mail it is handed should go out
+     * inline or be left for the queue: a job that emails many users must not
+     * pay an SMTP handshake per user while a visitor's page load waits on it.
+     */
+    private static $in_job = 0;
+
+    /** @return bool whether a scheduled job is currently running. */
+    public static function is_running_job() { return self::$in_job > 0; }
+
     public function run($job, callable $work) {
         $this->job = $job;
 
@@ -62,6 +76,7 @@ class JobRunner {
         $this->started = microtime(true);
         $this->run_id  = $this->start_record($job);
 
+        self::$in_job++;
         try {
             $result = $work($this);
             $result = is_array($result) ? $result : array();
@@ -77,6 +92,7 @@ class JobRunner {
             $this->finish_record('FAILED', 0, 0, substr($e->getMessage(), 0, 1000));
             return array('ok' => false, 'error' => $e->getMessage());
         } finally {
+            self::$in_job--;
             $this->release();
         }
     }
