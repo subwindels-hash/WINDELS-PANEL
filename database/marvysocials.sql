@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 40), roles,
+-- foreign keys, migration bookkeeping (version 41), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first-login accounts. No migration,
 -- seed or installer command has to run afterwards.
@@ -2314,6 +2314,10 @@ SELECT r.id, p.id
     ON rp.role_id = r.id AND rp.permission_id = p.id
  WHERE r.name = 'ADMIN' AND rp.role_id IS NULL;
 
+-- ---------------------------------------------------------------------
+-- migration 041_email_template_text_links
+-- ---------------------------------------------------------------------
+
 -- ======================================================================
 -- MIGRATION BOOKKEEPING
 -- ======================================================================
@@ -2328,7 +2332,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 DELETE FROM migrations;
 
-INSERT INTO migrations (version) VALUES (40);
+INSERT INTO migrations (version) VALUES (41);
 
 -- ======================================================================
 -- CORE DATA
@@ -3116,10 +3120,10 @@ VALUES (9, 'fundsvera', 'GRJ1X0NJS18KH9YZXBKXVPDTFT', 'Bank Transfer', 'FUNDSVER
 
 -- email_templates
 INSERT INTO `email_templates` (`id`, `template_key`, `subject`, `body_html`, `body_text`, `variables`, `is_active`)
-VALUES (1, 'auth.verify_email', 'Verify your {{site_name}} account', '<p>Hi {{username}},</p><p>Confirm your email to activate your account:</p><p><a href="{{verify_url}}">Verify email</a></p>', 'Hi {{username}},\nConfirm your email to activate your account:\nVerify email', '["site_name","username","verify_url"]', 1);
+VALUES (1, 'auth.verify_email', 'Verify your {{site_name}} account', '<p>Hi {{username}},</p><p>Confirm your email to activate your account:</p><p><a href="{{verify_url}}">Verify email</a></p>', 'Hi {{username}},\nConfirm your email to activate your account:\nVerify email ({{verify_url}})', '["site_name","username","verify_url"]', 1);
 
 INSERT INTO `email_templates` (`id`, `template_key`, `subject`, `body_html`, `body_text`, `variables`, `is_active`)
-VALUES (2, 'auth.password_reset', 'Reset your {{site_name}} password', '<p>Hi {{username}},</p><p>Use the link below to set a new password. It expires in 60 minutes.</p><p><a href="{{reset_url}}">Reset password</a></p>', 'Hi {{username}},\nUse the link below to set a new password. It expires in 60 minutes.\nReset password', '["site_name","username","reset_url"]', 1);
+VALUES (2, 'auth.password_reset', 'Reset your {{site_name}} password', '<p>Hi {{username}},</p><p>Use the link below to set a new password. It expires in 60 minutes.</p><p><a href="{{reset_url}}">Reset password</a></p>', 'Hi {{username}},\nUse the link below to set a new password. It expires in 60 minutes.\nReset password ({{reset_url}})', '["site_name","username","reset_url"]', 1);
 
 INSERT INTO `email_templates` (`id`, `template_key`, `subject`, `body_html`, `body_text`, `variables`, `is_active`)
 VALUES (3, 'order.completed', 'Order {{order_id}} completed', '<p>Your order <strong>{{order_id}}</strong> for {{service_name}} is complete.</p><p>Quantity: {{quantity}} · Charge: {{charge}}</p>', 'Your order {{order_id}} for {{service_name}} is complete.\nQuantity: {{quantity}} · Charge: {{charge}}', '["order_id","service_name","quantity","charge"]', 1);
@@ -3131,10 +3135,10 @@ INSERT INTO `email_templates` (`id`, `template_key`, `subject`, `body_html`, `bo
 VALUES (5, 'payment.credited', 'Wallet credited: {{amount}}', '<p>We received your payment of {{amount}}. Your new balance is {{balance}}.</p>', 'We received your payment of {{amount}}. Your new balance is {{balance}}.', '["amount","balance"]', 1);
 
 INSERT INTO `email_templates` (`id`, `template_key`, `subject`, `body_html`, `body_text`, `variables`, `is_active`)
-VALUES (6, 'ticket.replied', 'Support ticket {{ticket_id}} updated', '<p>Our team replied to your ticket <strong>{{subject}}</strong>.</p><p><a href="{{ticket_url}}">View ticket</a></p>', 'Our team replied to your ticket {{subject}}.\nView ticket', '["ticket_id","subject","ticket_url"]', 1);
+VALUES (6, 'ticket.replied', 'Support ticket {{ticket_id}} updated', '<p>Our team replied to your ticket <strong>{{subject}}</strong>.</p><p><a href="{{ticket_url}}">View ticket</a></p>', 'Our team replied to your ticket {{subject}}.\nView ticket ({{ticket_url}})', '["ticket_id","subject","ticket_url"]', 1);
 
 INSERT INTO `email_templates` (`id`, `template_key`, `subject`, `body_html`, `body_text`, `variables`, `is_active`)
-VALUES (7, 'shop.digital_ready', 'Your download is ready: {{product}}', '<p>Hi {{username}},</p><p>Your purchase <strong>{{product}}</strong> (order {{order_id}}) is ready.</p><p><a href="{{downloads_url}}">Download it from My Downloads</a> — you can issue a fresh download link there at any time.</p>', 'Hi {{username}},\nYour purchase {{product}} (order {{order_id}}) is ready.\nDownload it from My Downloads — you can issue a fresh download link there at any time.', '["username","product","order_id","downloads_url"]', 1);
+VALUES (7, 'shop.digital_ready', 'Your download is ready: {{product}}', '<p>Hi {{username}},</p><p>Your purchase <strong>{{product}}</strong> (order {{order_id}}) is ready.</p><p><a href="{{downloads_url}}">Download it from My Downloads</a> — you can issue a fresh download link there at any time.</p>', 'Hi {{username}},\nYour purchase {{product}} (order {{order_id}}) is ready.\nDownload it from My Downloads ({{downloads_url}}) — you can issue a fresh download link there at any time.', '["username","product","order_id","downloads_url"]', 1);
 
 INSERT INTO `email_templates` (`id`, `template_key`, `subject`, `body_html`, `body_text`, `variables`, `is_active`)
 VALUES (8, 'contact.reply_general', 'Re: {{subject}}', '<p>Hi {{name}},</p><p>Thanks for contacting {{site_name}} — here is where that stands.</p><p>{{reply}}</p><p>If anything above is unclear, just answer this email.</p>', 'Hi {{name}},\nThanks for contacting {{site_name}} — here is where that stands.\n{{reply}}\nIf anything above is unclear, just answer this email.', '["name","subject","site_name","reply"]', 1);

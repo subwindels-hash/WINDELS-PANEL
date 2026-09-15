@@ -23,11 +23,20 @@ $tab = function ($key, $label, $count) use ($status) {
       <p class="muted mb-0">
         Delivery happens on the <code class="mono">email_queue</code> cron job, so a message that never
         arrived leaves its reason here. Current transport:
-        <strong class="mono"><?=htmlspecialchars($transport)?></strong><?php if ($transport === 'log'): ?>
-          — nothing is actually being emailed; set <code class="mono">mail_transport</code> to
-          <code class="mono">smtp</code> or <code class="mono">mail</code> in Settings when you are ready.
-        <?php endif; ?>
+        <strong class="mono"><?=htmlspecialchars($transport)?></strong>.
       </p>
+      <?php if ($transport === 'log'): ?>
+        <div class="alert alert-warning mt-3 mb-0">
+          <strong>No email is leaving this panel.</strong>
+          The <code class="mono">log</code> transport writes each message to
+          <code class="mono">storage/logs/mail.log</code> and sends nothing — so password-reset and
+          verification links never reach customers, even though the queue below shows them as
+          <span class="mono">SENT</span>. Set <strong>Transport</strong> to
+          <code class="mono">mail</code> (cPanel's sendmail, works with no further configuration) or
+          <code class="mono">smtp</code> in Admin → Settings → Email, then use <em>Send test</em> to
+          confirm it before relying on it.
+        </div>
+      <?php endif; ?>
     </div>
 
     <form method="post" action="<?=site_url('admin/mail-queue/test')?>" class="row" style="gap:.5rem;align-items:flex-end">

@@ -158,7 +158,9 @@ class Inbox extends Admin_Controller {
         }
 
         $this->session->set_flashdata('success',
-            'Reply queued to '.$msg->from_email.'. It sends with the next mail-queue run.');
+            $this->mailservice->last_send_was_immediate()
+                ? 'Reply sent to '.$msg->from_email.'.'
+                : 'Reply queued to '.$msg->from_email.'. It sends with the next mail-queue run.');
         redirect('admin/inbox/'.$public_id);
     }
 

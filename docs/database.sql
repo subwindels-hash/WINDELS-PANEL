@@ -2277,4 +2277,8 @@ SELECT r.id, p.id
     ON rp.role_id = r.id AND rp.permission_id = p.id
  WHERE r.name = 'ADMIN' AND rp.role_id IS NULL;
 
+-- ---------------------------------------------------------------------
+-- migration 041_email_template_text_links
+-- ---------------------------------------------------------------------
+
 SET FOREIGN_KEY_CHECKS = 1;

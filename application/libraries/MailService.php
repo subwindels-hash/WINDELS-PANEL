@@ -25,9 +25,10 @@ class MailService {
      * @param string $template_key  e.g. "auth.verify_email"
      * @param array  $variables     merged into {{placeholders}}
      * @param string $to_name
+     * @param bool|null $urgent     null decides automatically (web = now)
      * @return bool
      */
-    public function enqueue_template($to, $template_key, array $variables = array(), $to_name = null) {
+    public function enqueue_template($to, $template_key, array $variables = array(), $to_name = null, $urgent = null) {
         $row = $this->ci->db->where('template_key', $template_key)
             ->where('is_active', 1)->get('email_templates')->row();
         if (!$row) {
@@ -38,9 +39,9 @@ class MailService {
         $variables = array_merge($this->global_variables(), $variables);
         $subject = $this->interpolate($row->subject, $variables);
         $html    = $this->interpolate($row->body_html, $variables);
-        $text    = $row->body_text ? $this->interpolate($row->body_text, $variables) : trim(strip_tags($html));
+        $text    = $row->body_text ? $this->interpolate($row->body_text, $variables) : self::readable_text($html);
 
-        return $this->enqueue_raw($to, $subject, $html, $text, $to_name, $template_key);
+        return $this->enqueue_raw($to, $subject, $html, $text, $to_name, $template_key, $urgent);
     }
 
     /**
@@ -69,15 +70,23 @@ class MailService {
                 'username'  => $user->username,
                 'reset_url' => site_url('reset-password/' . $token),
             ),
-            $user->username
+            $user->username,
+            // Urgent: a reset link is worthless if it lands after the customer
+            // has given up and requested three more.
+            true
         );
     }
 
     /**
      * Enqueue a raw (already-rendered) email.
+     *
+     * @param bool|null $urgent deliver on this request instead of waiting for
+     *                          the email_queue worker (see flush_now()).
+     *                          null (the default) decides automatically — see
+     *                          send_immediately_by_default().
      */
     public function enqueue_raw($to, $subject, $body_html, $body_text = null,
-                                 $to_name = null, $template_key = null) {
+                                 $to_name = null, $template_key = null, $urgent = null) {
         $ok = (bool) $this->ci->db->insert('email_queue', array(
             'to_email'     => strtolower(trim($to)),
             'to_name'      => $to_name,
@@ -91,10 +100,245 @@ class MailService {
             'created_at'   => gmdate('Y-m-d H:i:s'),
         ));
 
+        $id = $ok ? (int)$this->ci->db->insert_id() : 0;
+
         if ($ok && env_bool('MAIL_LOG')) {
-            log_message('info', "mail queued to {$to} <{$subject}>\n".strip_tags($body_html));
+            $this->write_mail_log("queued to {$to} <{$subject}>\n".self::readable_text($body_html));
         }
+
+        if ($urgent === null) $urgent = $this->send_immediately_by_default();
+
+        // Time-critical mail is delivered on this request rather than waiting
+        // for the worker. The row is still a queue row, so a failure here
+        // retries and reports exactly like any other message.
+        $this->last_send_was_immediate = ($ok && $urgent) ? $this->flush_now($id) : false;
+
         return $ok;
+    }
+
+    /**
+     * Did the last enqueue actually deliver, rather than leave a queue row?
+     *
+     * Screens use this to describe what happened truthfully: "sent" when the
+     * message is gone, "queued" when it is still waiting. Telling an operator
+     * a reply was sent when it is sitting in a queue — or that it was queued
+     * when it already went — is how the original report started.
+     */
+    public function last_send_was_immediate() {
+        return (bool)$this->last_send_was_immediate;
+    }
+    private $last_send_was_immediate = false;
+
+    /**
+     * Should a message with no explicit preference go out on this request?
+     *
+     * Yes for web requests — that is where a human just pressed "Send" and is
+     * now looking at a screen that says the message was sent. An operator
+     * replying from Admin → Messages, a customer triggering a receipt, a
+     * contact form: all of them read "Queued for five minutes" as broken,
+     * because from where they sit it is.
+     *
+     * No while a scheduled job is running — on the CLI, or inside the
+     * heartbeat, which runs jobs during an ordinary web request and so would
+     * otherwise look exactly like a human pressing Send. Two reasons, and both
+     * matter:
+     *
+     *   - email_queue() is already looping over claimed rows and sending
+     *     them. A job that enqueues mail (PIN rotation issues a new PIN to
+     *     every user whose PIN aged out) would otherwise send each message
+     *     inline, one SMTP handshake at a time, inside a job that is supposed
+     *     to be a bounded batch — and smtp_timeout is 15s per message, so a
+     *     slow mail host turns a 200-user rotation into an hour-long job that
+     *     overlaps its own next tick.
+     *   - the batch is not waiting on a human. Nobody is watching a screen,
+     *     so there is nothing to be immediate for.
+     *
+     * Callers that know better still win: pass true or false explicitly.
+     */
+    private function send_immediately_by_default() {
+        if ($this->is_cli_context()) return false;
+        if (class_exists('JobRunner') && JobRunner::is_running_job()) return false;
+        return true;
+    }
+
+    /** Seam: overridden in tests, which themselves run under the CLI SAPI. */
+    protected function is_cli_context() {
+        return class_exists('Env') && Env::is_cli();
+    }
+
+    /**
+     * Deliver one specific queued row immediately, in this request.
+     *
+     * Why this exists: the email_queue worker runs every 5 minutes, and on a
+     * host with no crontab it runs only when site traffic drives the in-app
+     * heartbeat (itself throttled to one pass per minute). A password-reset
+     * link that arrives minutes after the customer clicked "reset" reads as
+     * broken — they request another, and another. Auth mail is the one class
+     * of message where the delay is the defect.
+     *
+     * It deliberately reuses the queue rather than sending around it: the same
+     * CAS claim the worker uses (so the two can never both send the row), the
+     * same attempt counting, the same exponential backoff, the same last_error
+     * on the admin screen. A failure here leaves the row QUEUED for the worker
+     * to retry — the immediate attempt is an optimisation, never the only
+     * chance the message gets.
+     *
+     * Never throws: enqueueing succeeded, and the caller's flow (a password
+     * reset) must not fail because an SMTP server was slow.
+     *
+     * @param int $id email_queue row id
+     * @return bool whether the message went out on this request
+     */
+    public function flush_now($id) {
+        $id = (int)$id;
+        if ($id <= 0) return false;
+
+        try {
+            // Claim exactly as CronWorkers::email_queue() does: only the
+            // process that flips QUEUED -> SENDING owns the row, so an
+            // overlapping worker run cannot deliver it twice.
+            // scheduled_at is stamped with the claim time so the worker's
+            // stale-SENDING sweep can tell an abandoned row from a live send.
+            $this->ci->db->where('id', $id)->where('status', 'QUEUED')
+                ->update('email_queue', array(
+                    'status'       => 'SENDING',
+                    'scheduled_at' => gmdate('Y-m-d H:i:s'),
+                ));
+            if ((int)$this->ci->db->affected_rows() !== 1) return false;
+
+            $mail = $this->ci->db->where('id', $id)->get('email_queue')->row();
+            if (!$mail) return false;
+
+            $attempts = (int)$mail->attempts + 1;
+            $res = $this->deliver($mail);
+
+            if (!empty($res['ok'])) {
+                $this->ci->db->where('id', $id)->update('email_queue', array(
+                    'status'     => 'SENT',
+                    'attempts'   => $attempts,
+                    'sent_at'    => gmdate('Y-m-d H:i:s'),
+                    'last_error' => null,
+                ));
+                return true;
+            }
+
+            // Hand it back to the worker so a transient failure is retried
+            // rather than lost. The first retry is deliberately due straight
+            // away rather than 2^1 minutes out: this row was urgent enough to
+            // send inline, one blip (a dropped connection, a greylisting) is
+            // the common case, and the next worker tick is a minute away. From
+            // the second attempt on, the normal exponential backoff applies so
+            // a genuinely dead mail host is not hammered.
+            $error = substr((string)($res['error'] ?? 'send failed'), 0, 1000);
+            if (!empty($res['hint'])) $error .= ' — '.substr((string)$res['hint'], 0, 600);
+            $delay = $attempts <= 1 ? 0 : (60 * pow(2, $attempts));
+            $this->ci->db->where('id', $id)->update('email_queue', array(
+                'status'       => 'QUEUED',
+                'attempts'     => $attempts,
+                'last_error'   => $error,
+                'scheduled_at' => gmdate('Y-m-d H:i:s', time() + $delay),
+            ));
+            return false;
+        } catch (Throwable $e) {
+            // Release the claim so the row is not stranded in SENDING.
+            try {
+                $this->ci->db->where('id', $id)->where('status', 'SENDING')
+                    ->update('email_queue', array(
+                        'status'     => 'QUEUED',
+                        'last_error' => substr('immediate send failed: '.$e->getMessage(), 0, 1000),
+                    ));
+            } catch (Throwable $inner) {
+                // Nothing further to do: the worker's stale-SENDING sweep owns it.
+            }
+            log_message('error', 'mail: immediate delivery failed: '.$e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Flatten HTML to text WITHOUT throwing away the links.
+     *
+     * A bare strip_tags() keeps the anchor text and discards the href, so
+     * "<a href="…/reset-password/TOKEN">Reset password</a>" collapses to the
+     * words "Reset password" and the token — the only thing the message exists
+     * to carry — is gone. That silently emptied both the plain-text alternative
+     * part of every email and the logged copy of a reset link.
+     *
+     * Each link is rendered as "text (url)". Angle brackets are deliberately
+     * NOT used as the delimiter: "<https://…>" is indistinguishable from a tag
+     * to strip_tags(), which would remove the URL again on the very next line.
+     */
+    public static function readable_text($html) {
+        $out = (string)$html;
+        $out = preg_replace_callback(
+            '/<a\b[^>]*href\s*=\s*["\']([^"\']*)["\'][^>]*>(.*?)<\/a>/is',
+            function ($m) {
+                $href = trim($m[1]);
+                $text = trim(strip_tags($m[2]));
+                if ($href === '') return $text;
+                // Don't print the URL twice when it is already the link text.
+                if ($text === '' || $text === $href) return $href;
+                return $text.' ('.$href.')';
+            },
+            $out
+        );
+        // Keep the line structure the reader expects from block elements.
+        $out = preg_replace('/<(br|\/p|\/div|\/li|\/tr|\/h[1-6])\b[^>]*>/i', "\n", $out);
+        $out = strip_tags($out);
+        $out = html_entity_decode($out, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        // Collapse the blank-line pileup the tag removal leaves behind.
+        $out = preg_replace('/[ \t]+/', ' ', $out);
+        $out = preg_replace('/\n{3,}/', "\n\n", $out);
+        return trim($out);
+    }
+
+    /**
+     * Write an outbound-mail payload somewhere an operator can actually read.
+     *
+     * This deliberately does NOT go through log_message('info'). CI3 grades
+     * levels ERROR=1, DEBUG=2, INFO=3 and only writes a level whose number is
+     * <= the configured threshold — and config/config.php sets that threshold
+     * to 1 in production and 2 with APP_DEBUG on. INFO is 3, so it is above
+     * the threshold in BOTH cases: every 'info' line this class ever wrote was
+     * discarded before it reached a file.
+     *
+     * That is what made the `log` transport a black hole. deliver() reported
+     * ok=true, the queue row was marked SENT, and the message existed nowhere
+     * at all — no inbox, no log, nothing to retry — which is exactly how a
+     * password-reset link goes missing without leaving a trace.
+     *
+     * So the payload is appended to its own file (storage/logs/mail.log, which
+     * needs no threshold to be readable), and log_message('error') is the
+     * fallback when that path is not writable — 'error' being the one level
+     * this panel always emits.
+     *
+     * @return bool whether the payload was persisted somewhere
+     */
+    private function write_mail_log($message) {
+        $line = '['.gmdate('Y-m-d H:i:s').' UTC] '.$message."\n\n";
+
+        $path = null;
+        try {
+            if (class_exists('Env') || is_file(APPPATH.'core/Env.php')) {
+                require_once APPPATH.'core/Env.php';
+                $paths = Env::writable_paths();
+                if (!empty($paths['logs'])) $path = rtrim($paths['logs'], '/').'/mail.log';
+            }
+        } catch (Throwable $e) {
+            $path = null;
+        }
+
+        if ($path !== null) {
+            $dir = dirname($path);
+            if (!is_dir($dir)) @mkdir($dir, 0775, true);
+            if (@file_put_contents($path, $line, FILE_APPEND | LOCK_EX) !== false) {
+                return true;
+            }
+        }
+
+        // Last resort: the only level this panel's threshold always writes.
+        log_message('error', 'mail[log] '.$message);
+        return false;
     }
 
     /**
@@ -118,11 +362,31 @@ class MailService {
         $transport = $this->transport();
 
         if ($transport === 'log' || env_bool('MAIL_LOG')) {
-            log_message('info', sprintf(
-                "mail[log] to=%s subject=%s\n%s",
-                $mail->to_email, $mail->subject, strip_tags((string)$mail->body_html)
+            $written = $this->write_mail_log(sprintf(
+                "to=%s subject=%s\n%s",
+                $mail->to_email, $mail->subject,
+                // Flatten the HTML (link-preserving) in preference to the
+                // stored body_text: rows queued before migration 041 have a
+                // text part whose URLs were stripped, and this logged copy is
+                // the operator's last resort for a reset link that never
+                // arrived — it has to contain the actual URL.
+                trim((string)$mail->body_html) !== ''
+                    ? self::readable_text((string)$mail->body_html)
+                    : (string)$mail->body_text
             ));
-            if ($transport === 'log') return array('ok'=>true, 'transport'=>'log');
+            if ($transport === 'log') {
+                // Only claim success when the payload is actually readable
+                // somewhere. A 'log' transport that cannot write is a message
+                // that vanished, and reporting ok=true would mark the queue
+                // row SENT and destroy the last copy of a reset link.
+                return $written
+                    ? array('ok'=>true, 'transport'=>'log')
+                    : array('ok'=>false, 'transport'=>'log',
+                            'error'=>'the log transport could not write the message anywhere',
+                            'hint'=>'storage/logs is not writable, so nothing was delivered and nothing '
+                                .'was recorded. Fix the permissions, or set Admin → Settings → Email → '
+                                .'Transport to "mail" (cPanel sendmail) to send real email.');
+            }
         }
 
         if ($transport !== 'smtp' && $transport !== 'mail') {
@@ -171,6 +435,26 @@ class MailService {
      */
     private function prime_message($mail) {
         $this->ci->email->clear(true);
+        // Pin the protocol to the transport this panel actually resolved.
+        //
+        // config/email.php builds the library's protocol from VP_MAIL_DRIVER
+        // alone, while transport() lets the admin-editable `mail_transport`
+        // setting win. When they disagree the panel used to send through the
+        // .env protocol while REPORTING the settings one: an operator who
+        // switched Admin → Settings → Email → Transport to "smtp" and entered
+        // their cPanel credentials still had every message handed to PHP
+        // mail(), which many shared hosts silently blackhole — mail() returns
+        // true, the queue row goes SENT, and the reset link is never
+        // delivered. Setting it here makes the reported transport the one that
+        // is used.
+        $transport = $this->transport();
+        if ($transport === 'smtp' || $transport === 'mail') {
+            if (method_exists($this->ci->email, 'set_protocol')) {
+                $this->ci->email->set_protocol($transport);
+            } else {
+                $this->ci->email->protocol = $transport;
+            }
+        }
         // Greet the server with the panel's real domain, never the stock
         // 'localhost.localdomain' a cron request has for SERVER_NAME:
         // cPanel Exim setups with strict HELO checks reject or mislog a

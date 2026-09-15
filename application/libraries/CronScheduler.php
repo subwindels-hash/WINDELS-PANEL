@@ -156,9 +156,17 @@ class CronScheduler {
      * "Due" means: the job's cadence (its own schedule) has elapsed since its
      * last recorded run — for interval schedules (`*`, `*\/n` minutes/hours)
      * measured from that run; for a fixed daily time (`H H * * *`) measured
-     * against today's occurrence. Jobs with no schedule, or no answer from
-     * the run history, are left to the crontab/admin catch-up rather than
-     * guessed at.
+     * against today's occurrence.
+     *
+     * A job with NO run history is due immediately. It used to be skipped,
+     * with the reasoning that "crontab/catch-up owns the first run" — but on
+     * the deployment this heartbeat exists for there IS no crontab, and the
+     * only thing that writes run history is a run. So nothing ever ran: the
+     * first run waited on a history that only the first run could create, and
+     * queued email (password resets included) sat QUEUED forever on a panel
+     * whose operator never found Admin → Cron jobs → Run overdue jobs.
+     * Treating "never ran" as due is also what the cadence means literally —
+     * an interval job that has never run is infinitely overdue.
      *
      * @param string $now 'Y-m-d H:i:s' UTC
      * @return array[] of {job, age_minutes, overdue_minutes}
@@ -172,7 +180,27 @@ class CronScheduler {
 
             $latest = self::latest_runs();
             foreach ($schedules as $job => $schedule) {
-                if (!isset($latest[$job])) continue; // never ran: crontab/catch-up owns the first run
+                if (!isset($latest[$job])) {
+                    // Never ran. Only bootstrap jobs whose schedule this class
+                    // understands, so an unparseable expression still falls to
+                    // the crontab rather than running on every single tick.
+                    $cadence = self::due_at_age_minutes((string)$schedule, $now, $now);
+                    if ($cadence === null) continue;
+                    $out[] = array(
+                        'job'             => $job,
+                        'age_minutes'     => 0,
+                        // Sorts below any genuinely overdue job, so a real
+                        // backlog still drains first.
+                        'overdue_minutes' => 0,
+                        // Tie-breaker among never-run jobs: the tightest
+                        // cadence bootstraps first. A tick runs only a few
+                        // jobs, so without this the once-a-day jobs could keep
+                        // winning the coin toss and email_queue would wait
+                        // ticks it does not have.
+                        'cadence_minutes' => $cadence,
+                    );
+                    continue;
+                }
                 $last = $latest[$job];
                 if (isset($last->status) && $last->status === 'RUNNING'
                     && (time() - strtotime($last->started_at.' UTC')) < 3600) {
@@ -195,7 +223,17 @@ class CronScheduler {
             return array();
         }
 
-        usort($out, function ($a, $b) { return $b['overdue_minutes'] - $a['overdue_minutes']; });
+        usort($out, function ($a, $b) {
+            if ($a['overdue_minutes'] !== $b['overdue_minutes']) {
+                return $b['overdue_minutes'] - $a['overdue_minutes'];
+            }
+            // Equally overdue (in practice: the never-run jobs at 0) — run the
+            // most frequent first. Absent for jobs with history, which is the
+            // same as "no preference".
+            $ca = isset($a['cadence_minutes']) ? $a['cadence_minutes'] : PHP_INT_MAX;
+            $cb = isset($b['cadence_minutes']) ? $b['cadence_minutes'] : PHP_INT_MAX;
+            return $ca <=> $cb;
+        });
         return $out;
     }
 

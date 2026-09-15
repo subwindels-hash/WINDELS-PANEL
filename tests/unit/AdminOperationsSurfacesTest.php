@@ -123,12 +123,12 @@ class AdminOperationsSurfacesTest extends TestCase
     {
         $lines = SystemAdminService::crontab_lines(array(
             'order_status' => '*/2 * * * *',
-            'email_queue'  => '*/5 * * * *',
+            'email_queue'  => '*/1 * * * *',
         ));
         $text = implode("\n", $lines);
         // The job names and expressions still come from the real schedule table.
         $this->assertStringContainsString('cron order_status', $text);
-        $this->assertStringContainsString('*/5 * * * *', $text);
+        $this->assertStringContainsString('*/1 * * * *', $text);
         // The two things that actually stop a pasted crontab must be present and
         // derived, not placeholders the operator has to remember to replace:
         // the real document root and an overridable PHP binary that cron's

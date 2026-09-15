@@ -48,7 +48,7 @@ MYPANEL=/var/www/marvysocials
 */5  * * * *  cd $MYPANEL && "$PHP" index.php cron refill_status
 */5  * * * *  cd $MYPANEL && "$PHP" index.php cron payment_reconciliation  # asks each gateway about deposits whose callback never arrived
 */5  * * * *  cd $MYPANEL && "$PHP" index.php cron fundsvera_expire   # expires unpaid FundsVera checkout sessions
-*/5  * * * *  cd $MYPANEL && "$PHP" index.php cron email_queue
+*/1  * * * *  cd $MYPANEL && "$PHP" index.php cron email_queue
 
 # --- every 10 minutes ---------------------------------------------------------
 */10 * * * *  cd $MYPANEL && "$PHP" index.php cron service_recovery   # refunds purchases no worker can settle (no provider reference / vendor stopped answering)

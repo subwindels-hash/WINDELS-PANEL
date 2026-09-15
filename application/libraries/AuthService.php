@@ -462,7 +462,14 @@ class AuthService {
      * outstanding reset) is invalidated as soon as the password changes.
      */
     public function reset_password($token, $new_password, $ip = null) {
-        $payload = $this->ci->signedtoken->verify($token, 'reset-password');
+        // Read the subject WITHOUT verifying: the signature is bound to the
+        // user's password fingerprint, which cannot be known until the user
+        // row has been found. Verifying with an empty fingerprint first (the
+        // previous behaviour) could never match a token issued with one, so
+        // EVERY reset link failed as INVALID_OR_EXPIRED_TOKEN and password
+        // reset was unusable for every account. peek() is explicitly
+        // untrusted — the authorising check is the verify() below.
+        $payload = $this->ci->signedtoken->peek($token, 'reset-password');
         if (!$payload) {
             return array('ok' => false, 'error' => 'INVALID_OR_EXPIRED_TOKEN');
         }
@@ -470,8 +477,10 @@ class AuthService {
         if (!$user) {
             return array('ok' => false, 'error' => 'USER_NOT_FOUND');
         }
-        // The signature mixes in the current password fingerprint; verify again
-        // with it bound so any prior reset is invalidated after a change.
+        // The real check: the signature mixes in the current password
+        // fingerprint, so a token stops verifying as soon as the password
+        // changes — which makes it single-use and invalidates any other
+        // outstanding reset for the same account.
         $check = $this->ci->signedtoken->verify($token, 'reset-password',
             $this->password_fingerprint($user));
         if (!$check) {

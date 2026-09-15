@@ -115,6 +115,39 @@ class AuthRbacTest extends TestCase
         $this->assertStringContainsString("'SUPER_ADMIN','ADMIN','STAFF'", $core);
     }
 
+    /**
+     * A reset token is signed with the user's password fingerprint, so it can
+     * only be validated AFTER the user has been located — and the subject used
+     * for that lookup is inside the token. reset_password() used to read it
+     * with verify() and no fingerprint, which can never match a token issued
+     * with one: every reset link failed as INVALID_OR_EXPIRED_TOKEN and
+     * password reset was broken for every account on the panel.
+     *
+     * The unauthenticated read must go through peek(), and the authorising
+     * verify() must still be fingerprint-bound.
+     */
+    public function testPasswordResetLooksUpTheUserBeforeTheFingerprintBoundCheck()
+    {
+        $src = file_get_contents(self::$root.'/application/libraries/AuthService.php');
+        $start = strpos($src, 'public function reset_password(');
+        $this->assertNotFalse($start, 'AuthService::reset_password must exist');
+        $body = substr($src, $start, 2200);
+
+        $this->assertStringContainsString("peek(\$token, 'reset-password')", $body,
+            'the subject must be read with peek(): verify() without the fingerprint can never '
+            .'match a token that was issued with one');
+        $this->assertStringContainsString('password_fingerprint($user)', $body,
+            'the authorising check must still bind the current password fingerprint');
+
+        // The order matters: peek (read) must precede verify (authorise).
+        $peek_at   = strpos($body, '->peek(');
+        $verify_at = strpos($body, '->verify(');
+        $this->assertNotFalse($peek_at);
+        $this->assertNotFalse($verify_at);
+        $this->assertLessThan($verify_at, $peek_at,
+            'the untrusted read comes first, the fingerprint-bound verification authorises');
+    }
+
     public function testAuthControllerExistsAndHandlesAllAuthRoutes()
     {
         $src = file_get_contents(self::$root.'/application/controllers/Auth.php');

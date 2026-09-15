@@ -552,6 +552,11 @@ class Core_seeder extends Seeder {
     }
 
     private function seed_email_templates() {
+        // readable_text() lives on MailService; the seeder runs from the CLI
+        // where libraries are not autoloaded.
+        if (!class_exists('MailService', false)) {
+            require_once APPPATH.'libraries/MailService.php';
+        }
         $templates = array(
             array('auth.verify_email', 'Verify your {{site_name}} account',
                 '<p>Hi {{username}},</p><p>Confirm your email to activate your account:</p><p><a href="{{verify_url}}">Verify email</a></p>',
@@ -595,7 +600,12 @@ class Core_seeder extends Seeder {
             $this->insert_once('email_templates', array('template_key'=>$t[0]), array(
                 'subject'   => $t[1],
                 'body_html' => $t[2],
-                'body_text' => trim(strip_tags(str_replace('</p>', "\n", $t[2]))),
+                // Link-preserving flatten. A bare strip_tags() keeps the
+                // anchor TEXT and drops the href, so the plain-text part of
+                // the password-reset mail said "Reset password" with no URL
+                // anywhere in it — unusable for any recipient whose client
+                // renders the text alternative.
+                'body_text' => MailService::readable_text($t[2]),
                 'variables' => json_encode($t[3]),
                 'is_active' => 1,
             ));

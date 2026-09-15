@@ -174,7 +174,7 @@ class Content extends Admin_Controller {
             'status'    => $status,
             'transport' => $this->mailservice->transport(),
             'page_description' => 'Every message the panel has queued, with the delivery error when there '
-                                  .'is one. Retry puts a failed message back in the queue for the next cron run.',
+                                  .'is one. Retry attempts delivery immediately and tells you the result.',
         ));
     }
 
@@ -203,7 +203,18 @@ class Content extends Admin_Controller {
             array('status' => $row->status, 'attempts' => (int)$row->attempts), array('status' => 'QUEUED'),
             $this->input->ip_address(), $this->input->user_agent(), $this->request_id
         );
-        $this->session->set_flashdata('success', 'Message re-queued. The next cron run will try again.');
+        // Try it right now. The operator pressed Retry and is watching: making
+        // them wait for a cron tick to find out whether it worked is the whole
+        // complaint. flush_now() re-claims the row properly, so a worker that
+        // happens to be running at the same moment cannot double-send it, and
+        // a failure just leaves it queued with its backoff for the worker.
+        $this->load->library('MailService');
+        $sent = $this->mailservice->flush_now((int)$row->id);
+
+        $this->session->set_flashdata($sent ? 'success' : 'error', $sent
+            ? 'Message delivered.'
+            : 'Still could not deliver it — the error on the row has been updated. '
+              .'It stays queued and the worker will keep retrying.');
         redirect('admin/mail-queue');
     }
 

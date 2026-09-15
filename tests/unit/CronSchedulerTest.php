@@ -80,13 +80,74 @@ class CronSchedulerTest extends TestCase
 
     /* ============================= due-ness ============================== */
 
+    /**
+     * A brand-new install, with no crontab and an empty job_runs table, must
+     * still run its jobs.
+     *
+     * This was a deadlock: select_due() skipped every job with no run history
+     * ("crontab/catch-up owns the first run"), but on the host this heartbeat
+     * exists for there is no crontab, and the only thing that writes run
+     * history is a run. Nothing was ever due, so nothing ever ran, so nothing
+     * was ever due — queued password-reset mail sat QUEUED forever.
+     */
+    public function testAJobThatHasNeverRunIsDueOnAFreshInstall()
+    {
+        $this->app(); // no job_runs rows at all
+
+        $due  = CronScheduler::select_due(gmdate('Y-m-d H:i:s'));
+        $jobs = array_column($due, 'job');
+
+        $this->assertNotEmpty($due,
+            'with an empty history and no crontab, the heartbeat must bootstrap itself');
+        $this->assertContains('email_queue', $jobs,
+            'queued email must not wait for a first run that can never happen');
+
+        // A tick runs only a few jobs, so bootstrap order matters: the
+        // every-minute jobs must not queue behind the once-a-day ones.
+        // email_queue is '*/1', tied with the other minute-cadence jobs, so
+        // assert the band it lands in rather than an exact index.
+        $position = array_search('email_queue', $jobs, true);
+        $this->assertLessThan(CronScheduler::MAX_JOBS_PER_TICK, $position,
+            'email_queue must bootstrap within the first tick, not after the daily jobs');
+
+        // Every job ordered after email_queue must be at least as infrequent.
+        // (Stated as a cadence invariant rather than by naming a specific
+        // daily job: a fixed-time job is only due once its slot has passed, so
+        // naming one would make this test pass or fail by time of day.)
+        $schedules = (array)get_instance()->config->item('cron');
+        foreach (array_slice($jobs, $position + 1) as $later) {
+            $this->assertGreaterThanOrEqual(
+                SystemAdminService::cadence_minutes($schedules['email_queue']),
+                SystemAdminService::cadence_minutes($schedules[$later]),
+                "{$later} bootstrapped ahead of mail despite a slacker cadence");
+        }
+    }
+
+    /** Bootstrapping must not starve a job that genuinely is behind. */
+    public function testARealBacklogStillOutranksANeverRunJob()
+    {
+        $this->app(array(
+            array('job' => 'order_status', 'started_at' => gmdate('Y-m-d H:i:s', time() - 900 * 60)),
+        ));
+
+        $due = CronScheduler::select_due(gmdate('Y-m-d H:i:s'));
+        $this->assertSame('order_status', $due[0]['job'],
+            'a job 15 hours overdue is more urgent than one that has simply never run');
+        $this->assertContains('email_queue', array_column($due, 'job'),
+            'never-run jobs are still offered, just behind the real backlog');
+    }
+
     /** An interval job whose cadence has elapsed is due; a fresh one is not. */
     public function testAJobIsDueWhenItsCadenceHasElapsed()
     {
         $fresh = $this->app(array(
             array('job' => 'order_status', 'started_at' => gmdate('Y-m-d H:i:s', time() - 60)),
         ));
-        $this->assertSame(array(), CronScheduler::select_due(gmdate('Y-m-d H:i:s')),
+        // Asserted per-job, not on the whole list: every other job in the
+        // schedule has no run history on this harness, and a never-run job is
+        // now due by design (see testAJobThatHasNeverRunIsDueOnAFreshInstall).
+        $this->assertNotContains('order_status',
+            array_column(CronScheduler::select_due(gmdate('Y-m-d H:i:s')), 'job'),
             'order_status ran a minute ago against a 2-minute schedule');
 
         $stale = $this->app(array(
