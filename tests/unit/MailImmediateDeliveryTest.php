@@ -279,8 +279,27 @@ class MailImmediateDeliveryTest extends TestCase
         $this->assertSame('QUEUED', $row->status, 'a transient failure must remain retryable');
         $this->assertSame(1, (int)$row->attempts);
         $this->assertStringContainsString('smtp down', (string)$row->last_error);
+        // Due immediately, not 2 minutes out: one blip on an urgent message
+        // should cost the next worker tick, not an exponential wait.
+        $this->assertLessThanOrEqual(gmdate('Y-m-d H:i:s'), $row->scheduled_at,
+            'the first retry of an urgent message must be due straight away');
+    }
+
+    /** A repeatedly failing message still backs off, so a dead host is not hammered. */
+    public function testLaterRetriesStillBackOffExponentially()
+    {
+        $svc = $this->service(array('ok' => false, 'error' => 'smtp down'));
+        $svc->enqueue_raw('customer@example.test', 'Reset your password',
+            '<p>x</p>', null, null, 'auth.password_reset', true);
+
+        // Second attempt: the row is already at attempts=1.
+        $this->ci->db->where('id', 1)->update('email_queue', array('status' => 'QUEUED'));
+        $svc->flush_now(1);
+
+        $row = $this->row();
+        $this->assertSame(2, (int)$row->attempts);
         $this->assertGreaterThan(gmdate('Y-m-d H:i:s'), $row->scheduled_at,
-            'the retry must be scheduled into the future, as the worker would');
+            'from the second attempt on, back off rather than retry in a tight loop');
     }
 
     /** The worker and the request must never both send the same row. */

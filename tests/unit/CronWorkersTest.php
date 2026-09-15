@@ -285,6 +285,46 @@ class CronWorkersTest extends TestCase
             'a permanently failing email must stop being retried');
     }
 
+    /**
+     * A row abandoned mid-send must be recovered, not stuck forever.
+     *
+     * email_queue only ever selects QUEUED rows, and a message is flipped to
+     * SENDING before the transport is called. If the process dies in between
+     * — PHP timeout against a slow SMTP host, the worker killed, a fatal —
+     * the row kept SENDING permanently: never selected, never retried, never
+     * reported failed. It just sat in the queue looking busy, which is
+     * indistinguishable from "my message is stuck in Queued".
+     */
+    public function testAMessageStrandedInSendingIsRequeuedAndDelivered()
+    {
+        $ci = $this->fresh();
+        $ci->mail_row->status = 'SENDING';
+        // Claimed well before the grace period, so it cannot be a live send.
+        $ci->mail_row->scheduled_at = gmdate('Y-m-d H:i:s', time() - 3600);
+
+        $res = (new CronWorkers())->email_queue();
+
+        $this->assertSame('SENT', $ci->mail_row->status,
+            'an interrupted send must be picked back up, not abandoned in SENDING');
+        $this->assertSame(1, $res['processed']);
+    }
+
+    /** The sweep must not steal a send that is genuinely still running. */
+    public function testASendStillInProgressIsLeftAlone()
+    {
+        $ci = $this->fresh();
+        $ci->mail_row->status = 'SENDING';
+        // Claimed seconds ago: another worker is very likely mid-handshake.
+        $ci->mail_row->scheduled_at = gmdate('Y-m-d H:i:s', time() - 5);
+
+        $res = (new CronWorkers())->email_queue();
+
+        $this->assertSame('SENDING', $ci->mail_row->status,
+            'a fresh claim must be left to the worker that owns it');
+        $this->assertSame(0, $ci->mail_sends, 'no second send while the first may still be running');
+        $this->assertSame(0, $res['processed']);
+    }
+
     public function testAnEmailClaimedByAnotherWorkerIsSkipped()
     {
         $ci = $this->fresh();
@@ -722,6 +762,16 @@ class CronFakeDb {
             // Model the compare-and-set claim: it only succeeds while QUEUED.
             if (isset($w['status']) && $w['status'] === 'QUEUED') {
                 if (!$this->ci->claim_succeeds || $this->ci->mail_row->status !== 'QUEUED') {
+                    $this->affected = 0;
+                    return true;
+                }
+            }
+            // Model the stale-SENDING sweep: it only touches rows that are
+            // still SENDING and were claimed before the grace cutoff.
+            if (isset($w['status']) && $w['status'] === 'SENDING') {
+                $cutoff = $w['scheduled_at <='] ?? null;
+                if ($this->ci->mail_row->status !== 'SENDING'
+                    || ($cutoff !== null && $this->ci->mail_row->scheduled_at > $cutoff)) {
                     $this->affected = 0;
                     return true;
                 }

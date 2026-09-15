@@ -21,6 +21,16 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 class CronWorkers {
 
     /** Provider statuses mapped onto our order state machine. */
+    /**
+     * How long a row may sit in SENDING before it is treated as abandoned.
+     *
+     * Must be comfortably longer than the slowest real send. config/email.php
+     * allows smtp_timeout=15s per message, and PHP's own max_execution_time
+     * bounds the request around it, so ten minutes cannot overlap a send that
+     * is genuinely still running.
+     */
+    const SENDING_GRACE_SECONDS = 600;
+
     private static $status_map = array(
         'pending'     => 'PENDING',
         'inprogress'  => 'IN_PROGRESS',
@@ -638,6 +648,25 @@ class CronWorkers {
     public function email_queue($limit = 50, $max_attempts = 5) {
         $this->need(array(), array('MailService'));
 
+        // Recover rows stranded mid-send before picking up new work.
+        //
+        // A message is flipped QUEUED -> SENDING and only moved to SENT/FAILED
+        // once the transport answers. If the process dies in between — PHP
+        // timeout on a slow SMTP host, the worker being killed, a fatal — the
+        // row keeps the SENDING status forever. Nothing selects it (this
+        // worker only reads QUEUED), so it is never retried and never
+        // reported as failed: it just sits in the queue looking busy. That is
+        // indistinguishable, from the operator's side, from mail that is
+        // simply "stuck". Anything still SENDING after the grace period below
+        // cannot be a live send, so hand it back to the queue.
+        $stale_before = gmdate('Y-m-d H:i:s', time() - self::SENDING_GRACE_SECONDS);
+        $this->ci->db->where('status', 'SENDING')
+            ->where('scheduled_at <=', $stale_before)
+            ->update('email_queue', array(
+                'status'     => 'QUEUED',
+                'last_error' => 'delivery was interrupted before it completed; requeued automatically',
+            ));
+
         $rows = $this->ci->db
             ->where('status', 'QUEUED')
             ->where('scheduled_at <=', gmdate('Y-m-d H:i:s'))
@@ -649,8 +678,13 @@ class CronWorkers {
         $sent = 0; $failed = 0;
         foreach ($rows as $mail) {
             // Claim: only the run that flips QUEUED -> SENDING owns this row.
+            // scheduled_at is stamped with the claim time so the stale-SENDING
+            // sweep above can tell an abandoned row from a live send.
             $this->ci->db->where('id', $mail->id)->where('status', 'QUEUED')
-                ->update('email_queue', array('status' => 'SENDING'));
+                ->update('email_queue', array(
+                    'status'       => 'SENDING',
+                    'scheduled_at' => gmdate('Y-m-d H:i:s'),
+                ));
             if ((int)$this->ci->db->affected_rows() !== 1) continue;
 
             $attempts = (int)$mail->attempts + 1;

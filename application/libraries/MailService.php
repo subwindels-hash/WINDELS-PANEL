@@ -197,8 +197,13 @@ class MailService {
             // Claim exactly as CronWorkers::email_queue() does: only the
             // process that flips QUEUED -> SENDING owns the row, so an
             // overlapping worker run cannot deliver it twice.
+            // scheduled_at is stamped with the claim time so the worker's
+            // stale-SENDING sweep can tell an abandoned row from a live send.
             $this->ci->db->where('id', $id)->where('status', 'QUEUED')
-                ->update('email_queue', array('status' => 'SENDING'));
+                ->update('email_queue', array(
+                    'status'       => 'SENDING',
+                    'scheduled_at' => gmdate('Y-m-d H:i:s'),
+                ));
             if ((int)$this->ci->db->affected_rows() !== 1) return false;
 
             $mail = $this->ci->db->where('id', $id)->get('email_queue')->row();
@@ -217,15 +222,21 @@ class MailService {
                 return true;
             }
 
-            // Hand it back to the worker with the same backoff it would have
-            // applied, so a transient SMTP failure is retried rather than lost.
+            // Hand it back to the worker so a transient failure is retried
+            // rather than lost. The first retry is deliberately due straight
+            // away rather than 2^1 minutes out: this row was urgent enough to
+            // send inline, one blip (a dropped connection, a greylisting) is
+            // the common case, and the next worker tick is a minute away. From
+            // the second attempt on, the normal exponential backoff applies so
+            // a genuinely dead mail host is not hammered.
             $error = substr((string)($res['error'] ?? 'send failed'), 0, 1000);
             if (!empty($res['hint'])) $error .= ' — '.substr((string)$res['hint'], 0, 600);
+            $delay = $attempts <= 1 ? 0 : (60 * pow(2, $attempts));
             $this->ci->db->where('id', $id)->update('email_queue', array(
                 'status'       => 'QUEUED',
                 'attempts'     => $attempts,
                 'last_error'   => $error,
-                'scheduled_at' => gmdate('Y-m-d H:i:s', time() + (60 * pow(2, $attempts))),
+                'scheduled_at' => gmdate('Y-m-d H:i:s', time() + $delay),
             ));
             return false;
         } catch (Throwable $e) {
