@@ -88,7 +88,14 @@ $config['cron'] = array(
     // sweep they would never become withdrawable.
     'earnings_release'       => '*/10 * * * *',
     'fundsvera_expire'       => '*/5 * * * *',
-    'email_queue' => '*/5 * * * *',
+    // Every minute: this is the backstop for everything the panel sends, and
+    // a five-minute cadence meant a customer could watch a "we've emailed you"
+    // confirmation for five minutes before the message existed. Auth mail no
+    // longer waits for this tick at all (MailService::flush_now), so this only
+    // has to be prompt for bulk/notification mail and for retrying whatever
+    // the immediate attempt failed to deliver. A batch is bounded, so an empty
+    // queue costs one cheap query.
+    'email_queue' => '*/1 * * * *',
     // Pull new mail from the configured mailbox into the dashboard inboxes
     // (admin + each customer's). Every 2 minutes so a customer replying to
     // support waits at most two ticks to see it on their dashboard.

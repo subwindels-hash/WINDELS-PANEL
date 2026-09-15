@@ -438,7 +438,8 @@ class Auth extends MY_Controller {
                 'username'   => $user->username,
                 'verify_url' => $url,
             ),
-            trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: $user->username
+            trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: $user->username,
+            true // urgent: the visitor is waiting on this link to finish signing up
         );
         // In development/demo the link is surfaced in the flash message so a
         // developer can complete the flow without an inbox.

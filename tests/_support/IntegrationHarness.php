@@ -674,9 +674,9 @@ class HarnessMailService
 {
     private $h;
     public function __construct($h) { $this->h = $h; }
-    public function enqueue_template($to, $key, array $vars = array(), $to_name = null)
+    public function enqueue_template($to, $key, array $vars = array(), $to_name = null, $urgent = false)
     {
-        $this->h->sent_mail[] = array('to' => $to, 'template' => $key, 'vars' => $vars);
+        $this->h->sent_mail[] = array('to' => $to, 'template' => $key, 'vars' => $vars, 'urgent' => (bool)$urgent);
         return array('ok' => true);
     }
     public function enqueue_password_reset($user, $token)
@@ -687,9 +687,10 @@ class HarnessMailService
         );
         return true;
     }
-    public function enqueue_raw($to, $subject, $html, $text = null, $to_name = null)
+    public function enqueue_raw($to, $subject, $html, $text = null, $to_name = null,
+                                 $template_key = null, $urgent = false)
     {
-        $this->h->sent_mail[] = array('to' => $to, 'subject' => $subject);
+        $this->h->sent_mail[] = array('to' => $to, 'subject' => $subject, 'urgent' => (bool)$urgent);
         return array('ok' => true);
     }
     public function deliver($mail)

@@ -104,7 +104,8 @@ class Account extends Auth_Controller {
                 $this->mailservice->enqueue_template($email, 'auth.verify_email', array(
                     'username'   => $fresh->username,
                     'verify_url' => site_url('verify-email/'.$token),
-                ), trim(($fresh->first_name ?? '').' '.($fresh->last_name ?? '')) ?: $fresh->username);
+                ), trim(($fresh->first_name ?? '').' '.($fresh->last_name ?? '')) ?: $fresh->username,
+                    true); // urgent: the customer just changed their address and is waiting
             } catch (Throwable $e) {
                 log_message('error', 'verification email after profile change failed: '.$e->getMessage());
             }

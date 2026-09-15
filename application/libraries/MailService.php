@@ -27,7 +27,7 @@ class MailService {
      * @param string $to_name
      * @return bool
      */
-    public function enqueue_template($to, $template_key, array $variables = array(), $to_name = null) {
+    public function enqueue_template($to, $template_key, array $variables = array(), $to_name = null, $urgent = false) {
         $row = $this->ci->db->where('template_key', $template_key)
             ->where('is_active', 1)->get('email_templates')->row();
         if (!$row) {
@@ -40,7 +40,7 @@ class MailService {
         $html    = $this->interpolate($row->body_html, $variables);
         $text    = $row->body_text ? $this->interpolate($row->body_text, $variables) : self::readable_text($html);
 
-        return $this->enqueue_raw($to, $subject, $html, $text, $to_name, $template_key);
+        return $this->enqueue_raw($to, $subject, $html, $text, $to_name, $template_key, $urgent);
     }
 
     /**
@@ -69,15 +69,21 @@ class MailService {
                 'username'  => $user->username,
                 'reset_url' => site_url('reset-password/' . $token),
             ),
-            $user->username
+            $user->username,
+            // Urgent: a reset link is worthless if it lands after the customer
+            // has given up and requested three more.
+            true
         );
     }
 
     /**
      * Enqueue a raw (already-rendered) email.
+     *
+     * @param bool $urgent deliver on this request instead of waiting for the
+     *                     email_queue worker (see flush_now())
      */
     public function enqueue_raw($to, $subject, $body_html, $body_text = null,
-                                 $to_name = null, $template_key = null) {
+                                 $to_name = null, $template_key = null, $urgent = false) {
         $ok = (bool) $this->ci->db->insert('email_queue', array(
             'to_email'     => strtolower(trim($to)),
             'to_name'      => $to_name,
@@ -91,10 +97,97 @@ class MailService {
             'created_at'   => gmdate('Y-m-d H:i:s'),
         ));
 
+        $id = $ok ? (int)$this->ci->db->insert_id() : 0;
+
         if ($ok && env_bool('MAIL_LOG')) {
             $this->write_mail_log("queued to {$to} <{$subject}>\n".self::readable_text($body_html));
         }
+
+        // Time-critical mail (password reset, email verification) is delivered
+        // on this request rather than waiting up to five minutes for the
+        // worker. The row is still a queue row, so a failure here retries and
+        // reports exactly like any other message.
+        if ($ok && $urgent) $this->flush_now($id);
+
         return $ok;
+    }
+
+    /**
+     * Deliver one specific queued row immediately, in this request.
+     *
+     * Why this exists: the email_queue worker runs every 5 minutes, and on a
+     * host with no crontab it runs only when site traffic drives the in-app
+     * heartbeat (itself throttled to one pass per minute). A password-reset
+     * link that arrives minutes after the customer clicked "reset" reads as
+     * broken — they request another, and another. Auth mail is the one class
+     * of message where the delay is the defect.
+     *
+     * It deliberately reuses the queue rather than sending around it: the same
+     * CAS claim the worker uses (so the two can never both send the row), the
+     * same attempt counting, the same exponential backoff, the same last_error
+     * on the admin screen. A failure here leaves the row QUEUED for the worker
+     * to retry — the immediate attempt is an optimisation, never the only
+     * chance the message gets.
+     *
+     * Never throws: enqueueing succeeded, and the caller's flow (a password
+     * reset) must not fail because an SMTP server was slow.
+     *
+     * @param int $id email_queue row id
+     * @return bool whether the message went out on this request
+     */
+    public function flush_now($id) {
+        $id = (int)$id;
+        if ($id <= 0) return false;
+
+        try {
+            // Claim exactly as CronWorkers::email_queue() does: only the
+            // process that flips QUEUED -> SENDING owns the row, so an
+            // overlapping worker run cannot deliver it twice.
+            $this->ci->db->where('id', $id)->where('status', 'QUEUED')
+                ->update('email_queue', array('status' => 'SENDING'));
+            if ((int)$this->ci->db->affected_rows() !== 1) return false;
+
+            $mail = $this->ci->db->where('id', $id)->get('email_queue')->row();
+            if (!$mail) return false;
+
+            $attempts = (int)$mail->attempts + 1;
+            $res = $this->deliver($mail);
+
+            if (!empty($res['ok'])) {
+                $this->ci->db->where('id', $id)->update('email_queue', array(
+                    'status'     => 'SENT',
+                    'attempts'   => $attempts,
+                    'sent_at'    => gmdate('Y-m-d H:i:s'),
+                    'last_error' => null,
+                ));
+                return true;
+            }
+
+            // Hand it back to the worker with the same backoff it would have
+            // applied, so a transient SMTP failure is retried rather than lost.
+            $error = substr((string)($res['error'] ?? 'send failed'), 0, 1000);
+            if (!empty($res['hint'])) $error .= ' — '.substr((string)$res['hint'], 0, 600);
+            $this->ci->db->where('id', $id)->update('email_queue', array(
+                'status'       => 'QUEUED',
+                'attempts'     => $attempts,
+                'last_error'   => $error,
+                'scheduled_at' => gmdate('Y-m-d H:i:s', time() + (60 * pow(2, $attempts))),
+            ));
+            return false;
+        } catch (Throwable $e) {
+            // Release the claim so the row is not stranded in SENDING.
+            try {
+                $this->ci->db->where('id', $id)->where('status', 'SENDING')
+                    ->update('email_queue', array(
+                        'status'     => 'QUEUED',
+                        'last_error' => substr('immediate send failed: '.$e->getMessage(), 0, 1000),
+                    ));
+            } catch (Throwable $inner) {
+                // Nothing further to do: the worker's stale-SENDING sweep owns it.
+            }
+            log_message('error', 'mail: immediate delivery failed: '.$e->getMessage());
+            return false;
+        }
     }
 
     /**
