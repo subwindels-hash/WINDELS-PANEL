@@ -115,7 +115,7 @@ $providers = array(
               <tr>
                 <td><?=htmlspecialchars($s->name)?></td>
                 <td style="color:#94a3b8"><?=htmlspecialchars($s->category_name ?? '—')?></td>
-                <td class="mono"><?=marvy_money($s->rate)?></td>
+                <td class="mono"><?=marvy_price($s->rate)?></td>
                 <td><a class="btn btn-secondary btn-sm" href="<?=site_url('services/'.$s->slug)?>">Open</a></td>
               </tr>
             <?php endforeach; ?>

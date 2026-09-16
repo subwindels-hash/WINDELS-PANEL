@@ -79,7 +79,7 @@ elseif ($svc) $selected = $svc->public_id;
                       data-platform="<?=htmlspecialchars($row['platform'])?>"
                       data-category="<?=htmlspecialchars($row['category_id'])?>"
                       <?=$selected === $row['id'] ? 'selected' : ''?>>
-                <?=htmlspecialchars($row['name'].' — '.$__symbol.number_format((float)$row['rate'], 2).'/1k')?>
+                <?=htmlspecialchars($row['name'].' — '.marvy_price_text($row['rate'], '/1k'))?>
               </option>
             <?php endforeach; ?>
           </select>
@@ -154,7 +154,16 @@ elseif ($svc) $selected = $svc->public_id;
     <div class="card">
       <h3 class="card-title">Wallet</h3>
       <div class="text-3xl font-bold" style="font-family:var(--font-display)"><?=marvy_money($wallet->balance ?? '0', $wallet->currency ?? marvy_base_currency())?></div>
-      <?php if (bccomp($wallet->balance ?? '0', '0', 8) <= 0): ?>
+      <?php if (isset($wallet->currency) && strtoupper((string)$wallet->currency) !== marvy_base_currency() && (float)marvy_display_rate($wallet->currency) > 0): ?>
+        <div class="text-xs muted mt-1">
+          ≈ <?=marvy_money(bcdiv((string)($wallet->balance ?? '0'), (string)marvy_display_rate($wallet->currency), 8), marvy_base_currency())?>
+        </div>
+      <?php endif; ?>
+      <?php
+        $this->load->library('LedgerService');
+        $has_wallet_funds = $this->ledgerservice->covers($wallet, '0.01');
+      ?>
+      <?php if (!$has_wallet_funds): ?>
         <div class="alert alert-warning mt-3 mb-0">Your wallet is empty. Add funds before placing an order.</div>
       <?php endif; ?>
       <a class="btn btn-secondary btn-block btn-sm mt-3" href="<?=site_url('dashboard/add-funds')?>">Add funds →</a>
@@ -256,7 +265,12 @@ elseif ($svc) $selected = $svc->public_id;
     rows.forEach(function(s){
       var opt = document.createElement('option');
       opt.value = s.id;
-      opt.textContent = s.name + ' — ' + fmt(parseFloat(s.rate||'0')) + '/1k';
+      var rateVal = parseFloat(s.rate||'0');
+      var label = s.name + ' — ' + fmt(rateVal) + '/1k';
+      if (dispRate > 0 && dispSym !== sym) {
+        label += ' (≈ ' + fmtDisp(rateVal * dispRate) + '/1k)';
+      }
+      opt.textContent = label;
       opt.dataset.rate = s.rate;
       opt.dataset.min = s.min;
       opt.dataset.max = s.max;

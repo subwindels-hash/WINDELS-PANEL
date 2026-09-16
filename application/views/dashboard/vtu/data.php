@@ -27,7 +27,7 @@
       <?php foreach ($products as $p): ?>
         <option value="<?=htmlspecialchars($p->code)?>">
           <?=htmlspecialchars($p->name)?>
-          <?php if ($p->price !== null): ?> — <?=marvy_money($p->price)?><?php endif; ?>
+          <?php if ($p->price !== null): ?> — <?=marvy_price_text($p->price)?><?php endif; ?>
         </option>
       <?php endforeach; ?>
     </select>

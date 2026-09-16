@@ -68,8 +68,13 @@ $u = $current_user;
 
           <div class="card">
             <h3 class="card-title">Payment</h3>
-            <p class="text-sm muted">Charged from your wallet balance: <strong><?=marvy_money($wallet->balance ?? '0')?></strong> available.</p>
-            <?php if (bccomp($wallet->balance ?? '0', $total, 8) < 0): ?>
+            <?php
+              $this->load->library('LedgerService');
+              $has_funds = $this->ledgerservice->covers($wallet, $total);
+              $w_cur = $wallet->currency ?? marvy_base_currency();
+            ?>
+            <p class="text-sm muted">Charged from your wallet balance: <strong><?=marvy_money($wallet->balance ?? '0', $w_cur)?></strong> available<?php if (strtoupper((string)$w_cur) !== strtoupper((string)$currency) && (float)marvy_display_rate($w_cur) > 0): ?> <span class="muted text-xs">(≈ <?=marvy_money(bcdiv((string)($wallet->balance ?? '0'), (string)marvy_display_rate($w_cur), 8), $currency)?>)</span><?php endif; ?>.</p>
+            <?php if (!$has_funds): ?>
               <div class="alert alert-warning mb-0">Your wallet balance is too low for this order. <a href="<?=site_url('dashboard/add-funds')?>">Add funds</a> first.</div>
             <?php endif; ?>
           </div>
@@ -100,7 +105,7 @@ $u = $current_user;
             </div>
           <?php endif; ?>
           <button class="btn btn-primary btn-block mt-3" type="submit"
-                  <?=bccomp($wallet->balance ?? '0', $total, 8) < 0 ? 'disabled' : ''?>>Place order</button>
+                  <?=!$has_funds ? 'disabled' : ''?>>Place order</button>
           <a class="btn btn-ghost btn-block mt-2" href="<?=site_url('cart')?>">← Back to cart</a>
         </aside>
       </div>

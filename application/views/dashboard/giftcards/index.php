@@ -36,8 +36,7 @@ ksort($by_brand);
         <?php foreach ($rows as $p): ?>
           <option value="<?=htmlspecialchars($p->code)?>"
                   <?=($selected === $p->code) ? 'selected' : ''?>>
-            <?=htmlspecialchars($p->name)?>
-            — <?=marvy_money($p->price)?>
+            <?=htmlspecialchars($p->name)?> — <?=marvy_price_text($p->price)?>
           </option>
         <?php endforeach; ?>
         </optgroup>
