@@ -95,12 +95,14 @@ $csrf = function () {
           </td>
           <td>
             <?php if (!$is_base): ?>
-            <form method="post" action="<?=site_url('admin/currencies/rate')?>" class="row" style="gap:.25rem;flex-wrap:nowrap">
+            <form method="post" action="<?=site_url('admin/currencies/rate')?>" class="currency-rate-form">
               <?=$csrf()?>
               <input type="hidden" name="code" value="<?=htmlspecialchars($c->code)?>">
-              <input class="input mono" type="number" step="0.00000001" min="0.00000001" name="rate"
-                     value="<?=htmlspecialchars((string)$c->exchange_rate)?>" style="width:9rem" required>
-              <button class="btn btn-secondary btn-sm" type="submit">Update rate</button>
+              <label class="sr-only" for="rate-<?=htmlspecialchars($c->code)?>">Rate for <?=htmlspecialchars($c->code)?></label>
+              <input id="rate-<?=htmlspecialchars($c->code)?>" class="input mono currency-rate-input" type="number"
+                     step="0.00000001" min="0.00000001" inputmode="decimal" name="rate"
+                     value="<?=htmlspecialchars((string)$c->exchange_rate)?>" required>
+              <button class="btn btn-secondary btn-sm currency-rate-button" type="submit">Update rate</button>
             </form>
             <?php endif; ?>
           </td>

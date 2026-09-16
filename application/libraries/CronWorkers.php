@@ -781,6 +781,30 @@ class CronWorkers {
     }
 
     /** Refresh the service catalogue for providers whose interval has elapsed. */
+    /** Refresh display currencies from the configured public FX endpoint. */
+    public function currency_rates() {
+        $this->ci->load->library('CurrencyService');
+        $base = $this->ci->currencyservice->base_code();
+        $url = rtrim((string)getenv('CURRENCY_RATE_API_URL'), '/');
+        if ($url === '') $url = 'https://open.er-api.com/v6/latest/'.rawurlencode($base);
+        $context = stream_context_create(array('http' => array('timeout' => 12, 'ignore_errors' => true)));
+        $raw = @file_get_contents($url, false, $context);
+        $data = $raw ? json_decode($raw, true) : null;
+        if (!is_array($data) || empty($data['rates']) || !is_array($data['rates'])) {
+            return array('processed' => 0, 'failed' => 1, 'message' => 'FX provider returned no rates');
+        }
+        $rows = $this->ci->currencyservice->all();
+        $processed = 0; $failed = 0;
+        foreach ($rows as $row) {
+            if ((int)$row->is_base === 1) continue;
+            $rate = isset($data['rates'][$row->code]) ? $data['rates'][$row->code] : null;
+            $result = $this->ci->currencyservice->set_rate($row->code, $rate, null, 'AUTO:'.parse_url($url, PHP_URL_HOST));
+            if (!empty($result['ok'])) $processed++; else $failed++;
+        }
+        return array('processed' => $processed, 'failed' => $failed,
+            'message' => "updated {$processed} rate(s)".($failed ? ", {$failed} skipped" : ''));
+    }
+
     public function provider_sync() {
         $this->need(array('Provider_model'), array('ProviderSyncService'));
 

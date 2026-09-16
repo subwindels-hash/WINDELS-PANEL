@@ -686,6 +686,13 @@ button { font-family:inherit; cursor:pointer; }
 .ws-action-card:hover { text-decoration:none; }
 
 .table-wrap, .card { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.currency-rate-form { display:flex; align-items:center; gap:.5rem; min-width:17rem; }
+.currency-rate-input { width:9rem; }
+.currency-rate-button { flex:0 0 auto; }
+@media (max-width: 900px) {
+  .currency-rate-form { min-width:0; }
+  .currency-rate-input { width:8rem; }
+}
 .table-toolbar { display:flex; flex-wrap:wrap; gap:.75rem; align-items:center; margin-bottom:1rem; }
 .table-toolbar .input, .table-toolbar .select { max-width:16rem; }
 .form-layout { display:flex; flex-direction:column; gap:1rem; }

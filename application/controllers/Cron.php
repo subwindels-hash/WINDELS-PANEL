@@ -122,6 +122,11 @@ class Cron extends Cron_Controller {
         $this->execute('provider_sync');
     }
 
+    /** Refresh display-currency exchange rates hourly. */
+    public function currency_rates() {
+        $this->execute('currency_rates');
+    }
+
     public function refill_status() {
         $this->execute('refill_status');
     }
