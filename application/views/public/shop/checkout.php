@@ -91,6 +91,14 @@ $u = $current_user;
           <div class="row justify-between mt-2" style="border-top:1px dashed var(--slate-200);padding-top:.5rem">
             <strong>Total</strong><strong class="mono" style="font-size:1.2rem"><?=marvy_money($total, $currency)?></strong>
           </div>
+          <?php /* The charge is the base-currency total above; this line only tells the
+                   customer what that is worth in the currency they were browsing in. */ ?>
+          <?php if (strtoupper((string)$currency) === marvy_base_currency() && marvy_display_currency() !== marvy_base_currency()): ?>
+            <div class="row justify-between">
+              <span class="hint">Estimate in <?=htmlspecialchars(marvy_display_currency())?></span>
+              <span class="hint mono">≈ <?=htmlspecialchars(marvy_display_money($total))?></span>
+            </div>
+          <?php endif; ?>
           <button class="btn btn-primary btn-block mt-3" type="submit"
                   <?=bccomp($wallet->balance ?? '0', $total, 8) < 0 ? 'disabled' : ''?>>Place order</button>
           <a class="btn btn-ghost btn-block mt-2" href="<?=site_url('cart')?>">← Back to cart</a>

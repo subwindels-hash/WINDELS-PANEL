@@ -59,7 +59,7 @@ $badges = array(
             <?php foreach ($related as $r): ?>
               <a class="card card-hover" href="<?=site_url('services/'.$r->slug)?>" style="margin:0">
                 <h3 class="card-title" style="font-size:1rem"><?=htmlspecialchars($r->name)?></h3>
-                <strong style="color:var(--brand-700)"><?=marvy_money($r->rate)?> / 1k</strong>
+                <strong style="color:var(--brand-700)"><?=marvy_price($r->rate, '/ 1k')?></strong>
               </a>
             <?php endforeach; ?>
           </div>
@@ -71,13 +71,13 @@ $badges = array(
         <div class="card ws-pricecard">
           <div class="muted text-xs">Price</div>
           <div class="text-4xl font-bold" style="font-family:var(--font-display);color:var(--brand-700)">
-            <?=marvy_money($u->rate)?>
+            <?=marvy_price($u->rate)?>
           </div>
           <div class="muted text-sm mb-4">per <?=htmlspecialchars($unit_label)?></div>
 
           <?php if ($user_price !== null && bccomp($user_price, $guest_price, 8) < 0): ?>
             <div class="alert alert-success mb-3" style="padding:.6rem">
-              <strong>Your price:</strong> <?=marvy_money($user_price)?> per 1k
+              <strong>Your price:</strong> <?=marvy_price($user_price, 'per 1k')?>
             </div>
           <?php endif; ?>
 
@@ -93,7 +93,15 @@ $badges = array(
             </label>
             <div class="row justify-between" style="border-top:1px dashed var(--slate-200);padding-top:.75rem">
               <span class="muted">Total</span>
-              <strong id="ws-total" style="font-size:1.25rem"><?=marvy_money($u->rate)?></strong>
+              <div class="text-right">
+                <strong id="ws-total" style="font-size:1.25rem"><?=marvy_money($u->rate)?></strong>
+                <?php /* Live converted estimate, kept in step with the base total by the
+                         script below using the very same rate the server rendered with. */ ?>
+                <?php if (marvy_display_currency() !== marvy_base_currency()): ?>
+                  <div class="hint" id="ws-total-approx" style="margin:0"
+                       title="Estimate at the current <?=htmlspecialchars(marvy_display_currency())?> rate — your wallet is charged in <?=htmlspecialchars(marvy_base_currency())?>"></div>
+                <?php endif; ?>
+              </div>
             </div>
             <button class="btn btn-primary btn-block" type="submit" <?=!empty($current_user) ? '' : 'disabled'?>>
               <?=!empty($current_user) ? 'Continue to order →' : 'Log in to order'?>
@@ -137,11 +145,19 @@ $badges = array(
   var isPackage=<?=json_encode($u->service_type === 'PACKAGE')?>;
   // Currency symbol from the server so live totals match server-rendered prices.
   var sym=<?=json_encode(trim(str_replace(array('0','.',','), '', marvy_money(0))))?>;
+  // Display-currency conversion, from the server so the live total agrees
+  // exactly with every server-rendered price on the page. An admin rate
+  // change is picked up on the next load — there is nothing cached here.
+  var dispSym=<?=json_encode(trim(str_replace(array('0','.',','), '', marvy_display_money(0))))?>;
+  var dispRate=parseFloat(<?=json_encode(marvy_display_rate(), JSON_PRESERVE_ZERO_FRACTION)?>);
+  var approx=document.getElementById('ws-total-approx');
   function fmt(v){return sym+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+  function fmtDisp(v){return dispSym+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
   function recalc(){
     var q=parseInt(qty.value,10)||0;
     var v = isPackage ? perUnit : perUnit*q;
     total.textContent=fmt(v);
+    if(approx && dispRate>0) approx.textContent='≈ '+fmtDisp(v*dispRate);
   }
   qty.addEventListener('input',recalc); recalc();
 })();

@@ -150,6 +150,7 @@ class CurrencyService {
         if (!$active && strtoupper((string)$this->ci->Setting_model->get('default_display_currency', '')) === $code) {
             $this->ci->Setting_model->set('default_display_currency', $this->base_code(), 'currency');
         }
+        $this->forget();
         return array('ok' => true);
     }
 
@@ -171,6 +172,7 @@ class CurrencyService {
             $this->audit($actor_id, 'currency.default_display_changed', $code,
                 array('default_display_currency' => $before), array('default_display_currency' => $code));
         }
+        $this->forget();
         return array('ok' => true);
     }
 
@@ -196,6 +198,7 @@ class CurrencyService {
         }
         $this->audit($actor_id, 'currency.base_rate_refreshed', $code,
             array('exchange_rate' => $before), array('exchange_rate' => '1.00000000', 'source' => $source));
+        $this->forget();
         return array('ok' => true);
     }
 
@@ -230,6 +233,10 @@ class CurrencyService {
         }
         $this->audit($actor_id, 'currency.rate_changed', $code,
             array('exchange_rate' => $before), array('exchange_rate' => number_format((float)$rate, 8, '.', ''), 'source' => $source));
+        // Drop the per-request memo so anything rendered after this point in
+        // the same request (and the next page load) prices off the new rate
+        // rather than the one read before the write.
+        $this->forget();
         return array('ok' => true);
     }
 

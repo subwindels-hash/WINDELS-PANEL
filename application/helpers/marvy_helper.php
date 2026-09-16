@@ -250,6 +250,98 @@ if (!function_exists('marvy_display_money')) {
     }
 }
 
+if (!function_exists('marvy_display_currency')) {
+    /**
+     * The currency code the catalogue is currently browsed in (Admin →
+     * Currencies → default display currency). Falls back to the base currency
+     * whenever CurrencyService cannot answer — a price must always render.
+     */
+    function marvy_display_currency() {
+        static $code = null;
+        if ($code !== null) return $code;
+        $code = marvy_base_currency();
+        if (!function_exists('get_instance')) return $code;
+        try {
+            $ci =& get_instance();
+            $ci->load->library('CurrencyService');
+            $code = strtoupper((string)$ci->currencyservice->display_code());
+        } catch (Throwable $e) {
+            $code = marvy_base_currency();
+        }
+        return $code;
+    }
+}
+
+if (!function_exists('marvy_display_rate')) {
+    /**
+     * Units of the display currency per 1 unit of the base currency.
+     *
+     * This is the single number every catalogue surface (and the JavaScript
+     * that recalculates a live total as the customer types a quantity) must
+     * agree on, so a converted price never drifts between the card, the
+     * product page and the order form. Returns '1.00000000' when the display
+     * currency is the base currency or no usable rate exists.
+     */
+    function marvy_display_rate($to = null) {
+        $to = strtoupper((string)($to ?: marvy_display_currency()));
+        if ($to === marvy_base_currency()) return '1.00000000';
+        try {
+            $ci =& get_instance();
+            $ci->load->model('Currency_model');
+            $row = $ci->Currency_model->find($to);
+            if ($row && (int)$row->is_active === 1 && bccomp((string)$row->exchange_rate, '0', 8) > 0) {
+                return (string)$row->exchange_rate;
+            }
+        } catch (Throwable $e) {
+            // fall through to the identity rate
+        }
+        return '1.00000000';
+    }
+}
+
+if (!function_exists('marvy_price')) {
+    /**
+     * A catalogue price, rendered the way every product surface should render
+     * one: the settlement amount in the base currency, plus the converted
+     * "≈" estimate when the operator has put the catalogue in a different
+     * display currency.
+     *
+     * Why a helper instead of per-view markup: an exchange-rate change in
+     * Admin → Currencies has to reach *every* place a product price appears —
+     * services list, service detail, shop grid, product page, order form —
+     * or customers see two different prices for the same thing. Centralising
+     * it means there is exactly one conversion rule to change, and it reads
+     * live from the currency row, so a manual NGN/USD rate update is visible
+     * on the next page render with no cache to bust.
+     *
+     * The base amount stays first and unmodified on purpose: the wallet is
+     * charged in the base currency, so that is the real price and the
+     * conversion is explicitly labelled an estimate.
+     *
+     * @param string      $amount base-currency amount
+     * @param string|null $suffix optional unit label, e.g. '/ 1k'
+     * @param bool        $approx render the converted estimate (false = base only)
+     */
+    function marvy_price($amount, $suffix = null, $approx = true) {
+        $base_html = htmlspecialchars(marvy_money($amount));
+        if ($suffix) {
+            $base_html .= ' <span class="muted" style="font-weight:400;font-size:.75rem">'
+                .htmlspecialchars($suffix).'</span>';
+        }
+        if (!$approx) return $base_html;
+
+        $to = marvy_display_currency();
+        if ($to === marvy_base_currency()) return $base_html;
+
+        $converted = marvy_display_money($amount, $to);
+        if ($converted === marvy_money($amount)) return $base_html;
+
+        return $base_html.'<div class="hint marvy-approx" style="margin:0" title="Estimate at the current '
+            .htmlspecialchars($to).' rate — your wallet is always charged in '
+            .htmlspecialchars(marvy_base_currency()).'">≈ '.htmlspecialchars($converted).'</div>';
+    }
+}
+
 if (!function_exists('marvy_request_id')) {
     function marvy_request_id(){ return bin2hex(random_bytes(8)); }
 }

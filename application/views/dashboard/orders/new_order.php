@@ -131,7 +131,18 @@ elseif ($svc) $selected = $svc->public_id;
             <?php if ($user_rate && $svc && bccomp($user_rate, $svc->rate, 8) < 0): ?>
               <span class="badge badge-success">Your price</span>
             <?php endif; ?>
-            <p class="hint mb-0">Final charge is calculated on the server at checkout.</p>
+            <?php /* The converted estimate tracks the same total as the customer types.
+                     It is an estimate by design: the wallet is charged in the base
+                     currency, at the price the server recalculates on submit. */ ?>
+            <?php if (marvy_display_currency() !== marvy_base_currency()): ?>
+              <div class="hint" id="ws-total-approx" style="margin:0"></div>
+            <?php endif; ?>
+            <p class="hint mb-0">
+              Final charge is calculated on the server at checkout
+              <?php if (marvy_display_currency() !== marvy_base_currency()): ?>
+                and taken from your wallet in <?=htmlspecialchars(marvy_base_currency())?>.
+              <?php else: ?>.<?php endif; ?>
+            </p>
           </div>
           <button class="btn btn-primary btn-lg" type="submit" id="ws-submit">Place order →</button>
         </div>
@@ -156,6 +167,9 @@ elseif ($svc) $selected = $svc->public_id;
         <div class="row justify-between"><span class="muted">Refill</span><strong id="ws-refill"><?= !empty($svc) && (int)$svc->refill_supported ? 'Yes' : 'No'?></strong></div>
         <div class="row justify-between"><span class="muted">Cancel</span><strong id="ws-cancel"><?= !empty($svc) && (int)$svc->cancel_supported ? 'Yes' : 'No'?></strong></div>
         <div class="row justify-between"><span class="muted">Rate / 1k</span><strong id="ws-rate"><?=$svc ? marvy_money($svc->rate) : '—'?></strong></div>
+        <?php if (marvy_display_currency() !== marvy_base_currency()): ?>
+          <div class="row justify-between"><span class="muted">Rate / 1k (<?=htmlspecialchars(marvy_display_currency())?>)</span><strong id="ws-rate-approx" class="hint"><?=$svc ? '≈ '.htmlspecialchars(marvy_display_money($svc->rate)) : '—'?></strong></div>
+        <?php endif; ?>
       </dl>
     </div>
 
@@ -189,8 +203,15 @@ elseif ($svc) $selected = $svc->public_id;
   var infoName = document.getElementById('ws-info-name');
   var rateEl = document.getElementById('ws-rate');
   var sym = <?=json_encode(trim(str_replace(array('0','.',','), '', marvy_money(0))))?>;
+  // Display-currency conversion comes from the server, so the live estimate
+  // uses the exact rate the catalogue was rendered with — an admin rate change
+  // takes effect on the next page load, with nothing cached in between.
+  var dispSym = <?=json_encode(trim(str_replace(array('0','.',','), '', marvy_display_money(0))))?>;
+  var dispRate = parseFloat(<?=json_encode(marvy_display_rate(), JSON_PRESERVE_ZERO_FRACTION)?>);
+  var approx = document.getElementById('ws-total-approx');
 
   function fmt(v){ return sym + v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function fmtDisp(v){ return dispSym + v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
   function uniqueCategories(rows) {
     var seen = {}, out = [];
@@ -265,12 +286,16 @@ elseif ($svc) $selected = $svc->public_id;
       if (refill) refill.textContent = opt.dataset.refill === '1' ? 'Yes' : 'No';
       if (cancel) cancel.textContent = opt.dataset.cancel === '1' ? 'Yes' : 'No';
       if (rateEl) rateEl.textContent = fmt(rate);
+      var rateApprox = document.getElementById('ws-rate-approx');
+      if (rateApprox && dispRate > 0) rateApprox.textContent = '≈ ' + fmtDisp(rate * dispRate);
     } else {
       limits.textContent = '';
       if (info) info.style.display = 'none';
     }
     var q = Math.max(min, parseInt(qty.value||'0',10)||0);
-    total.textContent = fmt((rate/1000)*q);
+    var amount = (rate/1000)*q;
+    total.textContent = fmt(amount);
+    if (approx && dispRate > 0) approx.textContent = '≈ ' + fmtDisp(amount * dispRate);
     submit.disabled = !opt || !opt.value || q <= 0;
   }
 
