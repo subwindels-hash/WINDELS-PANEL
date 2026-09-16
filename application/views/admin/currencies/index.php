@@ -22,9 +22,9 @@ $csrf = function () {
   at <span class="mono">1.00000000</span> but gets fresh source and timestamp metadata. Use
   <em>Update all currencies at once</em> to run that same locked job immediately; the boxes below stay
   available for emergency manual corrections (pause the job if a manual rate must hold).
-  The NGN row has a rate box like the others: it sets the naira's dollar value (USD per ₦1,
-  e.g. <span class="mono">0.00075300</span> ≈ ₦1,328/$) and writes it to the USD row — the naira itself
-  remains the 1.0 base.
+  The NGN row has its own manual rate box like the others: type the naira's dollar value
+  (USD per ₦1, e.g. <span class="mono">0.00075300</span> ≈ ₦1,328/$) and press Update rate. The
+  naira's stored base rate itself remains the pinned <span class="mono">1.00000000</span>.
 </div>
 
 <div class="card mb-4">
@@ -60,13 +60,19 @@ $csrf = function () {
       </tr></thead>
       <tbody>
       <?php
-      // The base row (NGN) gets a rate box too — see its cell below. It edits
-      // the USD row's rate, because "the naira's rate" in day-to-day terms is
-      // its dollar value, and that is exactly what the USD row stores
-      // (units of USD per 1 NGN). Find that reference row once.
-      $usd_row = null;
+      // The base row (NGN) gets a manual rate box like every other currency.
+      // Its own stored rate is pinned at 1.0 (it is the base), so the box
+      // edits the base currency's market value — units of the quote currency
+      // (USD where available) per 1 NGN, e.g. 0.00075300 ≈ ₦1,328/$. Find the
+      // row that holds that number once.
+      $quote_row = null;
       foreach ($currencies as $c) {
-          if (strtoupper($c->code) === 'USD' && (int)$c->is_base !== 1) { $usd_row = $c; break; }
+          if (strtoupper($c->code) === 'USD' && (int)$c->is_base !== 1) { $quote_row = $c; break; }
+      }
+      if ($quote_row === null) {
+          foreach ($currencies as $c) {
+              if ((int)$c->is_base !== 1) { $quote_row = $c; break; }
+          }
       }
       ?>
       <?php foreach ($currencies as $c): $is_base = (int)$c->is_base === 1; $is_default = strtoupper($c->code) === strtoupper($display_currency); ?>
@@ -77,6 +83,12 @@ $csrf = function () {
           <td class="text-right mono">
             <?php if ($is_base): ?>
               1.00000000 <span class="badge badge-brand">base</span>
+              <?php if ($quote_row !== null): ?>
+                <div class="text-xs muted">
+                  <?=htmlspecialchars(number_format((float)$quote_row->exchange_rate, 8))?>
+                  <?=htmlspecialchars($quote_row->code)?>/<?=htmlspecialchars($c->code)?>
+                </div>
+              <?php endif; ?>
             <?php else: ?>
               <?=htmlspecialchars(number_format((float)$c->exchange_rate, 8))?>
             <?php endif; ?>
@@ -135,21 +147,24 @@ $csrf = function () {
                      value="<?=htmlspecialchars((string)$c->exchange_rate)?>" required>
               <button class="btn btn-primary btn-sm currency-rate-button" type="submit">Update rate</button>
             </form>
-            <?php elseif ($usd_row !== null): ?>
-            <?php /* The naira's own rate is pinned at 1.0 (it is the base), but its
-                     dollar value is still editable from here. This box writes the
-                     USD row's rate — units of USD per ₦1, e.g. 0.00075300 ≈ ₦1,328/$. */ ?>
-            <form method="post" action="<?=site_url('admin/currencies/rate')?>" class="currency-rate-form">
+            <?php elseif ($quote_row !== null): ?>
+            <?php /* The naira's own stored rate is pinned at 1.0 (it is the base), but
+                     its market value is editable right here, like every other row. The
+                     box posts to admin/currencies/base-rate, which records the value as
+                     units of the quote currency per ₦1, e.g. 0.00075300 ≈ ₦1,328/$. */ ?>
+            <form method="post" action="<?=site_url('admin/currencies/base-rate')?>" class="currency-rate-form">
               <?=$csrf()?>
-              <input type="hidden" name="code" value="<?=htmlspecialchars($usd_row->code)?>">
-              <label class="sr-only" for="rate-base-usd">Dollar value of 1 <?=htmlspecialchars($c->code)?> (stored on the USD row)</label>
-              <input id="rate-base-usd" class="input mono currency-rate-input" type="number"
+              <label class="sr-only" for="rate-<?=htmlspecialchars($c->code)?>">Rate for <?=htmlspecialchars($c->code)?></label>
+              <input id="rate-<?=htmlspecialchars($c->code)?>" class="input mono currency-rate-input" type="number"
                      step="0.00000001" min="0.00000001" inputmode="decimal" name="rate"
-                     value="<?=htmlspecialchars((string)$usd_row->exchange_rate)?>" required
-                     title="USD per 1 <?=htmlspecialchars($c->code)?> — same value as the USD row">
+                     value="<?=htmlspecialchars((string)$quote_row->exchange_rate)?>" required
+                     title="<?=htmlspecialchars($quote_row->code)?> per 1 <?=htmlspecialchars($c->code)?> — the naira's market value">
               <button class="btn btn-primary btn-sm currency-rate-button" type="submit">Update rate</button>
             </form>
-            <div class="text-xs muted mt-1">USD per 1 <?=htmlspecialchars($c->code)?> — updates the USD row.</div>
+            <div class="text-xs muted mt-1">
+              <?=htmlspecialchars($quote_row->code)?> per 1 <?=htmlspecialchars($c->code)?> — the naira's market value
+              (also shown on the <?=htmlspecialchars($quote_row->code)?> row).
+            </div>
             <?php endif; ?>
           </td>
         </tr>

@@ -198,6 +198,35 @@ class CurrencyTest extends TestCase
         $this->assertStringContainsString('Update all currencies at once', $view);
         $this->assertSame(1, substr_count($view, "site_url('admin/currencies/update-all')"),
             'the admin page should have one clear button for refreshing all currencies at once');
+
+    }
+
+    /* ------------------- manual base (NGN) rate box --------------------- */
+
+    public function testTheBaseCurrencyRowHasItsOwnManualRateBox()
+    {
+        $view = file_get_contents(self::$root.'/application/views/admin/currencies/index.php');
+        $this->assertStringContainsString("site_url('admin/currencies/base-rate')", $view,
+            'NGN needs a manual rate box of its own, like every other currency');
+        $this->assertStringContainsString('0.00075300', $view);
+
+        $routes = file_get_contents(self::$root.'/application/config/routes.php');
+        $this->assertStringContainsString(
+            '$route[\'admin/currencies/base-rate\'] = \'admin/currencies/set_base_rate\';', $routes);
+
+        $controller = file_get_contents(self::$root.'/application/controllers/admin/Currencies.php');
+        $this->assertStringContainsString('public function set_base_rate()', $controller);
+        $this->assertStringContainsString('$this->guard();', $controller);
+
+        $service = file_get_contents(self::$root.'/application/libraries/CurrencyService.php');
+        foreach (array('public function set_base_rate(', 'public function base_quote_code(',
+                       'public function base_rate(', 'currency.base_rate_set') as $needle) {
+            $this->assertStringContainsString($needle, $service);
+        }
+
+        $model = file_get_contents(self::$root.'/application/models/Currency_model.php');
+        $this->assertStringContainsString('if ((int)$row->is_base === 1) return false;', $model,
+            'the stored base rate itself must stay pinned at 1.0 whatever the box writes');
     }
 
     /* -------------------------- migration 011 --------------------------- */
