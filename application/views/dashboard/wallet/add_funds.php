@@ -133,7 +133,8 @@ $suggested = min($max, max($min, 5000));
     <div class="card">
       <h3 class="card-title">Summary</h3>
       <dl class="mt-3 stack" style="gap:.5rem">
-        <div class="row justify-between"><span class="muted">Current balance</span><strong><?=marvy_money($wallet->balance ?? '0', $cur)?></strong></div>
+        <div class="row justify-between"><span class="muted">Default currency</span><strong><?=html_escape($cur)?></strong></div>
+        <div class="row justify-between"><span class="muted">Current balance</span><strong><?=marvy_money($wallet->balance ?? '0', $wallet->currency ?? $cur)?></strong></div>
         <div class="row justify-between"><span class="muted">Deposit</span><strong id="ws-deposit"><?=marvy_money($suggested, $cur)?></strong></div>
         <div class="row justify-between border-t pt-2" style="border-color:var(--slate-200)"><span>New balance</span><strong id="ws-newbal"><?=marvy_money(($wallet->balance ?? 0)+$suggested, $cur)?></strong></div>
       </dl>
