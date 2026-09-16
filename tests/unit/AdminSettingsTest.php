@@ -394,6 +394,8 @@ class AdminSettingsTest extends TestCase
         $missing = array();
         foreach (Core_seeder::default_settings() as $row) {
             $key = $row[0];
+            // base_currency is handled specially by BaseCurrencyService rather than generic save
+            if ($key === 'base_currency') continue;
             if (isset($schema[$key])) continue;
             if (isset($unwired[$key])) continue;
             if (array_key_exists($key, SettingsService::readonly_settings())) continue;

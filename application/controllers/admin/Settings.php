@@ -14,8 +14,8 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *   - Settings that no code reads are **not** rendered as controls. The screen
  *     lists them instead, with what each would need to work. A switch that
  *     saves and does nothing is worse than no switch.
- *   - `base_currency` is shown read-only. It moves by migration, never by
- *     form — see the class comment on SettingsService.
+ *   - `base_currency` is handled by BaseCurrencyService, which redenominates
+ *     every stored money column at the current rate in a single transaction.
  */
 class Settings extends Admin_Controller {
 
