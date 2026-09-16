@@ -1871,7 +1871,7 @@ REFERENCES payout_requests(id) ON DELETE SET NULL;
 -- ---------------------------------------------------------------------
 
 ALTER TABLE currencies
-ADD COLUMN rate_source VARCHAR(32) NULL COMMENT 'MANUAL today; a provider key (e.g. OPEN_EXCHANGE_RATES) once automatic rates exist',
+ADD COLUMN rate_source VARCHAR(32) NULL COMMENT 'MANUAL or AUTO:<provider-host> for automatic currency-rate refreshes',
 ADD COLUMN rate_updated_by BIGINT UNSIGNED NULL COMMENT 'admin who last set exchange_rate',
 ADD COLUMN rate_updated_at DATETIME NULL COMMENT 'when exchange_rate was last changed',
 ADD COLUMN rate_effective_at DATETIME NULL COMMENT 'when this rate is considered to take effect';

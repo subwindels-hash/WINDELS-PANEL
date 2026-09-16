@@ -780,42 +780,135 @@ class CronWorkers {
         return array('processed'=>$ok, 'failed'=>$bad, 'message'=>"{$ok} healthy, {$bad} unhealthy");
     }
 
-    /** Refresh the service catalogue for providers whose interval has elapsed. */
-    /** Refresh display currencies from the configured public FX endpoint. */
+    /**
+     * Refresh display-currency exchange rates automatically.
+     *
+     * The public provider endpoint returns rates with the panel's accounting
+     * currency as the base (NGN by default). We update every configured row:
+     * display currencies receive provider rates, while the base NGN row is
+     * pinned to 1.00000000 and gets fresh source/timestamp metadata too. We
+     * never write a missing/invalid provider value over a known-good display
+     * rate. This job is scheduled hourly and is also picked up by
+     * the in-app CronScheduler auto-run heartbeat when a host has not installed
+     * the crontab yet.
+     */
     public function currency_rates() {
-        $this->ci->load->library('CurrencyService');
-        $base = $this->ci->currencyservice->base_code();
-        $url = rtrim((string)getenv('CURRENCY_RATE_API_URL'), '/');
-        if ($url === '') $url = 'https://open.er-api.com/v6/latest/'.rawurlencode($base);
-        $context = stream_context_create(array('http' => array('timeout' => 12, 'ignore_errors' => true)));
-        $raw = @file_get_contents($url, false, $context);
-        $data = $raw ? json_decode($raw, true) : null;
-        if (!is_array($data) || empty($data['rates']) || !is_array($data['rates'])) {
-            return array('processed' => 0, 'failed' => 1, 'message' => 'FX provider returned no rates');
+        $this->need(array(), array('CurrencyService', 'SecureHttpClient'));
+
+        $base = strtoupper((string)$this->ci->currencyservice->base_code());
+        $url = $this->currency_rate_url($base);
+        $host = parse_url($url, PHP_URL_HOST) ?: 'configured-provider';
+        $timeout = $this->currency_rate_timeout();
+
+        $response = $this->ci->securehttpclient->get($url, array('Accept: application/json'), array(
+            'timeout' => $timeout,
+            'connect_timeout' => min(5, $timeout),
+            'max_retries' => 0,
+        ));
+        $http = (int)($response['http_code'] ?? 0);
+        if ($http < 200 || $http >= 300) {
+            $error = (string)($response['error'] ?? ('HTTP '.$http));
+            return array('processed' => 0, 'failed' => 1,
+                'message' => 'FX provider request failed: '.$error);
         }
-        $rows = $this->ci->currencyservice->all();
-        $processed = 0; $failed = 0;
-        foreach ($rows as $row) {
-            // NGN is the accounting/base currency. Its canonical rate is
-            // always 1.00000000 by definition; the provider response is
-            // requested with NGN as the base, so all other rates are already
-            // expressed as units per one NGN.
-            if ((int)$row->is_base === 1) continue;
-            $rate = isset($data['rates'][$row->code]) ? $data['rates'][$row->code] : null;
-            // Never write a missing or malformed provider value. This keeps a
-            // partial/outage response from replacing a valid rate with zero.
+
+        $data = json_decode((string)($response['body'] ?? ''), true);
+        if (!is_array($data)) {
+            return array('processed' => 0, 'failed' => 1,
+                'message' => 'FX provider returned invalid JSON');
+        }
+        if (isset($data['result']) && in_array(strtolower((string)$data['result']), array('error', 'failed', 'failure'), true)) {
+            $message = (string)($data['error-type'] ?? $data['message'] ?? 'FX provider reported an error');
+            return array('processed' => 0, 'failed' => 1, 'message' => $message);
+        }
+
+        $provider_base = strtoupper((string)($data['base_code'] ?? $data['base'] ?? $data['base_currency'] ?? ''));
+        if ($provider_base !== '' && $provider_base !== $base) {
+            return array('processed' => 0, 'failed' => 1,
+                'message' => 'FX provider base mismatch: expected '.$base.', got '.$provider_base);
+        }
+
+        $rates = $this->currency_rates_from_payload($data);
+        if (!$rates) {
+            return array('processed' => 0, 'failed' => 1,
+                'message' => 'FX provider returned no rates');
+        }
+
+        $processed = 0;
+        $failed = 0;
+        $checked = 0;
+        foreach ($this->ci->currencyservice->all() as $row) {
+            $checked++;
+
+            $code = strtoupper((string)$row->code);
+            if ((int)$row->is_base === 1) {
+                // NGN (the base row) must update too, but its rate is fixed by
+                // accounting identity: one naira is one naira. Refreshing it
+                // means pinning exchange_rate back to 1.00000000 and updating
+                // rate_source/rate_updated_at alongside the foreign rows.
+                $result = $this->ci->currencyservice->refresh_base_rate($code, null, 'AUTO:'.$host);
+                if (!empty($result['ok'])) $processed++; else $failed++;
+                continue;
+            }
+
+            $rate = $rates[$code] ?? null;
             if (!is_numeric($rate) || (float)$rate <= 0) {
                 $failed++;
                 continue;
             }
-            $host = parse_url($url, PHP_URL_HOST) ?: 'configured-provider';
-            $result = $this->ci->currencyservice->set_rate($row->code, $rate, null, 'AUTO:'.$host);
+
+            $rate = number_format((float)$rate, 8, '.', '');
+            $result = $this->ci->currencyservice->set_rate($code, $rate, null, 'AUTO:'.$host);
             if (!empty($result['ok'])) $processed++; else $failed++;
         }
-        return array('processed' => $processed, 'failed' => $failed,
-            'message' => "updated {$processed} rate(s)".($failed ? ", {$failed} skipped" : ''));
+
+        if ($checked === 0) {
+            return array('processed' => 0, 'failed' => 0, 'message' => 'no currencies to update');
+        }
+
+        return array(
+            'processed' => $processed,
+            'failed'    => $failed,
+            'message'   => 'updated '.$processed.' rate(s) from '.$host.($failed ? '; '.$failed.' skipped' : ''),
+        );
     }
 
+    /** Provider URL for automatic FX updates. {BASE} is expanded for operators who customise it. */
+    private function currency_rate_url($base) {
+        $configured = function_exists('env_str') ? env_str('CURRENCY_RATE_API_URL', '') : trim((string)getenv('CURRENCY_RATE_API_URL'));
+        if ($configured === '') {
+            return 'https://open.er-api.com/v6/latest/'.rawurlencode((string)$base);
+        }
+        $configured = str_replace(array('{BASE}', '{base}'), rawurlencode((string)$base), $configured);
+        return $configured;
+    }
+
+    /** Timeout for the FX request, bounded so the auto-run heartbeat cannot spend a whole request on it. */
+    private function currency_rate_timeout() {
+        $raw = function_exists('env_str') ? env_str('CURRENCY_RATE_TIMEOUT', '12') : (getenv('CURRENCY_RATE_TIMEOUT') ?: '12');
+        $timeout = (int)$raw;
+        if ($timeout < 3) $timeout = 3;
+        if ($timeout > 30) $timeout = 30;
+        return $timeout;
+    }
+
+    /** Normalise common FX API shapes into CODE => rate. */
+    private function currency_rates_from_payload(array $data) {
+        $payload = array();
+        if (isset($data['rates']) && is_array($data['rates'])) {
+            $payload = $data['rates'];
+        } elseif (isset($data['conversion_rates']) && is_array($data['conversion_rates'])) {
+            $payload = $data['conversion_rates'];
+        }
+
+        $rates = array();
+        foreach ($payload as $code => $rate) {
+            $rates[strtoupper((string)$code)] = $rate;
+        }
+        return $rates;
+    }
+
+    /** Refresh the service catalogue for providers whose interval has elapsed. */
     public function provider_sync() {
         $this->need(array('Provider_model'), array('ProviderSyncService'));
 

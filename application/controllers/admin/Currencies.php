@@ -56,16 +56,45 @@ class Currencies extends Admin_Controller {
         $this->finish($res, 'Default display currency updated.');
     }
 
-    /** POST /admin/currencies/update-all — refresh every currency from the FX provider. */
+    /** POST /admin/currencies/update-all — run the same automatic FX refresh immediately. */
     public function update_all() {
         $this->guard();
-        $this->load->library('CronWorkers');
-        $res = $this->cronworkers->currency_rates();
-        $ok = (int)($res['failed'] ?? 0) === 0;
-        $message = $ok
-            ? 'All currency rates updated successfully.'
-            : ($res['message'] ?? 'Some currency rates could not be updated.');
-        $this->finish(array('ok' => $ok, 'error' => $message), $message);
+        $this->load->library(array('JobRunner', 'CronRegistry', 'CronControlService'));
+
+        $job = 'currency_rates';
+        if ($this->croncontrolservice->is_paused($job)) {
+            $state = $this->croncontrolservice->state($job);
+            $reason = $state && $state->reason !== '' ? $state->reason : 'paused by an operator';
+            $this->jobrunner->record_skip($job, 'manual currency refresh refused: paused ('.$reason.')');
+            $this->session->set_flashdata('warning',
+                'Automatic currency updates are paused ('.$reason.'). Resume the currency_rates job first.');
+            return redirect('admin/currencies');
+        }
+
+        $worker = $this->cronregistry->worker($job);
+        if ($worker === null) {
+            $this->session->set_flashdata('error', 'The currency_rates job is not available in this build.');
+            return redirect('admin/currencies');
+        }
+
+        if (isset($this->db) && is_object($this->db)) {
+            $this->db->db_debug = false;
+        }
+        $res = $this->jobrunner->run($job, $worker);
+
+        if (!empty($res['skipped'])) {
+            $this->session->set_flashdata('warning',
+                'Currency rate refresh is already running. The current update owns the lock.');
+        } elseif (empty($res['ok'])) {
+            $this->session->set_flashdata('error', 'Currency rate refresh failed: '.($res['error'] ?? 'unknown error'));
+        } elseif ((int)($res['failed'] ?? 0) > 0 && (int)($res['processed'] ?? 0) === 0) {
+            $this->session->set_flashdata('error', 'Currency rate refresh failed: '.($res['message'] ?? 'no rates were updated'));
+        } elseif ((int)($res['failed'] ?? 0) > 0) {
+            $this->session->set_flashdata('warning', 'Currency rates updated with warnings: '.($res['message'] ?? 'some rates were skipped'));
+        } else {
+            $this->session->set_flashdata('success', 'Currency rates updated automatically: '.($res['message'] ?? 'done'));
+        }
+        redirect('admin/currencies');
     }
 
     /** POST /admin/currencies/rate — manually record an exchange rate. */

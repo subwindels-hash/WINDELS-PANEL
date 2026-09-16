@@ -28,10 +28,11 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * ## Where the rate comes from
  *
  * `currencies.exchange_rate` is "units of this currency per 1 unit of the
- * base currency" — the same convention migration 011 established. Rates are
- * manual today (`rate_source = 'MANUAL'` or `'SEED'`); `set_rate()` accepts an
- * arbitrary source string so a future automatic provider integration is a
- * pure addition, not a rewrite of this class or the schema.
+ * base currency" — the same convention migration 011 established. Rates can
+ * be set manually (`rate_source = 'MANUAL'`) or by the hourly `currency_rates`
+ * background job (`rate_source = 'AUTO:<provider-host>'`). The automatic job
+ * updates NGN too by pinning the base row to 1.00000000 and refreshing its
+ * provenance fields; either path records who/what changed the row and when.
  */
 class CurrencyService {
 
@@ -170,6 +171,31 @@ class CurrencyService {
             $this->audit($actor_id, 'currency.default_display_changed', $code,
                 array('default_display_currency' => $before), array('default_display_currency' => $code));
         }
+        return array('ok' => true);
+    }
+
+    /**
+     * Mark the base currency row refreshed during automatic FX sync.
+     *
+     * A base currency's rate is not editable and not fetched from the market:
+     * it is 1 unit of itself. The automatic job still calls this so NGN gets
+     * the same refreshed source/timestamp trail as USD/EUR/GBP/etc. while the
+     * accounting invariant remains pinned at 1.00000000.
+     */
+    public function refresh_base_rate($code, $actor_id, $source = 'AUTO') {
+        $code = strtoupper(trim((string)$code));
+        $row = $this->ci->Currency_model->find($code);
+        if (!$row) return $this->err('NOT_FOUND', 'Unknown currency.');
+        if ((int)$row->is_base !== 1) {
+            return $this->err('NOT_BASE', 'Only the base currency can be refreshed this way.');
+        }
+
+        $before = (string)$row->exchange_rate;
+        if (!$this->ci->Currency_model->refresh_base_rate($code, $actor_id, $source)) {
+            return $this->err('UPDATE_FAILED', 'Could not update the base currency refresh metadata.');
+        }
+        $this->audit($actor_id, 'currency.base_rate_refreshed', $code,
+            array('exchange_rate' => $before), array('exchange_rate' => '1.00000000', 'source' => $source));
         return array('ok' => true);
     }
 
