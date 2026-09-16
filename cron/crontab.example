@@ -61,6 +61,7 @@ MYPANEL=/var/www/marvysocials
 # --- hourly -------------------------------------------------------------------
 0    * * * *  cd $MYPANEL && "$PHP" index.php cron analytics           # prune high-volume logs
 */60 * * * *  cd $MYPANEL && "$PHP" index.php cron provider_sync       # refresh vendor catalogues/prices
+0    * * * *  cd $MYPANEL && "$PHP" index.php cron currency_rates       # refresh display-currency exchange rates
 
 # --- daily (UTC) ----------------------------------------------------------------
 30   3 * * *  cd $MYPANEL && "$PHP" index.php cron identity_purge      # scrub identity results past retention

@@ -12,7 +12,13 @@ $csrf = function () {
       This does not change what customers pay with — checkout still settles in the accounting currency below.
     </p>
   </div>
-  <a class="btn btn-ghost btn-sm" href="<?=site_url('admin/settings')?>">← Settings</a>
+  <div class="row" style="gap:.5rem;flex-wrap:wrap">
+    <form method="post" action="<?=site_url('admin/currencies/update-all')?>" style="display:inline">
+      <?=$csrf()?>
+      <button class="btn btn-primary btn-sm" type="submit">Update all rates</button>
+    </form>
+    <a class="btn btn-ghost btn-sm" href="<?=site_url('admin/settings')?>">← Settings</a>
+  </div>
 </div>
 
 <div class="card mb-4">
@@ -102,7 +108,7 @@ $csrf = function () {
               <input id="rate-<?=htmlspecialchars($c->code)?>" class="input mono currency-rate-input" type="number"
                      step="0.00000001" min="0.00000001" inputmode="decimal" name="rate"
                      value="<?=htmlspecialchars((string)$c->exchange_rate)?>" required>
-              <button class="btn btn-secondary btn-sm currency-rate-button" type="submit">Update rate</button>
+              <button class="btn btn-primary btn-sm currency-rate-button" type="submit">Update rate</button>
             </form>
             <?php endif; ?>
           </td>

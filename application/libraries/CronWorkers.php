@@ -796,9 +796,20 @@ class CronWorkers {
         $rows = $this->ci->currencyservice->all();
         $processed = 0; $failed = 0;
         foreach ($rows as $row) {
+            // NGN is the accounting/base currency. Its canonical rate is
+            // always 1.00000000 by definition; the provider response is
+            // requested with NGN as the base, so all other rates are already
+            // expressed as units per one NGN.
             if ((int)$row->is_base === 1) continue;
             $rate = isset($data['rates'][$row->code]) ? $data['rates'][$row->code] : null;
-            $result = $this->ci->currencyservice->set_rate($row->code, $rate, null, 'AUTO:'.parse_url($url, PHP_URL_HOST));
+            // Never write a missing or malformed provider value. This keeps a
+            // partial/outage response from replacing a valid rate with zero.
+            if (!is_numeric($rate) || (float)$rate <= 0) {
+                $failed++;
+                continue;
+            }
+            $host = parse_url($url, PHP_URL_HOST) ?: 'configured-provider';
+            $result = $this->ci->currencyservice->set_rate($row->code, $rate, null, 'AUTO:'.$host);
             if (!empty($result['ok'])) $processed++; else $failed++;
         }
         return array('processed' => $processed, 'failed' => $failed,

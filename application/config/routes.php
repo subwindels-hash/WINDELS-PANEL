@@ -533,6 +533,7 @@ $route['admin/currencies'] = 'admin/currencies/index';
 $route['admin/currencies/active'] = 'admin/currencies/set_active';
 $route['admin/currencies/default'] = 'admin/currencies/set_default';
 $route['admin/currencies/rate'] = 'admin/currencies/set_rate';
+$route['admin/currencies/update-all'] = 'admin/currencies/update_all';
 $route['admin/earnings'] = 'admin/payouts/earnings';
 $route['admin/earnings/(:any)/reverse'] = 'admin/payouts/reverse_earning/$1';
 $route['admin/referrals'] = 'admin/payouts/referrals';

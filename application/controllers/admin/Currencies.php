@@ -56,6 +56,18 @@ class Currencies extends Admin_Controller {
         $this->finish($res, 'Default display currency updated.');
     }
 
+    /** POST /admin/currencies/update-all — refresh every currency from the FX provider. */
+    public function update_all() {
+        $this->guard();
+        $this->load->library('CronWorkers');
+        $res = $this->cronworkers->currency_rates();
+        $ok = (int)($res['failed'] ?? 0) === 0;
+        $message = $ok
+            ? 'All currency rates updated successfully.'
+            : ($res['message'] ?? 'Some currency rates could not be updated.');
+        $this->finish(array('ok' => $ok, 'error' => $message), $message);
+    }
+
     /** POST /admin/currencies/rate — manually record an exchange rate. */
     public function set_rate() {
         $this->guard();
