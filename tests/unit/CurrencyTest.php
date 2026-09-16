@@ -198,6 +198,94 @@ class CurrencyTest extends TestCase
         $this->assertStringContainsString('Update all currencies at once', $view);
         $this->assertSame(1, substr_count($view, "site_url('admin/currencies/update-all')"),
             'the admin page should have one clear button for refreshing all currencies at once');
+
+    }
+
+    /* ------------------- manual base (NGN) rate box --------------------- */
+
+    public function testTheBaseCurrencyRowHasItsOwnManualRateBox()
+    {
+        $view = file_get_contents(self::$root.'/application/views/admin/currencies/index.php');
+        $this->assertStringContainsString("site_url('admin/currencies/base-rate')", $view,
+            'NGN needs a manual rate box of its own, like every other currency');
+        $this->assertStringContainsString('0.00075300', $view);
+
+        $routes = file_get_contents(self::$root.'/application/config/routes.php');
+        $this->assertStringContainsString(
+            '$route[\'admin/currencies/base-rate\'] = \'admin/currencies/set_base_rate\';', $routes);
+
+        $controller = file_get_contents(self::$root.'/application/controllers/admin/Currencies.php');
+        $this->assertStringContainsString('public function set_base_rate()', $controller);
+        $this->assertStringContainsString('$this->guard();', $controller);
+
+        $service = file_get_contents(self::$root.'/application/libraries/CurrencyService.php');
+        foreach (array('public function set_base_rate(', 'public function base_quote_code(',
+                       'public function base_rate(', 'currency.base_rate_set') as $needle) {
+            $this->assertStringContainsString($needle, $service);
+        }
+
+        $model = file_get_contents(self::$root.'/application/models/Currency_model.php');
+        $this->assertStringContainsString('if ((int)$row->is_base === 1) return false;', $model,
+            'the stored base rate itself must stay pinned at 1.0 whatever the box writes');
+    }
+
+    /* ----------------- rate changes reach product prices ---------------- */
+
+    public function testEveryProductSurfaceRendersThroughTheSharedPriceHelper()
+    {
+        $helper = file_get_contents(self::$root.'/application/helpers/marvy_helper.php');
+        foreach (array('function marvy_price(', 'function marvy_display_rate(',
+                       'function marvy_display_currency(') as $needle) {
+            $this->assertStringContainsString($needle, $helper);
+        }
+
+        // A price shown anywhere a customer shops must go through the helper,
+        // otherwise a rate change in Admin → Currencies reaches some screens
+        // and not others and the same product shows two prices.
+        $surfaces = array(
+            'application/views/public/services/index.php',
+            'application/views/public/services/detail.php',
+            'application/views/dashboard/services/index.php',
+            'application/views/public/shop/index.php',
+            'application/views/public/shop/product.php',
+        );
+        foreach ($surfaces as $rel) {
+            $this->assertStringContainsString('marvy_price(', file_get_contents(self::$root.'/'.$rel),
+                $rel.' must price through marvy_price() so currency changes reach it');
+        }
+    }
+
+    public function testLiveTotalsUseTheServerRenderedRate()
+    {
+        foreach (array('application/views/public/services/detail.php',
+                       'application/views/dashboard/orders/new_order.php') as $rel) {
+            $view = file_get_contents(self::$root.'/'.$rel);
+            $this->assertStringContainsString('marvy_display_rate()', $view,
+                $rel.' must take its conversion rate from the server, not hardcode one');
+            $this->assertStringContainsString('ws-total-approx', $view);
+        }
+    }
+
+    public function testCheckoutTotalsStayDenominatedInTheBaseCurrency()
+    {
+        // The converted figure is an estimate beside the real charge; the
+        // charge itself must still be the base-currency total.
+        foreach (array('application/views/public/shop/cart.php',
+                       'application/views/public/shop/checkout.php') as $rel) {
+            $view = file_get_contents(self::$root.'/'.$rel);
+            $this->assertStringContainsString('marvy_money($total, $currency)', $view,
+                $rel.' must keep charging the base-currency total');
+            $this->assertStringContainsString('marvy_base_currency()', $view);
+        }
+    }
+
+    public function testRateWritesDropTheCurrencyMemo()
+    {
+        $service = file_get_contents(self::$root.'/application/libraries/CurrencyService.php');
+        // Four mutations (active, default, rate, base refresh) each invalidate
+        // the per-request memo, so a price rendered after a change is truthful.
+        $this->assertSame(4, substr_count($service, '$this->forget();'),
+            'every currency mutation must drop the memo so prices re-read the new rate');
     }
 
     /* -------------------------- migration 011 --------------------------- */

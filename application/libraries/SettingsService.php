@@ -19,13 +19,14 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * so the UNWIRED list below is empty. It is kept (rather than deleted) so any
  * future seeded-but-unwired setting has an obvious, honest place to be listed.
  *
- * **`base_currency` is deliberately read-only.** The row exists, but
- * `marvy_base_currency()` reads `config/marvy.php`, not this table, and
- * every priced row, wallet and ledger entry is denominated in whatever it
- * returned at the time. A form that edited the row would change nothing; a
- * form that actually switched the currency would silently reinterpret every
- * historical amount. Session 22 moved USD→NGN with a migration for exactly
- * that reason, and that remains the only safe way.
+ * **`base_currency` is not in this schema on purpose.** It is not an ordinary
+ * key. Every priced row, wallet and ledger entry is denominated in it, so
+ * writing a new value here would reinterpret every historical amount — a ₦100
+ * wallet would silently become a $100 wallet. Admin → Settings therefore
+ * routes that field to BaseCurrencyService *before* calling save(), which
+ * converts every stored amount at the current rate inside one transaction.
+ * Leaving the key out of this schema is what stops the generic saver from
+ * writing a settings row that disagrees with the ledger.
  */
 class SettingsService {
 
@@ -392,9 +393,6 @@ class SettingsService {
     /** Settings shown but not editable, with the reason. */
     public static function readonly_settings() {
         return array(
-            // Shown, never editable: every wallet, order and ledger entry is
-            // already denominated in it, so it moves by migration only.
-            'base_currency'       => 'Fixed for the ledger. Redenominating is a migration, not a setting.',
             // Wired, but edited on their own screen rather than as text fields:
             // a logo is chosen from the media library, not typed as a URL.
             'brand_primary_color' => 'Set in Admin → Appearance.',

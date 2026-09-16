@@ -234,7 +234,7 @@ $show_marketing = !empty($show_marketing);
                 <?php if ((int)$s->refill_supported): ?><span class="badge badge-success">Refill</span><?php endif; ?>
                 <?php if ((int)$s->cancel_supported): ?><span class="badge badge-info">Cancel</span><?php endif; ?>
               </td>
-              <td><?=marvy_money($s->rate)?></td>
+              <td><?=marvy_price($s->rate)?></td>
               <td><?=number_format((int)$s->min_quantity)?></td>
               <td><?=number_format((int)$s->max_quantity)?></td>
               <td class="text-xs muted"><?=htmlspecialchars($s->average_time ?: '—')?></td>
@@ -269,15 +269,7 @@ $show_marketing = !empty($show_marketing);
         </dl>
         <div class="row justify-between mt-2">
           <div>
-            <strong style="color:var(--brand-700);font-size:1.1rem"><?=marvy_money($s->rate)?> <span class="muted" style="font-weight:400;font-size:.75rem">/ 1k</span></strong>
-            <?php if (function_exists('marvy_display_money') && function_exists('marvy_base_currency')): ?>
-              <?php $__disp = marvy_display_money($s->rate); ?>
-              <?php if (strpos($__disp, marvy_base_currency()) !== 0 && $__disp !== marvy_money($s->rate)): ?>
-                <div class="hint" style="margin:0" title="Estimate only — your wallet is always charged in <?=htmlspecialchars(marvy_base_currency())?>">
-                  ≈ <?=htmlspecialchars($__disp)?>
-                </div>
-              <?php endif; ?>
-            <?php endif; ?>
+            <strong style="color:var(--brand-700);font-size:1.1rem"><?=marvy_price($s->rate, '/ 1k')?></strong>
           </div>
           <a class="btn btn-primary btn-sm" href="<?=site_url('services/'.$s->slug)?>">Order</a>
         </div>

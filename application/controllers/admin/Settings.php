@@ -39,6 +39,9 @@ class Settings extends Admin_Controller {
             'unwired'      => SettingsService::unwired(),
             'readonly'     => SettingsService::readonly_settings(),
             'base_currency'=> marvy_base_currency(),
+            // Real rows, not a hardcoded list: a currency can only become the
+            // base if it exists and has a rate to convert the books with.
+            'base_currency_choices' => $this->base_currency_choices(),
             'page_description' => 'Panel-wide configuration. Every change is recorded in the audit log.',
         ));
     }
@@ -80,14 +83,40 @@ class Settings extends Admin_Controller {
     public function save() {
         $this->guard();
 
-        $res = $this->settingsservice->save($this->input->post(null, true));
+        $post = $this->input->post(null, true);
+
+        // The base currency is not an ordinary setting: switching it has to
+        // convert every stored amount, so it is handled before the generic
+        // save and reported separately. Previously the form posted this key,
+        // SettingsService silently dropped it (not in its schema), and the
+        // operator was told "Nothing changed" — the value never moved.
+        $base_result = $this->maybe_change_base_currency($post);
+        if ($base_result !== null && empty($base_result['ok'])) {
+            $this->session->set_flashdata('error', $base_result['error']);
+            redirect('admin/settings');
+        }
+
+        $res = $this->settingsservice->save($post);
         if (empty($res['ok'])) {
             $this->session->set_flashdata('error', $res['error']);
             redirect('admin/settings');
         }
 
-        if (empty($res['changed'])) {
+        if (empty($res['changed']) && $base_result === null) {
             $this->session->set_flashdata('warning', 'Nothing changed.');
+            redirect('admin/settings');
+        }
+
+        if ($base_result !== null) {
+            $rows = array_sum($base_result['converted']);
+            $this->session->set_flashdata('success',
+                'Base currency changed from '.$base_result['from'].' to '.$base_result['to']
+                .' at a rate of '.rtrim(rtrim(number_format((float)$base_result['rate'], 8, '.', ''), '0'), '.')
+                .'. '.number_format($rows).' stored amount'.($rows === 1 ? '' : 's')
+                .' were converted.'
+                .(empty($res['changed']) ? '' : ' '.count($res['changed']).' other setting'
+                    .(count($res['changed']) === 1 ? '' : 's').' updated.'));
+            if (!empty($res['changed'])) $this->audit('settings.updated', $res['changed']);
             redirect('admin/settings');
         }
 
@@ -101,6 +130,60 @@ class Settings extends Admin_Controller {
     }
 
     /* ----------------------------- helpers ----------------------------- */
+
+    /**
+     * Apply a base-currency change if the form asked for one.
+     *
+     * Returns null when the field was absent or already matches (so the rest
+     * of the save behaves exactly as before), the service result otherwise.
+     */
+    private function maybe_change_base_currency(array &$post) {
+        if (!array_key_exists('base_currency', $post)) return null;
+
+        $requested = strtoupper(trim((string)$post['base_currency']));
+        // Never let it fall through to the generic saver, which would write a
+        // settings row that disagrees with the ledger.
+        unset($post['base_currency']);
+
+        $this->load->library('BaseCurrencyService');
+        if ($requested === '' || $requested === $this->basecurrencyservice->current()) {
+            return null;
+        }
+        $result = $this->basecurrencyservice->change($requested, $this->current_user->id);
+        if (!empty($result['ok'])) {
+            // This request already rendered prices in the old currency; drop
+            // the memo so the redirect target is truthful.
+            if (function_exists('marvy_forget_base_currency')) marvy_forget_base_currency();
+        }
+        return $result;
+    }
+
+    /**
+     * Currencies that can legally become the base, labelled with the rate the
+     * conversion would use. A currency with no usable rate is not offered —
+     * selecting it could only fail.
+     */
+    private function base_currency_choices() {
+        $this->load->library('CurrencyService');
+        $current = marvy_base_currency();
+        $out = array();
+        try {
+            foreach ($this->currencyservice->all() as $row) {
+                $code = strtoupper($row->code);
+                if ($code === $current) {
+                    $out[$code] = $code.' — '.$row->name.' (current)';
+                    continue;
+                }
+                if (bccomp((string)$row->exchange_rate, '0', 8) <= 0) continue;
+                $out[$code] = $code.' — '.$row->name
+                    .' (1 '.$current.' = '.rtrim(rtrim(number_format((float)$row->exchange_rate, 8, '.', ''), '0'), '.').' '.$code.')';
+            }
+        } catch (Throwable $e) {
+            log_message('error', 'base currency choices unavailable: '.$e->getMessage());
+        }
+        if (!$out) $out = array($current => $current);
+        return $out;
+    }
 
     private function guard() {
         if ($this->input->method(true) !== 'POST') show_404();

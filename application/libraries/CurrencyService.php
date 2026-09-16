@@ -150,6 +150,7 @@ class CurrencyService {
         if (!$active && strtoupper((string)$this->ci->Setting_model->get('default_display_currency', '')) === $code) {
             $this->ci->Setting_model->set('default_display_currency', $this->base_code(), 'currency');
         }
+        $this->forget();
         return array('ok' => true);
     }
 
@@ -171,6 +172,7 @@ class CurrencyService {
             $this->audit($actor_id, 'currency.default_display_changed', $code,
                 array('default_display_currency' => $before), array('default_display_currency' => $code));
         }
+        $this->forget();
         return array('ok' => true);
     }
 
@@ -196,6 +198,7 @@ class CurrencyService {
         }
         $this->audit($actor_id, 'currency.base_rate_refreshed', $code,
             array('exchange_rate' => $before), array('exchange_rate' => '1.00000000', 'source' => $source));
+        $this->forget();
         return array('ok' => true);
     }
 
@@ -230,7 +233,61 @@ class CurrencyService {
         }
         $this->audit($actor_id, 'currency.rate_changed', $code,
             array('exchange_rate' => $before), array('exchange_rate' => number_format((float)$rate, 8, '.', ''), 'source' => $source));
+        // Drop the per-request memo so anything rendered after this point in
+        // the same request (and the next page load) prices off the new rate
+        // rather than the one read before the write.
+        $this->forget();
         return array('ok' => true);
+    }
+
+    /**
+     * Manually set the base currency's own market value, expressed in USD per
+     * 1 unit of the base currency (e.g. 0.00075300 ≈ ₦1,328/$).
+     *
+     * The base row itself stays pinned at 1.00000000 — that invariant is what
+     * keeps every stored amount meaning what it says. What an operator
+     * actually means by "the naira's rate", though, is its dollar value, and
+     * that number lives on the USD row (units of USD per ₦1). So this gives
+     * NGN a manual rate box like every other currency, and writes it where it
+     * belongs, with the same validation, provenance and audit trail.
+     */
+    public function set_base_rate($rate, $actor_id, $source = 'MANUAL') {
+        $base = $this->base_code();
+        $quote = $this->base_quote_code();
+        if ($quote === null) {
+            return $this->err('NO_QUOTE_ROW',
+                'No quote currency is configured to hold the '.$base.' market rate.');
+        }
+        $res = $this->set_rate($quote, $rate, $actor_id, $source);
+        if (!empty($res['ok'])) {
+            // Record the change under the base currency too, so an audit for
+            // "who moved the naira rate" finds it where an operator looks.
+            $this->audit($actor_id, 'currency.base_rate_set', $base, null,
+                array('quote' => $quote, 'rate' => number_format((float)$rate, 8, '.', ''), 'source' => $source));
+        }
+        return $res;
+    }
+
+    /**
+     * The currency row that carries the base currency's market value — USD
+     * when it exists (and is not itself the base), otherwise the first other
+     * configured currency. Returns null when nothing can hold the rate.
+     */
+    public function base_quote_code() {
+        $usd = $this->ci->Currency_model->find('USD');
+        if ($usd && (int)$usd->is_base !== 1) return 'USD';
+        foreach ($this->all() as $row) {
+            if ((int)$row->is_base !== 1) return strtoupper($row->code);
+        }
+        return null;
+    }
+
+    /** The current market rate of the base currency (units of quote per 1 base), or null. */
+    public function base_rate() {
+        $quote = $this->base_quote_code();
+        if ($quote === null) return null;
+        $row = $this->ci->Currency_model->find($quote);
+        return $row ? (string)$row->exchange_rate : null;
     }
 
     /* ------------------------------------------------------------------ */

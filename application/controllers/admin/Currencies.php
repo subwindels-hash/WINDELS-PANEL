@@ -109,6 +109,23 @@ class Currencies extends Admin_Controller {
         $this->finish($res, 'Exchange rate updated.');
     }
 
+    /**
+     * POST /admin/currencies/base-rate — manually set the base currency's own
+     * market value (units of the quote currency per 1 base unit).
+     *
+     * The base row stays 1.00000000; this records the naira's dollar value on
+     * the quote row, which is what that number has always meant here.
+     */
+    public function set_base_rate() {
+        $this->guard();
+        $res = $this->currencyservice->set_base_rate(
+            $this->input->post('rate', true),
+            $this->current_user->id,
+            'MANUAL'
+        );
+        $this->finish($res, 'Exchange rate updated.');
+    }
+
     /* ------------------------------ helpers ----------------------------- */
 
     private function guard() {

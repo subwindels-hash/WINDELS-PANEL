@@ -99,6 +99,14 @@ $csrf = '<input type="hidden" name="'.htmlspecialchars($this->security->get_csrf
           <div class="row justify-between" style="border-top:1px dashed var(--slate-200);padding-top:.5rem">
             <span class="font-medium">Total</span><strong class="mono" style="font-size:1.2rem"><?=marvy_money($total, $currency)?></strong>
           </div>
+          <?php /* Converted only when the cart is denominated in the base currency:
+                   converting an already-foreign cart total would compound two rates. */ ?>
+          <?php if (strtoupper((string)$currency) === marvy_base_currency() && marvy_display_currency() !== marvy_base_currency()): ?>
+            <div class="row justify-between">
+              <span class="hint">Estimate</span>
+              <span class="hint mono" title="Charged in <?=htmlspecialchars(marvy_base_currency())?> at checkout">≈ <?=htmlspecialchars(marvy_display_money($total))?></span>
+            </div>
+          <?php endif; ?>
         </dl>
         <a class="btn btn-primary btn-block mt-3" href="<?=site_url('checkout')?>">Proceed to Checkout</a>
       </div>
