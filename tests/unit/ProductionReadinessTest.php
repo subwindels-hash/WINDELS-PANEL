@@ -377,7 +377,7 @@ class ProductionReadinessTest extends TestCase
         }
     }
 
-    /** Ten documented cron jobs and nothing in the stack running them. */
+    /** Documented cron jobs and a dedicated worker container to run them. */
     public function testTheComposeStackRunsTheCronJobs()
     {
         $compose = file_get_contents(self::$root.'/docker-compose.yml');
@@ -393,7 +393,7 @@ class ProductionReadinessTest extends TestCase
         // marvy.php populates $config; re-read it directly for the job list.
         $jobs = array('dripfeed', 'order_status', 'subscriptions', 'provider_health',
                       'refill_status', 'payment_reconciliation', 'email_queue',
-                      'analytics', 'provider_sync', 'affiliate_payouts');
+                      'analytics', 'provider_sync', 'currency_rates', 'affiliate_payouts');
         foreach ($jobs as $job) {
             $this->assertStringContainsString('cron '.$job, $crontab,
                 $job.' has no crontab entry');

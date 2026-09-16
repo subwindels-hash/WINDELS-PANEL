@@ -160,6 +160,37 @@ class CurrencyTest extends TestCase
         $this->assertSame(array(), $offenders, "hardcoded \$ in live total(s):\n".implode("\n", $offenders));
     }
 
+    public function testAutomaticCurrencyRateUpdatesAreWiredEndToEnd()
+    {
+        $config = file_get_contents(self::$root.'/application/config/marvy.php');
+        $this->assertMatchesRegularExpression("~'currency_rates'\s*=>\s*'0 \* \* \* \*'~", $config,
+            'currency rates must run hourly from the shared cron schedule');
+
+        $controller = file_get_contents(self::$root.'/application/controllers/Cron.php');
+        $this->assertStringContainsString('public function currency_rates()', $controller);
+
+        $registry = file_get_contents(self::$root.'/application/libraries/CronRegistry.php');
+        $this->assertStringContainsString("'currency_rates',", $registry,
+            'the CLI, auto-run heartbeat and admin Run now must resolve the same worker');
+
+        $workers = file_get_contents(self::$root.'/application/libraries/CronWorkers.php');
+        foreach (array('public function currency_rates()', 'SecureHttpClient', 'open.er-api.com',
+                       'currency_rates_from_payload', 'base mismatch', 'set_rate(') as $needle) {
+            $this->assertStringContainsString($needle, $workers);
+        }
+
+        $crontab = file_get_contents(self::$root.'/cron/crontab.example');
+        $this->assertStringContainsString('cron currency_rates', $crontab);
+
+        $env = file_get_contents(self::$root.'/.env.example');
+        $this->assertStringContainsString('VP_CURRENCY_RATE_API_URL', $env);
+        $this->assertStringContainsString('VP_CURRENCY_RATE_TIMEOUT', $env);
+
+        $view = file_get_contents(self::$root.'/application/views/admin/currencies/index.php');
+        $this->assertStringContainsString('Automatic rate updates are on', $view);
+        $this->assertStringContainsString('Update all rates now', $view);
+    }
+
     /* -------------------------- migration 011 --------------------------- */
 
     public function testTheRedenominationMigrationCreatesNoTables()

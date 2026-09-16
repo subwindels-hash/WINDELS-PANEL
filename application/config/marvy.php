@@ -96,10 +96,13 @@ $config['cron'] = array(
     // the immediate attempt failed to deliver. A batch is bounded, so an empty
     // queue costs one cheap query.
     'email_queue' => '*/1 * * * *',
+    // Refresh display-currency exchange rates every hour. The same job is
+    // also picked up by the site-traffic auto-run heartbeat when no crontab is
+    // installed, so rates stay current on shared hosting too.
+    'currency_rates' => '0 * * * *',
     // Pull new mail from the configured mailbox into the dashboard inboxes
     // (admin + each customer's). Every 2 minutes so a customer replying to
     // support waits at most two ticks to see it on their dashboard.
-    'currency_rates'       => '0 * * * *',
     'inbox_poll' => '*/2 * * * *',
     'analytics' => '0 * * * *',
     'provider_sync' => '*/60 * * * *',

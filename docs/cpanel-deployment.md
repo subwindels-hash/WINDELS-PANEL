@@ -258,13 +258,17 @@ terminal.
 ## Background jobs (recommended)
 
 Drip-feed orders, subscription renewals, provider status polling, payment
-reconciliation and the email queue run from cron. Without them the panel works,
-but nothing progresses on its own.
+reconciliation, email delivery and automatic display-currency rates all run as
+background jobs. The panel also has a built-in site-traffic auto-run heartbeat:
+if cron has not been installed yet, ordinary page loads run due jobs a few at a
+time so an active site keeps moving. A real crontab is still recommended because
+it runs on schedule even when nobody visits.
 
-**cPanel → Cron Jobs** → *Add New Cron Job*. Each job is one entry; these five
-cover everything a typical panel needs (adjust the PHP path and the application
-path to your account — cPanel shows the correct `php` binary under *Select PHP
-Version*):
+**cPanel → Cron Jobs** → *Add New Cron Job*. The easiest path is to copy the
+current block from **Admin → System → Cron jobs**, which is generated from the
+same schedule table the app uses. If you add jobs manually, include the currency
+rate refresh too (adjust the PHP path and the application path to your account —
+cPanel shows the correct `php` binary under *Select PHP Version*):
 
 | Common settings | Command |
 | --- | --- |
@@ -273,13 +277,15 @@ Version*):
 | Every 5 minutes | `cd /home/myaccount/public_html && /usr/local/bin/php index.php cron email_queue >/dev/null 2>&1` |
 | Every 5 minutes | `cd /home/myaccount/public_html && /usr/local/bin/php index.php cron payment_reconciliation >/dev/null 2>&1` |
 | Every 5 minutes | `cd /home/myaccount/public_html && /usr/local/bin/php index.php cron subscriptions >/dev/null 2>&1` |
+| Hourly | `cd /home/myaccount/public_html && /usr/local/bin/php index.php cron currency_rates >/dev/null 2>&1` |
 
 `cron/crontab.example` in the package lists every available job with its
 recommended schedule, and `php index.php cron` prints the same list.
 
 This is the only place a PHP command line appears anywhere in this document,
 it is entered through a cPanel form rather than a terminal, and the panel
-serves traffic correctly without it.
+serves traffic correctly without it because the auto-run heartbeat is on by
+default.
 
 ---
 

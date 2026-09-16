@@ -15,10 +15,18 @@ $csrf = function () {
   <div class="row" style="gap:.5rem;flex-wrap:wrap">
     <form method="post" action="<?=site_url('admin/currencies/update-all')?>" style="display:inline">
       <?=$csrf()?>
-      <button class="btn btn-primary btn-sm" type="submit">Update all rates</button>
+      <button class="btn btn-primary btn-sm" type="submit">Update all rates now</button>
     </form>
     <a class="btn btn-ghost btn-sm" href="<?=site_url('admin/settings')?>">← Settings</a>
   </div>
+</div>
+
+<div class="alert alert-info">
+  <strong>Automatic rate updates are on.</strong>
+  The <span class="mono">currency_rates</span> background job refreshes display-currency rates every hour
+  through cron or the built-in site-traffic auto-run heartbeat. Use <em>Update all rates now</em> to run that
+  same locked job immediately; the boxes below stay available for emergency manual corrections
+  (pause the job if a manual rate must hold).
 </div>
 
 <div class="card mb-4">
@@ -118,7 +126,7 @@ $csrf = function () {
     </table>
   </div>
   <p class="muted text-xs mt-3">
-    Exchange rates are manual today. Each is recorded with who set it, when, and its source, so a rate can
-    always be traced back to a decision an operator made — never a silent default.
+    Automatic and manual exchange-rate changes are both recorded with who/what set the rate, when it changed,
+    and its source. The stored rate is always units of that currency per 1 <?=htmlspecialchars($base_currency)?>.
   </p>
 </div>

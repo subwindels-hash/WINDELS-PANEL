@@ -28,10 +28,10 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * ## Where the rate comes from
  *
  * `currencies.exchange_rate` is "units of this currency per 1 unit of the
- * base currency" — the same convention migration 011 established. Rates are
- * manual today (`rate_source = 'MANUAL'` or `'SEED'`); `set_rate()` accepts an
- * arbitrary source string so a future automatic provider integration is a
- * pure addition, not a rewrite of this class or the schema.
+ * base currency" — the same convention migration 011 established. Rates can
+ * be set manually (`rate_source = 'MANUAL'`) or by the hourly `currency_rates`
+ * background job (`rate_source = 'AUTO:<provider-host>'`); either way
+ * `set_rate()` records who/what changed the number and when.
  */
 class CurrencyService {
 
