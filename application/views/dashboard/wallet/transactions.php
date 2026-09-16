@@ -2,8 +2,16 @@
 <div class="grid gap-6 lg:grid-cols-4">
   <div class="lg:col-span-1">
     <div class="card">
-      <div class="card-meta">Current balance</div>
+      <div class="row justify-between" style="align-items:center">
+        <div class="card-meta">Current balance</div>
+        <span class="badge badge-default">Default currency: <?=htmlspecialchars(marvy_base_currency())?></span>
+      </div>
       <div class="mt-1 text-3xl font-bold" style="font-family:var(--font-display)"><?=marvy_money($wallet->balance ?? '0', $wallet->currency ?? marvy_base_currency())?></div>
+      <?php // A foreign-currency wallet also shows its value in the panel's
+            // default (base) currency, the currency everything settles in.
+      if (isset($wallet->currency) && strtoupper((string)$wallet->currency) !== marvy_base_currency() && (float)marvy_display_rate($wallet->currency) > 0): ?>
+        <div class="text-xs muted mt-1">≈ <?=marvy_money(bcdiv((string)($wallet->balance ?? '0'), (string)marvy_display_rate($wallet->currency), 8), marvy_base_currency())?></div>
+      <?php endif; ?>
       <a class="btn btn-primary btn-block btn-sm mt-3" href="<?=site_url('dashboard/add-funds')?>">Add funds</a>
     </div>
   </div>
