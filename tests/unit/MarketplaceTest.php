@@ -70,6 +70,16 @@ class MarketplaceTest extends TestCase
         ), $overrides));
     }
 
+    private function seedUsd($app)
+    {
+        $app->db->insert('currencies', array(
+            'code' => 'USD', 'name' => 'US Dollar', 'symbol' => '$',
+            'exchange_rate' => '0.00064516', 'is_base' => 0, 'is_active' => 1,
+            'updated_at' => gmdate('Y-m-d H:i:s'),
+        ));
+        if (class_exists('Currency_model')) Currency_model::forget();
+    }
+
     /** Operator fulfils on the platform's behalf (admin console flag). */
     private function deliver($app, $admin, $public_id, $payload)
     {
@@ -101,6 +111,32 @@ class MarketplaceTest extends TestCase
         $this->assertTrue($tx->provider_cost === null || $tx->provider_cost === '0.00000000');
         list($debits, $credits) = $app->ledger_is_balanced();
         $this->assertSame($debits, $credits);
+    }
+
+    public function testDollarPricedListingIsChargedInNairaEquivalent()
+    {
+        list($app, $buyer) = $this->app();
+        $this->seedUsd($app);
+        $listing = $app->Marketplace_listing_model->find_public('MPL00000000000000000000001');
+        $app->Marketplace_listing_model->update_fields($listing->id, array(
+            'price' => '1.00000000',
+            'promo_price' => null,
+            'currency' => 'USD',
+        ));
+
+        $expected = bcdiv('1.00000000', '0.00064516', 8);
+        $res = $this->purchase($app, $buyer, array(
+            'quantity' => 1,
+            'idempotency_key' => 'usd-priced-marketplace-purchase',
+        ));
+
+        $this->assertTrue($res['ok'], $res['error'] ?? '');
+        $this->assertSame($expected, $res['order']->unit_price);
+        $this->assertSame($expected, $res['order']->gross_amount);
+        $this->assertSame('NGN', $res['order']->currency);
+        $this->assertSame(bcsub('10000.00000000', $expected, 8), $app->balance($buyer));
+        $tx = $app->Service_transaction_model->find_by_id($res['order']->service_transaction_id);
+        $this->assertSame($expected, $tx->amount);
     }
 
     public function testPurchaseIdempotencyDoesNotDoubleChargeOrConsumeStock()
@@ -382,6 +418,7 @@ class MarketplaceTest extends TestCase
         $this->assertSame('ACTIVE', $res['listing']->status);
         $this->assertSame((int)$staff->id, (int)$res['listing']->approved_by);
         $this->assertSame('4000.00000000', $res['listing']->promo_price);
+        $this->assertSame('NGN', $res['listing']->currency);
         $this->assertSame(1, (int)$res['listing']->is_featured);
         // Platform-owned: no vendor reference is possible on a listing.
         $this->assertFalse(property_exists($res['listing'], 'seller_id'));
@@ -390,6 +427,7 @@ class MarketplaceTest extends TestCase
         // data: pin that save_listing sits behind require_perm('marketplace.manage').
         $controller = file_get_contents(self::$root.'/application/controllers/admin/Marketplace.php');
         $save_body = substr($controller, strpos($controller, 'public function save_listing('));
+        $this->assertStringContainsString("'currency' => \$this->input->post('currency', true)", $save_body);
         $this->assertLessThan(strpos($save_body, 'save_listing($this->current_user'),
             strpos($save_body, "require_perm('marketplace.manage')"),
             'save_listing must be permission-gated before it touches the service');

@@ -18,7 +18,7 @@ class Marketplace extends Admin_Controller {
         $this->load->library(array('MarketplaceService', 'DashboardStats', 'MediaService'));
         $this->load->model(array(
             'Marketplace_listing_model',
-            'Marketplace_order_model', 'Marketplace_category_model', 'Shop_order_shipment_model', 'Audit_log_model'
+            'Marketplace_order_model', 'Marketplace_category_model', 'Shop_order_shipment_model', 'Audit_log_model', 'Currency_model'
         ));
     }
 
@@ -73,6 +73,7 @@ class Marketplace extends Admin_Controller {
             'categories' => $this->Marketplace_category_model->active(),
             'digital_product' => $digital_product,
             'physical_product' => $physical_product,
+            'currencies' => $this->Currency_model->active(),
         ));
     }
 
@@ -217,6 +218,7 @@ class Marketplace extends Admin_Controller {
             'description' => $this->input->post('description', true),
             'price' => $this->input->post('price', true),
             'promo_price' => $this->input->post('promo_price', true),
+            'currency' => $this->input->post('currency', true),
             'stock' => $this->input->post('stock', true),
             'delivery_days' => $this->input->post('delivery_days', true),
             'product_type' => $this->input->post('product_type', true),

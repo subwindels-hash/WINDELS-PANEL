@@ -57,14 +57,14 @@ class PhysicalShippingTest extends TestCase
         return array($app, $buyer);
     }
 
-    private function listing($app, $title = 'Physical mug', $price = '1000.00000000')
+    private function listing($app, $title = 'Physical mug', $price = '1000.00000000', $currency = 'NGN')
     {
         $now = gmdate('Y-m-d H:i:s');
         $app->db->insert('marketplace_listings', array(
             'public_id' => 'MPS'.str_pad((string)random_int(1, 999999), 23, '0', STR_PAD_LEFT),
             'category' => 'DIGITAL_GOODS', 'title' => $title,
             'description' => 'A physical product with complete package details.',
-            'product_type' => 'PHYSICAL', 'price' => $price, 'currency' => 'NGN',
+            'product_type' => 'PHYSICAL', 'price' => $price, 'currency' => $currency,
             'promo_price' => null, 'is_featured' => 0, 'image' => null, 'stock' => 5,
             'delivery_days' => 3, 'status' => 'ACTIVE', 'created_at' => $now, 'updated_at' => $now,
         ));
@@ -77,6 +77,16 @@ class PhysicalShippingTest extends TestCase
             'created_at' => $now, 'updated_at' => $now,
         ));
         return $listing;
+    }
+
+    private function seedUsd($app)
+    {
+        $app->db->insert('currencies', array(
+            'code' => 'USD', 'name' => 'US Dollar', 'symbol' => '$',
+            'exchange_rate' => '0.00064516', 'is_base' => 0, 'is_active' => 1,
+            'updated_at' => gmdate('Y-m-d H:i:s'),
+        ));
+        if (class_exists('Currency_model')) Currency_model::forget();
     }
 
     private function purchase_input($app, $listing, $buyer, $extra = array())
@@ -139,6 +149,29 @@ class PhysicalShippingTest extends TestCase
         $this->assertSame('PENDING', $shipment->status);
         $this->assertSame('250.00000000', (string)$shipment->shipping_cost);
         $this->assertSame($before, bcadd($app->balance($buyer), '1250.00000000', 8));
+    }
+
+    public function testCartAndCheckoutQuoteDollarListingsInNaira()
+    {
+        list($app, $buyer) = $this->app();
+        $this->seedUsd($app);
+        $listing = $this->listing($app, 'Dollar physical item', '1.00000000', 'USD');
+
+        $added = $app->cartservice->add($buyer->id, $listing->public_id, 1);
+        $this->assertTrue($added['ok'], $added['error'] ?? '');
+        $expected = bcdiv('1.00000000', '0.00064516', 8);
+
+        $view = $app->cartservice->view($buyer->id);
+        $this->assertSame('NGN', $view['currency']);
+        $this->assertSame($expected, $view['lines'][0]['unit_price']);
+        $this->assertSame($expected, $view['subtotal']);
+        $this->assertSame($expected, $view['total']);
+
+        $quote = $app->shopcheckoutservice->quote($buyer->id, array(
+            'shipping_method' => $app->__physical_checkout['method']->public_id,
+        ));
+        $this->assertTrue($quote['ok'], $quote['error'] ?? '');
+        $this->assertSame(bcadd($expected, '250.00000000', 8), $quote['view']['total']);
     }
 
     public function testCheckoutAllocatesShippingExactlyOnceAcrossPhysicalLines()

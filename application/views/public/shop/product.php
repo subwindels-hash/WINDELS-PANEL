@@ -67,8 +67,8 @@ $effective_price = $on_sale ? $l->promo_price : $l->price;
 
       <aside class="card" style="height:max-content">
         <h3 class="card-title">Buy</h3>
-        <p style="font-size:1.6rem;font-weight:700"><?=marvy_price($effective_price)?>
-          <?php if ($on_sale): ?><br><span class="text-sm muted" style="text-decoration:line-through;font-weight:400"><?=marvy_money($l->price)?></span> <span class="badge badge-warning">Promo</span><?php endif; ?>
+        <p style="font-size:1.6rem;font-weight:700"><?=marvy_price($effective_price, null, true, $l->currency ?? marvy_base_currency())?>
+          <?php if ($on_sale): ?><br><span class="text-sm muted" style="text-decoration:line-through;font-weight:400"><?=marvy_price($l->price, null, false, $l->currency ?? marvy_base_currency())?></span> <span class="badge badge-warning">Promo</span><?php endif; ?>
         </p>
         <p class="text-sm muted"><?=($l->stock === null ? 'In stock' : ((int)$l->stock > 0 ? number_format((int)$l->stock).' available' : 'Sold out'))?></p>
 

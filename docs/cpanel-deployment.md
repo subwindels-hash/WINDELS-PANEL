@@ -282,6 +282,12 @@ cPanel shows the correct `php` binary under *Select PHP Version*):
 `cron/crontab.example` in the package lists every available job with its
 recommended schedule, and `php index.php cron` prints the same list.
 
+If a host cannot run a PHP command but can call a URL from a scheduler, set
+`VP_CURRENCY_RATE_WEBHOOK_SECRET` and call
+`https://yourdomain.com/webhook/currency-rates?secret=...` for the currency
+rate refresh only. That endpoint is optional, signed, and runs the same locked
+`currency_rates` worker as the crontab/Admin button.
+
 This is the only place a PHP command line appears anywhere in this document,
 it is entered through a cPanel form rather than a terminal, and the panel
 serves traffic correctly without it because the auto-run heartbeat is on by

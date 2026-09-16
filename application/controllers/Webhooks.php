@@ -72,6 +72,110 @@ class Webhooks extends MY_Controller {
         return $this->respond($code, array('ok'=>false,'error'=>$result['error'] ?? 'error'));
     }
 
+    /**
+     * GET/POST /webhook/currency-rates — optional signed URL trigger for the
+     * automatic FX refresh. Some shared hosts cannot run a PHP CLI command but
+     * can hit a URL from a scheduler; this keeps that path safe by requiring a
+     * dedicated secret and then running the exact same locked `currency_rates`
+     * worker used by cron and Admin → Currencies → Update all.
+     */
+    public function currency_rates() {
+        $method = $this->input->method(true);
+        if (!in_array($method, array('GET', 'POST'), true)) {
+            return $this->respond(405, array('ok' => false, 'error' => 'method not allowed'));
+        }
+
+        $raw = file_get_contents('php://input') ?: '';
+        $headers = $this->all_headers();
+        $auth = $this->verify_currency_webhook($raw, $headers);
+        if (empty($auth['configured'])) {
+            return $this->respond(503, array(
+                'ok' => false,
+                'error' => 'currency rate webhook secret is not configured',
+            ));
+        }
+        if (empty($auth['ok'])) {
+            return $this->respond(401, array('ok' => false, 'error' => 'invalid signature'));
+        }
+
+        $this->load->library(array('JobRunner', 'CronRegistry', 'CronControlService'));
+        $job = 'currency_rates';
+        if ($this->croncontrolservice->is_paused($job)) {
+            return $this->respond(423, array('ok' => false, 'error' => 'currency rate updates are paused'));
+        }
+
+        $worker = $this->cronregistry->worker($job);
+        if ($worker === null) {
+            return $this->respond(503, array('ok' => false, 'error' => 'currency_rates job is not available'));
+        }
+
+        $res = $this->jobrunner->run($job, $worker);
+        $foreign_checked = (int)($res['foreign_checked'] ?? 0);
+        $foreign_processed = (int)($res['foreign_processed'] ?? 0);
+        $ok = !empty($res['ok'])
+            && ((int)($res['failed'] ?? 0) === 0 || (int)($res['processed'] ?? 0) > 0)
+            && ($foreign_checked === 0 || $foreign_processed > 0);
+        $status = $ok || !empty($res['skipped']) ? 200 : 503;
+        return $this->respond($status, array(
+            'ok' => $ok,
+            'skipped' => !empty($res['skipped']),
+            'processed' => (int)($res['processed'] ?? 0),
+            'failed' => (int)($res['failed'] ?? 0),
+            'foreign_processed' => $foreign_processed,
+            'foreign_checked' => $foreign_checked,
+            'message' => (string)($res['message'] ?? ($res['error'] ?? '')),
+        ));
+    }
+
+    private function verify_currency_webhook($raw, array $headers) {
+        $secret = $this->currency_webhook_secret();
+        if ($secret === '') return array('configured' => false, 'ok' => false);
+
+        $presented = (string)($this->input->get('secret', true) ?: '');
+        if ($presented === '') $presented = $this->header($headers, 'X-Currency-Webhook-Secret');
+        if ($presented === '') $presented = $this->header($headers, 'X-Marvy-Webhook-Secret');
+        if ($presented !== '' && hash_equals($secret, $presented)) {
+            return array('configured' => true, 'ok' => true);
+        }
+
+        $signature = $this->header($headers, 'X-Marvy-Signature');
+        if ($signature === '') $signature = $this->header($headers, 'X-Currency-Signature');
+        if ($signature !== '') {
+            $expected = hash_hmac('sha256', (string)$raw, $secret);
+            $sent = preg_replace('/^sha256=/i', '', trim($signature));
+            if (hash_equals($expected, $sent)) {
+                return array('configured' => true, 'ok' => true);
+            }
+        }
+
+        return array('configured' => true, 'ok' => false);
+    }
+
+    private function currency_webhook_secret() {
+        foreach (array('CURRENCY_RATE_WEBHOOK_SECRET', 'CURRENCY_WEBHOOK_SECRET') as $name) {
+            if (class_exists('Env') && method_exists('Env', 'get')) {
+                $value = Env::get($name, '');
+            } elseif (function_exists('env_str')) {
+                $value = env_str($name, '');
+                if ($value === '') $value = env_str('VP_'.$name, '');
+            } else {
+                $value = getenv($name);
+                if ($value === false || trim((string)$value) === '') $value = getenv('VP_'.$name);
+            }
+            $value = trim((string)$value);
+            if ($value !== '') return $value;
+        }
+        return '';
+    }
+
+    private function header(array $headers, $name) {
+        $wanted = strtolower($name);
+        foreach ($headers as $k => $v) {
+            if (strtolower((string)$k) === $wanted) return trim((string)$v);
+        }
+        return '';
+    }
+
     private function all_headers() {
         if (function_exists('getallheaders')) {
             $h = getallheaders();

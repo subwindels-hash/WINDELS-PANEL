@@ -493,6 +493,10 @@ $route['api/docs/json'] = 'api_v1/docs_json';
 // settled through a /requery rather than the payment-event pipeline); the
 // literal must precede the wildcard or CI would route it to index('vtpass').
 $route['webhook/vtpass'] = 'webhooks/vtpass';
+// Optional signed trigger for hosts that can only call a URL, not `php index.php cron`.
+// It runs the same locked currency_rates job as cron/Admin, and requires a secret.
+$route['webhook/currency'] = 'webhooks/currency_rates';
+$route['webhook/currency-rates'] = 'webhooks/currency_rates';
 $route['webhook/(:any)'] = 'webhooks/index/$1';
 
 // Fundsvera's configured callback URL. Same handler as /webhook/fundsvera —

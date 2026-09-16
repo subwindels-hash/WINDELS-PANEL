@@ -34,10 +34,10 @@ class MarketplaceService {
             'Service_transaction_model',
             'Wallet_model', 'Audit_log_model', 'Setting_model',
             'Physical_product_model', 'Shipping_address_model',
-            'Shipping_method_model', 'Shop_order_shipment_model',
+            'Shipping_method_model', 'Shop_order_shipment_model', 'Currency_model',
         ));
         $this->ci->load->library(array(
-            'TransactionEngine', 'LedgerService', 'EncryptionService'
+            'TransactionEngine', 'LedgerService', 'EncryptionService', 'CurrencyService'
         ));
     }
 
@@ -60,6 +60,7 @@ class MarketplaceService {
         $description = trim((string)($input['description'] ?? ''));
         $price = $this->money($input['price'] ?? 0);
         $promo_price = ($input['promo_price'] ?? '') === '' ? null : $this->money($input['promo_price']);
+        $currency = strtoupper(trim((string)($input['currency'] ?? ($listing->currency ?? marvy_base_currency()))));
         $delivery_days = (int)($input['delivery_days'] ?? 1);
         $stock = ($input['stock'] ?? '') === '' ? null : (int)$input['stock'];
         $product_type = strtoupper(trim((string)($input['product_type'] ?? 'DIGITAL')));
@@ -78,6 +79,9 @@ class MarketplaceService {
             return $this->err('Choose a valid category', 'BAD_CATEGORY');
         }
         if (bccomp($price, '0', 8) <= 0) return $this->err('Price must be greater than zero', 'BAD_PRICE');
+        if (!preg_match('/^[A-Z]{3}$/', $currency) || !$this->currency_can_settle($currency)) {
+            return $this->err('Choose a currency with a usable '.marvy_base_currency().' exchange rate', 'BAD_CURRENCY');
+        }
         if ($promo_price !== null
             && (bccomp($promo_price, '0', 8) <= 0 || bccomp($promo_price, $price, 8) >= 0)) {
             return $this->err('The promotional price must be greater than zero and lower than the list price', 'BAD_PROMO');
@@ -96,6 +100,7 @@ class MarketplaceService {
             'description' => $description,
             'price' => $price,
             'promo_price' => $promo_price,
+            'currency' => $currency,
             'stock' => $stock,
             'delivery_days' => $delivery_days,
             'product_type' => $product_type,
@@ -111,7 +116,8 @@ class MarketplaceService {
         }
         $fields['updated_at'] = gmdate('Y-m-d H:i:s');
         if ($listing) {
-            $before = array('status' => $listing->status, 'price' => $listing->price);
+            $before = array('status' => $listing->status, 'price' => $listing->price,
+                'currency' => $listing->currency ?? marvy_base_currency());
             $this->ci->Marketplace_listing_model->update_fields($listing->id, $fields);
             $id = $listing->id;
             $action = 'marketplace.listing.update';
@@ -124,7 +130,8 @@ class MarketplaceService {
         }
         $saved = $this->ci->Marketplace_listing_model->find_id($id);
         $this->audit($user_id, $action, 'marketplace_listing', $saved->public_id, $before,
-            array('status' => $saved->status, 'price' => $saved->price));
+            array('status' => $saved->status, 'price' => $saved->price,
+                'currency' => $saved->currency ?? marvy_base_currency()));
         return array('ok' => true, 'listing' => $saved);
     }
 
@@ -161,6 +168,9 @@ class MarketplaceService {
         // live promotion undercuts the list price. Selling is platform-side,
         // so the gross IS the revenue: no supplier cost, fee or payout split.
         $unit_price = $this->effective_price($listing);
+        if ($unit_price === null) {
+            return $this->err('This listing has no usable '.marvy_base_currency().' price. Ask staff to set an exchange rate for '.strtoupper((string)($listing->currency ?? '')).'.', 'CURRENCY_RATE_MISSING');
+        }
         $line_amount = bcmul($unit_price, (string)$quantity, 8);
         // Optional per-line discount (e.g. a coupon applied at cart checkout,
         // ShopCheckoutService). Never negative and never larger than the line
@@ -194,6 +204,10 @@ class MarketplaceService {
                 'quantity' => $quantity,
                 'shipping_cost' => $shipping_cost,
                 'shipping_method_id' => $shipping['method_id'],
+                'listing_currency' => strtoupper((string)($listing->currency ?? marvy_base_currency())),
+                'listing_unit_price' => (string)$this->effective_source_price($listing),
+                'settlement_currency' => marvy_base_currency(),
+                'settlement_unit_price' => $unit_price,
             ),
             'detail' => function ($transaction_id) use ($listing, $buyer_id, $quantity, $gross,
                                                          $shipping_cost, $order_model, &$order_id, $unit_price) {
@@ -206,6 +220,7 @@ class MarketplaceService {
                     'unit_price' => $unit_price,
                     'gross_amount' => $gross,
                     'shipping_cost' => $shipping_cost,
+                    'currency' => marvy_base_currency(),
                     'status' => 'PENDING',
                     'created_at' => gmdate('Y-m-d H:i:s'),
                     'updated_at' => gmdate('Y-m-d H:i:s'),
@@ -883,6 +898,11 @@ class MarketplaceService {
      * never price above list.
      */
     private function effective_price($listing) {
+        return $this->amount_to_base($this->effective_source_price($listing), $listing->currency ?? marvy_base_currency());
+    }
+
+    /** The shelf price before currency conversion: promo wins only inside the listing's own currency. */
+    private function effective_source_price($listing) {
         $list = $this->money($listing->price);
         $promo = isset($listing->promo_price) && $listing->promo_price !== null
             ? $this->money($listing->promo_price) : null;
@@ -890,6 +910,26 @@ class MarketplaceService {
             return $promo;
         }
         return $list;
+    }
+
+    private function amount_to_base($amount, $currency) {
+        $currency = strtoupper((string)($currency ?: marvy_base_currency()));
+        if ($currency === marvy_base_currency()) return $this->money($amount);
+        try {
+            $converted = $this->ci->currencyservice->to_base($amount, $currency);
+            return $converted === null ? null : $this->money($converted);
+        } catch (Throwable $e) {
+            log_message('error', 'marketplace currency conversion failed: '.$e->getMessage());
+            return null;
+        }
+    }
+
+    private function currency_can_settle($currency) {
+        $currency = strtoupper((string)$currency);
+        if ($currency === marvy_base_currency()) return true;
+        $row = $this->ci->Currency_model->find($currency);
+        return $row && (int)$row->is_active === 1 && is_numeric($row->exchange_rate)
+            && bccomp((string)$row->exchange_rate, '0', 8) > 0;
     }
 
     private function user_id($user) {

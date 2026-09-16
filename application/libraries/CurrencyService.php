@@ -101,6 +101,29 @@ class CurrencyService {
     }
 
     /**
+     * Convert an amount denominated in `$from` into the base/accounting
+     * currency. Exchange rates are stored as "units of currency per 1 base",
+     * so foreign → base is the inverse operation: amount ÷ exchange_rate.
+     *
+     * This is intentionally stricter than display conversion. If a listing or
+     * provider says "USD 1.00" and there is no usable USD/NGN rate, returning
+     * the amount unchanged would charge ₦1 instead of roughly ₦1,550. Callers
+     * that move money should treat NULL as "do not sell until the rate is set".
+     */
+    public function to_base($amount, $from = null) {
+        $from = strtoupper((string)($from ?: $this->base_code()));
+        if ($from === $this->base_code()) return (string)$amount;
+        if (!is_numeric($amount)) return null;
+
+        $row = $this->ci->Currency_model->find($from);
+        if (!$row || (int)$row->is_active !== 1 || !is_numeric($row->exchange_rate)
+                || bccomp((string)$row->exchange_rate, '0', 8) <= 0) {
+            return null;
+        }
+        return bcdiv((string)$amount, (string)$row->exchange_rate, 8);
+    }
+
+    /**
      * Format an amount as the given (or configured display) currency, honouring
      * the currency's own decimal precision and the panel's symbol/code display
      * setting — the same formatting rules marvy_money() applies for the base

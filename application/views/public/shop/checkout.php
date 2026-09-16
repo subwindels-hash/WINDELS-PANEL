@@ -1,6 +1,8 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
 $csrf = '<input type="hidden" name="'.htmlspecialchars($this->security->get_csrf_token_name()).'" value="'.htmlspecialchars($this->security->get_csrf_hash()).'">';
 $u = $current_user;
+$has_price_error = false;
+foreach (($lines ?? array()) as $line) { if (!empty($line['price_error'])) { $has_price_error = true; break; } }
 ?>
 <section class="ws-section-sm">
   <div class="container" style="max-width:1000px">
@@ -83,7 +85,7 @@ $u = $current_user;
         <aside class="card" style="height:max-content">
           <h3 class="card-title">Order summary</h3>
           <?php foreach ($lines as $line): $item = $line['item']; ?>
-            <div class="row justify-between text-sm mb-1"><span><?=htmlspecialchars($item->title)?> × <?=(int)$item->quantity?></span><span class="mono"><?=marvy_money($line['line_total'], $item->currency)?></span></div>
+            <div class="row justify-between text-sm mb-1"><span><?=htmlspecialchars($item->title)?> × <?=(int)$item->quantity?><?php if (!empty($line['price_error'])): ?><br><span class="text-xs" style="color:var(--danger-600)">Price unavailable</span><?php endif; ?></span><span class="mono"><?=marvy_money($line['line_total'], $currency)?></span></div>
           <?php endforeach; ?>
           <hr class="my-3">
           <div class="row justify-between"><span class="muted">Subtotal</span><span class="mono"><?=marvy_money($subtotal, $currency)?></span></div>
@@ -104,8 +106,9 @@ $u = $current_user;
               <span class="hint mono">≈ <?=htmlspecialchars(marvy_display_money($total))?></span>
             </div>
           <?php endif; ?>
+          <?php if ($has_price_error): ?><div class="alert alert-warning mt-3">One item cannot be converted to <?=htmlspecialchars($currency)?> yet. Please contact support.</div><?php endif; ?>
           <button class="btn btn-primary btn-block mt-3" type="submit"
-                  <?=!$has_funds ? 'disabled' : ''?>>Place order</button>
+                  <?=(!$has_funds || $has_price_error) ? 'disabled' : ''?>>Place order</button>
           <a class="btn btn-ghost btn-block mt-2" href="<?=site_url('cart')?>">← Back to cart</a>
         </aside>
       </div>

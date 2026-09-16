@@ -16,8 +16,8 @@ $effective_price = $on_sale ? $listing->promo_price : $listing->price;
   <aside class="card" style="height:max-content">
     <h3 class="card-title">Order</h3>
     <div style="font-size:1.5rem;font-weight:700" class="mb-2">
-      <?=marvy_price($effective_price, 'each')?>
-      <?php if ($on_sale): ?><div class="text-sm muted" style="text-decoration:line-through;font-weight:400"><?=marvy_money($listing->price)?> <span class="badge badge-warning">Promo</span></div><?php endif; ?>
+      <?=marvy_price($effective_price, 'each', true, $listing->currency ?? marvy_base_currency())?>
+      <?php if ($on_sale): ?><div class="text-sm muted" style="text-decoration:line-through;font-weight:400"><?=marvy_price($listing->price, null, false, $listing->currency ?? marvy_base_currency())?> <span class="badge badge-warning">Promo</span></div><?php endif; ?>
     </div>
     <p class="text-sm muted"><?=($listing->product_type === 'PHYSICAL' ? 'Ships' : 'Digital delivery')?> within <?=(int)$listing->delivery_days?> day(s). <?=($listing->stock === null ? 'Unlimited availability.' : number_format((int)$listing->stock).' currently available.')?></p>
     <p class="text-sm muted">Wallet balance: <strong><?=marvy_money($wallet->balance, $wallet->currency ?? marvy_base_currency())?></strong></p>

@@ -50,6 +50,7 @@ class ShopCheckoutService {
         $errors = array();
         foreach ($view['lines'] as $line) {
             if ($line['unavailable']) $errors[] = $line['item']->title.' is no longer available.';
+            elseif (!empty($line['price_error'])) $errors[] = $line['item']->title.' cannot be converted to '.marvy_base_currency().' yet.';
             elseif ($line['out_of_stock']) $errors[] = $line['item']->title.' does not have enough stock.';
             elseif (!empty($line['physical_details_missing'])) {
                 $errors[] = $line['item']->title.' is not ready for physical fulfilment. Ask staff to finish its shipping details.';

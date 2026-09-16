@@ -14,9 +14,9 @@ $effective = function ($item) {
 };
 $price_badges = function ($item) use ($effective) {
     list($now, $was) = $effective($item);
-    $html = '<strong>'.marvy_price($now).'</strong>';
+    $html = '<strong>'.marvy_price($now, null, true, $item->currency ?? marvy_base_currency()).'</strong>';
     if ($was !== null) {
-        $html .= ' <span class="text-xs muted" style="text-decoration:line-through">'.marvy_money($was).'</span> <span class="badge badge-warning">Promo</span>';
+        $html .= ' <span class="text-xs muted" style="text-decoration:line-through">'.marvy_price($was, null, false, $item->currency ?? marvy_base_currency()).'</span> <span class="badge badge-warning">Promo</span>';
     }
     return $html;
 };

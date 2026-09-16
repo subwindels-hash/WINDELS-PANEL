@@ -822,21 +822,28 @@ class CronWorkers {
             return array('processed' => 0, 'failed' => 1, 'message' => $message);
         }
 
-        $provider_base = strtoupper((string)($data['base_code'] ?? $data['base'] ?? $data['base_currency'] ?? ''));
-        if ($provider_base !== '' && $provider_base !== $base) {
-            return array('processed' => 0, 'failed' => 1,
-                'message' => 'FX provider base mismatch: expected '.$base.', got '.$provider_base);
-        }
-
         $rates = $this->currency_rates_from_payload($data);
         if (!$rates) {
             return array('processed' => 0, 'failed' => 1,
                 'message' => 'FX provider returned no rates');
         }
 
+        $provider_base = strtoupper((string)($data['base_code'] ?? $data['base'] ?? $data['base_currency'] ?? ''));
+        if ($provider_base !== '' && $provider_base !== $base) {
+            $rebased = $this->rebase_currency_rates($rates, $provider_base, $base);
+            if (!$rebased) {
+                return array('processed' => 0, 'failed' => 1,
+                    'message' => 'FX provider base mismatch: expected '.$base.', got '.$provider_base
+                        .'; payload did not include a usable '.$base.' rate to rebase');
+            }
+            $rates = $rebased;
+        }
+
         $processed = 0;
         $failed = 0;
         $checked = 0;
+        $foreign_checked = 0;
+        $foreign_processed = 0;
         foreach ($this->ci->currencyservice->all() as $row) {
             $checked++;
 
@@ -851,6 +858,7 @@ class CronWorkers {
                 continue;
             }
 
+            $foreign_checked++;
             $rate = $rates[$code] ?? null;
             if (!is_numeric($rate) || (float)$rate <= 0) {
                 $failed++;
@@ -859,7 +867,12 @@ class CronWorkers {
 
             $rate = number_format((float)$rate, 8, '.', '');
             $result = $this->ci->currencyservice->set_rate($code, $rate, null, 'AUTO:'.$host);
-            if (!empty($result['ok'])) $processed++; else $failed++;
+            if (!empty($result['ok'])) {
+                $processed++;
+                $foreign_processed++;
+            } else {
+                $failed++;
+            }
         }
 
         if ($checked === 0) {
@@ -869,13 +882,15 @@ class CronWorkers {
         return array(
             'processed' => $processed,
             'failed'    => $failed,
+            'foreign_processed' => $foreign_processed,
+            'foreign_checked' => $foreign_checked,
             'message'   => 'updated '.$processed.' rate(s) from '.$host.($failed ? '; '.$failed.' skipped' : ''),
         );
     }
 
     /** Provider URL for automatic FX updates. {BASE} is expanded for operators who customise it. */
     private function currency_rate_url($base) {
-        $configured = function_exists('env_str') ? env_str('CURRENCY_RATE_API_URL', '') : trim((string)getenv('CURRENCY_RATE_API_URL'));
+        $configured = $this->currency_env('CURRENCY_RATE_API_URL', '');
         if ($configured === '') {
             return 'https://open.er-api.com/v6/latest/'.rawurlencode((string)$base);
         }
@@ -885,11 +900,61 @@ class CronWorkers {
 
     /** Timeout for the FX request, bounded so the auto-run heartbeat cannot spend a whole request on it. */
     private function currency_rate_timeout() {
-        $raw = function_exists('env_str') ? env_str('CURRENCY_RATE_TIMEOUT', '12') : (getenv('CURRENCY_RATE_TIMEOUT') ?: '12');
+        $raw = $this->currency_env('CURRENCY_RATE_TIMEOUT', '12');
         $timeout = (int)$raw;
         if ($timeout < 3) $timeout = 3;
         if ($timeout > 30) $timeout = 30;
         return $timeout;
+    }
+
+    /** Read a currency-updater env var, honouring both canonical and VP_ names. */
+    private function currency_env($name, $default = '') {
+        if (class_exists('Env') && method_exists('Env', 'get')) {
+            $value = Env::get($name, null);
+            if ($value !== null && trim((string)$value) !== '') return trim((string)$value);
+        }
+        if (function_exists('env_str')) {
+            $value = env_str($name, null);
+            if ($value !== null && trim((string)$value) !== '') return trim((string)$value);
+            $value = env_str('VP_'.$name, null);
+            if ($value !== null && trim((string)$value) !== '') return trim((string)$value);
+            return $default;
+        }
+        foreach (array($name, 'VP_'.$name) as $key) {
+            $value = getenv($key);
+            if ($value !== false && trim((string)$value) !== '') return trim((string)$value);
+        }
+        return $default;
+    }
+
+    /** Convert provider-base rates into this panel's base convention. */
+    private function rebase_currency_rates(array $rates, $provider_base, $base) {
+        $provider_base = strtoupper((string)$provider_base);
+        $base = strtoupper((string)$base);
+        if ($provider_base === '' || $base === '' || $provider_base === $base) return $rates;
+
+        if (!isset($rates[$provider_base])) {
+            // FX APIs often omit the base code from their own rates object.
+            $rates[$provider_base] = 1;
+        }
+
+        $base_rate = $rates[$base] ?? null;
+        if (!is_numeric($base_rate) || (float)$base_rate <= 0) return array();
+
+        $normalised = array();
+        foreach ($rates as $code => $rate) {
+            $code = strtoupper((string)$code);
+            if ($code === $base) {
+                $normalised[$code] = 1;
+                continue;
+            }
+            if (!is_numeric($rate) || (float)$rate <= 0) continue;
+            // Provider payloads say: provider_base → code. The panel stores:
+            // panel_base → code. Divide by provider_base → panel_base. For
+            // example, USD payload NGN=1550 gives USD per NGN = 1 / 1550.
+            $normalised[$code] = (float)$rate / (float)$base_rate;
+        }
+        return $normalised;
     }
 
     /** Normalise common FX API shapes into CODE => rate. */
@@ -1008,9 +1073,9 @@ class CronWorkers {
 
                 // Still pending, or nobody to ask. Expire only when it is past
                 // the window and the answer was neither "the provider is down"
-                // nor "they paid, but short" — both of those need a human, and
-                // writing either off would be writing off real money.
-                $never_expire = in_array($verdict['status'], array('UNREACHABLE', 'UNDERPAID'), true);
+                // nor "they paid, but short/wrong-currency" — both of those need a human,
+                // and writing either off would be writing off real money.
+                $never_expire = in_array($verdict['status'], array('UNREACHABLE', 'UNDERPAID', 'CURRENCY_MISMATCH', 'BAD_PROVIDER_AMOUNT'), true);
                 if (!$never_expire && (string)($tx->created_at ?? '') < $cutoff) {
                     $this->ci->paymentservice->mark_failed($tx->id,
                         "Expired: no payment received within {$stale_days} days");
@@ -1124,22 +1189,30 @@ class CronWorkers {
         }
 
         $status = strtoupper((string)($res['status'] ?? 'PENDING'));
-        if ($status === 'SUCCESS' && !$this->amount_covers_deposit($tx, $res)) {
-            // Paid, but short. Crediting the full figure would hand out money
-            // that never arrived; staff resolve it from the payment screen.
+        $coverage = $this->payment_covers_deposit($tx, $res);
+        if ($status === 'SUCCESS' && empty($coverage['ok'])) {
+            // Paid, but short or in a different currency. Crediting the full
+            // figure would hand out value that never arrived; staff resolve it
+            // from the payment screen.
+            $code = (string)($coverage['code'] ?? 'UNDERPAID');
             $this->ci->Payment_transaction_model->update_status($tx->id, array(
                 'metadata' => $this->merge_metadata($tx, array('reconciliation' => array(
-                    'underpaid'       => true,
-                    'expected'        => (string)$tx->amount,
-                    'provider_amount' => (string)($res['amount'] ?? ''),
-                    'checked_at'      => gmdate('Y-m-d H:i:s'),
+                    'underpaid'         => $code === 'UNDERPAID',
+                    'currency_mismatch'=> $code === 'CURRENCY_MISMATCH',
+                    'invalid_amount'    => $code === 'BAD_PROVIDER_AMOUNT',
+                    'expected'          => (string)$tx->amount,
+                    'expected_currency' => (string)($tx->currency ?? (function_exists('marvy_base_currency') ? marvy_base_currency() : 'NGN')),
+                    'provider_amount'   => (string)($res['amount'] ?? ''),
+                    'provider_currency' => (string)($res['currency'] ?? ''),
+                    'checked_at'        => gmdate('Y-m-d H:i:s'),
                 ))),
             ));
-            log_message('error', 'payment_reconciliation: '.$tx->public_id.' is short — provider reports '
-                .($res['amount'] ?? '?').' against '.$tx->amount.'; left for staff');
-            // Never expired: the money did arrive, just not all of it.
-            return array('status' => 'UNDERPAID', 'provider_tx_id' => $res['provider_tx_id'] ?? null,
-                         'detail' => 'underpaid');
+            log_message('error', 'payment_reconciliation: '.$tx->public_id.' refused — '
+                .($coverage['message'] ?? 'provider amount/currency did not match').' left for staff');
+            // Never expired: the provider says money arrived, but it needs a
+            // human because the amount or currency does not match the deposit.
+            return array('status' => $code, 'provider_tx_id' => $res['provider_tx_id'] ?? null,
+                         'detail' => strtolower($code));
         }
 
         return array(
@@ -1150,13 +1223,39 @@ class CronWorkers {
     }
 
     /** Whether what the provider says arrived covers what we expected. */
-    private function amount_covers_deposit($tx, array $res) {
+    private function payment_covers_deposit($tx, array $res) {
+        $metadata = isset($res['metadata']) && is_array($res['metadata']) ? $res['metadata'] : array();
+        if (!empty($metadata['provider_amount_validated'])) {
+            return array('ok' => true);
+        }
+
+        $expected_currency = strtoupper(trim((string)($tx->currency ?? (function_exists('marvy_base_currency') ? marvy_base_currency() : 'NGN'))));
+        $reported_currency = isset($res['currency']) ? strtoupper(trim((string)$res['currency'])) : '';
+        if ($reported_currency !== '' && $expected_currency !== '' && $reported_currency !== $expected_currency) {
+            return array('ok' => false, 'code' => 'CURRENCY_MISMATCH',
+                         'message' => 'provider reported '.$reported_currency.' for a '.$expected_currency.' deposit');
+        }
+
         if (!isset($res['amount']) || $res['amount'] === null || $res['amount'] === '') {
             // The gateway did not report an amount; the deposit row is the
             // only figure we have and the webhook path trusts it too.
-            return true;
+            return array('ok' => true);
         }
-        return bccomp((string)$res['amount'], (string)$tx->amount, 8) >= 0;
+        if (!is_numeric($res['amount'])) {
+            return array('ok' => false, 'code' => 'BAD_PROVIDER_AMOUNT',
+                         'message' => 'provider reported an invalid payment amount');
+        }
+        if (bccomp((string)$res['amount'], (string)$tx->amount, 8) < 0) {
+            return array('ok' => false, 'code' => 'UNDERPAID',
+                         'message' => 'provider reports '.($res['amount'] ?? '?').' against '.$tx->amount);
+        }
+        return array('ok' => true);
+    }
+
+    /** Backwards-compatible boolean for older source-level tests and comments. */
+    private function amount_covers_deposit($tx, array $res) {
+        $coverage = $this->payment_covers_deposit($tx, $res);
+        return !empty($coverage['ok']);
     }
 
     /** Merge a key into a transaction's metadata JSON without losing the rest. */
