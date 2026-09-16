@@ -18,8 +18,8 @@ require_once dirname(__DIR__).'/_support/IntegrationHarness.php';
  *   - a saved value actually reaching the code that consumes it (proved by
  *     driving the real consumer, not by reading the row back);
  *   - the honesty rule: no control is rendered for a key nothing reads, and
- *     base_currency stays read-only because changing it would reinterpret
- *     every stored amount;
+ *     base_currency bypasses the generic saver because changing it must
+ *     convert every stored amount, not just rewrite a label;
  *   - type validation, since these values feed money and percentage maths.
  */
 class AdminSettingsTest extends TestCase
@@ -304,21 +304,72 @@ class AdminSettingsTest extends TestCase
     }
 
     /**
-     * base_currency stays read-only. Editing the row would change nothing —
-     * marvy_base_currency() reads config — and actually switching the
-     * currency would reinterpret every stored amount.
+     * base_currency is still kept out of the generic schema — but now because
+     * it is routed to BaseCurrencyService, not because it is inert. The
+     * generic saver must never write it, or the settings row would disagree
+     * with the ledger it is supposed to describe.
      */
-    public function testBaseCurrencyIsNotEditable()
+    public function testBaseCurrencyBypassesTheGenericSaver()
     {
         $this->assertArrayNotHasKey('base_currency', SettingsService::schema(),
-            'base_currency moves by migration only');
-        $this->assertArrayHasKey('base_currency', SettingsService::readonly_settings());
+            'base_currency must not be an ordinary key: changing it converts every stored amount');
 
         $app = $this->app();
-        $app->settingsservice->save(array('base_currency' => 'USD'));
+        $res = $app->settingsservice->save(array('base_currency' => 'USD'));
+        $this->assertArrayNotHasKey('base_currency', $res['changed'] ?? array(),
+            'the generic saver must ignore base_currency entirely');
         Setting_model::flush_cache();
+        if (function_exists('marvy_forget_base_currency')) marvy_forget_base_currency();
         $this->assertSame('NGN', marvy_base_currency(),
-            'the panel must stay denominated in the currency its ledger was written in');
+            'only BaseCurrencyService may move the base currency');
+    }
+
+    /**
+     * The regression this fixes: the form posted base_currency, the schema
+     * dropped it, `changed` came back empty and the operator was told
+     * "Nothing changed" while the value never moved.
+     */
+    public function testTheSettingsControllerRoutesBaseCurrencyToTheConverter()
+    {
+        $controller = file_get_contents(self::$root.'/application/controllers/admin/Settings.php');
+        $this->assertStringContainsString('maybe_change_base_currency', $controller);
+        $this->assertStringContainsString('BaseCurrencyService', $controller);
+        // It must run before the generic save, and must strip the key so the
+        // generic saver can never see it.
+        $this->assertLessThan(
+            strpos($controller, '$this->settingsservice->save('),
+            strpos($controller, '$this->maybe_change_base_currency('),
+            'the base currency must be handled before the generic save');
+        $this->assertStringContainsString('unset($post[\'base_currency\']);', $controller);
+
+        $view = file_get_contents(self::$root.'/application/views/admin/settings/index.php');
+        $this->assertStringNotContainsString('!isset($values[\'base_currency\'])', $view,
+            'the dropdown must not be hidden behind a condition that is always false');
+        $this->assertStringContainsString('base_currency_choices', $view);
+    }
+
+    /** Switching the base currency converts amounts rather than relabelling them. */
+    public function testBaseCurrencyChangeConvertsStoredAmounts()
+    {
+        $service = file_get_contents(self::$root.'/application/libraries/BaseCurrencyService.php');
+
+        // Conversion, not relabelling: the multiply is the whole point.
+        $this->assertStringContainsString('* ?, 8)', $service);
+        // All-or-nothing: a half-converted ledger is unrecoverable.
+        foreach (array('trans_begin()', 'trans_rollback()', 'trans_commit()') as $needle) {
+            $this->assertStringContainsString($needle, $service);
+        }
+        // A zero/missing rate must be refused before anything is multiplied.
+        $this->assertStringContainsString('NO_RATE', $service);
+        // Provider-denominated money must not be scaled with our books.
+        foreach (array('provider_cost', 'provider_charge', 'provider_rate') as $col) {
+            $this->assertStringNotContainsString("'".$col."'", $service,
+                $col.' is denominated by the upstream vendor and must not be converted');
+        }
+        // And the base currency helper must actually read the new value.
+        $helper = file_get_contents(self::$root.'/application/helpers/marvy_helper.php');
+        $this->assertStringContainsString("where('is_base', 1)", $helper,
+            'marvy_base_currency() must reflect a completed switch, not just config');
     }
 
     /** Keys nothing honours are declared as such, with the work each needs. */

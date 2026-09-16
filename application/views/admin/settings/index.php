@@ -120,19 +120,28 @@ $field = function ($key, $def, $value) {
         <?php $field($key, $def, $values[$key] ?? $def[4]); ?>
       <?php endforeach; ?>
 
-      <?php if ($category === 'general' && !isset($values['base_currency'])): ?>
-        <!-- base_currency is now editable via settings -->
+      <?php if ($category === 'general'): ?>
+        <?php /* Always rendered. It used to be hidden whenever a base_currency
+                 value existed, which on a seeded panel is always — so the only
+                 way to reach the control was for it to be doing nothing. */ ?>
         <div class="field" style="margin-bottom:1rem">
           <label class="label" for="set-base_currency">Base currency</label>
-          <select class="select" id="set-base_currency" name="base_currency">
-            <option value="NGN" <?=($base_currency ?? 'NGN') === 'NGN' ? 'selected' : ''?>>NGN</option>
-            <option value="USD" <?=($base_currency ?? 'NGN') === 'USD' ? 'selected' : ''?>>USD</option>
-            <option value="EUR" <?=($base_currency ?? 'NGN') === 'EUR' ? 'selected' : ''?>>EUR</option>
-            <option value="GBP" <?=($base_currency ?? 'NGN') === 'GBP' ? 'selected' : ''?>>GBP</option>
-            <option value="INR" <?=($base_currency ?? 'NGN') === 'INR' ? 'selected' : ''?>>INR</option>
-            <option value="BRL" <?=($base_currency ?? 'NGN') === 'BRL' ? 'selected' : ''?>>BRL</option>
+          <select class="select" id="set-base_currency" name="base_currency"
+                  data-confirm="Change the base currency? Every stored amount will be converted at the current exchange rate. Take a database backup first.">
+            <?php foreach (($base_currency_choices ?? array()) as $code => $label): ?>
+              <option value="<?=htmlspecialchars($code)?>" <?=$base_currency === $code ? 'selected' : ''?>>
+                <?=htmlspecialchars($label)?>
+              </option>
+            <?php endforeach; ?>
           </select>
-          <p class="muted text-xs" style="margin:.25rem 0 0">The accounting/settlement currency every wallet, order and ledger entry is denominated in. Changing this would reinterpret every stored amount, so it moves by migration only — see docs/session-22-currency.md.</p>
+          <p class="muted text-xs" style="margin:.25rem 0 0">
+            The accounting currency every wallet, order and ledger entry is denominated in.
+            Changing it <strong>converts every stored amount</strong> at the current exchange rate
+            in a single transaction — a <?=htmlspecialchars(marvy_money(100))?> wallet keeps its real
+            value rather than becoming 100 of the new currency. Set the target currency's rate under
+            <a href="<?=site_url('admin/currencies')?>">Admin → Currencies</a> first, and take a
+            database backup before switching.
+          </p>
         </div>
         <?php endif; ?>
       <?php if ($category === 'payments'): ?>
@@ -151,13 +160,17 @@ $field = function ($key, $def, $value) {
 
 <div class="card mt-4">
   <h3 style="font-size:1rem;font-weight:600" class="mb-1">Currency settings</h3>
-  <p class="muted text-xs mb-3">Base currency can now be changed in Admin → Settings. All wallets, orders and ledger entries will be reinterpreted upon migration.</p>
+  <p class="muted text-xs mb-3">
+    The base currency is changed in the General section above. Per-currency exchange rates,
+    including the manual NGN rate box, live under
+    <a href="<?=site_url('admin/currencies')?>">Admin → Currencies</a>.
+  </p>
   <table class="table">
     <tbody>
       <tr>
         <td class="font-medium">Base currency</td>
         <td class="mono"><?=htmlspecialchars($base_currency)?></td>
-        <td class="text-xs muted">Now editable via Admin → Settings</td>
+        <td class="text-xs muted">Every stored amount is denominated in this.</td>
       </tr>
     </tbody>
   </table>
