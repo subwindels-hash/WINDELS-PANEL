@@ -73,6 +73,33 @@ class Currency_model extends MY_Model {
         return true;
     }
 
+    /**
+     * Refresh the base currency's own row during an automatic rate update.
+     *
+     * The base currency (NGN on this panel) is not a provider-derived number:
+     * it is exactly 1.00000000 by definition. Still, the row should not look
+     * stale after an automatic refresh. This pins the value back to 1.0 and
+     * updates the same source/timestamp fields every other currency gets.
+     */
+    public function refresh_base_rate($code, $actor_id, $source = 'AUTO', $effective_at = null){
+        $code = strtoupper($code);
+        $row = $this->db->where('code', $code)->get($this->table)->row();
+        if (!$row) return false;
+        if ((int)$row->is_base !== 1) return false;
+
+        $now = $this->now_utc();
+        $this->db->where('code', $code)->update($this->table, array(
+            'exchange_rate'      => '1.00000000',
+            'rate_source'        => mb_substr((string)$source, 0, 32) ?: 'AUTO',
+            'rate_updated_by'    => $actor_id ? (int)$actor_id : null,
+            'rate_updated_at'    => $now,
+            'rate_effective_at'  => $effective_at ?: $now,
+            'updated_at'         => $now,
+        ));
+        self::forget();
+        return true;
+    }
+
     /** Convert an amount denominated in the base currency into `code`. */
     public function convert_from_base($amount, $code){
         $target = $this->db->where('code', strtoupper($code))->get($this->table)->row();

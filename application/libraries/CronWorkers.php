@@ -784,9 +784,11 @@ class CronWorkers {
      * Refresh display-currency exchange rates automatically.
      *
      * The public provider endpoint returns rates with the panel's accounting
-     * currency as the base (NGN by default). We only update non-base display
-     * currencies, and we never write a missing/invalid provider value over a
-     * known-good rate. This job is scheduled hourly and is also picked up by
+     * currency as the base (NGN by default). We update every configured row:
+     * display currencies receive provider rates, while the base NGN row is
+     * pinned to 1.00000000 and gets fresh source/timestamp metadata too. We
+     * never write a missing/invalid provider value over a known-good display
+     * rate. This job is scheduled hourly and is also picked up by
      * the in-app CronScheduler auto-run heartbeat when a host has not installed
      * the crontab yet.
      */
@@ -836,10 +838,19 @@ class CronWorkers {
         $failed = 0;
         $checked = 0;
         foreach ($this->ci->currencyservice->all() as $row) {
-            if ((int)$row->is_base === 1) continue;
             $checked++;
 
             $code = strtoupper((string)$row->code);
+            if ((int)$row->is_base === 1) {
+                // NGN (the base row) must update too, but its rate is fixed by
+                // accounting identity: one naira is one naira. Refreshing it
+                // means pinning exchange_rate back to 1.00000000 and updating
+                // rate_source/rate_updated_at alongside the foreign rows.
+                $result = $this->ci->currencyservice->refresh_base_rate($code, null, 'AUTO:'.$host);
+                if (!empty($result['ok'])) $processed++; else $failed++;
+                continue;
+            }
+
             $rate = $rates[$code] ?? null;
             if (!is_numeric($rate) || (float)$rate <= 0) {
                 $failed++;
@@ -852,7 +863,7 @@ class CronWorkers {
         }
 
         if ($checked === 0) {
-            return array('processed' => 0, 'failed' => 0, 'message' => 'no display currencies to update');
+            return array('processed' => 0, 'failed' => 0, 'message' => 'no currencies to update');
         }
 
         return array(

@@ -175,9 +175,15 @@ class CurrencyTest extends TestCase
 
         $workers = file_get_contents(self::$root.'/application/libraries/CronWorkers.php');
         foreach (array('public function currency_rates()', 'SecureHttpClient', 'open.er-api.com',
-                       'currency_rates_from_payload', 'base mismatch', 'set_rate(') as $needle) {
+                       'currency_rates_from_payload', 'base mismatch', 'set_rate(', 'refresh_base_rate(') as $needle) {
             $this->assertStringContainsString($needle, $workers);
         }
+        $this->assertStringContainsString('NGN (the base row) must update too', $workers);
+
+        $model = file_get_contents(self::$root.'/application/models/Currency_model.php');
+        $this->assertStringContainsString('public function refresh_base_rate(', $model);
+        $this->assertStringContainsString("'exchange_rate'      => '1.00000000'", $model,
+            'the automatic update may refresh NGN metadata, but the base rate itself stays pinned');
 
         $crontab = file_get_contents(self::$root.'/cron/crontab.example');
         $this->assertStringContainsString('cron currency_rates', $crontab);
@@ -188,6 +194,7 @@ class CurrencyTest extends TestCase
 
         $view = file_get_contents(self::$root.'/application/views/admin/currencies/index.php');
         $this->assertStringContainsString('Automatic rate updates are on', $view);
+        $this->assertStringContainsString('including NGN', $view);
         $this->assertStringContainsString('Update all rates now', $view);
     }
 

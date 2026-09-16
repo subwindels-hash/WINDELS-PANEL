@@ -23,10 +23,11 @@ $csrf = function () {
 
 <div class="alert alert-info">
   <strong>Automatic rate updates are on.</strong>
-  The <span class="mono">currency_rates</span> background job refreshes display-currency rates every hour
-  through cron or the built-in site-traffic auto-run heartbeat. Use <em>Update all rates now</em> to run that
-  same locked job immediately; the boxes below stay available for emergency manual corrections
-  (pause the job if a manual rate must hold).
+  The <span class="mono">currency_rates</span> background job refreshes every row every hour
+  through cron or the built-in site-traffic auto-run heartbeat — including NGN, which stays pinned
+  at <span class="mono">1.00000000</span> but gets fresh source and timestamp metadata. Use
+  <em>Update all rates now</em> to run that same locked job immediately; the boxes below stay available
+  for emergency manual corrections (pause the job if a manual rate must hold).
 </div>
 
 <div class="card mb-4">
@@ -127,6 +128,7 @@ $csrf = function () {
   </div>
   <p class="muted text-xs mt-3">
     Automatic and manual exchange-rate changes are both recorded with who/what set the rate, when it changed,
-    and its source. The stored rate is always units of that currency per 1 <?=htmlspecialchars($base_currency)?>.
+    and its source. The stored rate is always units of that currency per 1 <?=htmlspecialchars($base_currency)?>;
+    <?=htmlspecialchars($base_currency)?> itself is refreshed as an audited 1.00000000 base row.
   </p>
 </div>

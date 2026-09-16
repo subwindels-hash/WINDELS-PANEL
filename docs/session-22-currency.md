@@ -146,4 +146,6 @@ a clean checkout never created it. Added `application/cache/.gitignore`
 - Automatic display-currency refresh now lives in the `currency_rates` background
   job. It runs hourly by crontab and through the site-traffic auto-run heartbeat,
   uses open.er-api.com by default, and can be pointed at a compatible endpoint
-  with `VP_CURRENCY_RATE_API_URL` / `CURRENCY_RATE_API_URL`.
+  with `VP_CURRENCY_RATE_API_URL` / `CURRENCY_RATE_API_URL`. The NGN base row is
+  included in each run: its rate remains the required 1.00000000, but its
+  source and last-updated metadata move forward with the rest of the table.
