@@ -4,14 +4,11 @@
     <div class="card">
       <div class="row justify-between" style="align-items:center">
         <div class="card-meta">Current balance</div>
-        <span class="badge badge-default">Default currency: <?=htmlspecialchars(marvy_base_currency())?></span>
+        <span class="badge badge-default">Base: <?=htmlspecialchars(marvy_base_currency())?><?php
+          if (marvy_pay_currency() !== marvy_base_currency()) echo ' · Pay: '.htmlspecialchars(marvy_pay_currency());
+        ?></span>
       </div>
-      <div class="mt-1 text-3xl font-bold" style="font-family:var(--font-display)"><?=marvy_money($wallet->balance ?? '0', $wallet->currency ?? marvy_base_currency())?></div>
-      <?php // A foreign-currency wallet also shows its value in the panel's
-            // default (base) currency, the currency everything settles in.
-      if (isset($wallet->currency) && strtoupper((string)$wallet->currency) !== marvy_base_currency() && (float)marvy_display_rate($wallet->currency) > 0): ?>
-        <div class="text-xs muted mt-1">≈ <?=marvy_money(bcdiv((string)($wallet->balance ?? '0'), (string)marvy_display_rate($wallet->currency), 8), marvy_base_currency())?></div>
-      <?php endif; ?>
+      <?php $this->load->view('partials/wallet_balance', array('wallet' => $wallet, 'size' => 'sm')); ?>
       <a class="btn btn-primary btn-block btn-sm mt-3" href="<?=site_url('dashboard/add-funds')?>">Add funds</a>
     </div>
   </div>

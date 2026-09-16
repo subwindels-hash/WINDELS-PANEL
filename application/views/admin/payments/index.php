@@ -61,8 +61,13 @@ $tabs = array('PENDING'=>'Awaiting review', 'SUCCESS'=>'Credited', 'FAILED'=>'Re
           </td>
           <td><?=htmlspecialchars((string)$t->method_name)?>
             <span class="badge badge-default"><?=htmlspecialchars((string)$t->method_type)?></span></td>
-          <td class="text-right mono"><?=marvy_money($t->amount)?></td>
-          <td class="text-right mono"><?=marvy_money($t->credited_amount ?? $t->amount)?></td>
+          <?php // Paid in the charge currency, credited in the accounting one.
+                // A pre-042 row has no base leg: the two are the same currency.
+            $t_base = strtoupper((string)($t->base_currency ?? $t->currency));
+            $t_credited = $t->credited_base_amount ?? ($t->credited_amount ?? $t->amount);
+          ?>
+          <td class="text-right mono"><?=marvy_money($t->amount, $t->currency)?></td>
+          <td class="text-right mono"><?=marvy_money($t_credited, $t_base)?></td>
           <td><span class="<?=$badge($t->status)?>"><?=htmlspecialchars($t->status)?></span></td>
           <td class="text-xs muted"><?=htmlspecialchars((string)$t->created_at)?></td>
         </tr>

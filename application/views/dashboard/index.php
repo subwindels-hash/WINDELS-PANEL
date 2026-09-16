@@ -16,15 +16,13 @@ $name = htmlspecialchars($current_user->username ?? 'there');
   <div class="card ws-stat-card">
     <div class="row justify-between" style="align-items:center">
       <div class="card-meta">Wallet balance</div>
-      <span class="badge badge-default">Default currency: <?=htmlspecialchars(marvy_base_currency())?></span>
+      <span class="badge badge-default">Base: <?=htmlspecialchars(marvy_base_currency())?><?php
+        if (marvy_pay_currency() !== marvy_base_currency()) echo ' · Pay: '.htmlspecialchars(marvy_pay_currency());
+      ?></span>
     </div>
-    <div class="ws-stat-value"><?=marvy_money($wallet->balance ?? '0', $wallet->currency ?? marvy_base_currency())?></div>
-    <?php // A wallet held in another currency shows its real worth in the panel's
-          // default (base) currency too — ordering, deposits and limits all
-          // settle in that currency.
-    if (isset($wallet->currency) && strtoupper((string)$wallet->currency) !== marvy_base_currency() && (float)marvy_display_rate($wallet->currency) > 0): ?>
-      <div class="text-xs muted mt-1">≈ <?=marvy_money(bcdiv((string)($wallet->balance ?? '0'), (string)marvy_display_rate($wallet->currency), 8), marvy_base_currency())?></div>
-    <?php endif; ?>
+    <?php // Balance in the wallet's own currency, plus the base currency it
+          // buys in and the currency it tops up in — see the partial.
+    $this->load->view('partials/wallet_balance', array('wallet' => $wallet)); ?>
     <p class="hint">Available for orders and in-app purchases.</p>
   </div>
   <a href="<?=site_url('dashboard/orders')?>" class="card ws-stat-card card-hover ws-action-card">

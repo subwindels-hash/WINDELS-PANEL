@@ -65,6 +65,25 @@ class PaymentService {
     /**
      * Initialise a deposit.
      *
+     * ## Which currency the customer is charged in
+     *
+     * The amount the customer typed is in the PAY currency — the panel's
+     * default display currency, the one every price on the site is quoted in
+     * (`marvy_pay_currency()`). That is what the gateway is handed, so a
+     * Nigerian customer reading ₦ prices is charged ₦ rather than being
+     * bounced to a dollar checkout because the books happen to be kept in USD.
+     *
+     * The wallet is still credited in the BASE currency. The conversion
+     * happens once, here, at a rate PINNED on the deposit row (`fx_rate`), and
+     * `confirm()` credits `credited_base_amount` — never a figure re-derived
+     * from the rate of the day. The customer pays at the rate they were shown
+     * on Add Funds, whatever the market does between "Continue" and the
+     * webhook.
+     *
+     * Deposit bounds (`payment_methods.min_amount` / `max_amount`) are stored
+     * in the base currency like every other money column, so they are
+     * compared against the base-currency leg, not the typed amount.
+     *
      * @param object $user
      * @param array $input  payment_method (code), amount, currency, idempotency_key?
      * @return array{ok:bool, transaction?:object, redirect_url?:string, checkout?:array, error?:string, code?:string}
@@ -76,13 +95,23 @@ class PaymentService {
 
         $amount = $this->normalise_amount($input['amount'] ?? null);
         if ($amount === null) return array('ok'=>false,'error'=>'Invalid amount','code'=>'BAD_AMOUNT');
-        if ($method->min_amount !== null && bccomp($amount, (string)$method->min_amount, 8) < 0)
-            return array('ok'=>false,'error'=>'Minimum is '.$method->min_amount,'code'=>'AMOUNT_TOO_LOW');
-        if ($method->max_amount !== null && bccomp($amount, (string)$method->max_amount, 8) > 0)
-            return array('ok'=>false,'error'=>'Maximum is '.$method->max_amount,'code'=>'AMOUNT_TOO_HIGH');
 
-        $currency = strtoupper($input['currency'] ?? marvy_base_currency());
+        // The currency the gateway is handed. Defaults to the pay currency,
+        // which is the default display currency — not the accounting one.
+        $currency = strtoupper($input['currency'] ?? $this->pay_currency());
         if (!preg_match('/^[A-Z]{3}$/', $currency)) return array('ok'=>false,'error'=>'Bad currency','code'=>'BAD_CURRENCY');
+
+        $quote = $this->quote($amount, $currency);
+        if (empty($quote['ok'])) return $quote;
+
+        // Limits are base-currency amounts (BaseCurrencyService converts them
+        // with every other money column), so they are checked on the base leg.
+        if ($method->min_amount !== null && bccomp($quote['base_amount'], (string)$method->min_amount, 8) < 0)
+            return array('ok'=>false,'code'=>'AMOUNT_TOO_LOW',
+                'error'=>'Minimum is '.marvy_money($this->in_pay_currency($method->min_amount, $quote['fx_rate']), $currency));
+        if ($method->max_amount !== null && bccomp($quote['base_amount'], (string)$method->max_amount, 8) > 0)
+            return array('ok'=>false,'code'=>'AMOUNT_TOO_HIGH',
+                'error'=>'Maximum is '.marvy_money($this->in_pay_currency($method->max_amount, $quote['fx_rate']), $currency));
 
         $idem = $this->normalise_idem($input['idempotency_key'] ?? null, $user);
         if ($idem) {
@@ -90,12 +119,23 @@ class PaymentService {
             if ($existing) return array('ok'=>true,'transaction'=>$existing,'duplicate'=>true);
         }
 
-        $fee = $this->calculate_fee($method, $amount);
-        $bonus = $this->calculate_bonus($method, $amount);
-        $credited = bcadd(bcsub($amount, $fee, 8), $bonus, 8);
+        // Fees and bonuses are percentages plus a base-currency fixed part, so
+        // they are computed on the base leg and then expressed in the charge
+        // currency — otherwise a ₦100 fixed fee would become a $100 one.
+        $fee_base   = $this->calculate_fee($method, $quote['base_amount']);
+        $bonus_base = $this->calculate_bonus($method, $quote['base_amount']);
+        $credited_base = bcadd(bcsub($quote['base_amount'], $fee_base, 8), $bonus_base, 8);
+
+        $fee      = $this->in_pay_currency($fee_base, $quote['fx_rate']);
+        $bonus    = $this->in_pay_currency($bonus_base, $quote['fx_rate']);
+        $credited = $this->in_pay_currency($credited_base, $quote['fx_rate']);
 
         $public_id = marvy_public_id();
         $tx = $this->persist_transaction(array(
+            'base_currency'        => $quote['base_currency'],
+            'base_amount'          => $quote['base_amount'],
+            'credited_base_amount' => $credited_base,
+            'fx_rate'              => $quote['fx_rate'],
             'public_id'          => $public_id,
             // Fundsvera requires a >= 20-character reference that is unique per
             // business; every provider gets the same stable value so support
@@ -170,8 +210,119 @@ class PaymentService {
         );
     }
 
+    /* ------------------------------------------------------------------ */
+    /* The charge / settlement currency split                              */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * The currency a deposit is charged in — the default display currency.
+     *
+     * Falls back to the base currency whenever the display currency cannot be
+     * resolved: a deposit must always be quotable in *something*, and the
+     * accounting currency is the one figure that always exists.
+     */
+    public function pay_currency() {
+        try {
+            if (function_exists('marvy_pay_currency')) {
+                $code = strtoupper((string)marvy_pay_currency());
+                if (preg_match('/^[A-Z]{3}$/', $code)) return $code;
+            }
+        } catch (Throwable $e) {
+            log_message('error', 'pay currency unavailable: '.$e->getMessage());
+        }
+        return marvy_base_currency();
+    }
+
+    /**
+     * Price a deposit: what the customer pays, what the wallet gets, and the
+     * rate that ties the two together.
+     *
+     * The rate is read once and returned so the caller can pin it on the row.
+     * A charge currency with no usable rate is refused outright rather than
+     * quietly treated as 1:1 — quoting "₦1,328" and crediting a ₦1,328 wallet
+     * balance when the books are in dollars would hand the customer ~1,300x
+     * the money they paid for.
+     *
+     * @return array{ok:bool, base_currency?:string, base_amount?:string,
+     *               fx_rate?:string, error?:string, code?:string}
+     */
+    public function quote($pay_amount, $pay_currency = null) {
+        $base = marvy_base_currency();
+        $pay  = strtoupper((string)($pay_currency ?: $this->pay_currency()));
+
+        if ($pay === $base) {
+            return array('ok'=>true, 'base_currency'=>$base,
+                'base_amount'=>number_format((float)$pay_amount, 8, '.', ''),
+                'fx_rate'=>'1.00000000');
+        }
+
+        $rate = $this->fx_rate($pay);
+        if ($rate === null) {
+            return array('ok'=>false, 'code'=>'NO_RATE',
+                'error'=>'No usable '.$pay.' exchange rate is configured, so this deposit cannot be '
+                    .'priced right now. Please contact support.');
+        }
+
+        return array(
+            'ok'            => true,
+            'base_currency' => $base,
+            // pay ÷ rate: the rate is units of the charge currency per 1 base.
+            'base_amount'   => bcdiv((string)$pay_amount, $rate, 8),
+            'fx_rate'       => $rate,
+        );
+    }
+
+    /** A base-currency amount expressed in the charge currency at a pinned rate. */
+    private function in_pay_currency($base_amount, $fx_rate) {
+        return bcmul((string)$base_amount, (string)$fx_rate, 8);
+    }
+
+    /**
+     * Units of `$code` per 1 unit of the base currency, or NULL when no
+     * usable, active rate exists. Never invents one.
+     */
+    private function fx_rate($code) {
+        try {
+            $this->ci->load->model('Currency_model');
+            $row = $this->ci->Currency_model->find($code);
+            if ($row && (int)$row->is_active === 1 && is_numeric($row->exchange_rate)
+                    && bccomp((string)$row->exchange_rate, '0', 8) > 0) {
+                return (string)$row->exchange_rate;
+            }
+        } catch (Throwable $e) {
+            log_message('error', 'fx rate lookup failed for '.$code.': '.$e->getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * What a deposit credits the wallet with, in the BASE currency.
+     *
+     * Prefers the figure pinned when the deposit was opened. A row from before
+     * migration 042 has no pinned leg and was charged in the base currency by
+     * construction, so its charge-currency figure is already the base figure —
+     * which is exactly what the old code credited.
+     */
+    private function settlement_amount($tx) {
+        if (isset($tx->credited_base_amount) && $tx->credited_base_amount !== null
+                && $tx->credited_base_amount !== '') {
+            return (string)$tx->credited_base_amount;
+        }
+        if (isset($tx->base_amount) && $tx->base_amount !== null && $tx->base_amount !== '') {
+            return (string)$tx->base_amount;
+        }
+        return $tx->credited_amount !== null ? (string)$tx->credited_amount : (string)$tx->amount;
+    }
+
     /**
      * Confirm a transaction and credit the wallet once.
+     *
+     * The wallet is credited in the BASE currency using the amount pinned at
+     * initiation — not the charge amount, and not a figure re-derived from
+     * today's rate. A customer who was quoted "$1 = ₦1,328" and paid ₦1,328
+     * gets $1, even if the rate moved to 1,400 while the webhook was in
+     * flight. LedgerService then does its own conversion if the wallet itself
+     * holds a foreign currency; that boundary is unchanged.
      *
      * @param object $tx        the payment transaction
      * @param string $source    SYSTEM|ADMIN|WEBHOOK
@@ -183,7 +334,8 @@ class PaymentService {
             return array('ok'=>false,'error'=>'Transaction cannot be confirmed in '.$tx->status,'code'=>'BAD_STATE');
         }
         $wallet = $this->ci->Wallet_model->for_user($tx->user_id);
-        $credited = $tx->credited_amount !== null ? (string)$tx->credited_amount : (string)$tx->amount;
+        // Base currency: LedgerService::credit() speaks base, always.
+        $credited = $this->settlement_amount($tx);
         $idem = 'payment:credit:'.($tx->idempotency_key ?: $tx->public_id);
 
         $this->ci->db->trans_start();
@@ -218,16 +370,26 @@ class PaymentService {
             // name); reading it blind raises a warning try/catch cannot see.
             if (isset($this->ci->notificationservice)) {
                 $wallet_now = $this->ci->Wallet_model->for_user($tx->user_id);
+                // $credited is a BASE-currency figure; label it as such rather
+                // than with the charge currency, or a ₦1,328 payment would be
+                // announced as "₦1.00 added to your wallet".
+                $credited_code = (string)($tx->base_currency ?: marvy_base_currency());
+                // What they actually paid, when that is a different currency.
+                $paid = marvy_money($tx->amount, $tx->currency);
+                $line = marvy_money($credited, $credited_code).' has been added to your wallet';
+                if (strtoupper((string)$tx->currency) !== strtoupper($credited_code)) {
+                    $line .= ' ('.$paid.' paid)';
+                }
                 $this->ci->notificationservice->notify(
                     $tx->user_id, 'payment.credited',
-                    marvy_money($credited, $tx->currency).' has been added to your wallet.',
+                    $line.'.',
                     array('reference' => $tx->public_id, 'url' => 'dashboard/wallet/deposits/'.$tx->public_id),
                     array(
-                        'amount'  => marvy_money($credited, $tx->currency),
+                        'amount'  => marvy_money($credited, $credited_code),
                         // The wallet may hold a different currency than the
                         // deposit; show the balance in what it actually holds.
                         'balance' => marvy_money($wallet_now->balance ?? '0',
-                            $wallet_now->currency ?? $tx->currency),
+                            $wallet_now->currency ?? $credited_code),
                     )
                 );
             }
@@ -734,11 +896,25 @@ class PaymentService {
         $existing = $this->ci->Payment_transaction_model->find_by_idempotency_key($idem);
         if ($existing) return $existing;
 
+        // The bank reported an amount in ITS currency (Fundsvera is a Nigerian
+        // bank rail, so naira). Price it the same way a declared deposit is
+        // priced: the reported figure is the charge, and the base leg is what
+        // the wallet gets. No rate means no credit — a spontaneous transfer is
+        // never worth guessing at.
+        $currency = strtoupper((string)($event['currency'] ?? $this->pay_currency()));
+        $quote = $this->quote($amount, $currency);
+        if (empty($quote['ok'])) {
+            log_message('error', 'virtual-account credit for user '.$user_id
+                .' cannot be priced: '.$quote['error']);
+            return null;
+        }
+
         // The method's fee/bonus rules apply to a bank-transfer credit exactly
         // as they would to a declared deposit, when the row can be found.
-        $method = $this->resolve_method('fundsvera');
-        $fee    = $method ? $this->calculate_fee($method, $amount) : '0.00000000';
-        $bonus  = $method ? $this->calculate_bonus($method, $amount) : '0.00000000';
+        $method     = $this->resolve_method('fundsvera');
+        $fee_base   = $method ? $this->calculate_fee($method, $quote['base_amount']) : '0.00000000';
+        $bonus_base = $method ? $this->calculate_bonus($method, $quote['base_amount']) : '0.00000000';
+        $credited_base = bcadd(bcsub($quote['base_amount'], $fee_base, 8), $bonus_base, 8);
 
         $public_id = marvy_public_id();
         $tx = $this->persist_transaction(array(
@@ -750,10 +926,14 @@ class PaymentService {
             'user_id'            => $user_id,
             'payment_method_id'  => $method ? (int)$method->id : null,
             'amount'             => $amount,
-            'fee'                => $fee,
-            'bonus'              => $bonus,
-            'credited_amount'    => bcadd(bcsub($amount, $fee, 8), $bonus, 8),
-            'currency'           => (string)($event['currency'] ?? marvy_base_currency()),
+            'fee'                => $this->in_pay_currency($fee_base, $quote['fx_rate']),
+            'bonus'              => $this->in_pay_currency($bonus_base, $quote['fx_rate']),
+            'credited_amount'    => $this->in_pay_currency($credited_base, $quote['fx_rate']),
+            'currency'           => $currency,
+            'base_currency'        => $quote['base_currency'],
+            'base_amount'          => $quote['base_amount'],
+            'credited_base_amount' => $credited_base,
+            'fx_rate'              => $quote['fx_rate'],
             'status'             => self::STATUS_PENDING,
             'idempotency_key'    => $idem,
             'metadata'           => json_encode(array(
@@ -1013,18 +1193,28 @@ class PaymentService {
 
         $amount = $this->normalise_amount($amount);
         if ($amount === null) return array('ok'=>false,'error'=>'Invalid amount','code'=>'BAD_AMOUNT');
-        if ($method->min_amount !== null && bccomp($amount, (string)$method->min_amount, 8) < 0)
-            return array('ok'=>false,'error'=>'Minimum is '.$method->min_amount,'code'=>'AMOUNT_TOO_LOW');
-        if ($method->max_amount !== null && bccomp($amount, (string)$method->max_amount, 8) > 0)
-            return array('ok'=>false,'error'=>'Maximum is '.$method->max_amount,'code'=>'AMOUNT_TOO_HIGH');
+
+        // Typed by the customer, so it is in the currency they see — the pay
+        // currency — exactly like the Add Funds amount field.
+        $currency = $this->pay_currency();
+        $quote = $this->quote($amount, $currency);
+        if (empty($quote['ok'])) return $quote;
+
+        if ($method->min_amount !== null && bccomp($quote['base_amount'], (string)$method->min_amount, 8) < 0)
+            return array('ok'=>false,'code'=>'AMOUNT_TOO_LOW',
+                'error'=>'Minimum is '.marvy_money($this->in_pay_currency($method->min_amount, $quote['fx_rate']), $currency));
+        if ($method->max_amount !== null && bccomp($quote['base_amount'], (string)$method->max_amount, 8) > 0)
+            return array('ok'=>false,'code'=>'AMOUNT_TOO_HIGH',
+                'error'=>'Maximum is '.marvy_money($this->in_pay_currency($method->max_amount, $quote['fx_rate']), $currency));
 
         // The account the customer will pay into — created on first use.
         $va = $this->virtual_account($user);
         if (empty($va['ok'])) return $va;
         $account = $va['account'];
 
-        $fee   = $this->calculate_fee($method, $amount);
-        $bonus = $this->calculate_bonus($method, $amount);
+        $fee_base   = $this->calculate_fee($method, $quote['base_amount']);
+        $bonus_base = $this->calculate_bonus($method, $quote['base_amount']);
+        $credited_base = bcadd(bcsub($quote['base_amount'], $fee_base, 8), $bonus_base, 8);
 
         $public_id = marvy_public_id();
         $tx = $this->persist_transaction(array(
@@ -1036,10 +1226,14 @@ class PaymentService {
             'user_id'            => $user->id,
             'payment_method_id'  => (int)$method->id,
             'amount'             => $amount,
-            'fee'                => $fee,
-            'bonus'              => $bonus,
-            'credited_amount'    => bcadd(bcsub($amount, $fee, 8), $bonus, 8),
-            'currency'           => marvy_base_currency(),
+            'fee'                => $this->in_pay_currency($fee_base, $quote['fx_rate']),
+            'bonus'              => $this->in_pay_currency($bonus_base, $quote['fx_rate']),
+            'credited_amount'    => $this->in_pay_currency($credited_base, $quote['fx_rate']),
+            'currency'           => $currency,
+            'base_currency'        => $quote['base_currency'],
+            'base_amount'          => $quote['base_amount'],
+            'credited_base_amount' => $credited_base,
+            'fx_rate'              => $quote['fx_rate'],
             'status'             => self::STATUS_PENDING,
             'idempotency_key'    => 'va-deposit:'.$user->id.':'.$public_id,
             'metadata'           => json_encode(array(
@@ -1058,8 +1252,9 @@ class PaymentService {
             'payment_transaction_id' => $tx->id,
             'user_id'                => $user->id,
             'request_id'             => 'MVS-'.strtoupper($public_id),
+            // What the BANK must report, so it is the charge currency.
             'expected_amount'        => $amount,
-            'currency'               => marvy_base_currency(),
+            'currency'               => $currency,
             'account_number'         => $account->account_number ?? null,
             'account_name'           => $account->account_name ?? null,
             'bank_name'              => $account->bank_name ?? null,

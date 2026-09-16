@@ -52,7 +52,9 @@ class Payments extends MY_Controller {
         $res = $this->paymentservice->deposit($user, array(
             'payment_method'  => 'fundsvera',
             'amount'          => $amount,
-            'currency'        => marvy_base_currency(),
+            // Charged in the panel's default display currency — the one the
+            // API's own price fields are quoted in.
+            'currency'        => marvy_pay_currency(),
             'idempotency_key' => $payload['idempotency_key'] ?? $this->input->post('idempotency_key'),
         ));
 
@@ -67,6 +69,11 @@ class Payments extends MY_Controller {
             'status'       => $tx->status,
             'amount'       => (string)$tx->amount,
             'currency'     => $tx->currency,
+            // The settlement leg and the rate it was pinned at, so a client
+            // can show the customer what this payment is actually worth.
+            'base_currency' => (string)($tx->base_currency ?: $tx->currency),
+            'base_amount'   => $tx->base_amount === null ? (string)$tx->amount : (string)$tx->base_amount,
+            'fx_rate'       => $tx->fx_rate === null ? '1.00000000' : (string)$tx->fx_rate,
             'checkout'     => $res['checkout'] ?? null,
             'redirect_url' => $res['redirect_url'] ?? null,
             // Stated plainly because it is the whole security model: the
@@ -181,10 +188,20 @@ class Payments extends MY_Controller {
             'reference'        => $tx->internal_reference ?: $tx->public_id,
             'provider'         => $tx->provider,
             'payment_method'   => $tx->payment_method,
+            // What the customer is charged, in the currency the gateway took.
             'amount'           => (string)$tx->amount,
             'fee'              => (string)$tx->fee,
-            'credited_amount'  => $tx->credited_amount === null ? null : (string)$tx->credited_amount,
             'currency'         => $tx->currency,
+            // What the wallet is credited with, in the accounting currency,
+            // at the rate pinned when the deposit was opened. On a panel where
+            // the two currencies coincide these simply mirror the pair above.
+            'credited_amount'  => $tx->credited_amount === null ? null : (string)$tx->credited_amount,
+            'base_currency'    => (string)($tx->base_currency ?: $tx->currency),
+            'base_amount'      => $tx->base_amount === null ? (string)$tx->amount : (string)$tx->base_amount,
+            'credited_base_amount' => $tx->credited_base_amount === null
+                ? ($tx->credited_amount === null ? null : (string)$tx->credited_amount)
+                : (string)$tx->credited_base_amount,
+            'fx_rate'          => $tx->fx_rate === null ? '1.00000000' : (string)$tx->fx_rate,
             'status'           => $tx->status,
             'provider_reference' => $tx->provider_tx_id,
             'initiated_at'     => $tx->initiated_at,

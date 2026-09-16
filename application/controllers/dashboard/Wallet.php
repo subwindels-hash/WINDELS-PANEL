@@ -95,6 +95,13 @@ class Wallet extends Auth_Controller {
             'min_deposit' => $this->Setting_model->get('min_deposit', '500.00000000'),
             'max_deposit' => $this->Setting_model->get('max_deposit', '5000000.00000000'),
             'base_currency' => marvy_base_currency(),
+            // The currency this deposit is actually charged in (the default
+            // display currency) and the rate it is quoted at. Both are read
+            // once here so the form, the summary panel and the JavaScript that
+            // recalculates the running total cannot disagree — the customer
+            // pays at exactly the rate printed on the page.
+            'pay_currency' => marvy_pay_currency(),
+            'fx_rate'      => marvy_display_rate(marvy_pay_currency()),
         ));
     }
 
@@ -142,7 +149,11 @@ class Wallet extends Auth_Controller {
             $res = $this->paymentservice->deposit($this->current_user, array(
                 'payment_method'  => $this->input->post('payment_method', true),
                 'amount'          => $this->input->post('amount'),
-                'currency'        => marvy_base_currency(),
+                // The amount field is labelled in — and the rate line quotes —
+                // the default display currency, so that is what the gateway is
+                // handed. PaymentService converts to the accounting currency
+                // at the rate it pins on the deposit.
+                'currency'        => marvy_pay_currency(),
                 'idempotency_key' => $form_token !== '' ? 'form:'.$form_token : null,
             ));
         } catch (Throwable $e) {

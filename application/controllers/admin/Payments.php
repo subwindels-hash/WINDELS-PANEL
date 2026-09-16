@@ -274,13 +274,21 @@ class Payments extends Admin_Controller {
         }
 
         $confirmed = $result['transaction'];
+        // The wallet is credited with the BASE-currency leg pinned on the
+        // deposit, not the charge amount — saying otherwise in the flash and
+        // the audit trail would misreport every converted top-up.
+        $credited = $tx->credited_base_amount ?? ($tx->base_amount ?? $tx->credited_amount);
+        $credited_cur = (string)($tx->base_currency ?: marvy_base_currency());
         $this->audit('payment.approved', $tx, $before, array(
             'status'                => $confirmed->status ?? 'SUCCESS',
-            'credited_amount'       => (string)$tx->credited_amount,
+            'credited_amount'       => (string)$credited,
+            'credited_currency'     => $credited_cur,
+            'charged_amount'        => (string)$tx->amount,
+            'charged_currency'      => (string)$tx->currency,
             'wallet_transaction_id' => $confirmed->wallet_transaction_id ?? null,
         ));
         $this->session->set_flashdata('success',
-            'Deposit approved — '.marvy_money($tx->credited_amount).' credited to '.$tx->username.'.');
+            'Deposit approved — '.marvy_money($credited, $credited_cur).' credited to '.$tx->username.'.');
         redirect('admin/payments/'.$tx->public_id);
     }
 

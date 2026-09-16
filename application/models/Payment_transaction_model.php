@@ -112,13 +112,22 @@ class Payment_transaction_model extends MY_Model {
             ->get()->row();
     }
 
-    /** Totals for the queue header cards. */
+    /**
+     * Totals for the queue header cards.
+     *
+     * Summed over the BASE-currency legs, never the charge amounts. Deposits
+     * can now be charged in a different currency than the books are kept in
+     * (migration 042), and adding a ₦1,328 charge to a $1 one produces a
+     * number that means nothing. `base_amount` / `credited_base_amount` are
+     * one currency by definition; COALESCE covers pre-042 rows, which were
+     * charged in the base currency and so already carry it.
+     */
     public function admin_totals(){
         $row = $this->db
             ->select("COUNT(*) AS total", false)
             ->select("COALESCE(SUM(CASE WHEN status='PENDING' THEN 1 ELSE 0 END),0) AS pending_count", false)
-            ->select("COALESCE(SUM(CASE WHEN status='PENDING' THEN amount ELSE 0 END),0) AS pending_amount", false)
-            ->select("COALESCE(SUM(CASE WHEN status='SUCCESS' THEN credited_amount ELSE 0 END),0) AS credited", false)
+            ->select("COALESCE(SUM(CASE WHEN status='PENDING' THEN COALESCE(base_amount, amount) ELSE 0 END),0) AS pending_amount", false)
+            ->select("COALESCE(SUM(CASE WHEN status='SUCCESS' THEN COALESCE(credited_base_amount, credited_amount) ELSE 0 END),0) AS credited", false)
             ->get($this->table)->row();
         return array(
             'total'          => (int)($row->total ?? 0),
