@@ -144,8 +144,11 @@ a clean checkout never created it. Added `application/cache/.gitignore`
   but they look odd in naira and should be re-scaled when the demo seeder is next
   touched.
 - Automatic display-currency refresh now lives in the `currency_rates` background
-  job. It runs hourly by crontab and through the site-traffic auto-run heartbeat,
-  uses open.er-api.com by default, and can be pointed at a compatible endpoint
-  with `VP_CURRENCY_RATE_API_URL` / `CURRENCY_RATE_API_URL`. The NGN base row is
-  included in each run: its rate remains the required 1.00000000, but its
-  source and last-updated metadata move forward with the rest of the table.
+  job. It runs hourly by crontab, through the site-traffic auto-run heartbeat,
+  from Admin → Currencies → Update all, and (when `VP_CURRENCY_RATE_WEBHOOK_SECRET`
+  is set) from the signed `/webhook/currency-rates` URL trigger for hosts that
+  cannot run CLI cron. It uses open.er-api.com by default and can be pointed at a
+  compatible endpoint with `VP_CURRENCY_RATE_API_URL` / `CURRENCY_RATE_API_URL`.
+  The NGN base row is included in each run: its rate remains the required
+  1.00000000, but its source and last-updated metadata move forward with the
+  rest of the table.

@@ -321,10 +321,11 @@ class PaymentService {
         if (method_exists($gateway, 'capture')) {
             $capture = $gateway->capture($reference);
             if (!empty($capture['ok'])) {
-                if (!$this->amount_covers_deposit($tx, $capture)) {
-                    $this->record_shortfall($tx, $capture);
-                    return array('ok'=>false,'code'=>'UNDERPAID',
-                        'error'=>'PayPal reports less money than this deposit was for — support will reconcile it.');
+                $coverage = $this->provider_payment_covers_deposit($tx, $capture);
+                if (empty($coverage['ok'])) {
+                    $this->record_shortfall($tx, $capture, $coverage);
+                    return array('ok'=>false,'code'=>$coverage['code'],
+                        'error'=>$coverage['message'].' Support will reconcile it.');
                 }
                 $res = $this->confirm($tx, $source, $capture['provider_tx_id'] ?? null);
                 if (!empty($res['ok'])) return array_merge($res, array('captured'=>true));
@@ -343,10 +344,11 @@ class PaymentService {
         if (method_exists($gateway, 'verify')) {
             $verdict = $gateway->verify($reference);
             if (!empty($verdict['ok']) && strtoupper((string)($verdict['status'] ?? '')) === 'SUCCESS') {
-                if (!$this->amount_covers_deposit($tx, $verdict)) {
-                    $this->record_shortfall($tx, $verdict);
-                    return array('ok'=>false,'code'=>'UNDERPAID',
-                        'error'=>'The provider reports less money than this deposit was for — support will reconcile it.');
+                $coverage = $this->provider_payment_covers_deposit($tx, $verdict);
+                if (empty($coverage['ok'])) {
+                    $this->record_shortfall($tx, $verdict, $coverage);
+                    return array('ok'=>false,'code'=>$coverage['code'],
+                        'error'=>$coverage['message'].' Support will reconcile it.');
                 }
                 $res = $this->confirm($tx, $source, $verdict['provider_tx_id'] ?? null);
                 if (!empty($res['ok'])) return array_merge($res, array('verified'=>true));
@@ -422,30 +424,77 @@ class PaymentService {
     /**
      * Whether what the provider says arrived covers what we expected.
      *
-     * Same policy as CronWorkers::amount_covers_deposit(): a gateway that
-     * reports no amount is trusted on the deposit row (the webhook path does),
-     * a reported amount below the deposit is a shortfall for staff — never a
-     * full credit for partial money.
+     * A gateway that reports no amount is trusted on the deposit row, because
+     * some providers only sign the status/reference and the amount is already
+     * the row we created. Once a provider *does* report amount or currency,
+     * both must agree with the transaction before a webhook can credit the
+     * wallet: a USD success callback must never satisfy an NGN deposit, and a
+     * partial payment must never become full wallet balance. Crypto adapters
+     * that validate a coin amount against their stored quote mark the metadata
+     * with `provider_amount_validated`, because their callback currency (BTC,
+     * USDT) is intentionally different from the fiat deposit row.
      */
-    private function amount_covers_deposit($tx, array $res) {
-        if (!isset($res['amount']) || $res['amount'] === null || $res['amount'] === '') return true;
-        return bccomp((string)$res['amount'], (string)$tx->amount, 8) >= 0;
+    private function provider_payment_covers_deposit($tx, array $res) {
+        $metadata = isset($res['metadata']) && is_array($res['metadata']) ? $res['metadata'] : array();
+        if (!empty($metadata['provider_amount_validated'])) {
+            return array('ok' => true);
+        }
+
+        $expected_currency = strtoupper(trim((string)($tx->currency ?? (function_exists('marvy_base_currency') ? marvy_base_currency() : 'NGN'))));
+        $reported_currency = isset($res['currency']) ? strtoupper(trim((string)$res['currency'])) : '';
+        if ($reported_currency !== '' && $expected_currency !== '' && $reported_currency !== $expected_currency) {
+            return array(
+                'ok' => false,
+                'code' => 'CURRENCY_MISMATCH',
+                'message' => 'The provider reported '.$reported_currency.' for a '.$expected_currency.' deposit.',
+            );
+        }
+
+        if (array_key_exists('amount', $res) && $res['amount'] !== null && $res['amount'] !== '') {
+            if (!is_numeric($res['amount'])) {
+                return array(
+                    'ok' => false,
+                    'code' => 'BAD_PROVIDER_AMOUNT',
+                    'message' => 'The provider reported an invalid payment amount.',
+                );
+            }
+            if (bccomp((string)$res['amount'], (string)$tx->amount, 8) < 0) {
+                return array(
+                    'ok' => false,
+                    'code' => 'UNDERPAID',
+                    'message' => 'The provider reports less money than this deposit was for.',
+                );
+            }
+        }
+
+        return array('ok' => true);
     }
 
-    /** Record a provider-reported shortfall on the transaction for staff. */
-    private function record_shortfall($tx, array $res) {
+    /** Backwards-compatible boolean for older source-level tests and comments. */
+    private function amount_covers_deposit($tx, array $res) {
+        $coverage = $this->provider_payment_covers_deposit($tx, $res);
+        return !empty($coverage['ok']);
+    }
+
+    /** Record a provider-reported shortfall/currency mismatch on the transaction for staff. */
+    private function record_shortfall($tx, array $res, array $coverage = array()) {
         $meta = json_decode((string)($tx->metadata ?? ''), true);
         $meta = is_array($meta) ? $meta : array();
+        $code = (string)($coverage['code'] ?? 'UNDERPAID');
         $meta['reconciliation'] = array(
-            'underpaid'       => true,
-            'expected'        => (string)$tx->amount,
-            'provider_amount' => (string)($res['amount'] ?? ''),
-            'checked_at'      => gmdate('Y-m-d H:i:s'),
+            'underpaid'         => $code === 'UNDERPAID',
+            'currency_mismatch'=> $code === 'CURRENCY_MISMATCH',
+            'invalid_amount'    => $code === 'BAD_PROVIDER_AMOUNT',
+            'expected'          => (string)$tx->amount,
+            'expected_currency' => (string)($tx->currency ?? (function_exists('marvy_base_currency') ? marvy_base_currency() : 'NGN')),
+            'provider_amount'   => (string)($res['amount'] ?? ''),
+            'provider_currency' => (string)($res['currency'] ?? ''),
+            'checked_at'        => gmdate('Y-m-d H:i:s'),
         );
         $this->ci->Payment_transaction_model->update_status($tx->id,
             array('metadata' => json_encode($meta, JSON_UNESCAPED_SLASHES)));
-        log_message('error', 'settle_hosted_return: '.$tx->public_id.' is short — provider reports '
-            .($res['amount'] ?? '?').' against '.$tx->amount.'; left for staff');
+        log_message('error', 'payment confirmation refused for '.$tx->public_id.' — '
+            .($coverage['message'] ?? 'provider amount did not cover the deposit').' left for staff');
     }
 
     /** Mark a transaction failed (terminal). */
@@ -617,6 +666,19 @@ class PaymentService {
                 'error' => 'no matching transaction',
             ));
             return array('ok'=>true,'unmatched'=>true,'error'=>'No matching transaction');
+        }
+
+        $coverage = $this->provider_payment_covers_deposit($tx, $event);
+        if (empty($coverage['ok'])) {
+            $this->record_shortfall($tx, $event, $coverage);
+            $this->ci->db->where('id', $id)->update('payment_webhooks', array(
+                'payment_transaction_id' => $tx->id,
+                'processed' => 1,
+                'processed_at' => gmdate('Y-m-d H:i:s'),
+                'error' => substr($coverage['message'], 0, 250),
+            ));
+            $flag = strtolower((string)$coverage['code']);
+            return array('ok'=>true, $flag=>true, 'error'=>$coverage['message']);
         }
 
         $res = $this->confirm($tx, 'WEBHOOK', $event['provider_tx_id'] ?? null);

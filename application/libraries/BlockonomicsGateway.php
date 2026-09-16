@@ -271,6 +271,11 @@ class BlockonomicsGateway implements GatewayInterface {
         }
 
         $event['metadata']['payment_transaction_id'] = (int) $row->payment_transaction_id;
+        // The amount/currency here are crypto (BTC/USDT), not the fiat deposit
+        // row. This adapter validates the received base units against the
+        // stored crypto quote before marking SUCCESS, so PaymentService should
+        // not re-compare BTC as though it were NGN/USD.
+        $event['metadata']['provider_amount_validated'] = true;
         $this->record_progress($row, $status, $value, $txid);
 
         if ($status >= self::STATUS_CONFIRMED && $this->amount_sufficient($row, $value)) {

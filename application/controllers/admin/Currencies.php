@@ -89,6 +89,8 @@ class Currencies extends Admin_Controller {
             $this->session->set_flashdata('error', 'Currency rate refresh failed: '.($res['error'] ?? 'unknown error'));
         } elseif ((int)($res['failed'] ?? 0) > 0 && (int)($res['processed'] ?? 0) === 0) {
             $this->session->set_flashdata('error', 'Currency rate refresh failed: '.($res['message'] ?? 'no rates were updated'));
+        } elseif ((int)($res['foreign_checked'] ?? 0) > 0 && (int)($res['foreign_processed'] ?? 0) === 0) {
+            $this->session->set_flashdata('error', 'Currency rate refresh failed: no non-base exchange rates were updated. '.($res['message'] ?? ''));
         } elseif ((int)($res['failed'] ?? 0) > 0) {
             $this->session->set_flashdata('warning', 'Currency rates updated with warnings: '.($res['message'] ?? 'some rates were skipped'));
         } else {

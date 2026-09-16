@@ -160,6 +160,30 @@ class CurrencyTest extends TestCase
         $this->assertSame(array(), $offenders, "hardcoded \$ in live total(s):\n".implode("\n", $offenders));
     }
 
+    public function testCurrencyRateWebhookIsSignedAndRunsTheSharedUpdater()
+    {
+        $routes = file_get_contents(self::$root.'/application/config/routes.php');
+        $currency = strpos($routes, "webhook/currency-rates");
+        $generic = strpos($routes, "webhook/(:any)");
+        $this->assertNotFalse($currency, 'currency rate URL trigger route must exist');
+        $this->assertNotFalse($generic, 'generic payment webhook route must remain registered');
+        $this->assertLessThan($generic, $currency, 'specific currency webhook route must be before the generic payment catch-all');
+
+        $webhooks = file_get_contents(self::$root.'/application/controllers/Webhooks.php');
+        foreach (array(
+            'public function currency_rates()',
+            'CURRENCY_RATE_WEBHOOK_SECRET',
+            'hash_equals',
+            'JobRunner',
+            'CronRegistry',
+            "'currency_rates'",
+            'foreign_processed',
+            'currency_rates job is not available',
+        ) as $needle) {
+            $this->assertStringContainsString($needle, $webhooks);
+        }
+    }
+
     public function testAutomaticCurrencyRateUpdatesAreWiredEndToEnd()
     {
         $config = file_get_contents(self::$root.'/application/config/marvy.php');
@@ -175,7 +199,8 @@ class CurrencyTest extends TestCase
 
         $workers = file_get_contents(self::$root.'/application/libraries/CronWorkers.php');
         foreach (array('public function currency_rates()', 'SecureHttpClient', 'open.er-api.com',
-                       'currency_rates_from_payload', 'base mismatch', 'set_rate(', 'refresh_base_rate(') as $needle) {
+                       'currency_rates_from_payload', 'rebase_currency_rates', 'base mismatch',
+                       'foreign_processed', 'set_rate(', 'refresh_base_rate(') as $needle) {
             $this->assertStringContainsString($needle, $workers);
         }
         $this->assertStringContainsString('NGN (the base row) must update too', $workers);
@@ -191,6 +216,7 @@ class CurrencyTest extends TestCase
         $env = file_get_contents(self::$root.'/.env.example');
         $this->assertStringContainsString('VP_CURRENCY_RATE_API_URL', $env);
         $this->assertStringContainsString('VP_CURRENCY_RATE_TIMEOUT', $env);
+        $this->assertStringContainsString('VP_CURRENCY_RATE_WEBHOOK_SECRET', $env);
 
         $view = file_get_contents(self::$root.'/application/views/admin/currencies/index.php');
         $this->assertStringContainsString('Automatic rate updates are on', $view);

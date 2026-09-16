@@ -45,8 +45,8 @@ $type_labels = array('' => 'All', 'DIGITAL' => 'Digital Products', 'PHYSICAL' =>
         <span class="badge badge-warning">Featured</span>
         <span class="badge badge-default"><?=htmlspecialchars($item->product_type === 'PHYSICAL' ? 'Physical' : 'Digital')?></span>
         <h3 class="card-title mt-2"><?=htmlspecialchars($item->title)?></h3>
-        <div class="mt-2"><strong><?=marvy_price($now)?></strong>
-          <?php if ($was !== null): ?> <span class="text-xs muted" style="text-decoration:line-through"><?=marvy_money($was)?></span><?php endif; ?>
+        <div class="mt-2"><strong><?=marvy_price($now, null, true, $item->currency ?? marvy_base_currency())?></strong>
+          <?php if ($was !== null): ?> <span class="text-xs muted" style="text-decoration:line-through"><?=marvy_price($was, null, false, $item->currency ?? marvy_base_currency())?></span><?php endif; ?>
         </div>
       </a>
       <?php endforeach; ?>
@@ -74,8 +74,8 @@ $type_labels = array('' => 'All', 'DIGITAL' => 'Digital Products', 'PHYSICAL' =>
         <p class="muted text-sm" style="flex:1"><?=htmlspecialchars(mb_strimwidth($item->description, 0, 100, '…'))?></p>
         <p class="text-xs muted"><?=($item->stock === null ? 'In stock' : ((int)$item->stock > 0 ? (int)$item->stock.' left' : 'Sold out'))?></p>
         <div class="row justify-between mt-2">
-          <span><strong><?=marvy_price($now)?></strong>
-            <?php if ($was !== null): ?><br><span class="text-xs muted" style="text-decoration:line-through"><?=marvy_money($was)?></span><?php endif; ?>
+          <span><strong><?=marvy_price($now, null, true, $item->currency ?? marvy_base_currency())?></strong>
+            <?php if ($was !== null): ?><br><span class="text-xs muted" style="text-decoration:line-through"><?=marvy_price($was, null, false, $item->currency ?? marvy_base_currency())?></span><?php endif; ?>
           </span>
           <?php if ($item->stock === null || (int)$item->stock > 0): ?>
           <form method="post" action="<?=site_url('cart/add')?>">

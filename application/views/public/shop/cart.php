@@ -1,5 +1,7 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
 $csrf = '<input type="hidden" name="'.htmlspecialchars($this->security->get_csrf_token_name()).'" value="'.htmlspecialchars($this->security->get_csrf_hash()).'">';
+$has_price_error = false;
+foreach (($lines ?? array()) as $line) { if (!empty($line['price_error'])) { $has_price_error = true; break; } }
 ?>
 <section class="ws-section-sm">
   <div class="container" style="max-width:1000px">
@@ -21,10 +23,11 @@ $csrf = '<input type="hidden" name="'.htmlspecialchars($this->security->get_csrf
             <td>
               <a href="<?=site_url('shop/product/'.$item->listing_public_id)?>"><?=htmlspecialchars($item->title)?></a>
               <?php if ($line['unavailable']): ?><div class="text-xs" style="color:var(--danger-600)">No longer available</div><?php endif; ?>
+              <?php if (!empty($line['price_error'])): ?><div class="text-xs" style="color:var(--danger-600)">Price cannot be converted to <?=htmlspecialchars($currency)?> yet.</div><?php endif; ?>
               <?php if ($line['out_of_stock']): ?><div class="text-xs" style="color:var(--danger-600)">Not enough stock — reduce quantity</div><?php endif; ?>
               <?php if (!empty($line['physical_details_missing'])): ?><div class="text-xs" style="color:var(--danger-600)">Shipping details are not ready yet — staff must finish this listing.</div><?php endif; ?>
             </td>
-            <td class="text-right mono"><?=marvy_money($line['unit_price'], $item->currency)?></td>
+            <td class="text-right mono"><?=marvy_money($line['unit_price'], $currency)?></td>
             <td>
               <form method="post" action="<?=site_url('cart/update')?>" class="row" style="gap:.3rem">
                 <?=$csrf?>
@@ -33,7 +36,7 @@ $csrf = '<input type="hidden" name="'.htmlspecialchars($this->security->get_csrf
                 <button class="btn btn-ghost btn-sm" type="submit">Update</button>
               </form>
             </td>
-            <td class="text-right mono"><?=marvy_money($line['line_total'], $item->currency)?></td>
+            <td class="text-right mono"><?=marvy_money($line['line_total'], $currency)?></td>
             <td>
               <form method="post" action="<?=site_url('cart/remove')?>">
                 <?=$csrf?>
@@ -108,7 +111,12 @@ $csrf = '<input type="hidden" name="'.htmlspecialchars($this->security->get_csrf
             </div>
           <?php endif; ?>
         </dl>
-        <a class="btn btn-primary btn-block mt-3" href="<?=site_url('checkout')?>">Proceed to Checkout</a>
+        <?php if ($has_price_error): ?><div class="alert alert-warning mt-3">One item cannot be converted to <?=htmlspecialchars($currency)?> yet. Please contact support.</div><?php endif; ?>
+        <?php if ($has_price_error): ?>
+          <span class="btn btn-primary btn-block mt-3 disabled" aria-disabled="true">Proceed to Checkout</span>
+        <?php else: ?>
+          <a class="btn btn-primary btn-block mt-3" href="<?=site_url('checkout')?>">Proceed to Checkout</a>
+        <?php endif; ?>
       </div>
     </div>
     <?php endif; ?>

@@ -25,6 +25,7 @@ class CartService {
     public function __construct() {
         $this->ci =& get_instance();
         $this->ci->load->model(array('Cart_model', 'Cart_item_model', 'Marketplace_listing_model', 'Coupon_model'));
+        $this->ci->load->library('CurrencyService');
     }
 
     /** The user's cart, creating an empty one if none exists yet. */
@@ -46,8 +47,10 @@ class CartService {
         foreach ($items as $item) {
             $unavailable = $item->listing_status !== 'ACTIVE';
             $unit_price = $this->effective_price($item);
-            $line_total = $unavailable ? '0.00000000' : bcmul($unit_price, (string)$item->quantity, 8);
-            if (!$unavailable) $subtotal = bcadd($subtotal, $line_total, 8);
+            $price_error = $unit_price === null;
+            $line_total = ($unavailable || $price_error)
+                ? '0.00000000' : bcmul($unit_price, (string)$item->quantity, 8);
+            if (!$unavailable && !$price_error) $subtotal = bcadd($subtotal, $line_total, 8);
 
             $is_physical = strtoupper((string)$item->product_type) === 'PHYSICAL';
             // A missing physical row is deliberately not treated as a free
@@ -66,9 +69,10 @@ class CartService {
 
             $lines[] = array(
                 'item' => $item,
-                'unit_price' => $unit_price,
+                'unit_price' => $price_error ? '0.00000000' : $unit_price,
                 'line_total' => $line_total,
                 'unavailable' => $unavailable,
+                'price_error' => $price_error,
                 'out_of_stock' => $item->stock !== null && (int)$item->stock < (int)$item->quantity,
                 'is_physical' => $is_physical,
                 'requires_shipping' => $requires_shipping,
@@ -134,7 +138,13 @@ class CartService {
         $existing = $this->ci->Cart_item_model->find_in_cart($cart->id, $listing->id);
         $new_quantity = $existing ? min(self::MAX_QUANTITY_PER_LINE, (int)$existing->quantity + $quantity) : $quantity;
 
-        $this->ci->Cart_item_model->upsert($cart->id, $listing->id, $new_quantity, $this->effective_price_of($listing));
+        $unit_price = $this->effective_price_of($listing);
+        if ($unit_price === null) {
+            return $this->err('CURRENCY_RATE_MISSING',
+                'This item cannot be priced in '.marvy_base_currency().' yet. Ask staff to set the '.strtoupper((string)($listing->currency ?? '')).' exchange rate.');
+        }
+
+        $this->ci->Cart_item_model->upsert($cart->id, $listing->id, $new_quantity, $unit_price);
         $this->ci->Cart_model->touch($cart->id);
         return array('ok' => true, 'listing' => $listing);
     }
@@ -155,7 +165,13 @@ class CartService {
         if ($listing->stock !== null && $listing->stock < $quantity) {
             return $this->err('OUT_OF_STOCK', 'Only '.(int)$listing->stock.' left in stock.');
         }
-        $this->ci->Cart_item_model->upsert($cart->id, $listing->id, $quantity, $this->effective_price_of($listing));
+        $unit_price = $this->effective_price_of($listing);
+        if ($unit_price === null) {
+            return $this->err('CURRENCY_RATE_MISSING',
+                'This item cannot be priced in '.marvy_base_currency().' yet. Ask staff to set the '.strtoupper((string)($listing->currency ?? '')).' exchange rate.');
+        }
+
+        $this->ci->Cart_item_model->upsert($cart->id, $listing->id, $quantity, $unit_price);
         $this->ci->Cart_model->touch($cart->id);
         return array('ok' => true);
     }
@@ -213,15 +229,26 @@ class CartService {
     /** The shelf price right now: a valid promotion wins over the list price. */
     private function effective_price($item) {
         return $this->effective_price_of((object)array(
-            'price' => $item->current_price, 'promo_price' => $item->promo_price,
+            'price' => $item->current_price,
+            'promo_price' => $item->promo_price,
+            'currency' => $item->currency ?? marvy_base_currency(),
         ));
     }
 
     private function effective_price_of($listing) {
         $list = (string)$listing->price;
         $promo = isset($listing->promo_price) && $listing->promo_price !== null ? (string)$listing->promo_price : null;
-        if ($promo !== null && bccomp($promo, '0', 8) > 0 && bccomp($promo, $list, 8) < 0) return $promo;
-        return $list;
+        $source_amount = ($promo !== null && bccomp($promo, '0', 8) > 0 && bccomp($promo, $list, 8) < 0)
+            ? $promo : $list;
+        $currency = strtoupper((string)($listing->currency ?? marvy_base_currency()));
+        if ($currency === marvy_base_currency()) return $source_amount;
+        try {
+            $converted = $this->ci->currencyservice->to_base($source_amount, $currency);
+            return $converted === null ? null : number_format((float)$converted, 8, '.', '');
+        } catch (Throwable $e) {
+            log_message('error', 'cart currency conversion failed: '.$e->getMessage());
+            return null;
+        }
     }
 
     private function err($code, $message) {

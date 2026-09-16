@@ -337,6 +337,52 @@ class CronWorkersTest extends TestCase
         $this->assertSame(0, $ci->mail_sends, 'a lost claim must not send');
     }
 
+    /* =========================== currency rates =========================== */
+
+    public function testCurrencyRateWorkerUpdatesBaseAndForeignRows()
+    {
+        $ci = $this->fresh();
+        $ci->fx_response = array('http_code' => 200, 'body' => json_encode(array(
+            'result' => 'success',
+            'base_code' => 'NGN',
+            'rates' => array('NGN' => 1, 'USD' => 0.00064516, 'EUR' => 0.00059100),
+        )));
+        $w = new CronWorkers();
+
+        $res = $w->currency_rates();
+
+        $this->assertSame(3, $res['processed']);
+        $this->assertSame(0, $res['failed']);
+        $this->assertSame(2, $res['foreign_processed']);
+        $this->assertSame(2, $res['foreign_checked']);
+        $this->assertSame('https://open.er-api.com/v6/latest/NGN', $ci->fx_url);
+        $this->assertSame('1.00000000', $ci->rate_updates['NGN']['rate']);
+        $this->assertSame('0.00064516', $ci->rate_updates['USD']['rate']);
+        $this->assertSame('0.00059100', $ci->rate_updates['EUR']['rate']);
+    }
+
+    public function testCurrencyRateWorkerRebasesForeignBasePayloads()
+    {
+        $ci = $this->fresh();
+        $ci->fx_response = array('http_code' => 200, 'body' => json_encode(array(
+            'result' => 'success',
+            'base_code' => 'USD',
+            'rates' => array('NGN' => 1550, 'EUR' => 0.90),
+        )));
+        $w = new CronWorkers();
+
+        $res = $w->currency_rates();
+
+        $this->assertSame(3, $res['processed']);
+        $this->assertSame(0, $res['failed']);
+        $this->assertSame(2, $res['foreign_processed']);
+        $this->assertSame(2, $res['foreign_checked']);
+        // USD is omitted by many USD-base APIs; the worker inserts USD=1 and
+        // divides by NGN=1550, yielding the panel convention: USD per 1 NGN.
+        $this->assertSame('0.00064516', $ci->rate_updates['USD']['rate']);
+        $this->assertSame('0.00058065', $ci->rate_updates['EUR']['rate']);
+    }
+
     /* ====================== payments & housekeeping ======================= */
 
     /**
@@ -464,6 +510,23 @@ class CronWorkersTest extends TestCase
         $this->assertSame(1, $res['pending'], 'it stays open for staff to resolve');
         $this->assertNotEmpty($ci->tx_updates, 'the shortfall must be recorded for staff');
         $this->assertStringContainsString('underpaid', json_encode($ci->tx_updates));
+    }
+
+    public function testProviderCurrencyMismatchIsFlaggedRatherThanCredited()
+    {
+        $ci = $this->fresh();
+        $ci->stale_payments = array($this->deposit(array('currency' => 'NGN')));
+        $ci->payment_methods = $this->paystackMethod();
+        $ci->gateway_verdict = array('ok' => true, 'status' => 'SUCCESS',
+            'provider_tx_id' => 'MVS-PAY1', 'amount' => '5000.00000000', 'currency' => 'USD');
+        $w = new CronWorkers();
+
+        $res = $w->payment_reconciliation();
+        $this->assertSame(0, $res['credited'], 'a USD provider result must not credit an NGN deposit');
+        $this->assertSame(array(), $ci->confirmed);
+        $this->assertSame(0, $res['expired'], 'money did arrive in some currency, so staff must reconcile it');
+        $this->assertSame(1, $res['pending']);
+        $this->assertStringContainsString('currency_mismatch', json_encode($ci->tx_updates));
     }
 
     public function testDepositsInsideTheGracePeriodAreLeftAlone()
@@ -661,6 +724,8 @@ class CronFakeCI {
     public $mail_fails = false, $mail_sends = 0, $claim_succeeds = true;
     public $deleted = array(), $prune_counts = array(), $stale_payments = array();
     public $marked_failed = array();
+    public $currency_base = 'NGN', $currencies = array(), $fx_response = array(), $fx_url = null;
+    public $rate_updates = array();
     /** Reconciliation doubles. */
     public $payment_methods = array(), $gateway_verdict = null, $gateway_configured = true;
     public $confirmed = array(), $stored_webhooks = array(), $reprocessed = array();
@@ -681,6 +746,16 @@ class CronFakeCI {
             'body_text'=>null, 'status'=>'QUEUED', 'attempts'=>0,
             'scheduled_at'=>gmdate('Y-m-d H:i:s', time()-60), 'sent_at'=>null, 'last_error'=>null,
         );
+        $this->currencies = array(
+            (object)array('id'=>1, 'code'=>'NGN', 'is_base'=>1, 'exchange_rate'=>'1.00000000'),
+            (object)array('id'=>2, 'code'=>'USD', 'is_base'=>0, 'exchange_rate'=>'0.00064000'),
+            (object)array('id'=>3, 'code'=>'EUR', 'is_base'=>0, 'exchange_rate'=>'0.00059000'),
+        );
+        $this->fx_response = array('http_code' => 200, 'body' => json_encode(array(
+            'result' => 'success',
+            'base_code' => 'NGN',
+            'rates' => array('NGN' => 1, 'USD' => 0.00064516, 'EUR' => 0.00059100),
+        )));
 
         $this->db     = new CronFakeDb($this);
         $this->load   = new CronFakeLoader();
@@ -696,10 +771,38 @@ class CronFakeCI {
         $this->orderservice           = new CronFakeOrderService($this);
         $this->mailservice            = new CronFakeMailService($this);
         $this->paymentservice         = new CronFakePaymentService($this);
+        $this->currencyservice        = new CronFakeCurrencyService($this);
+        $this->securehttpclient       = new CronFakeSecureHttpClient($this);
         $this->Payment_transaction_model = new CronFakePaymentTxModel($this);
         $this->Refill_status_history_model = new CronFakeEmptyModel();
         $this->dripfeedservice        = new CronFakeEmptyModel();
         $this->subscriptionservice    = new CronFakeEmptyModel();
+    }
+}
+
+class CronFakeCurrencyService {
+    private $ci; function __construct($ci){ $this->ci = $ci; }
+    function base_code(){ return $this->ci->currency_base; }
+    function all(){ return $this->ci->currencies; }
+    function refresh_base_rate($code, $user_id = null, $source = null){
+        $this->ci->rate_updates[strtoupper($code)] = array('rate' => '1.00000000', 'source' => $source);
+        return array('ok' => true);
+    }
+    function set_rate($code, $rate, $user_id = null, $source = null){
+        $code = strtoupper($code);
+        $this->ci->rate_updates[$code] = array('rate' => (string)$rate, 'source' => $source);
+        foreach ($this->ci->currencies as $row) {
+            if (strtoupper($row->code) === $code) $row->exchange_rate = (string)$rate;
+        }
+        return array('ok' => true);
+    }
+}
+
+class CronFakeSecureHttpClient {
+    private $ci; function __construct($ci){ $this->ci = $ci; }
+    function get($url, $headers = array(), $opts = array()){
+        $this->ci->fx_url = $url;
+        return $this->ci->fx_response;
     }
 }
 

@@ -212,6 +212,56 @@ class PaymentsTest extends TestCase
         $this->assertStringContainsString("'retryable'", $wh);
     }
 
+    public function testWebhookCurrencyMustMatchTheDepositBeforeCrediting()
+    {
+        $ci = $this->fresh();
+        $ci->webhook_sig = true;
+        $svc = new PaymentService();
+        $ci->Payment_transaction_model->seed_idem('k-currency', $ci->tx);
+
+        $body = json_encode(array(
+            'id' => 'evt_currency_mismatch',
+            'status' => 'success',
+            'amount' => '100.00',
+            'currency' => 'USD',
+            'metadata' => array('idempotency_key' => 'k-currency'),
+        ));
+        $sig = hash_hmac('sha256', $body, 'test-webhook-secret');
+
+        $res = $svc->record_webhook('acme', $body, array('x-signature' => $sig));
+
+        $this->assertTrue($res['ok'], json_encode($res));
+        $this->assertTrue(!empty($res['currency_mismatch']));
+        $this->assertSame(0, $ci->ledger_credits, 'a USD callback must not credit an NGN deposit');
+        $this->assertSame('PENDING', $ci->tx->status);
+        $this->assertStringContainsString('provider_currency', (string)$ci->tx->metadata);
+    }
+
+    public function testWebhookAmountMustCoverTheDepositBeforeCrediting()
+    {
+        $ci = $this->fresh();
+        $ci->webhook_sig = true;
+        $svc = new PaymentService();
+        $ci->Payment_transaction_model->seed_idem('k-underpaid', $ci->tx);
+
+        $body = json_encode(array(
+            'id' => 'evt_underpaid',
+            'status' => 'success',
+            'amount' => '50.00',
+            'currency' => 'NGN',
+            'metadata' => array('idempotency_key' => 'k-underpaid'),
+        ));
+        $sig = hash_hmac('sha256', $body, 'test-webhook-secret');
+
+        $res = $svc->record_webhook('acme', $body, array('x-signature' => $sig));
+
+        $this->assertTrue($res['ok'], json_encode($res));
+        $this->assertTrue(!empty($res['underpaid']));
+        $this->assertSame(0, $ci->ledger_credits, 'a short callback must not credit a full deposit');
+        $this->assertSame('PENDING', $ci->tx->status);
+        $this->assertStringContainsString('underpaid', (string)$ci->tx->metadata);
+    }
+
     /**
      * A refused delivery must never be mistaken for a handled one.
      *

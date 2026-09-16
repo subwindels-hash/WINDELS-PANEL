@@ -282,6 +282,43 @@ if (!function_exists('marvy_display_money')) {
     }
 }
 
+if (!function_exists('marvy_to_base_money')) {
+    /**
+     * Convert a stored amount from its source currency into the panel's
+     * accounting currency. Unlike the display helper, a missing rate returns
+     * NULL so checkout code and product views do not quietly treat "$1" as
+     * "₦1".
+     *
+     * @param string|float|int $amount
+     * @param string|null      $from source currency code; NULL means base
+     * @return string|null base-currency amount with 8dp, or NULL when no rate exists
+     */
+    function marvy_to_base_money($amount, $from = null) {
+        $from = strtoupper((string)($from ?: marvy_base_currency()));
+        if ($from === marvy_base_currency()) return number_format((float)$amount, 8, '.', '');
+        if (!is_numeric($amount)) return null;
+
+        static $service = null;
+        if ($service === null && function_exists('get_instance')) {
+            try {
+                $ci =& get_instance();
+                $ci->load->library('CurrencyService');
+                $service = $ci->currencyservice;
+            } catch (Throwable $e) {
+                $service = false;
+            }
+        }
+        if (!$service || !method_exists($service, 'to_base')) return null;
+
+        try {
+            $converted = $service->to_base($amount, $from);
+            return $converted === null ? null : (string)$converted;
+        } catch (Throwable $e) {
+            return null;
+        }
+    }
+}
+
 if (!function_exists('marvy_display_currency')) {
     /**
      * The currency code the catalogue is currently browsed in (Admin →
@@ -350,11 +387,22 @@ if (!function_exists('marvy_price')) {
      * charged in the base currency, so that is the real price and the
      * conversion is explicitly labelled an estimate.
      *
-     * @param string      $amount base-currency amount
+     * @param string      $amount source amount; base currency unless $source_currency is passed
      * @param string|null $suffix optional unit label, e.g. '/ 1k'
      * @param bool        $approx render the converted estimate (false = base only)
+     * @param string|null $source_currency currency the source amount is stored in
      */
-    function marvy_price($amount, $suffix = null, $approx = true) {
+    function marvy_price($amount, $suffix = null, $approx = true, $source_currency = null) {
+        $source_currency = strtoupper((string)($source_currency ?: marvy_base_currency()));
+        if ($source_currency !== marvy_base_currency()) {
+            $base_amount = marvy_to_base_money($amount, $source_currency);
+            if ($base_amount === null) {
+                return '<span class="badge badge-warning" title="No usable '.htmlspecialchars($source_currency)
+                    .' to '.htmlspecialchars(marvy_base_currency()).' rate is configured">Price unavailable</span>';
+            }
+            $amount = $base_amount;
+        }
+
         $base_html = htmlspecialchars(marvy_money($amount));
         if ($suffix) {
             $base_html .= ' <span class="muted" style="font-weight:400;font-size:.75rem">'
@@ -379,11 +427,19 @@ if (!function_exists('marvy_price_text')) {
      * Plain-text catalogue price with converted estimate for select dropdowns,
      * option tags and non-HTML contexts.
      *
-     * @param string      $amount base-currency amount
+     * @param string      $amount source amount; base currency unless $source_currency is passed
      * @param string|null $suffix optional unit label, e.g. '/ 1k'
      * @param bool        $approx include converted estimate when display currency differs
+     * @param string|null $source_currency currency the source amount is stored in
      */
-    function marvy_price_text($amount, $suffix = null, $approx = true) {
+    function marvy_price_text($amount, $suffix = null, $approx = true, $source_currency = null) {
+        $source_currency = strtoupper((string)($source_currency ?: marvy_base_currency()));
+        if ($source_currency !== marvy_base_currency()) {
+            $base_amount = marvy_to_base_money($amount, $source_currency);
+            if ($base_amount === null) return 'Price unavailable';
+            $amount = $base_amount;
+        }
+
         $base = marvy_money($amount) . ($suffix ? ' '.$suffix : '');
         if (!$approx) return $base;
 

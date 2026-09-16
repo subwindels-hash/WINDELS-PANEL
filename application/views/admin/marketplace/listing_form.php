@@ -1,6 +1,10 @@
 <?php defined('BASEPATH') OR exit('No direct script access allowed');
 $l = $listing; // null = create
 $old = function ($key, $default = '') use ($l) { return $l !== null ? ($l->{$key} ?? $default) : $default; };
+$currency_options = !empty($currencies) ? $currencies : array((object)array(
+    'code' => marvy_base_currency(), 'name' => marvy_base_currency(), 'symbol' => marvy_base_currency(), 'is_active' => 1,
+));
+$selected_currency = strtoupper((string)$old('currency', marvy_base_currency()));
 ?>
 <div class="row justify-between mb-4">
   <div><h2 class="card-title mb-0"><?=$l ? 'Edit listing' : 'New listing'?></h2>
@@ -23,13 +27,21 @@ $old = function ($key, $default = '') use ($l) { return $l !== null ? ($l->{$key
   <textarea class="textarea mb-3" id="description" name="description" rows="8" maxlength="10000" required><?=htmlspecialchars((string)$old('description'))?></textarea>
   <div class="row" style="gap:1rem;flex-wrap:wrap">
     <div style="flex:1;min-width:12rem">
-      <label class="label" for="price">Price (NGN)</label>
+      <label class="label" for="price">Price</label>
       <input class="input mb-3" id="price" name="price" inputmode="decimal" required value="<?=htmlspecialchars((string)$old('price'))?>">
+    </div>
+    <div style="flex:0 0 11rem;min-width:11rem">
+      <label class="label" for="currency">Currency</label>
+      <select class="select mb-3" id="currency" name="currency" required>
+        <?php foreach ($currency_options as $currency): $code = strtoupper((string)$currency->code); ?>
+        <option value="<?=htmlspecialchars($code)?>" <?=$selected_currency === $code ? 'selected' : ''?>><?=htmlspecialchars($code)?><?=empty($currency->symbol) ? '' : ' — '.htmlspecialchars($currency->symbol)?></option>
+        <?php endforeach; ?>
+      </select>
     </div>
     <div style="flex:1;min-width:12rem">
       <label class="label" for="promo_price">Promotional price (optional)</label>
       <input class="input mb-3" id="promo_price" name="promo_price" inputmode="decimal" placeholder="Leave empty for none" value="<?=htmlspecialchars((string)$old('promo_price'))?>">
-      <p class="text-xs muted mb-3">When set below the list price, buyers pay the promo price.</p>
+      <p class="text-xs muted mb-3">Enter list and promo prices in the selected currency. Buyers are charged the converted <?=htmlspecialchars(marvy_base_currency())?> amount.</p>
     </div>
   </div>
   <div class="row" style="gap:1rem;flex-wrap:wrap">
