@@ -22,6 +22,9 @@ $csrf = function () {
   at <span class="mono">1.00000000</span> but gets fresh source and timestamp metadata. Use
   <em>Update all currencies at once</em> to run that same locked job immediately; the boxes below stay
   available for emergency manual corrections (pause the job if a manual rate must hold).
+  The NGN row has a rate box like the others: it sets the naira's dollar value (USD per ₦1,
+  e.g. <span class="mono">0.00075300</span> ≈ ₦1,328/$) and writes it to the USD row — the naira itself
+  remains the 1.0 base.
 </div>
 
 <div class="card mb-4">
@@ -56,6 +59,16 @@ $csrf = function () {
         <th>Source</th><th>Last updated</th><th>Status</th><th>Default</th><th></th>
       </tr></thead>
       <tbody>
+      <?php
+      // The base row (NGN) gets a rate box too — see its cell below. It edits
+      // the USD row's rate, because "the naira's rate" in day-to-day terms is
+      // its dollar value, and that is exactly what the USD row stores
+      // (units of USD per 1 NGN). Find that reference row once.
+      $usd_row = null;
+      foreach ($currencies as $c) {
+          if (strtoupper($c->code) === 'USD' && (int)$c->is_base !== 1) { $usd_row = $c; break; }
+      }
+      ?>
       <?php foreach ($currencies as $c): $is_base = (int)$c->is_base === 1; $is_default = strtoupper($c->code) === strtoupper($display_currency); ?>
         <tr>
           <td><strong class="mono"><?=htmlspecialchars($c->code)?></strong> <span class="text-xs muted"><?=htmlspecialchars($c->name)?></span></td>
@@ -122,6 +135,21 @@ $csrf = function () {
                      value="<?=htmlspecialchars((string)$c->exchange_rate)?>" required>
               <button class="btn btn-primary btn-sm currency-rate-button" type="submit">Update rate</button>
             </form>
+            <?php elseif ($usd_row !== null): ?>
+            <?php /* The naira's own rate is pinned at 1.0 (it is the base), but its
+                     dollar value is still editable from here. This box writes the
+                     USD row's rate — units of USD per ₦1, e.g. 0.00075300 ≈ ₦1,328/$. */ ?>
+            <form method="post" action="<?=site_url('admin/currencies/rate')?>" class="currency-rate-form">
+              <?=$csrf()?>
+              <input type="hidden" name="code" value="<?=htmlspecialchars($usd_row->code)?>">
+              <label class="sr-only" for="rate-base-usd">Dollar value of 1 <?=htmlspecialchars($c->code)?> (stored on the USD row)</label>
+              <input id="rate-base-usd" class="input mono currency-rate-input" type="number"
+                     step="0.00000001" min="0.00000001" inputmode="decimal" name="rate"
+                     value="<?=htmlspecialchars((string)$usd_row->exchange_rate)?>" required
+                     title="USD per 1 <?=htmlspecialchars($c->code)?> — same value as the USD row">
+              <button class="btn btn-primary btn-sm currency-rate-button" type="submit">Update rate</button>
+            </form>
+            <div class="text-xs muted mt-1">USD per 1 <?=htmlspecialchars($c->code)?> — updates the USD row.</div>
             <?php endif; ?>
           </td>
         </tr>
