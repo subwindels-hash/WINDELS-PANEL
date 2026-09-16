@@ -12,13 +12,7 @@ $csrf = function () {
       This does not change what customers pay with — checkout still settles in the accounting currency below.
     </p>
   </div>
-  <div class="row" style="gap:.5rem;flex-wrap:wrap">
-    <form method="post" action="<?=site_url('admin/currencies/update-all')?>" style="display:inline">
-      <?=$csrf()?>
-      <button class="btn btn-primary btn-sm" type="submit">Update all rates now</button>
-    </form>
-    <a class="btn btn-ghost btn-sm" href="<?=site_url('admin/settings')?>">← Settings</a>
-  </div>
+  <a class="btn btn-ghost btn-sm" href="<?=site_url('admin/settings')?>">← Settings</a>
 </div>
 
 <div class="alert alert-info">
@@ -26,8 +20,8 @@ $csrf = function () {
   The <span class="mono">currency_rates</span> background job refreshes every row every hour
   through cron or the built-in site-traffic auto-run heartbeat — including NGN, which stays pinned
   at <span class="mono">1.00000000</span> but gets fresh source and timestamp metadata. Use
-  <em>Update all rates now</em> to run that same locked job immediately; the boxes below stay available
-  for emergency manual corrections (pause the job if a manual rate must hold).
+  <em>Update all currencies at once</em> to run that same locked job immediately; the boxes below stay
+  available for emergency manual corrections (pause the job if a manual rate must hold).
 </div>
 
 <div class="card mb-4">
@@ -45,7 +39,16 @@ $csrf = function () {
 </div>
 
 <div class="card">
-  <h3 style="font-size:1rem;font-weight:600" class="mb-3">Supported currencies</h3>
+  <div class="row justify-between mb-3" style="align-items:center;gap:.75rem">
+    <h3 style="font-size:1rem;font-weight:600" class="mb-0">Supported currencies</h3>
+    <form method="post" action="<?=site_url('admin/currencies/update-all')?>" style="display:inline">
+      <?=$csrf()?>
+      <button class="btn btn-primary btn-sm" type="submit"
+              data-confirm="Update exchange rates for every currency now? This refreshes all rows, including NGN.">
+        Update all currencies at once
+      </button>
+    </form>
+  </div>
   <div class="overflow-x-auto">
     <table class="table">
       <thead><tr>

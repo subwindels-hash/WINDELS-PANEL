@@ -195,7 +195,9 @@ class CurrencyTest extends TestCase
         $view = file_get_contents(self::$root.'/application/views/admin/currencies/index.php');
         $this->assertStringContainsString('Automatic rate updates are on', $view);
         $this->assertStringContainsString('including NGN', $view);
-        $this->assertStringContainsString('Update all rates now', $view);
+        $this->assertStringContainsString('Update all currencies at once', $view);
+        $this->assertSame(1, substr_count($view, "site_url('admin/currencies/update-all')"),
+            'the admin page should have one clear button for refreshing all currencies at once');
     }
 
     /* -------------------------- migration 011 --------------------------- */
