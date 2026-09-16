@@ -28,10 +28,11 @@ $csrf = function () {
 </div>
 
 <div class="card mb-4">
-  <h3 style="font-size:1rem;font-weight:600" class="mb-1">Accounting currency — fixed by design</h3>
+  <h3 style="font-size:1rem;font-weight:600" class="mb-1">Accounting currency</h3>
   <p class="muted text-xs mb-3">
-    Every wallet, order, payment, earning and payout is denominated in this currency. Changing it would
-    reinterpret every stored amount, so it moves by migration only.
+    Every wallet, order, payment, earning and payout is denominated in this currency. To redenominate the
+    panel and convert stored amounts at the current exchange rate, change it in
+    <a href="<?=site_url('admin/settings')?>">Admin → Settings</a>.
   </p>
   <div class="row" style="gap:1.5rem;flex-wrap:wrap">
     <div><div class="muted text-xs">Base currency</div><div class="mono font-medium"><?=htmlspecialchars($base_currency)?></div></div>

@@ -374,6 +374,29 @@ if (!function_exists('marvy_price')) {
     }
 }
 
+if (!function_exists('marvy_price_text')) {
+    /**
+     * Plain-text catalogue price with converted estimate for select dropdowns,
+     * option tags and non-HTML contexts.
+     *
+     * @param string      $amount base-currency amount
+     * @param string|null $suffix optional unit label, e.g. '/ 1k'
+     * @param bool        $approx include converted estimate when display currency differs
+     */
+    function marvy_price_text($amount, $suffix = null, $approx = true) {
+        $base = marvy_money($amount) . ($suffix ? ' '.$suffix : '');
+        if (!$approx) return $base;
+
+        $to = marvy_display_currency();
+        if ($to === marvy_base_currency()) return $base;
+
+        $converted = marvy_display_money($amount, $to);
+        if ($converted === marvy_money($amount)) return $base;
+
+        return $base . ' (≈ ' . $converted . ($suffix ? ' '.$suffix : '') . ')';
+    }
+}
+
 if (!function_exists('marvy_request_id')) {
     function marvy_request_id(){ return bin2hex(random_bytes(8)); }
 }

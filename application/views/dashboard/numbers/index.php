@@ -42,7 +42,7 @@
     <select class="select mb-4" id="service" name="service" required>
       <?php foreach ($products as $p): ?>
         <option value="<?=htmlspecialchars($p->service_code)?>">
-          <?=htmlspecialchars($p->service_name)?> — <?=marvy_money($p->price)?>
+          <?=htmlspecialchars($p->service_name)?> — <?=marvy_price_text($p->price)?>
           <?php if ($p->stock !== null): ?>(<?=number_format((int)$p->stock)?> available)<?php endif; ?>
         </option>
       <?php endforeach; ?>

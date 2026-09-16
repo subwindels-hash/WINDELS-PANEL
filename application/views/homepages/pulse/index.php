@@ -92,7 +92,7 @@ foreach (array_slice($showcase, 0, 8) as $s) {
           <article class="card">
             <?php if (!empty($s->category_name)): ?><span class="badge badge-default"><?=htmlspecialchars($s->category_name)?></span><?php endif; ?>
             <h3 class="card-title mt-2"><?=htmlspecialchars($s->name)?></h3>
-            <p class="ws-landing-rate"><?=marvy_money($s->rate)?> <span class="muted">/ 1,000</span></p>
+            <p class="ws-landing-rate"><?=marvy_price($s->rate, '/ 1,000')?></p>
             <a class="btn btn-primary btn-sm" href="<?=site_url('services/'.$s->slug)?>">View service</a>
           </article>
         <?php endforeach; ?>

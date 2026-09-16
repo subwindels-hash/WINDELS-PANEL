@@ -234,7 +234,7 @@ class CurrencyTest extends TestCase
     public function testEveryProductSurfaceRendersThroughTheSharedPriceHelper()
     {
         $helper = file_get_contents(self::$root.'/application/helpers/marvy_helper.php');
-        foreach (array('function marvy_price(', 'function marvy_display_rate(',
+        foreach (array('function marvy_price(', 'function marvy_price_text(', 'function marvy_display_rate(',
                        'function marvy_display_currency(') as $needle) {
             $this->assertStringContainsString($needle, $helper);
         }
@@ -248,6 +248,11 @@ class CurrencyTest extends TestCase
             'application/views/dashboard/services/index.php',
             'application/views/public/shop/index.php',
             'application/views/public/shop/product.php',
+            'application/views/dashboard/marketplace/index.php',
+            'application/views/dashboard/marketplace/listing.php',
+            'application/views/homepages/aurora/index.php',
+            'application/views/homepages/nexus/index.php',
+            'application/views/homepages/pulse/index.php',
         );
         foreach ($surfaces as $rel) {
             $this->assertStringContainsString('marvy_price(', file_get_contents(self::$root.'/'.$rel),

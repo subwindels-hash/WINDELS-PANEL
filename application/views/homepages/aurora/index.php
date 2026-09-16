@@ -145,7 +145,7 @@ if (empty($faqs)) {
         <h3 class="card-title"><?=htmlspecialchars($c->name)?></h3>
         <p class="muted mb-0">
           <?=number_format((int)$c->service_count)?> service<?=(int)$c->service_count===1?'':'s'?>
-          <?php if ($c->from_rate !== null): ?> · from <?=marvy_money($c->from_rate)?>/1k<?php endif; ?>
+          <?php if ($c->from_rate !== null): ?> · from <?=marvy_price($c->from_rate, '/ 1k')?><?php endif; ?>
         </p>
         <span class="ws-landing-link">Explore services</span>
       </a>
@@ -157,7 +157,7 @@ if (empty($faqs)) {
       <article class="card">
         <?php if (!empty($s->category_name)): ?><span class="badge badge-default"><?=htmlspecialchars($s->category_name)?></span><?php endif; ?>
         <h3 class="card-title mt-2"><?=htmlspecialchars($s->name)?></h3>
-        <p class="ws-landing-rate"><?=marvy_money($s->rate)?> <span class="muted">/ 1,000</span></p>
+        <p class="ws-landing-rate"><?=marvy_price($s->rate, '/ 1,000')?></p>
         <a class="btn btn-primary btn-sm" href="<?=site_url('services/'.$s->slug)?>">View service</a>
       </article>
       <?php endforeach; ?>
