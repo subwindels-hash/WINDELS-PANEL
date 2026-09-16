@@ -346,6 +346,11 @@ class AdminSettingsTest extends TestCase
         $this->assertStringNotContainsString('!isset($values[\'base_currency\'])', $view,
             'the dropdown must not be hidden behind a condition that is always false');
         $this->assertStringContainsString('base_currency_choices', $view);
+        $this->assertStringContainsString('name="base_currency"', $view);
+        $this->assertStringNotContainsString('data-confirm="Change the base currency?', $view,
+            'opening the currency dropdown must not trigger a blocking browser confirmation');
+        $this->assertStringContainsString('<strong>Save settings</strong>', $view,
+            'the control must tell the operator how to persist the selected currency');
     }
 
     /** Switching the base currency converts amounts rather than relabelling them. */

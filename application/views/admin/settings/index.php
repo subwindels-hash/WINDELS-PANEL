@@ -126,8 +126,12 @@ $field = function ($key, $def, $value) {
                  way to reach the control was for it to be doing nothing. */ ?>
         <div class="field" style="margin-bottom:1rem">
           <label class="label" for="set-base_currency">Base currency</label>
-          <select class="select" id="set-base_currency" name="base_currency"
-                  data-confirm="Change the base currency? Every stored amount will be converted at the current exchange rate. Take a database backup first.">
+          <?php /* Do not put data-confirm on this select. The global behaviour
+                 handler treats data-confirm as a click guard, so the browser
+                 used to show a blocking warning every time an operator merely
+                 opened the dropdown. Selecting a value is harmless; the
+                 transaction only runs when Save settings is submitted. */ ?>
+          <select class="select" id="set-base_currency" name="base_currency">
             <?php foreach (($base_currency_choices ?? array()) as $code => $label): ?>
               <option value="<?=htmlspecialchars($code)?>" <?=$base_currency === $code ? 'selected' : ''?>>
                 <?=htmlspecialchars($label)?>
@@ -139,8 +143,8 @@ $field = function ($key, $def, $value) {
             Changing it <strong>converts every stored amount</strong> at the current exchange rate
             in a single transaction — a <?=htmlspecialchars(marvy_money(100))?> wallet keeps its real
             value rather than becoming 100 of the new currency. Set the target currency's rate under
-            <a href="<?=site_url('admin/currencies')?>">Admin → Currencies</a> first, and take a
-            database backup before switching.
+            <a href="<?=site_url('admin/currencies')?>">Admin → Currencies</a> first. Select the new
+            currency here, then click <strong>Save settings</strong> to apply and save the change.
           </p>
         </div>
         <?php endif; ?>
