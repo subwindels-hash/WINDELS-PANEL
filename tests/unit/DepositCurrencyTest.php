@@ -516,8 +516,8 @@ class DepositCurrencyTest extends TestCase
         $this->assertSame(0, bccomp('500', $totals['pending_amount'], 8));
     }
 
-    /** A half-deployed schema is readable for staff but cannot take new money. */
-    public function testNewDepositsPauseCleanlyUntilMigration042IsImported()
+    /** The original schema remains usable while migration 042 is deferred. */
+    public function testNewDepositsUseTheLegacyPathUntilMigration042IsImported()
     {
         $app = $this->app('NGN');
         list($user) = $this->customer($app);
@@ -526,10 +526,10 @@ class DepositCurrencyTest extends TestCase
         }
 
         $res = $this->deposit($app, $user, '500');
-        $this->assertFalse($res['ok']);
-        $this->assertSame('SCHEMA_UPGRADE_REQUIRED', $res['code']);
-        $this->assertStringContainsString('upgrade-042-deposit-currency.sql', $res['error']);
-        $this->assertCount(0, $app->db->rows['payment_transactions']);
+        $this->assertTrue($res['ok'], $res['error'] ?? '');
+        $this->assertSame('NGN', $res['transaction']->currency);
+        $this->assertSame('500.00000000', (string)$res['transaction']->amount);
+        $this->assertFalse(property_exists($res['transaction'], 'base_amount'));
     }
 
     /**

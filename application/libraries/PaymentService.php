@@ -104,20 +104,16 @@ class PaymentService {
         if (!$method) return array('ok'=>false,'error'=>'Unknown payment method','code'=>'NO_METHOD');
         if (!(int)$method->is_active) return array('ok'=>false,'error'=>'That payment method is unavailable','code'=>'METHOD_INACTIVE');
 
-        // Do not let a code-first cPanel update fall through to an INSERT that
-        // references migration-042 columns the live database does not have.
-        // The admin queue remains readable through its legacy-total fallback,
-        // but opening a new deposit before the settlement fields exist would
-        // either 500 or lose the pinned accounting leg.
+        // Existing installations may still be on the pre-042 schema. Do not
+        // take payments offline while an administrator schedules the upgrade:
+        // use the original base-currency payment path until the four optional
+        // settlement columns are available. This preserves the old database's
+        // semantics (and its existing users) without attempting an INSERT into
+        // columns that do not exist.
+        $deposit_currency_schema_ready = true;
         if (isset($this->ci->Payment_transaction_model)
-                && method_exists($this->ci->Payment_transaction_model, 'deposit_currency_schema_ready')
-                && !$this->ci->Payment_transaction_model->deposit_currency_schema_ready()) {
-            return array(
-                'ok' => false,
-                'code' => 'SCHEMA_UPGRADE_REQUIRED',
-                'error' => 'Payments are temporarily unavailable while database upgrade 042 is pending. '
-                    .'An administrator must import database/upgrade-042-deposit-currency.sql.',
-            );
+                && method_exists($this->ci->Payment_transaction_model, 'deposit_currency_schema_ready')) {
+            $deposit_currency_schema_ready = (bool)$this->ci->Payment_transaction_model->deposit_currency_schema_ready();
         }
 
         $amount = $this->normalise_amount($input['amount'] ?? null);
@@ -127,7 +123,12 @@ class PaymentService {
         // here, inside the money service — not merely in the controller. That
         // makes the rule hold for dashboard forms, JSON API calls, retries and
         // any future caller, even if one posts the base currency explicitly.
-        $currency = $this->charge_currency_for($method, $input['currency'] ?? null);
+        $currency = $deposit_currency_schema_ready
+            ? $this->charge_currency_for($method, $input['currency'] ?? null)
+            // Pre-042 rows were always charged and settled in the accounting
+            // currency. Keep that contract on the legacy schema; otherwise a
+            // non-base display currency could not be represented safely.
+            : strtoupper((string)marvy_base_currency());
         if (!preg_match('/^[A-Z]{3}$/', $currency)) return array('ok'=>false,'error'=>'Bad currency','code'=>'BAD_CURRENCY');
         if (!$this->method_supports_currency($method, $currency)) {
             return $this->unsupported_currency($method, $currency);
@@ -1004,7 +1005,12 @@ class PaymentService {
         // priced: the reported figure is the charge, and the base leg is what
         // the wallet gets. No rate means no credit — a spontaneous transfer is
         // never worth guessing at.
-        $currency = strtoupper((string)($event['currency'] ?? $this->pay_currency()));
+        $legacy_schema = isset($this->ci->Payment_transaction_model)
+            && method_exists($this->ci->Payment_transaction_model, 'deposit_currency_schema_ready')
+            && !$this->ci->Payment_transaction_model->deposit_currency_schema_ready();
+        $currency = $legacy_schema
+            ? strtoupper((string)marvy_base_currency())
+            : strtoupper((string)($event['currency'] ?? $this->pay_currency()));
         $quote = $this->quote($amount, $currency);
         if (empty($quote['ok'])) {
             log_message('error', 'virtual-account credit for user '.$user_id
@@ -1313,7 +1319,12 @@ class PaymentService {
         // Typed by the customer, so it is in the default currency shown on
         // Add Funds. Resolve it through the same method policy as an ordinary
         // Fundsvera checkout rather than maintaining a second currency rule.
-        $currency = $this->charge_currency_for($method);
+        $legacy_schema = isset($this->ci->Payment_transaction_model)
+            && method_exists($this->ci->Payment_transaction_model, 'deposit_currency_schema_ready')
+            && !$this->ci->Payment_transaction_model->deposit_currency_schema_ready();
+        $currency = $legacy_schema
+            ? strtoupper((string)marvy_base_currency())
+            : $this->charge_currency_for($method);
         if (!$this->method_supports_currency($method, $currency)) {
             return $this->unsupported_currency($method, $currency);
         }
@@ -1437,6 +1448,16 @@ class PaymentService {
     }
 
     private function persist_transaction(array $data) {
+        // The four migration-042 fields are additive. On an older live
+        // database, discard only those fields and retain the legacy columns;
+        // all old payment and webhook flows can then continue normally.
+        if (isset($this->ci->Payment_transaction_model)
+                && method_exists($this->ci->Payment_transaction_model, 'deposit_currency_schema_ready')
+                && !$this->ci->Payment_transaction_model->deposit_currency_schema_ready()) {
+            foreach (array('base_currency', 'base_amount', 'credited_base_amount', 'fx_rate') as $column) {
+                unset($data[$column]);
+            }
+        }
         $this->ci->db->insert('payment_transactions', $data);
         return $this->ci->Payment_transaction_model->find_by_id($this->ci->db->insert_id());
     }
