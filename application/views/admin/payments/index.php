@@ -8,12 +8,11 @@ $schema_ready = !isset($deposit_currency_schema_ready) || $deposit_currency_sche
 ?>
 <?php if (!$schema_ready): ?>
   <div class="alert alert-warning mb-4" role="alert">
-    <strong>Database upgrade 042 is still required.</strong>
+    <strong>Legacy payment schema detected.</strong>
     <p class="mt-1 mb-0 text-sm">
-      This queue is temporarily showing legacy payment totals so staff can keep reviewing deposits.
-      Before accepting a new deposit, back up the database and import
-      <code class="mono">database/upgrade-042-deposit-currency.sql</code> through phpMyAdmin, then
-      confirm that <code class="mono">/deploy-verify.php</code> reports a healthy schema.
+      Payments continue using the original base-currency flow while this installation is on its
+      older schema. The optional upgrade adds multi-currency settlement details; it is safe to
+      schedule separately and is not required for existing users to make payments.
     </p>
   </div>
 <?php endif; ?>
