@@ -12,7 +12,7 @@
 --   3. Edit .env with the database name/user/password and your domain.
 --
 -- After the import the database is fully initialised: schema, indexes,
--- foreign keys, migration bookkeeping (version 41), roles,
+-- foreign keys, migration bookkeeping (version 42), roles,
 -- permissions, settings, feature flags, payment methods, email templates,
 -- FAQs, currencies, catalogues and the first-login accounts. No migration,
 -- seed or installer command has to run afterwards.
@@ -2320,27 +2320,12 @@ SELECT r.id, p.id
 
 -- ---------------------------------------------------------------------
 -- migration 042_deposit_pay_currency
---
--- A deposit now carries two legs. `amount` / `fee` / `bonus` /
--- `credited_amount` / `currency` are the CHARGE: what the customer pays, in
--- the panel's default display currency, which is what the payment gateway is
--- handed. `base_amount` / `credited_base_amount` / `base_currency` are the
--- SETTLEMENT: what the wallet is credited with, in the accounting currency.
--- `fx_rate` (units of the charge currency per 1 unit of base) is pinned when
--- the deposit is opened and shown to the customer, so a rate change between
--- "Continue" and the webhook cannot re-price a payment already authorised.
 -- ---------------------------------------------------------------------
 
 ALTER TABLE payment_transactions
-ADD COLUMN base_currency CHAR(3) NULL COMMENT 'accounting currency the wallet is credited in';
-
-ALTER TABLE payment_transactions
-ADD COLUMN base_amount DECIMAL(20,8) NULL COMMENT 'amount in base currency at fx_rate';
-
-ALTER TABLE payment_transactions
-ADD COLUMN credited_base_amount DECIMAL(20,8) NULL COMMENT 'what the wallet is credited, in base currency';
-
-ALTER TABLE payment_transactions
+ADD COLUMN base_currency CHAR(3) NULL COMMENT 'accounting currency the wallet is credited in',
+ADD COLUMN base_amount DECIMAL(20,8) NULL COMMENT 'amount in base currency at fx_rate',
+ADD COLUMN credited_base_amount DECIMAL(20,8) NULL COMMENT 'what the wallet is credited, in base currency',
 ADD COLUMN fx_rate DECIMAL(20,8) NULL COMMENT 'units of the charge currency per 1 unit of base, pinned at initiation';
 
 -- ======================================================================

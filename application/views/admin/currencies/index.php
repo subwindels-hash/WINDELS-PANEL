@@ -8,8 +8,9 @@ $csrf = function () {
   <div>
     <h2 class="mb-0" style="font-size:1.4rem;font-weight:600">Currencies</h2>
     <p class="muted text-sm">
-      Control which currencies customers can browse the catalogue in, the default, and exchange rates.
-      This does not change what customers pay with — checkout still settles in the accounting currency below.
+      Control which currencies customers browse and fund their wallets in, the default, and exchange rates.
+      Manual / Bank Transfer and Fundsvera charge the <strong>default display currency</strong>; the resulting
+      wallet credit is converted into the accounting currency below at the rate locked on each deposit.
     </p>
   </div>
   <a class="btn btn-ghost btn-sm" href="<?=site_url('admin/settings')?>">← Settings</a>
@@ -30,8 +31,9 @@ $csrf = function () {
 <div class="card mb-4">
   <h3 style="font-size:1rem;font-weight:600" class="mb-1">Accounting currency</h3>
   <p class="muted text-xs mb-3">
-    Every wallet, order, payment, earning and payout is denominated in this currency. To redenominate the
-    panel and convert stored amounts at the current exchange rate, change it in
+    Wallet settlement, orders, earnings and payouts are accounted for in this currency. Customer deposit
+    charges keep the default currency shown beside them, including Manual / Bank Transfer and Fundsvera.
+    To redenominate the panel and convert accounting amounts at the current exchange rate, change it in
     <a href="<?=site_url('admin/settings')?>">Admin → Settings</a>.
   </p>
   <div class="row" style="gap:1.5rem;flex-wrap:wrap">

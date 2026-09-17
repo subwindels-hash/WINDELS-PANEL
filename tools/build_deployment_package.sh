@@ -165,6 +165,7 @@ copy application
 copy assets
 copy cron
 copy database/marvysocials.sql
+copy database/upgrade-042-deposit-currency.sql
 copy database/schema_verification.php
 copy database/README.md
 copy docs/cpanel-deployment.md
@@ -306,6 +307,8 @@ MarvySocials — cPanel deployment
 =================================
 
 Six steps, no terminal, no Composer, no npm, no symlinks.
+These six steps are for a NEW installation. See EXISTING INSTALLATION UPDATE
+below when the domain already has customer or transaction data.
 
 1. UPLOAD
    cPanel -> File Manager -> the folder your domain serves (usually
@@ -347,6 +350,16 @@ Six steps, no terminal, no Composer, no npm, no symlinks.
 
 6. OPEN THE SITE
    https://yourdomain.com
+
+EXISTING INSTALLATION UPDATE (preserves all live data)
+   1. Export a database backup in phpMyAdmin.
+   2. Upload/extract the new application package over the application files.
+      Keep the existing .env and storage uploads.
+   3. In phpMyAdmin select the EXISTING database and import:
+         database/upgrade-042-deposit-currency.sql
+      Do NOT import marvysocials.sql over a live database; that file is the
+      complete new-install database and includes seed records.
+   4. Open /deploy-verify.php. When every check is green, delete that file.
 
 FIRST LOGIN
    The credentials are printed at the top of database/marvysocials.sql.
@@ -408,7 +421,9 @@ echo "  ${SIZE}, ${FILES} files"
 echo
 echo "  Contents: index.php .htaccess .env.example deploy-verify.php application/"
 echo "            system/ (real files) vendor/ (framework + autoloader) assets/"
-echo "            storage/ database/marvysocials.sql cron/ README-DEPLOYMENT.txt"
+echo "            storage/ database/marvysocials.sql database/upgrade-042-deposit-currency.sql"
+echo "            cron/ README-DEPLOYMENT.txt"
 echo
-echo "  Upload it through cPanel File Manager and extract. Nothing else to run."
+echo "  New install: extract, import database/marvysocials.sql, configure .env."
+echo "  Existing install: back up, extract, then import the versioned upgrade SQL."
 echo "  Post-deploy check: open /deploy-verify.php in the browser (then delete it)."

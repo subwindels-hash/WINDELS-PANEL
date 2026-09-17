@@ -21,20 +21,23 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *
  * ## What is deliberately NOT converted
  *
- *   - **Provider-denominated amounts** (`providers.balance`,
+ *   - **Provider- and customer-charge amounts** (`providers.balance`,
  *     `provider_services.rate`, `provider_transactions.cost`, every
- *     `provider_cost` / `provider_charge`). A provider row records what an
- *     upstream vendor bills in *their* currency; an SMM vendor invoicing in
- *     dollars keeps invoicing in dollars when our books move to EUR.
+ *     `provider_cost` / `provider_charge`, plus the charge leg on
+ *     `payment_transactions` and `fundsvera_checkouts`). A provider row
+ *     records what an upstream vendor bills in *their* currency; likewise, a
+ *     customer who paid NGN 10,000 still paid NGN 10,000 when our books later
+ *     move from USD to EUR. Only the deposit's explicit settlement/base leg
+ *     is redenominated.
  *   - **Percentages, multipliers and physical dimensions**
  *     (`commission_percent`, `fee_percent`, `rate_multiplier`, `markup`,
  *     `discount_percent`, `length_cm`...). A percentage is not money.
  *   - **Gift-card face values** (`giftcard_products.face_value`,
  *     `giftcard_orders.face_value`), which are denominated in
  *     `recipient_currency` — a $50 Amazon card is $50 regardless of our books.
- *   - **Crypto amounts and the rate they were priced at**
- *     (`blockonomics_addresses.rate_used`, the BTC columns). Only the fiat
- *     leg moves, and only when it was in the old base currency.
+ *   - **Crypto quotes** (`blockonomics_addresses.rate_used`, the BTC columns
+ *     and `fiat_amount`). Both sides record what the provider quoted at the
+ *     time; neither is accounting money to rewrite later.
  *   - **`currencies.exchange_rate`**, which is rebased rather than scaled —
  *     see rebase_currency_table().
  *
@@ -71,11 +74,10 @@ class BaseCurrencyService {
             'cancellation_requests' => array('cols' => array('refund_amount')),
             'dripfeed_orders'       => array('cols' => array('charge'), 'currency' => 'currency'),
             'payment_methods'       => array('cols' => array('min_amount', 'max_amount', 'fee_fixed')),
-            // The charge leg only. `base_amount` / `credited_base_amount` are
-            // handled separately below because they are keyed on
-            // `base_currency`, not `currency`, and `fx_rate` is a rate rather
-            // than an amount — scaling a pinned rate would rewrite history.
-            'payment_transactions'  => array('cols' => array('amount', 'fee', 'bonus', 'credited_amount'), 'currency' => 'currency'),
+            // `payment_transactions.amount/currency` is deliberately absent:
+            // that is the immutable CUSTOMER CHARGE in the panel default
+            // currency. Only its explicit settlement/base leg is converted in
+            // convert_money() below.
             'referral_accounts'     => array('cols' => array('total_earned', 'total_paid')),
             'referral_commissions'  => array('cols' => array('amount'), 'currency' => 'currency'),
             'referral_campaigns'    => array('cols' => array('reward_amount', 'budget', 'spent', 'cost')),
@@ -87,8 +89,12 @@ class BaseCurrencyService {
             'giftcard_products'     => array('cols' => array('price')),
             'marketplace_listings'  => array('cols' => array('price', 'promo_price'), 'currency' => 'currency'),
             'marketplace_orders'    => array('cols' => array('unit_price', 'gross_amount', 'shipping_cost'), 'currency' => 'currency'),
-            'fundsvera_checkouts'   => array('cols' => array('expected_amount', 'amount_paid', 'settlement_amount', 'provider_fee'), 'currency' => 'currency'),
-            'blockonomics_addresses'=> array('cols' => array('fiat_amount'), 'currency' => 'fiat_currency'),
+            // Fundsvera checkout amounts are what the NGN bank rail expected,
+            // received and charged. They belong to the immutable charge leg,
+            // not to the accounting currency, so they must survive a base
+            // currency change byte-for-byte for webhook reconciliation.
+            // Blockonomics' fiat_amount/fiat_currency is another immutable
+            // provider quote and is excluded for the same reason.
             'earnings'              => array('cols' => array('amount'), 'currency' => 'currency'),
             'payout_requests'       => array('cols' => array('amount'), 'currency' => 'currency'),
             'cart_items'            => array('cols' => array('quoted_unit_price')),

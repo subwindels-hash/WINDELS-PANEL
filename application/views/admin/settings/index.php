@@ -150,7 +150,10 @@ $field = function ($key, $def, $value) {
         <?php endif; ?>
       <?php if ($category === 'payments'): ?>
         <div class="alert alert-info">
-          Amounts are in <?=htmlspecialchars($base_currency)?>.
+          Deposit limits and flat fees are configured in the base currency,
+          <?=htmlspecialchars($base_currency)?>. Customers using Manual / Bank Transfer or Fundsvera pay in the
+          default currency selected under <a href="<?=site_url('admin/currencies')?>">Currencies</a>; the panel
+          converts the confirmed payment into <?=htmlspecialchars($base_currency)?> at the rate locked on the deposit.
         </div>
       <?php endif; ?>
     </div>

@@ -122,6 +122,18 @@ class FundsveraGateway implements GatewayInterface {
     }
 
     /**
+     * Fundsvera's bank rail is NGN-only.
+     *
+     * PaymentService still selects the panel's DEFAULT currency for this
+     * method; this capability check prevents a non-NGN default from being
+     * silently interpreted as naira because Fundsvera's request has no
+     * currency field.
+     */
+    public function supports_currency($currency) {
+        return strtoupper(trim((string)$currency)) === 'NGN';
+    }
+
+    /**
      * The key webhook signatures are verified with.
      *
      * Fundsvera's documentation signs webhooks with the *business secret key*.
@@ -155,11 +167,13 @@ class FundsveraGateway implements GatewayInterface {
         }
 
         $currency = strtoupper((string)$transaction->currency);
-        if ($currency !== 'NGN') {
-            // Their collections are NGN-denominated. Refusing loudly is better
-            // than sending a figure the provider will interpret as naira.
+        if (!$this->supports_currency($currency)) {
+            // Their request has no currency field: every amount is NGN.
+            // Refusing loudly is better than sending, for example, a USD
+            // figure the provider will interpret as the same number of naira.
             return $this->fail('CURRENCY_UNSUPPORTED',
-                'Bank transfer deposits are only available in NGN.');
+                'Fundsvera bank transfers collect NGN only, but this deposit is in '
+                .($currency ?: 'an unknown currency').'. Set the panel default currency to NGN.');
         }
 
         $amount = (float)$transaction->amount;

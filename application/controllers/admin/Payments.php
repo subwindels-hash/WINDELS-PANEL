@@ -121,9 +121,15 @@ class Payments extends Admin_Controller {
         $rows = $this->db->order_by('sorting', 'ASC')->get('payment_methods')->result();
         $state = array();
         foreach ($rows as $row) {
+            $charge_currency = $this->paymentservice->charge_currency_for($row);
             $state[$row->code] = array(
                 'implemented' => in_array(strtolower($row->code), $this->paymentservice->implemented_gateways(), true),
                 'configured'  => $this->paymentservice->method_is_configured($row),
+                'charge_currency' => $charge_currency,
+                'currency_supported' => $this->paymentservice->method_supports_currency($row, $charge_currency),
+                'uses_default_currency' => in_array(
+                    strtolower((string)$row->code), PaymentService::DEFAULT_CURRENCY_METHODS, true
+                ),
                 // Manual bank transfer is reconciled by a human and needs no
                 // API credentials, so "not configured" would be a lie there.
                 'needs_credentials' => $this->paymentservice->method_needs_credentials($row),
@@ -140,8 +146,9 @@ class Payments extends Admin_Controller {
             'methods'      => $rows,
             'state'        => $state,
             'page_description' => 'Which deposit methods customers see, what each charges, and whether its '
-                                  .'credentials are in place. A method with no credentials stays hidden from '
-                                  .'Add funds even when it is switched on.',
+                                  .'credentials are in place. Manual / Bank Transfer and Fundsvera charge the '
+                                  .'panel default currency, never the accounting/base currency. A method with no '
+                                  .'credentials or no support for that currency stays hidden from Add funds.',
         ));
     }
 
@@ -193,8 +200,14 @@ class Payments extends Admin_Controller {
 
         $warning = '';
         if ($after['is_active'] && !$this->paymentservice->method_is_configured($method)) {
-            $warning = ' It stays hidden from Add funds until its API credentials are set in Settings → '
-                     .'Card and wallet gateways.';
+            $warning .= ' It stays hidden from Add funds until its API credentials are set in Settings → '
+                      .'Card and wallet gateways.';
+        }
+        $charge_currency = $this->paymentservice->charge_currency_for($method);
+        if ($after['is_active']
+                && !$this->paymentservice->method_supports_currency($method, $charge_currency)) {
+            $warning .= ' It also stays hidden because it cannot collect the current default currency ('
+                      .$charge_currency.'). Fundsvera requires NGN.';
         }
         $this->session->set_flashdata('success', $method->name.' updated.'.$warning);
         redirect('admin/payments/methods');
@@ -231,6 +244,10 @@ class Payments extends Admin_Controller {
             'unread'       => $this->dashboardstats->unread_count($this->current_user->id),
             'transactions' => $this->Payment_transaction_model->admin_search($filters, $limit, ($page - 1) * $limit),
             'totals'       => $this->Payment_transaction_model->admin_totals(),
+            // Keep the queue usable when code is uploaded before the matching
+            // existing-install SQL upgrade. The model avoids the missing
+            // columns; the view tells the operator exactly how to finish.
+            'deposit_currency_schema_ready' => $this->Payment_transaction_model->deposit_currency_schema_ready(),
             'status'       => $status,
             'search'       => $filters['search'],
             'page'         => $page,
@@ -278,7 +295,7 @@ class Payments extends Admin_Controller {
         // deposit, not the charge amount — saying otherwise in the flash and
         // the audit trail would misreport every converted top-up.
         $credited = $tx->credited_base_amount ?? ($tx->base_amount ?? $tx->credited_amount);
-        $credited_cur = (string)($tx->base_currency ?: marvy_base_currency());
+        $credited_cur = (string)(($tx->base_currency ?? '') ?: marvy_base_currency());
         $this->audit('payment.approved', $tx, $before, array(
             'status'                => $confirmed->status ?? 'SUCCESS',
             'credited_amount'       => (string)$credited,
