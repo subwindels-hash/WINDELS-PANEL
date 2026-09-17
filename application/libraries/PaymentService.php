@@ -109,12 +109,10 @@ class PaymentService {
         // use the original base-currency payment path until the four optional
         // settlement columns are available. This preserves the old database's
         // semantics (and its existing users) without attempting an INSERT into
-        // columns that do not exist.
-        $deposit_currency_schema_ready = true;
-        if (isset($this->ci->Payment_transaction_model)
-                && method_exists($this->ci->Payment_transaction_model, 'deposit_currency_schema_ready')) {
-            $deposit_currency_schema_ready = (bool)$this->ci->Payment_transaction_model->deposit_currency_schema_ready();
-        }
+        // columns that do not exist. The helper fails closed to the legacy path
+        // when a driver cannot inspect column metadata; a temporary metadata
+        // problem must never turn into a write of unknown columns.
+        $deposit_currency_schema_ready = $this->deposit_currency_schema_ready();
 
         $amount = $this->normalise_amount($input['amount'] ?? null);
         if ($amount === null) return array('ok'=>false,'error'=>'Invalid amount','code'=>'BAD_AMOUNT');
@@ -1005,9 +1003,7 @@ class PaymentService {
         // priced: the reported figure is the charge, and the base leg is what
         // the wallet gets. No rate means no credit — a spontaneous transfer is
         // never worth guessing at.
-        $legacy_schema = isset($this->ci->Payment_transaction_model)
-            && method_exists($this->ci->Payment_transaction_model, 'deposit_currency_schema_ready')
-            && !$this->ci->Payment_transaction_model->deposit_currency_schema_ready();
+        $legacy_schema = !$this->deposit_currency_schema_ready();
         $currency = $legacy_schema
             ? strtoupper((string)marvy_base_currency())
             : strtoupper((string)($event['currency'] ?? $this->pay_currency()));
@@ -1319,9 +1315,7 @@ class PaymentService {
         // Typed by the customer, so it is in the default currency shown on
         // Add Funds. Resolve it through the same method policy as an ordinary
         // Fundsvera checkout rather than maintaining a second currency rule.
-        $legacy_schema = isset($this->ci->Payment_transaction_model)
-            && method_exists($this->ci->Payment_transaction_model, 'deposit_currency_schema_ready')
-            && !$this->ci->Payment_transaction_model->deposit_currency_schema_ready();
+        $legacy_schema = !$this->deposit_currency_schema_ready();
         $currency = $legacy_schema
             ? strtoupper((string)marvy_base_currency())
             : $this->charge_currency_for($method);
@@ -1447,13 +1441,43 @@ class PaymentService {
                      'paystack', 'flutterwave', 'stripe', 'paypal', 'razorpay', 'coinpayments');
     }
 
+    /**
+     * Whether the live payment table can store migration 042's settlement leg.
+     *
+     * PaymentService is also used by public webhooks and cron workers, not only
+     * controllers that explicitly load Payment_transaction_model. Keep the
+     * compatibility decision here as a final guard so every caller follows the
+     * same safe rule. If metadata cannot be read, return false: the legacy
+     * insert is safer than an INSERT containing unknown columns.
+     */
+    private function deposit_currency_schema_ready() {
+        if (isset($this->ci->Payment_transaction_model)
+                && method_exists($this->ci->Payment_transaction_model, 'deposit_currency_schema_ready')) {
+            return (bool)$this->ci->Payment_transaction_model->deposit_currency_schema_ready();
+        }
+
+        try {
+            $have = array();
+            foreach ((array)$this->ci->db->field_data('payment_transactions') as $field) {
+                $name = is_object($field) ? ($field->name ?? '') : ($field['name'] ?? '');
+                if ($name !== '') $have[strtolower((string)$name)] = true;
+            }
+            foreach (array('base_currency', 'base_amount', 'credited_base_amount', 'fx_rate') as $column) {
+                if (!isset($have[$column])) return false;
+            }
+            return true;
+        } catch (Throwable $e) {
+            log_message('debug', 'payment schema metadata unavailable; using legacy deposit path: '
+                .$e->getMessage());
+            return false;
+        }
+    }
+
     private function persist_transaction(array $data) {
         // The four migration-042 fields are additive. On an older live
         // database, discard only those fields and retain the legacy columns;
         // all old payment and webhook flows can then continue normally.
-        if (isset($this->ci->Payment_transaction_model)
-                && method_exists($this->ci->Payment_transaction_model, 'deposit_currency_schema_ready')
-                && !$this->ci->Payment_transaction_model->deposit_currency_schema_ready()) {
+        if (!$this->deposit_currency_schema_ready()) {
             foreach (array('base_currency', 'base_amount', 'credited_base_amount', 'fx_rate') as $column) {
                 unset($data[$column]);
             }

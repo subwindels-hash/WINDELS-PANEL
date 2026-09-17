@@ -64,16 +64,18 @@ class Payments extends MY_Controller {
         }
 
         $tx = $res['transaction'];
+        $settlement = $this->settlement_fields($tx);
         return $this->json_ok(array(
             'reference'    => $tx->internal_reference ?: $tx->public_id,
             'status'       => $tx->status,
             'amount'       => (string)$tx->amount,
             'currency'     => $tx->currency,
             // The settlement leg and the rate it was pinned at, so a client
-            // can show the customer what this payment is actually worth.
-            'base_currency' => (string)($tx->base_currency ?: $tx->currency),
-            'base_amount'   => $tx->base_amount === null ? (string)$tx->amount : (string)$tx->base_amount,
-            'fx_rate'       => $tx->fx_rate === null ? '1.00000000' : (string)$tx->fx_rate,
+            // can show the customer what this payment is actually worth. The
+            // helper also supplies legacy values when migration 042 is absent.
+            'base_currency' => $settlement['base_currency'],
+            'base_amount'   => $settlement['base_amount'],
+            'fx_rate'       => $settlement['fx_rate'],
             'checkout'     => $res['checkout'] ?? null,
             'redirect_url' => $res['redirect_url'] ?? null,
             // Stated plainly because it is the whole security model: the
@@ -184,6 +186,7 @@ class Payments extends MY_Controller {
      * ids. A customer needs to know what they paid and whether it landed.
      */
     private function present($tx) {
+        $settlement = $this->settlement_fields($tx);
         return array(
             'reference'        => $tx->internal_reference ?: $tx->public_id,
             'provider'         => $tx->provider,
@@ -195,19 +198,43 @@ class Payments extends MY_Controller {
             // What the wallet is credited with, in the accounting currency,
             // at the rate pinned when the deposit was opened. On a panel where
             // the two currencies coincide these simply mirror the pair above.
-            'credited_amount'  => $tx->credited_amount === null ? null : (string)$tx->credited_amount,
-            'base_currency'    => (string)($tx->base_currency ?: $tx->currency),
-            'base_amount'      => $tx->base_amount === null ? (string)$tx->amount : (string)$tx->base_amount,
-            'credited_base_amount' => $tx->credited_base_amount === null
-                ? ($tx->credited_amount === null ? null : (string)$tx->credited_amount)
-                : (string)$tx->credited_base_amount,
-            'fx_rate'          => $tx->fx_rate === null ? '1.00000000' : (string)$tx->fx_rate,
+            'credited_amount'  => isset($tx->credited_amount) && $tx->credited_amount !== null
+                ? (string)$tx->credited_amount : null,
+            'base_currency'    => $settlement['base_currency'],
+            'base_amount'      => $settlement['base_amount'],
+            'credited_base_amount' => $settlement['credited_base_amount'],
+            'fx_rate'          => $settlement['fx_rate'],
             'status'           => $tx->status,
             'provider_reference' => $tx->provider_tx_id,
             'initiated_at'     => $tx->initiated_at,
             'paid_at'          => $tx->paid_at,
             'failed_at'        => $tx->failed_at,
             'created_at'       => $tx->created_at,
+        );
+    }
+
+    /**
+     * Return the settlement leg without reading migration-042 properties
+     * directly. Old rows never had those properties, so the charge columns
+     * are their exact settlement values and the pinned rate is one.
+     */
+    private function settlement_fields($tx) {
+        $base_currency = isset($tx->base_currency) && $tx->base_currency
+            ? (string)$tx->base_currency : (string)$tx->currency;
+        $base_amount = isset($tx->base_amount) && $tx->base_amount !== null
+            ? (string)$tx->base_amount : (string)$tx->amount;
+        $credited = isset($tx->credited_base_amount) && $tx->credited_base_amount !== null
+            ? (string)$tx->credited_base_amount
+            : (isset($tx->credited_amount) && $tx->credited_amount !== null
+                ? (string)$tx->credited_amount : (string)$tx->amount);
+        $fx_rate = isset($tx->fx_rate) && $tx->fx_rate !== null
+            ? (string)$tx->fx_rate : '1.00000000';
+
+        return array(
+            'base_currency'        => $base_currency,
+            'base_amount'          => $base_amount,
+            'credited_base_amount' => $credited,
+            'fx_rate'              => $fx_rate,
         );
     }
 
