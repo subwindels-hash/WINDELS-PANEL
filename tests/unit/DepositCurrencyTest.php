@@ -18,8 +18,9 @@ require_once dirname(__DIR__).'/_support/IntegrationHarness.php';
  *
  * The behaviour these tests pin:
  *
- *   - the CHARGE is in the pay currency (the default display currency) and it
- *     is what the gateway and the payment_transactions row carry;
+ *   - the CHARGE is in the pay currency (the default display currency) and is
+ *     what payment_transactions carries; an NGN-only rail gets a separately
+ *     recorded converted collection leg rather than changing that charge;
  *   - the SETTLEMENT is in the base currency, and the wallet is credited with
  *     that leg — ₦1,328 in, $1 credited;
  *   - the RATE is pinned on the deposit when it is opened, so a rate change
@@ -250,10 +251,10 @@ class DepositCurrencyTest extends TestCase
 
     /**
      * A USD-default panel (books also in USD) still takes Fundsvera deposits:
-     * the typed dollar amount is converted into naira at today's rate and the
-     * NGN figure is what the transaction carries and the bank rail is told to
-     * expect. This is the "Fundsvera collects NGN only / default is USD"
-     * refusal, fixed: the default currency stays USD and the deposit works.
+     * the typed dollar amount remains the customer-facing payment while its
+     * naira equivalent is sent to the provider as a separate collection leg.
+     * This fixes the "Fundsvera collects NGN only / default is USD" refusal
+     * without falling back to the accounting/base currency.
      */
     public function testFundsveraConvertsAUsdDefaultChargeIntoNaira()
     {
@@ -271,6 +272,42 @@ class DepositCurrencyTest extends TestCase
         $this->assertTrue(!empty($rail['converted']));
         $this->assertSame('10.00000000', $rail['typed_amount']);
         $this->assertSame('USD', $rail['typed_currency']);
+    }
+
+    /**
+     * The stored transaction keeps the default currency while reconciliation
+     * checks Fundsvera's separate NGN collection leg. Base currency is not
+     * substituted into either side.
+     */
+    public function testFundsveraKeepsDefaultCurrencySeparateFromItsNgnRail()
+    {
+        $app = $this->app('USD', array('NGN' => '1328.00000000'), 'USD');
+        $tx = (object)array(
+            'amount' => '10.00000000',
+            'currency' => 'USD',
+            'metadata' => json_encode(array('collection' => array(
+                'amount' => '13280.00000000',
+                'currency' => 'NGN',
+                'rate' => '1328.00000000',
+            ))),
+        );
+
+        $method = new ReflectionMethod($app->paymentservice, 'provider_expected_money');
+        $expected = $method->invoke($app->paymentservice, $tx);
+
+        $this->assertSame('USD', $tx->currency,
+            'the payment transaction must remain in the configured default currency');
+        $this->assertSame('10.00000000', $tx->amount);
+        $this->assertSame('NGN', $expected['currency'],
+            'Fundsvera webhooks must be checked against the provider collection currency');
+        $this->assertSame('13280.00000000', $expected['amount']);
+
+        // The same deposit can be completed with the card button. An explicit
+        // USD card callback covers the stored default-currency payment, not the
+        // unused Fundsvera NGN transfer instruction.
+        $cardExpected = $method->invoke($app->paymentservice, $tx, 'USD');
+        $this->assertSame('USD', $cardExpected['currency']);
+        $this->assertSame('10.00000000', $cardExpected['amount']);
     }
 
     /**
