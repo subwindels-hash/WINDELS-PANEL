@@ -137,10 +137,18 @@ if ($wallet_rate <= 0) $wallet_rate = 1.0;
             <?php if (empty($methods)): ?>
               <p class="muted">No payment methods are enabled yet.</p>
             <?php else: foreach ($methods as $m): ?>
+              <?php // What this method's provider actually collects. An
+                    // NGN-only bank rail on a non-NGN panel converts the typed
+                    // amount at today's rate — label it honestly. ?>
+              <?php $collects = strtoupper((string)(($method_collects[$m->code] ?? '') ?: $pay)); ?>
               <label class="ws-payopt card">
                 <input type="radio" name="payment_method" value="<?=htmlspecialchars($m->code)?>" required <?=!empty($m->is_active)?'':'disabled'?>>
                 <span class="font-medium"><?=htmlspecialchars($m->name)?></span>
-                <span class="badge badge-default"><?=html_escape($pay)?></span>
+                <?php if ($collects !== strtoupper((string)$pay)): ?>
+                  <span class="badge badge-default" title="You type the amount in <?=html_escape($pay)?>; the bank transfer is made in <?=html_escape($collects)?> at today's rate"><?=html_escape($pay)?> → <?=html_escape($collects)?></span>
+                <?php else: ?>
+                  <span class="badge badge-default"><?=html_escape($pay)?></span>
+                <?php endif; ?>
                 <?php if ((float)$m->bonus_percent > 0): ?>
                   <span class="badge badge-warning">+<?=rtrim(rtrim(number_format($m->bonus_percent,2),'0'),'.')?>% bonus</span>
                 <?php endif; ?>

@@ -207,7 +207,9 @@ class Payments extends Admin_Controller {
         if ($after['is_active']
                 && !$this->paymentservice->method_supports_currency($method, $charge_currency)) {
             $warning .= ' It also stays hidden because it cannot collect the current default currency ('
-                      .$charge_currency.'). Fundsvera requires NGN.';
+                      .$charge_currency.'). Fundsvera collects NGN — add an active NGN currency with '
+                      .'an exchange rate under Admin → Currencies so '.$charge_currency.' deposits '
+                      .'can be converted for it.';
         }
         $this->session->set_flashdata('success', $method->name.' updated.'.$warning);
         redirect('admin/payments/methods');

@@ -79,6 +79,19 @@ class Wallet extends Auth_Controller {
             }
         }
 
+        // The currency each method's provider is actually handed. Almost
+        // always the pay currency; an NGN-only bank rail (Fundsvera) on a
+        // non-NGN-default panel collects naira converted at today's rate, and
+        // the method card must say so instead of promising a USD transfer.
+        $method_collects = array();
+        foreach ($methods as $m) {
+            try {
+                $method_collects[$m->code] = $this->paymentservice->collect_currency_for($m);
+            } catch (Throwable $e) {
+                log_message('error', 'collect currency lookup failed for '.$m->code.': '.$e->getMessage());
+            }
+        }
+
         $this->load->view('layouts/app', array(
             'title' => 'Add Funds',
             'nav_active' => 'dashboard/add-funds',
@@ -88,6 +101,7 @@ class Wallet extends Auth_Controller {
             'permissions' => $this->auth->permissions(),
             'wallet' => $wallet,
             'methods' => $methods,
+            'method_collects' => $method_collects,
             'can_choose_currency' => $can_choose_currency,
             'currency_choices' => $currency_choices,
             'va_available' => $va_available,

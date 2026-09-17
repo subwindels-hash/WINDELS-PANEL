@@ -240,8 +240,58 @@ class DepositCurrencyTest extends TestCase
 
         $this->assertSame('NGN', $app->paymentservice->charge_currency_for($method, 'USD'));
         $this->assertTrue($app->paymentservice->method_supports_currency($method, 'NGN'));
+        // A USD charge is fine too — the service converts it into naira at
+        // the configured rate before Fundsvera's adapter ever sees it.
+        $this->assertTrue($app->paymentservice->method_supports_currency($method, 'USD'),
+            'a USD default is served by converting into the NGN rail at the configured rate');
+        $this->assertSame('NGN', $app->paymentservice->collect_currency_for($method, 'USD'),
+            'the provider is handed naira, never a USD figure it would read as naira');
+    }
+
+    /**
+     * A USD-default panel (books also in USD) still takes Fundsvera deposits:
+     * the typed dollar amount is converted into naira at today's rate and the
+     * NGN figure is what the transaction carries and the bank rail is told to
+     * expect. This is the "Fundsvera collects NGN only / default is USD"
+     * refusal, fixed: the default currency stays USD and the deposit works.
+     */
+    public function testFundsveraConvertsAUsdDefaultChargeIntoNaira()
+    {
+        $app = $this->app('USD', array('NGN' => '1328.00000000'), 'USD');
+        $method = (object)array('code' => 'fundsvera', 'name' => 'Bank Transfer');
+
+        // The method stays offered: USD is collectable via the NGN rail.
+        $this->assertTrue($app->paymentservice->method_supports_currency($method, 'USD'));
+
+        $rail = $app->paymentservice->rail_charge($method, '10.00000000', 'USD');
+        $this->assertTrue($rail['ok'], $rail['error'] ?? '');
+        $this->assertSame('NGN', $rail['currency']);
+        $this->assertSame(0, bccomp('13280', $rail['amount'], 8),
+            '$10 at 1328/USD must be quoted to the bank as exactly ₦13,280, got '.$rail['amount']);
+        $this->assertTrue(!empty($rail['converted']));
+        $this->assertSame('10.00000000', $rail['typed_amount']);
+        $this->assertSame('USD', $rail['typed_currency']);
+    }
+
+    /**
+     * Without a usable NGN rate the conversion is refused loudly — a $100
+     * deposit must never reach a bank rail that will read it as ₦100.
+     */
+    public function testFundsveraWithoutAnNgnRateIsRefusedNotMisread()
+    {
+        $app = $this->app('USD', array(), 'USD'); // NGN row exists but rate is 1:1 leftovers
+        // Deactivate NGN entirely: no usable rate.
+        $app->db->where('code', 'NGN')->update('currencies', array('is_active' => 0));
+        Currency_model::forget();
+        $this->reset_currency_memos();
+
+        $method = (object)array('code' => 'fundsvera', 'name' => 'Bank Transfer');
         $this->assertFalse($app->paymentservice->method_supports_currency($method, 'USD'),
-            'Fundsvera has no currency field and must not interpret a USD amount as naira');
+            'no NGN rate means no conversion — the method must be hidden, not misread');
+
+        $rail = $app->paymentservice->rail_charge($method, '100.00000000', 'USD');
+        $this->assertFalse($rail['ok']);
+        $this->assertSame('NO_RATE', $rail['code']);
     }
 
     /** The credit that reaches the wallet is the base leg, not the charge. */
