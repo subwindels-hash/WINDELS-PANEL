@@ -112,6 +112,44 @@ class Payment_transaction_model extends MY_Model {
             ->get()->row();
     }
 
+    /** @var bool|null Cached for this request; a schema cannot change mid-page. */
+    private $deposit_currency_schema_ready = null;
+
+    /**
+     * Whether migration 042's charge/settlement split is available.
+     *
+     * Existing cPanel installations can receive application files before the
+     * operator imports the accompanying SQL upgrade. The payments queue must
+     * remain available while that mismatch is being repaired: it is the page
+     * staff use to see and action pending deposits. Checking the columns here
+     * also lets the controller show an actionable warning instead of a blank
+     * HTTP 500 page.
+     */
+    public function deposit_currency_schema_ready(){
+        if ($this->deposit_currency_schema_ready !== null) {
+            return $this->deposit_currency_schema_ready;
+        }
+
+        $have = array();
+        try {
+            foreach ((array)$this->db->field_data($this->table) as $field) {
+                $name = is_object($field) ? ($field->name ?? '') : ($field['name'] ?? '');
+                if ($name !== '') $have[strtolower((string)$name)] = true;
+            }
+        } catch (Exception $e) {
+            return $this->deposit_currency_schema_ready = false;
+        } catch (Throwable $e) {
+            return $this->deposit_currency_schema_ready = false;
+        }
+
+        foreach (array('base_currency', 'base_amount', 'credited_base_amount', 'fx_rate') as $column) {
+            if (!isset($have[$column])) {
+                return $this->deposit_currency_schema_ready = false;
+            }
+        }
+        return $this->deposit_currency_schema_ready = true;
+    }
+
     /**
      * Totals for the queue header cards.
      *
@@ -119,15 +157,25 @@ class Payment_transaction_model extends MY_Model {
      * can now be charged in a different currency than the books are kept in
      * (migration 042), and adding a ₦1,328 charge to a $1 one produces a
      * number that means nothing. `base_amount` / `credited_base_amount` are
-     * one currency by definition; COALESCE covers pre-042 rows, which were
-     * charged in the base currency and so already carry it.
+     * one currency by definition; COALESCE covers rows created before 042.
+     *
+     * If application files reached an existing server before migration 042,
+     * use the legacy columns temporarily. Referring to a missing base_amount
+     * in SQL is what made /admin/payments return HTTP 500; the page now opens,
+     * labels the totals as legacy, and points the operator to the safe upgrade.
      */
     public function admin_totals(){
+        $schema_ready = $this->deposit_currency_schema_ready();
+        $pending_amount = $schema_ready ? 'COALESCE(base_amount, amount)' : 'amount';
+        $credited_amount = $schema_ready
+            ? 'COALESCE(credited_base_amount, credited_amount, amount)'
+            : 'COALESCE(credited_amount, amount)';
+
         $row = $this->db
             ->select("COUNT(*) AS total", false)
             ->select("COALESCE(SUM(CASE WHEN status='PENDING' THEN 1 ELSE 0 END),0) AS pending_count", false)
-            ->select("COALESCE(SUM(CASE WHEN status='PENDING' THEN COALESCE(base_amount, amount) ELSE 0 END),0) AS pending_amount", false)
-            ->select("COALESCE(SUM(CASE WHEN status='SUCCESS' THEN COALESCE(credited_base_amount, credited_amount) ELSE 0 END),0) AS credited", false)
+            ->select("COALESCE(SUM(CASE WHEN status='PENDING' THEN {$pending_amount} ELSE 0 END),0) AS pending_amount", false)
+            ->select("COALESCE(SUM(CASE WHEN status='SUCCESS' THEN {$credited_amount} ELSE 0 END),0) AS credited", false)
             ->get($this->table)->row();
         return array(
             'total'          => (int)($row->total ?? 0),

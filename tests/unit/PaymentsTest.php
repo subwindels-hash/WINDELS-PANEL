@@ -97,6 +97,9 @@ class PaymentsTest extends TestCase
         $this->assertSame(2, $ci->inserts['payment_events']); // CREATED->PENDING
         $this->assertNull($res['redirect_url']);
         $this->assertIsArray($res['checkout']);
+        $this->assertSame('100.00000000', $res['checkout']['amount']);
+        $this->assertSame('NGN', $res['checkout']['currency'],
+            'manual transfer instructions must carry the default-currency charge explicitly');
     }
 
     public function testDepositIsIdempotent()
@@ -486,6 +489,38 @@ class PaymentsTest extends TestCase
     }
 
     /**
+     * Fundsvera has no currency field: every amount is NGN. If the panel's
+     * default is not NGN, the adapter must refuse before making a provider call
+     * rather than letting (for example) USD 100 be interpreted as NGN 100.
+     */
+    public function testFundsveraRefusesANonNgnDefaultBeforeCallingTheProvider()
+    {
+        putenv('FUNDSVERA_PUBLIC_KEY=pk-test');
+        putenv('FUNDSVERA_SECRET_KEY=sk-test');
+        putenv('FUNDSVERA_ENABLED=1');
+        try {
+            $this->fresh();
+            $http = new PayFakeHttp(array());
+            $gateway = new FundsveraGateway(null, $http);
+            $tx = (object)array(
+                'id' => 42, 'public_id' => 'PAY000000000000000001', 'user_id' => 7,
+                'internal_reference' => 'MVS-PAY00000000000000001',
+                'amount' => '100.00000000', 'currency' => 'USD',
+            );
+            $user = (object)array('id' => 7, 'email' => 'maria@example.com');
+
+            $res = $gateway->initiate($tx, $user);
+
+            $this->assertFalse($res['ok']);
+            $this->assertSame('CURRENCY_UNSUPPORTED', $res['code']);
+            $this->assertStringContainsString('default currency to NGN', $res['error']);
+            $this->assertCount(0, $http->calls, 'an unsupported currency must fail before any API call');
+        } finally {
+            putenv('FUNDSVERA_PUBLIC_KEY'); putenv('FUNDSVERA_SECRET_KEY'); putenv('FUNDSVERA_ENABLED');
+        }
+    }
+
+    /**
      * Initiation is a synchronous call the customer waits on: one bounded
      * attempt, no retry ladder. Three 15-second retries plus backoff held the
      * "Processing…" button for over a minute whenever the provider was slow —
@@ -497,6 +532,8 @@ class PaymentsTest extends TestCase
         putenv('FUNDSVERA_SECRET_KEY=sk-test');
         putenv('FUNDSVERA_ENABLED=1');
         try {
+            $ci = $this->fresh();
+            $ci->Fundsvera_checkout_model = new PayFakeCheckoutModel();
             $http = new PayFakeHttp(array(
                 array('http_code' => 200, 'body' => json_encode(array(
                     'trx_ref'        => 'FVTRX0010',

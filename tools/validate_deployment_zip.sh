@@ -50,6 +50,7 @@ REQUIRED=(
   application/config/config.php
   application/config/database.php
   database/marvysocials.sql
+  database/upgrade-042-deposit-currency.sql
   system/core/CodeIgniter.php
   vendor/autoload.php
   vendor/codeigniter/framework/system/core/CodeIgniter.php
@@ -102,6 +103,7 @@ required = [
     "index.php",
     "deploy-verify.php",
     "database/marvysocials.sql",
+    "database/upgrade-042-deposit-currency.sql",
 ]
 # Unix symlink: S_IFLNK = 0o120000 in the upper 16 bits of external_attr.
 S_IFMT = 0o170000

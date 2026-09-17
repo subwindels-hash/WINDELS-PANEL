@@ -7,23 +7,25 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * ## What this is
  *
  * The panel's accounting/settlement currency (`marvy_base_currency()`, NGN by
- * default) stays exactly what it has always been: every wallet, order,
- * payment, earning and payout is charged, refunded and paid out in it, and
- * nothing here changes that. This service only controls what a *browsing*
- * customer sees the catalogue priced in — a display conversion, not a second
- * settlement currency. Checkout still charges the wallet in the base
- * currency; a converted price shown on a product card is informational.
+ * default) remains the denomination for wallets, orders, earnings, payouts
+ * and purchase/refund accounting. Catalogue conversion is informational and a
+ * wallet purchase still settles in that base currency.
  *
- * ## Why this separation instead of "just let people pay in USD"
+ * Wallet DEPOSITS have one deliberate exception: Manual / Bank Transfer and
+ * Fundsvera collect the default display currency selected here. Their payment
+ * transaction keeps that customer charge unchanged and pins the exchange rate
+ * and base-currency settlement leg used to credit the wallet. Changing the
+ * accounting currency later converts only that settlement leg; it never
+ * rewrites what the customer or bank actually paid.
  *
- * Accepting a different settlement currency means every order, refund and
- * commission calculation would need to carry an exchange rate snapshot at the
- * moment of charge, and every domain service (OrderService, TransactionEngine,
- * MarketplaceService, GiftcardService, PayoutService) would need rewiring to
- * agree on it. That is a large, high-risk change to core money-movement code.
- * This service is the safe, additive slice: real admin control over which
- * currencies are enabled, what customers see by default, and a fully audited
- * exchange rate with provenance — without touching a single charge path.
+ * ## Why this is not multi-currency order settlement
+ *
+ * Letting every order, refund and commission settle independently in a display
+ * currency would require every domain service (OrderService,
+ * TransactionEngine, MarketplaceService, GiftcardService, PayoutService) to
+ * agree on a rate snapshot. This service keeps those core purchase paths in
+ * the base currency while providing real admin control over browsing and the
+ * explicit, rate-pinned deposit boundary described above.
  *
  * ## Where the rate comes from
  *

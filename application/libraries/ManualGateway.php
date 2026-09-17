@@ -12,6 +12,11 @@ class ManualGateway implements GatewayInterface {
     private $method;
     public function __construct($method_row = null) { $this->method = $method_row; }
 
+    /** A manual transfer can be collected in whichever currency the operator makes default. */
+    public function supports_currency($currency) {
+        return (bool)preg_match('/^[A-Z]{3}$/', strtoupper(trim((string)$currency)));
+    }
+
     public function initiate($transaction, $user) {
         return array(
             'ok' => true,
@@ -20,6 +25,11 @@ class ManualGateway implements GatewayInterface {
                 'instructions' => $this->method && $this->method->instructions ? $this->method->instructions
                     : 'Transfer the exact amount to the displayed account and include your reference. Funds are credited after admin review.',
                 'reference' => $transaction->public_id,
+                // Keep the manual instructions self-describing when they are
+                // consumed by the JSON API or resumed later. PaymentService
+                // guarantees this is the panel default currency.
+                'amount' => (string)$transaction->amount,
+                'currency' => strtoupper((string)$transaction->currency),
             ),
         );
     }

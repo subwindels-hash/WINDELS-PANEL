@@ -7,8 +7,11 @@ $can_manage = in_array('*', $permissions ?? array(), true)
 <div class="card">
   <h2 class="card-title">Deposit methods</h2>
   <p class="muted">
-    Switching a method on shows it on Add funds. A gateway with no API credentials stays hidden even
-    when it is on — the panel will not offer a payment it cannot complete. Credentials live in
+    Switching a method on shows it on Add funds. <strong>Manual / Bank Transfer and Fundsvera charge
+    the default currency</strong> selected under <a href="<?=site_url('admin/currencies')?>">Currencies</a>,
+    not the accounting/base currency. The wallet is still credited through the base-currency settlement leg
+    at the rate locked on the deposit. A gateway with no API credentials or no support for the default currency
+    stays hidden — the panel will not offer a payment it cannot complete. Credentials live in
     <a href="<?=site_url('admin/settings')?>#gateways">Settings → Card and wallet gateways</a>, and each
     provider's callback URL is <code class="mono"><?=htmlspecialchars(site_url('webhook/'))?>&lt;code&gt;</code>.
   </p>
@@ -47,6 +50,17 @@ $can_manage = in_array('*', $permissions ?? array(), true)
                       <?php else: ?>
                         <span class="badge badge-warning" title="Add the API keys in Settings">Not configured</span>
                       <?php endif; ?>
+                      <?php if (!empty($s['uses_default_currency'])): ?>
+                        <span class="badge <?=!empty($s['currency_supported'])?'badge-brand':'badge-warning'?>"
+                              title="This method follows the default payment currency, not the base currency">
+                          Default currency: <?=htmlspecialchars((string)($s['charge_currency'] ?? marvy_pay_currency()))?>
+                        </span>
+                      <?php endif; ?>
+                      <?php if (isset($s['currency_supported']) && !$s['currency_supported']): ?>
+                        <span class="badge badge-warning" title="This method is hidden from Add funds until the default currency is supported">
+                          Currency unavailable
+                        </span>
+                      <?php endif; ?>
                     </div>
                   </div>
 
@@ -61,7 +75,7 @@ $can_manage = in_array('*', $permissions ?? array(), true)
                            value="<?=htmlspecialchars(number_format((float)$m->fee_percent, 4, '.', ''))?>" <?=$can_manage ? '' : 'disabled'?>>
                   </label>
                   <label class="field mb-0" style="width:8rem">
-                    <span class="label">Fee flat</span>
+                    <span class="label">Fee flat (<?=htmlspecialchars(marvy_base_currency())?>)</span>
                     <input class="input" type="number" step="0.01" min="0" name="fee_fixed"
                            value="<?=htmlspecialchars(number_format((float)$m->fee_fixed, 2, '.', ''))?>" <?=$can_manage ? '' : 'disabled'?>>
                   </label>
@@ -71,12 +85,12 @@ $can_manage = in_array('*', $permissions ?? array(), true)
                            value="<?=htmlspecialchars(number_format((float)$m->bonus_percent, 4, '.', ''))?>" <?=$can_manage ? '' : 'disabled'?>>
                   </label>
                   <label class="field mb-0" style="width:8rem">
-                    <span class="label">Min</span>
+                    <span class="label">Min (<?=htmlspecialchars(marvy_base_currency())?>)</span>
                     <input class="input" type="number" step="0.01" min="0" name="min_amount"
                            value="<?=$m->min_amount === null ? '' : htmlspecialchars(number_format((float)$m->min_amount, 2, '.', ''))?>" <?=$can_manage ? '' : 'disabled'?>>
                   </label>
                   <label class="field mb-0" style="width:8rem">
-                    <span class="label">Max</span>
+                    <span class="label">Max (<?=htmlspecialchars(marvy_base_currency())?>)</span>
                     <input class="input" type="number" step="0.01" min="0" name="max_amount"
                            value="<?=$m->max_amount === null ? '' : htmlspecialchars(number_format((float)$m->max_amount, 2, '.', ''))?>" <?=$can_manage ? '' : 'disabled'?>>
                   </label>

@@ -4,7 +4,19 @@ $badge = function ($s) {
     return 'badge '.($map[$s] ?? 'badge-default');
 };
 $tabs = array('PENDING'=>'Awaiting review', 'SUCCESS'=>'Credited', 'FAILED'=>'Rejected', 'ALL'=>'All');
+$schema_ready = !isset($deposit_currency_schema_ready) || $deposit_currency_schema_ready;
 ?>
+<?php if (!$schema_ready): ?>
+  <div class="alert alert-warning mb-4" role="alert">
+    <strong>Database upgrade 042 is still required.</strong>
+    <p class="mt-1 mb-0 text-sm">
+      This queue is temporarily showing legacy payment totals so staff can keep reviewing deposits.
+      Before accepting a new deposit, back up the database and import
+      <code class="mono">database/upgrade-042-deposit-currency.sql</code> through phpMyAdmin, then
+      confirm that <code class="mono">/deploy-verify.php</code> reports a healthy schema.
+    </p>
+  </div>
+<?php endif; ?>
 <div class="row justify-between mb-4" style="align-items:flex-start;flex-wrap:wrap;gap:.75rem">
   <div>
     <h2 class="mb-0" style="font-size:1.4rem;font-weight:600">Payments</h2>

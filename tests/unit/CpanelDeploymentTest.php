@@ -443,6 +443,31 @@ class CpanelDeploymentTest extends TestCase
             'foreign keys are declared before their targets exist in migration order');
     }
 
+    /** Existing installations need a data-preserving SQL path, not a full seed re-import. */
+    public function testMigration042ShipsARepeatableExistingInstallUpgrade()
+    {
+        $path = self::$root.'/database/upgrade-042-deposit-currency.sql';
+        $this->assertFileExists($path);
+        $sql = file_get_contents($path);
+
+        foreach (array('base_currency', 'base_amount', 'credited_base_amount', 'fx_rate') as $column) {
+            $this->assertStringContainsString("COLUMN_NAME = '{$column}'", $sql);
+            $this->assertStringContainsString("ADD COLUMN `{$column}`", $sql);
+        }
+        $this->assertStringContainsString('information_schema.COLUMNS', $sql);
+        $this->assertStringContainsString('COALESCE(`base_currency`, `currency`)', $sql);
+        $this->assertStringContainsString('UPDATE `migrations` SET `version` = 42 WHERE `version` < 42', $sql);
+        $this->assertStringNotContainsStringIgnoringCase('DROP TABLE', $sql);
+        $this->assertStringNotContainsStringIgnoringCase('DELETE FROM', $sql);
+
+        $install = file_get_contents(self::$root.'/application/libraries/InstallCheck.php');
+        $this->assertStringContainsString('database/upgrade-042-deposit-currency.sql', $install,
+            'deploy-verify must name the safe repair for this exact schema mismatch');
+        $this->assertStringNotContainsString(
+            'Re-import database/marvysocials.sql; it upgrades the schema in place.', $install,
+            'the complete seeded database is not an existing-install upgrade');
+    }
+
     /* ===================== packaging and documentation ==================== */
 
     public function testTheDeploymentPackageIsBuiltWithoutTheDeveloperMachineMattering()
@@ -452,7 +477,7 @@ class CpanelDeploymentTest extends TestCase
         $src = file_get_contents($script);
 
         foreach (array('index.php', 'application', 'assets', 'database/marvysocials.sql',
-                       '.env.example', '.htaccess') as $needed) {
+                       'database/upgrade-042-deposit-currency.sql', '.env.example', '.htaccess') as $needed) {
             $this->assertStringContainsString($needed, $src, "the package must contain {$needed}");
         }
         $this->assertStringContainsString('system', $src,
@@ -556,7 +581,8 @@ class CpanelDeploymentTest extends TestCase
         $this->assertTrue($zip->open($zip_path) === true);
 
         foreach (array('index.php', '.htaccess', '.env.example', 'system/core/CodeIgniter.php',
-                       'database/marvysocials.sql', 'README-DEPLOYMENT.txt') as $entry) {
+                       'database/marvysocials.sql', 'database/upgrade-042-deposit-currency.sql',
+                       'README-DEPLOYMENT.txt') as $entry) {
             $this->assertNotFalse($zip->locateName($entry), "the package is missing {$entry}");
         }
         $this->assertFalse($zip->locateName('composer.json'), 'nothing to install on the host');
@@ -721,7 +747,7 @@ class CpanelDeploymentTest extends TestCase
         $this->assertFileExists($guide);
         $text = file_get_contents($guide);
         foreach (array('File Manager', 'MySQL Databases', 'phpMyAdmin',
-                       'database/marvysocials.sql', '.env') as $needle) {
+                       'database/marvysocials.sql', 'database/upgrade-042-deposit-currency.sql', '.env') as $needle) {
             $this->assertStringContainsString($needle, $text);
         }
         $this->assertDoesNotMatchRegularExpression('/^\s*composer install/mi', $text,

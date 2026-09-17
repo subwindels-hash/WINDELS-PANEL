@@ -4,9 +4,25 @@
 open the domain.** That is the whole process. No Terminal, no SSH, no Composer,
 no Node.js, no migration command, no seed command, no installer script.
 
-This guide covers a new install and a migration between hosting accounts. Both
-are the same five steps; a migration just reuses two values from the old
-server.
+The numbered installation steps below are for a new database or a move to a
+new hosting account. **Do not import the complete new-install SQL over a live
+database that already contains customers or transactions.** Existing-install
+updates use the release-specific upgrade file described below.
+
+### Updating an existing installation to migration 042
+
+1. Export a complete database backup in phpMyAdmin.
+2. Upload/extract the updated application package, preserving the current
+   `.env`, user uploads, and storage data.
+3. In phpMyAdmin, select the existing database and import
+   `database/upgrade-042-deposit-currency.sql`.
+4. Open `/deploy-verify.php`; confirm every schema check passes, then delete the
+   verifier.
+
+The upgrade is repeatable and preserves all live records. Until it is imported,
+Admin → Payments falls back to legacy totals and displays an upgrade warning
+instead of failing with a blank HTTP 500 page. New deposits should not be
+accepted until the schema check is green.
 
 ---
 
@@ -16,7 +32,7 @@ server.
 | --- | --- |
 | Hosting | cPanel with PHP **8.1+** and MySQL 5.7+ / MariaDB 10.4+ |
 | PHP extensions | `mysqli`, `mbstring`, `openssl`, `curl`, `json`, `bcmath` (cPanel → Select PHP Version → Extensions) |
-| The package | `application-deployment.zip` — published as a **release artifact** (GitHub → Releases), or built locally with `bash tools/build_deployment_package.sh`. It is a build artifact and is not committed to git. Contains index.php, application/, system/, assets/, storage/, cron/, database/marvysocials.sql and .env.example. |
+| The package | `application-deployment.zip` — published as a **release artifact** (GitHub → Releases), or built locally with `bash tools/build_deployment_package.sh`. It is a build artifact and is not committed to git. Contains index.php, application/, system/, assets/, storage/, cron/, database/marvysocials.sql, the migration-042 upgrade SQL, and .env.example. |
 
 Nothing else. The framework is inside the package, so `composer install` is
 never required; the CSS is pre-built, so `npm install` is never required.

@@ -210,6 +210,40 @@ class DepositCurrencyTest extends TestCase
         $this->assertSame(0, bccomp('1328', (string)$tx->fx_rate, 8));
     }
 
+    /**
+     * Manual / Bank Transfer is bound to the default currency in the service,
+     * not just by a well-behaved controller. A stale or malicious caller that
+     * explicitly posts the base currency must not turn an NGN-labelled form
+     * into a USD transfer instruction.
+     */
+    public function testManualBankTransferCannotBeForcedBackToTheBaseCurrency()
+    {
+        $app = $this->app('USD', array('NGN' => '1328.00000000'), 'NGN');
+        list($user) = $this->customer($app);
+
+        $res = $this->deposit($app, $user, '1328', array('currency' => 'USD'));
+
+        $this->assertTrue($res['ok'], $res['error'] ?? '');
+        $this->assertSame('NGN', $res['transaction']->currency,
+            'Manual / Bank Transfer must follow the panel default, not the posted/base currency');
+        $this->assertSame(0, bccomp('1328', (string)$res['transaction']->amount, 8));
+        $this->assertSame('USD', $res['transaction']->base_currency);
+        $this->assertSame(0, bccomp('1', (string)$res['transaction']->base_amount, 8));
+        $this->assertSame('NGN', $res['checkout']['currency']);
+    }
+
+    /** Fundsvera uses that same default-currency policy before its adapter runs. */
+    public function testFundsveraResolvesToTheDefaultCurrencyNotTheBaseCurrency()
+    {
+        $app = $this->app('USD', array('NGN' => '1328.00000000'), 'NGN');
+        $method = (object)array('code' => 'fundsvera', 'name' => 'Bank Transfer');
+
+        $this->assertSame('NGN', $app->paymentservice->charge_currency_for($method, 'USD'));
+        $this->assertTrue($app->paymentservice->method_supports_currency($method, 'NGN'));
+        $this->assertFalse($app->paymentservice->method_supports_currency($method, 'USD'),
+            'Fundsvera has no currency field and must not interpret a USD amount as naira');
+    }
+
     /** The credit that reaches the wallet is the base leg, not the charge. */
     public function testConfirmationCreditsTheBaseLegNotTheChargeAmount()
     {
@@ -452,24 +486,80 @@ class DepositCurrencyTest extends TestCase
     }
 
     /**
+     * An existing server can receive the PHP files just before its SQL upgrade.
+     * The staff queue must stay available in that short window instead of
+     * querying nonexistent migration-042 columns and returning HTTP 500.
+     */
+    public function testAdminPaymentsQueueFallsBackUntilMigration042IsImported()
+    {
+        $app = $this->app('NGN');
+        list($user) = $this->customer($app);
+        $res = $this->deposit($app, $user, '500');
+        $this->assertTrue($res['ok'], $res['error'] ?? '');
+        $app->Payment_transaction_model->update_status($res['transaction']->id, array('status' => 'PENDING'));
+
+        foreach (array('base_currency', 'base_amount', 'credited_base_amount', 'fx_rate') as $column) {
+            unset($app->db->schema['payment_transactions']['columns'][$column]);
+            foreach ($app->db->rows['payment_transactions'] as &$row) unset($row[$column]);
+            unset($row);
+        }
+        // A real web request gets a fresh model after the application upload.
+        // Replace this request's instance so its earlier successful deposit
+        // has not already cached the pre-removal schema state.
+        $model = new Payment_transaction_model();
+        $model->db = $app->db;
+        $app->Payment_transaction_model = $model;
+
+        $this->assertFalse($app->Payment_transaction_model->deposit_currency_schema_ready());
+        $totals = $app->Payment_transaction_model->admin_totals();
+        $this->assertSame(1, $totals['pending_count']);
+        $this->assertSame(0, bccomp('500', $totals['pending_amount'], 8));
+    }
+
+    /** A half-deployed schema is readable for staff but cannot take new money. */
+    public function testNewDepositsPauseCleanlyUntilMigration042IsImported()
+    {
+        $app = $this->app('NGN');
+        list($user) = $this->customer($app);
+        foreach (array('base_currency', 'base_amount', 'credited_base_amount', 'fx_rate') as $column) {
+            unset($app->db->schema['payment_transactions']['columns'][$column]);
+        }
+
+        $res = $this->deposit($app, $user, '500');
+        $this->assertFalse($res['ok']);
+        $this->assertSame('SCHEMA_UPGRADE_REQUIRED', $res['code']);
+        $this->assertStringContainsString('upgrade-042-deposit-currency.sql', $res['error']);
+        $this->assertCount(0, $app->db->rows['payment_transactions']);
+    }
+
+    /**
      * Admin totals cannot sum charge amounts: adding ₦1,328 to $1 produces a
      * number in no currency at all.
      */
     public function testAdminTotalsSumTheBaseLeg()
     {
         $src = file_get_contents(self::$root.'/application/models/Payment_transaction_model.php');
-        $this->assertStringContainsString('COALESCE(base_amount, amount)', $src);
-        $this->assertStringContainsString('COALESCE(credited_base_amount, credited_amount)', $src);
+        $this->assertStringContainsString("'COALESCE(base_amount, amount)'", $src);
+        $this->assertStringContainsString("'COALESCE(credited_base_amount, credited_amount, amount)'", $src);
+        $this->assertStringContainsString('deposit_currency_schema_ready', $src);
     }
 
     /**
-     * Redenominating the panel has to move the settlement leg too, and must
-     * REBASE the pinned rate rather than scale it — scaling would rewrite what
-     * every historical customer was quoted.
+     * Redenominating the panel moves only the settlement leg. The amount a
+     * customer paid through Manual / Bank Transfer or Fundsvera is historical
+     * provider/default-currency fact and must not be converted or relabelled
+     * just because the books move to another base currency. The pinned rate is
+     * rebased so that unchanged charge still equals the converted settlement.
      */
-    public function testChangingTheBaseCurrencyRebasesPinnedDepositRates()
+    public function testChangingTheBaseCurrencyPreservesChargesAndRebasesSettlement()
     {
         $src = file_get_contents(self::$root.'/application/libraries/BaseCurrencyService.php');
+        $this->assertStringNotContainsString(
+            "'payment_transactions'  => array('cols' => array('amount'", $src,
+            'the immutable customer charge must not be part of the base-money conversion map');
+        $this->assertStringNotContainsString(
+            "'fundsvera_checkouts'   => array('cols'", $src,
+            'Fundsvera expected/paid amounts must remain in the bank rail currency');
         $this->assertStringContainsString('`base_amount`          = ROUND(`base_amount` * ?, 8)', $src);
         $this->assertStringContainsString('`fx_rate`              = ROUND(`fx_rate` / ?, 8)', $src);
         $this->assertStringContainsString('WHERE `base_currency` = ?', $src);

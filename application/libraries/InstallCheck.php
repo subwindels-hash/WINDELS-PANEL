@@ -441,7 +441,7 @@ class InstallCheck {
         }
 
         // columns (only for tables present on both sides)
-        $missing_c = 0; $type_mismatch = 0; $examples = array();
+        $missing_c = 0; $type_mismatch = 0; $examples = array(); $missing_columns = array();
         foreach ($expected as $tname => $t) {
             if (!isset($live_tables[$tname])) continue;
             $cols = array();
@@ -450,6 +450,7 @@ class InstallCheck {
             foreach ($t['columns'] as $cname => $c) {
                 if (!isset($cols[$cname])) {
                     $missing_c++;
+                    $missing_columns[] = "{$tname}.{$cname}";
                     if (count($examples) < 6) $examples[] = "{$tname}.{$cname} (missing)";
                     continue;
                 }
@@ -460,9 +461,20 @@ class InstallCheck {
             }
         }
         if ($missing_c || $type_mismatch) {
+            $deposit_042 = array(
+                'payment_transactions.base_currency',
+                'payment_transactions.base_amount',
+                'payment_transactions.credited_base_amount',
+                'payment_transactions.fx_rate',
+            );
+            sort($missing_columns);
+            $expected_042 = $deposit_042;
+            sort($expected_042);
+            $fix = ($type_mismatch === 0 && $missing_columns === $expected_042)
+                ? 'Existing installation: back up the database, then import database/upgrade-042-deposit-currency.sql in phpMyAdmin. Do not import the full new-install database over live data.'
+                : 'Existing installation: back up the database and run php index.php migrate. Do not import the full new-install database over live data.';
             $this->add('fail', 'schema', "{$missing_c} missing column(s), {$type_mismatch} type mismatch(es)",
-                implode(' · ', $examples),
-                'Re-import database/marvysocials.sql; it upgrades the schema in place.');
+                implode(' · ', $examples), $fix);
         } elseif (!$missing_t) {
             $this->add('pass', 'schema', 'all columns present with compatible types (every table verified)');
         }

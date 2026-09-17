@@ -25,6 +25,17 @@ class PaymentService {
     /** Hosted card gateways the panel can route a card payment through. */
     const CARD_GATEWAY_CODES = array('paystack', 'flutterwave', 'razorpay', 'stripe');
 
+    /**
+     * Deposit methods whose charge currency is always the panel default.
+     *
+     * These are the two bank-transfer choices shown on Add Funds. A caller may
+     * not force either one back to the accounting/base currency by posting a
+     * different `currency`: the amount field is labelled in the default
+     * currency, so accepting that override would make the instructions and
+     * the transaction disagree about what the customer owes.
+     */
+    const DEFAULT_CURRENCY_METHODS = array('manual', 'fundsvera');
+
     private $ci;
 
     public function __construct() {
@@ -93,13 +104,34 @@ class PaymentService {
         if (!$method) return array('ok'=>false,'error'=>'Unknown payment method','code'=>'NO_METHOD');
         if (!(int)$method->is_active) return array('ok'=>false,'error'=>'That payment method is unavailable','code'=>'METHOD_INACTIVE');
 
+        // Do not let a code-first cPanel update fall through to an INSERT that
+        // references migration-042 columns the live database does not have.
+        // The admin queue remains readable through its legacy-total fallback,
+        // but opening a new deposit before the settlement fields exist would
+        // either 500 or lose the pinned accounting leg.
+        if (isset($this->ci->Payment_transaction_model)
+                && method_exists($this->ci->Payment_transaction_model, 'deposit_currency_schema_ready')
+                && !$this->ci->Payment_transaction_model->deposit_currency_schema_ready()) {
+            return array(
+                'ok' => false,
+                'code' => 'SCHEMA_UPGRADE_REQUIRED',
+                'error' => 'Payments are temporarily unavailable while database upgrade 042 is pending. '
+                    .'An administrator must import database/upgrade-042-deposit-currency.sql.',
+            );
+        }
+
         $amount = $this->normalise_amount($input['amount'] ?? null);
         if ($amount === null) return array('ok'=>false,'error'=>'Invalid amount','code'=>'BAD_AMOUNT');
 
-        // The currency the gateway is handed. Defaults to the pay currency,
-        // which is the default display currency — not the accounting one.
-        $currency = strtoupper($input['currency'] ?? $this->pay_currency());
+        // Manual / Bank Transfer and Fundsvera are bound to the panel default
+        // here, inside the money service — not merely in the controller. That
+        // makes the rule hold for dashboard forms, JSON API calls, retries and
+        // any future caller, even if one posts the base currency explicitly.
+        $currency = $this->charge_currency_for($method, $input['currency'] ?? null);
         if (!preg_match('/^[A-Z]{3}$/', $currency)) return array('ok'=>false,'error'=>'Bad currency','code'=>'BAD_CURRENCY');
+        if (!$this->method_supports_currency($method, $currency)) {
+            return $this->unsupported_currency($method, $currency);
+        }
 
         $quote = $this->quote($amount, $currency);
         if (empty($quote['ok'])) return $quote;
@@ -163,7 +195,15 @@ class PaymentService {
         $init = $gateway->initiate($tx, $user);
         if (empty($init['ok'])) {
             $this->mark_failed($tx->id, $init['error'] ?? 'Gateway error');
-            return array('ok'=>false,'error'=>$init['error'] ?? 'Could not initiate payment','code'=>'GATEWAY_ERROR');
+            return array(
+                'ok'    => false,
+                'error' => $init['error'] ?? 'Could not initiate payment',
+                // Keep a specific adapter refusal (notably
+                // CURRENCY_UNSUPPORTED) instead of flattening every failure
+                // into GATEWAY_ERROR. The form can then explain the actual
+                // configuration problem to the customer/operator.
+                'code'  => $init['code'] ?? 'GATEWAY_ERROR',
+            );
         }
         // Fundsvera's own checkout URL is a bank-transfer instructions page.
         // Always land the customer on our deposit page instead: it offers a
@@ -231,6 +271,69 @@ class PaymentService {
             log_message('error', 'pay currency unavailable: '.$e->getMessage());
         }
         return marvy_base_currency();
+    }
+
+    /**
+     * Resolve the charge currency for one payment method.
+     *
+     * Manual / Bank Transfer and Fundsvera always use the default currency,
+     * regardless of a caller-supplied value. Other adapters retain the
+     * existing extension point: an internal caller may request a particular
+     * supported currency, while an omitted value still defaults to the panel
+     * default.
+     *
+     * @param object|string $method payment-method row or code
+     * @param string|null $requested caller-supplied charge currency
+     */
+    public function charge_currency_for($method, $requested = null) {
+        $code = strtolower(trim((string)(is_object($method) ? ($method->code ?? '') : $method)));
+        if (in_array($code, self::DEFAULT_CURRENCY_METHODS, true)) {
+            return $this->pay_currency();
+        }
+
+        $currency = strtoupper(trim((string)($requested ?: $this->pay_currency())));
+        return $currency;
+    }
+
+    /** Whether this adapter can actually collect the selected charge currency. */
+    public function method_supports_currency($method, $currency = null) {
+        if (!$method) return false;
+        $currency = strtoupper(trim((string)($currency ?: $this->charge_currency_for($method))));
+        if (!preg_match('/^[A-Z]{3}$/', $currency)) return false;
+
+        $gateway = $this->gateway_for_code(
+            is_object($method) ? ($method->code ?? '') : $method,
+            is_object($method) ? $method : null
+        );
+        if (!method_exists($gateway, 'supports_currency')) return true;
+
+        try {
+            return (bool)$gateway->supports_currency($currency);
+        } catch (Throwable $e) {
+            log_message('error', 'could not check payment currency support: '.$e->getMessage());
+            return false;
+        }
+    }
+
+    /** A customer-facing refusal for a default currency the provider cannot collect. */
+    private function unsupported_currency($method, $currency) {
+        $code = strtolower((string)(is_object($method) ? ($method->code ?? '') : $method));
+        if ($code === 'fundsvera') {
+            return array(
+                'ok'    => false,
+                'code'  => 'CURRENCY_UNSUPPORTED',
+                'error' => 'Fundsvera bank transfers collect NGN only. The panel default currency is '
+                    .$currency.'. Set the default payment currency to NGN under Admin → Currencies, '
+                    .'or use Manual / Bank Transfer.',
+            );
+        }
+
+        $name = is_object($method) && !empty($method->name) ? (string)$method->name : ucfirst($code);
+        return array(
+            'ok'    => false,
+            'code'  => 'CURRENCY_UNSUPPORTED',
+            'error' => $name.' cannot collect '.$currency.'. Choose another payment method.',
+        );
     }
 
     /**
@@ -373,7 +476,7 @@ class PaymentService {
                 // $credited is a BASE-currency figure; label it as such rather
                 // than with the charge currency, or a ₦1,328 payment would be
                 // announced as "₦1.00 added to your wallet".
-                $credited_code = (string)($tx->base_currency ?: marvy_base_currency());
+                $credited_code = (string)(($tx->base_currency ?? '') ?: marvy_base_currency());
                 // What they actually paid, when that is a different currency.
                 $paid = marvy_money($tx->amount, $tx->currency);
                 $line = marvy_money($credited, $credited_code).' has been added to your wallet';
@@ -1031,7 +1134,15 @@ class PaymentService {
 
         $out = array();
         foreach ($rows as $row) {
-            if ($this->method_is_configured($row)) $out[] = $row;
+            // A configured provider that cannot collect the current default
+            // currency is still not payable. In particular, Fundsvera is an
+            // NGN bank rail: showing it while the default is USD would let the
+            // customer complete the form only to fail at the provider.
+            $currency = $this->charge_currency_for($row);
+            if ($this->method_is_configured($row)
+                    && $this->method_supports_currency($row, $currency)) {
+                $out[] = $row;
+            }
         }
         return $out;
     }
@@ -1160,6 +1271,11 @@ class PaymentService {
             return array('ok'=>false,'error'=>'Bank transfer deposits are not available right now.',
                 'code'=>'METHOD_INACTIVE');
         }
+        $currency = $this->charge_currency_for($method);
+        if (!$this->method_supports_currency($method, $currency)) {
+            return $this->unsupported_currency($method, $currency);
+        }
+
         $gateway = $this->gateway_for_code('fundsvera', $method);
         if (method_exists($gateway, 'is_configured') && !$gateway->is_configured()) {
             return array('ok'=>false,'error'=>'Bank transfer deposits are not configured yet.',
@@ -1194,9 +1310,13 @@ class PaymentService {
         $amount = $this->normalise_amount($amount);
         if ($amount === null) return array('ok'=>false,'error'=>'Invalid amount','code'=>'BAD_AMOUNT');
 
-        // Typed by the customer, so it is in the currency they see — the pay
-        // currency — exactly like the Add Funds amount field.
-        $currency = $this->pay_currency();
+        // Typed by the customer, so it is in the default currency shown on
+        // Add Funds. Resolve it through the same method policy as an ordinary
+        // Fundsvera checkout rather than maintaining a second currency rule.
+        $currency = $this->charge_currency_for($method);
+        if (!$this->method_supports_currency($method, $currency)) {
+            return $this->unsupported_currency($method, $currency);
+        }
         $quote = $this->quote($amount, $currency);
         if (empty($quote['ok'])) return $quote;
 
