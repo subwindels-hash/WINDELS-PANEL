@@ -26,15 +26,24 @@ class PaymentService {
     const CARD_GATEWAY_CODES = array('paystack', 'flutterwave', 'razorpay', 'stripe');
 
     /**
-     * Deposit methods whose charge currency is always the panel default.
+     * Deposit methods whose charge follows the panel default currency.
      *
      * These are the two bank-transfer choices shown on Add Funds. A caller may
      * not force either one back to the accounting/base currency by posting a
      * different `currency`: the amount field is labelled in the default
      * currency, so accepting that override would make the instructions and
      * the transaction disagree about what the customer owes.
+     *
+     * Manual / Bank Transfer collects the default currency itself. Fundsvera
+     * is an NGN-only bank rail, so on a panel whose default is some other
+     * currency the typed default-currency amount is CONVERTED into naira at
+     * today's rate (see charge_currency_for() / deposit()) rather than the
+     * whole method being refused.
      */
     const DEFAULT_CURRENCY_METHODS = array('manual', 'fundsvera');
+
+    /** The only currency Fundsvera's bank rail can collect. */
+    const FUNDSVERA_RAIL_CURRENCY = 'NGN';
 
     private $ci;
 
@@ -128,6 +137,29 @@ class PaymentService {
             // non-base display currency could not be represented safely.
             : strtoupper((string)marvy_base_currency());
         if (!preg_match('/^[A-Z]{3}$/', $currency)) return array('ok'=>false,'error'=>'Bad currency','code'=>'BAD_CURRENCY');
+
+        // What this method's rail actually collects for that charge currency.
+        // Fundsvera is an NGN-only bank rail: when the panel default is some
+        // other currency, the typed default-currency amount is converted into
+        // naira at today's rate instead of refusing the deposit outright —
+        // the default currency stays what the customer sees and types, and
+        // the rail is handed the one currency it can move. Only possible on
+        // the 042 schema: a legacy row cannot represent a charge that differs
+        // from the settlement currency.
+        $typed_charge = null;
+        if ($deposit_currency_schema_ready) {
+            $rail = $this->rail_charge($method, $amount, $currency);
+            if (empty($rail['ok'])) return $rail;
+            if (!empty($rail['converted'])) {
+                $typed_charge = array(
+                    'amount'   => $rail['typed_amount'],
+                    'currency' => $rail['typed_currency'],
+                    'rate'     => $rail['rail_rate'],
+                );
+            }
+            $amount   = $rail['amount'];
+            $currency = $rail['currency'];
+        }
         if (!$this->method_supports_currency($method, $currency)) {
             return $this->unsupported_currency($method, $currency);
         }
@@ -184,7 +216,7 @@ class PaymentService {
             'currency'           => $currency,
             'status'             => self::STATUS_CREATED,
             'idempotency_key'    => $idem,
-            'metadata'           => !empty($input['note']) ? json_encode(array('note'=>$input['note'])) : null,
+            'metadata'           => $this->initial_metadata($input, $typed_charge),
             'created_at'         => gmdate('Y-m-d H:i:s'),
         ));
 
@@ -294,11 +326,122 @@ class PaymentService {
         return $currency;
     }
 
+    /**
+     * The single currency a method's bank rail can move, or NULL when the
+     * rail simply collects whatever it is handed.
+     *
+     * Fundsvera's API has no currency field: every figure it receives is
+     * naira. That constraint belongs to the RAIL, not to the panel's default
+     * currency — a USD-default panel still uses Fundsvera by converting the
+     * typed USD amount into NGN at today's rate (see rail_charge()).
+     */
+    public function rail_currency_for($method) {
+        $code = strtolower(trim((string)(is_object($method) ? ($method->code ?? '') : $method)));
+        return $code === 'fundsvera' ? self::FUNDSVERA_RAIL_CURRENCY : null;
+    }
+
+    /**
+     * The currency a method's provider is actually handed for a deposit
+     * charged in `$charge_currency` — the rail currency when a conversion
+     * rate exists, otherwise the charge currency unchanged.
+     */
+    public function collect_currency_for($method, $charge_currency = null) {
+        $charge = strtoupper(trim((string)($charge_currency ?: $this->charge_currency_for($method))));
+        $rail = $this->rail_currency_for($method);
+        if ($rail !== null && $charge !== $rail && $this->rail_rate($charge, $rail) !== null) {
+            return $rail;
+        }
+        return $charge;
+    }
+
+    /**
+     * Express a typed charge in the currency the method's rail can collect.
+     *
+     * The customer types an amount in the panel default currency; an NGN-only
+     * rail (Fundsvera) is handed the naira equivalent at today's rate instead
+     * of being refused because the default is not NGN. The typed figure is
+     * returned alongside so the deposit can record what the customer asked
+     * for; a missing conversion rate is refused loudly — a USD amount must
+     * never be sent to a bank rail that will read it as the same number of
+     * naira.
+     *
+     * @param object|string $method payment-method row or code
+     * @param string $amount   normalised typed amount
+     * @param string $currency the charge currency the amount was typed in
+     * @return array{ok:bool, amount?:string, currency?:string, converted?:bool,
+     *               typed_amount?:string, typed_currency?:string, rail_rate?:string,
+     *               error?:string, code?:string}
+     */
+    public function rail_charge($method, $amount, $currency) {
+        $currency = strtoupper(trim((string)$currency));
+        $rail = $this->rail_currency_for($method);
+        if ($rail === null || $currency === $rail) {
+            return array('ok'=>true, 'amount'=>(string)$amount, 'currency'=>$currency, 'converted'=>false);
+        }
+
+        $rate = $this->rail_rate($currency, $rail);
+        if ($rate === null) {
+            return array('ok'=>false, 'code'=>'NO_RATE',
+                'error'=>'This payment method collects '.$rail.', and no usable exchange rate is '
+                    .'configured to convert '.$currency.' into '.$rail.'. Make sure both currencies '
+                    .'are active with exchange rates under Admin → Currencies, or use another '
+                    .'payment method.');
+        }
+
+        $converted = bcmul((string)$amount, $rate, 8);
+        // Banks move two-decimal amounts and the provider validates a plain
+        // number; quoting ₦12,345.6789 invites a reconciliation mismatch.
+        $converted = number_format(round((float)$converted, 2), 8, '.', '');
+        if (bccomp($converted, '0', 8) <= 0) {
+            return array('ok'=>false, 'error'=>'Invalid amount', 'code'=>'BAD_AMOUNT');
+        }
+
+        return array(
+            'ok'             => true,
+            'amount'         => $converted,
+            'currency'       => $rail,
+            'converted'      => true,
+            'typed_amount'   => (string)$amount,
+            'typed_currency' => $currency,
+            // Units of the rail currency per 1 unit of the typed currency.
+            'rail_rate'      => $rate,
+        );
+    }
+
+    /**
+     * Units of `$to` per 1 unit of `$from`, composed through the base
+     * currency, or NULL when either leg has no usable rate.
+     */
+    private function rail_rate($from, $to) {
+        $from = strtoupper(trim((string)$from));
+        $to   = strtoupper(trim((string)$to));
+        if ($from === $to) return '1.00000000';
+        $base = strtoupper((string)marvy_base_currency());
+        $from_rate = $from === $base ? '1.00000000' : $this->fx_rate($from);
+        $to_rate   = $to   === $base ? '1.00000000' : $this->fx_rate($to);
+        if ($from_rate === null || $to_rate === null) return null;
+        if (bccomp($from_rate, '0', 8) <= 0) return null;
+        return bcdiv($to_rate, $from_rate, 8);
+    }
+
     /** Whether this adapter can actually collect the selected charge currency. */
     public function method_supports_currency($method, $currency = null) {
         if (!$method) return false;
         $currency = strtoupper(trim((string)($currency ?: $this->charge_currency_for($method))));
         if (!preg_match('/^[A-Z]{3}$/', $currency)) return false;
+
+        // An NGN-only rail still serves a panel whose default currency is
+        // something else, provided the typed amount can be CONVERTED into the
+        // rail currency at a real rate. Ask the adapter about the currency it
+        // will actually be handed, not the one the customer types in. Only on
+        // the 042 schema: a legacy row cannot hold a charge that differs from
+        // its settlement currency, so no conversion can be recorded there.
+        $rail = $this->rail_currency_for($method);
+        if ($rail !== null && $currency !== $rail
+                && $this->deposit_currency_schema_ready()
+                && $this->rail_rate($currency, $rail) !== null) {
+            $currency = $rail;
+        }
 
         $gateway = $this->gateway_for_code(
             is_object($method) ? ($method->code ?? '') : $method,
@@ -314,16 +457,36 @@ class PaymentService {
         }
     }
 
+    /**
+     * The metadata JSON a deposit row is created with.
+     *
+     * Records the customer's note and, when the rail collected a different
+     * currency than the one they typed in (an NGN bank rail on a USD-default
+     * panel), the typed figure and the conversion rate used — so the deposit
+     * page and support can always show what the customer asked for next to
+     * what the bank was told to expect.
+     */
+    private function initial_metadata(array $input, $typed_charge = null) {
+        $meta = array();
+        if (!empty($input['note'])) $meta['note'] = $input['note'];
+        if (is_array($typed_charge) && $typed_charge) $meta['typed_charge'] = $typed_charge;
+        return $meta ? json_encode($meta, JSON_UNESCAPED_SLASHES) : null;
+    }
+
     /** A customer-facing refusal for a default currency the provider cannot collect. */
     private function unsupported_currency($method, $currency) {
         $code = strtolower((string)(is_object($method) ? ($method->code ?? '') : $method));
         if ($code === 'fundsvera') {
+            // Reached only when the typed default-currency amount cannot be
+            // converted into naira: the deposit path converts automatically
+            // whenever an active NGN rate exists (see rail_charge()).
             return array(
                 'ok'    => false,
                 'code'  => 'CURRENCY_UNSUPPORTED',
-                'error' => 'Fundsvera bank transfers collect NGN only. The panel default currency is '
-                    .$currency.'. Set the default payment currency to NGN under Admin → Currencies, '
-                    .'or use Manual / Bank Transfer.',
+                'error' => 'Fundsvera bank transfers collect NGN. Your '.$currency.' deposit could not '
+                    .'be converted because no usable NGN exchange rate is configured. Add an active '
+                    .'NGN currency with an exchange rate under Admin → Currencies, or use '
+                    .'Manual / Bank Transfer.',
             );
         }
 
@@ -1137,9 +1300,11 @@ class PaymentService {
         $out = array();
         foreach ($rows as $row) {
             // A configured provider that cannot collect the current default
-            // currency is still not payable. In particular, Fundsvera is an
-            // NGN bank rail: showing it while the default is USD would let the
-            // customer complete the form only to fail at the provider.
+            // currency — directly or via rail conversion — is still not
+            // payable. Fundsvera is an NGN bank rail: on a non-NGN-default
+            // panel it stays payable as long as an NGN rate exists to convert
+            // the typed amount with; with no usable rate it is hidden, or the
+            // customer would complete the form only to fail at the provider.
             $currency = $this->charge_currency_for($row);
             if ($this->method_is_configured($row)
                     && $this->method_supports_currency($row, $currency)) {
@@ -1319,6 +1484,24 @@ class PaymentService {
         $currency = $legacy_schema
             ? strtoupper((string)marvy_base_currency())
             : $this->charge_currency_for($method);
+        // The bank credits this standing account in naira only. A non-NGN
+        // default currency is converted at today's rate — the same rule the
+        // checkout path applies — so the webhook's amount check compares
+        // naira with naira. Only representable on the 042 schema.
+        $typed_charge = null;
+        if (!$legacy_schema) {
+            $rail = $this->rail_charge($method, $amount, $currency);
+            if (empty($rail['ok'])) return $rail;
+            if (!empty($rail['converted'])) {
+                $typed_charge = array(
+                    'amount'   => $rail['typed_amount'],
+                    'currency' => $rail['typed_currency'],
+                    'rate'     => $rail['rail_rate'],
+                );
+            }
+            $amount   = $rail['amount'];
+            $currency = $rail['currency'];
+        }
         if (!$this->method_supports_currency($method, $currency)) {
             return $this->unsupported_currency($method, $currency);
         }
@@ -1361,10 +1544,10 @@ class PaymentService {
             'fx_rate'              => $quote['fx_rate'],
             'status'             => self::STATUS_PENDING,
             'idempotency_key'    => 'va-deposit:'.$user->id.':'.$public_id,
-            'metadata'           => json_encode(array(
+            'metadata'           => json_encode(array_merge(array(
                 'virtual_account' => $account->account_number ?? null,
                 'purpose'         => 'virtual_account',
-            ), JSON_UNESCAPED_SLASHES),
+            ), $typed_charge ? array('typed_charge' => $typed_charge) : array()), JSON_UNESCAPED_SLASHES),
             'created_at'         => gmdate('Y-m-d H:i:s'),
         ));
         $this->transition($tx->id, null, self::STATUS_PENDING, 'SYSTEM', 'Virtual account deposit opened');
