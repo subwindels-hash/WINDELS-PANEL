@@ -268,7 +268,9 @@ if (!function_exists('marvy_display_money')) {
             try {
                 $ci =& get_instance();
                 $ci->load->library('CurrencyService');
-                $service = $ci->currencyservice;
+                // A loader that no-ops (test doubles) leaves the property
+                // unset; reading it blind warns where try/catch cannot help.
+                $service = isset($ci->currencyservice) ? $ci->currencyservice : false;
             } catch (Throwable $e) {
                 $service = false;
             }
@@ -303,7 +305,9 @@ if (!function_exists('marvy_to_base_money')) {
             try {
                 $ci =& get_instance();
                 $ci->load->library('CurrencyService');
-                $service = $ci->currencyservice;
+                // A loader that no-ops (test doubles) leaves the property
+                // unset; reading it blind warns where try/catch cannot help.
+                $service = isset($ci->currencyservice) ? $ci->currencyservice : false;
             } catch (Throwable $e) {
                 $service = false;
             }
@@ -326,18 +330,40 @@ if (!function_exists('marvy_display_currency')) {
      * whenever CurrencyService cannot answer — a price must always render.
      */
     function marvy_display_currency() {
-        static $code = null;
-        if ($code !== null) return $code;
+        // Memoised in a global rather than a function static so a request that
+        // changes the currency configuration can clear it (see
+        // marvy_forget_display_currency) — and so the test suite can drive
+        // more than one currency world in a single process.
+        if (isset($GLOBALS['__marvy_display_currency'])) return $GLOBALS['__marvy_display_currency'];
         $code = marvy_base_currency();
         if (!function_exists('get_instance')) return $code;
         try {
             $ci =& get_instance();
             $ci->load->library('CurrencyService');
-            $code = strtoupper((string)$ci->currencyservice->display_code());
+            // load->library() succeeding does not guarantee the property is
+            // there (a test double, or a loader that resolved it under another
+            // name); reading it blind raises a warning try/catch cannot see.
+            if (isset($ci->currencyservice)) {
+                $code = strtoupper((string)$ci->currencyservice->display_code());
+            }
         } catch (Throwable $e) {
             $code = marvy_base_currency();
         }
-        return $code;
+        return $GLOBALS['__marvy_display_currency'] = $code;
+    }
+}
+
+if (!function_exists('marvy_forget_display_currency')) {
+    /**
+     * Drop the memoised display currency after the configuration changes.
+     *
+     * The screen that switches the default display currency (or disables the
+     * one in force) would otherwise keep rendering the currency it cached at
+     * the top of the same request.
+     */
+    function marvy_forget_display_currency(){
+        unset($GLOBALS['__marvy_display_currency']);
+        if (class_exists('Currency_model')) Currency_model::forget();
     }
 }
 
@@ -365,6 +391,69 @@ if (!function_exists('marvy_display_rate')) {
             // fall through to the identity rate
         }
         return '1.00000000';
+    }
+}
+
+if (!function_exists('marvy_pay_currency')) {
+    /**
+     * The currency a customer is actually CHARGED in.
+     *
+     * This is the default display currency — the one the operator chose in
+     * Admin → Currencies and the one every price on the site is quoted in —
+     * not the base/accounting currency. Asking a Nigerian customer looking at
+     * ₦ prices to hand a gateway a USD amount is the bug this exists to stop:
+     * payment methods are denominated in what the customer sees.
+     *
+     * Settlement is unaffected. The wallet is still credited in the base
+     * currency; PaymentService converts at the rate pinned on the deposit.
+     */
+    function marvy_pay_currency() {
+        return marvy_display_currency();
+    }
+}
+
+if (!function_exists('marvy_rate_line')) {
+    /**
+     * The human sentence for a conversion rate: "$1 = ₦1,328.00".
+     *
+     * Every surface that quotes a converted amount has to show the customer
+     * the rate it used, or the number is unauditable — this is the one place
+     * that sentence is built so the wallet, Add Funds and the deposit page
+     * cannot disagree about its wording or its rounding.
+     *
+     * @param string      $rate units of $pay per 1 unit of $base
+     * @param string|null $pay  the charge currency (default: pay currency)
+     * @param string|null $base the accounting currency (default: base)
+     */
+    function marvy_rate_line($rate = null, $pay = null, $base = null) {
+        $base = strtoupper((string)($base ?: marvy_base_currency()));
+        $pay  = strtoupper((string)($pay  ?: marvy_pay_currency()));
+        if ($rate === null) $rate = marvy_display_rate($pay);
+        if (!is_numeric($rate) || (float)$rate <= 0) return '';
+        // 1 unit of base, expressed in the charge currency. Shown at the
+        // currency's own precision so a JPY rate does not read "¥150.00".
+        return marvy_money(1, $base).' = '.marvy_money($rate, $pay);
+    }
+}
+
+if (!function_exists('marvy_currency_symbol')) {
+    /**
+     * The bare symbol (or code prefix) a currency renders with.
+     *
+     * Views that hand a currency to JavaScript need the symbol on its own, and
+     * deriving it by stripping digits out of marvy_money(0, …) breaks on a
+     * code-style display ("NGN 0.00" → "NGN"), on thousands separators, and on
+     * any symbol containing a digit. Asking the formatter directly keeps the
+     * client-side running total spelled exactly like the server-rendered one.
+     */
+    function marvy_currency_symbol($code = null) {
+        $code = strtoupper((string)($code ?: marvy_base_currency()));
+        // marvy_money() renders "<prefix>0.00" in both symbol and code mode,
+        // so the prefix is whatever precedes the formatted zero.
+        $rendered = marvy_money(0, $code);
+        $zero = number_format(0, 2, '.', ',');
+        $at = strrpos($rendered, $zero);
+        return $at === false ? $code.' ' : substr($rendered, 0, $at);
     }
 }
 

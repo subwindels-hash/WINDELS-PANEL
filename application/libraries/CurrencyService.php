@@ -85,6 +85,10 @@ class CurrencyService {
     public function forget() {
         $this->display_code = null;
         if (class_exists('Currency_model')) Currency_model::forget();
+        // The helper memoises the same answer for the rest of the request;
+        // leaving it set is how a just-saved currency change fails to show up
+        // on the page that saved it.
+        if (function_exists('marvy_forget_display_currency')) marvy_forget_display_currency();
     }
 
     /**

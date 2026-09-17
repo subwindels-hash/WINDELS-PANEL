@@ -71,6 +71,10 @@ class BaseCurrencyService {
             'cancellation_requests' => array('cols' => array('refund_amount')),
             'dripfeed_orders'       => array('cols' => array('charge'), 'currency' => 'currency'),
             'payment_methods'       => array('cols' => array('min_amount', 'max_amount', 'fee_fixed')),
+            // The charge leg only. `base_amount` / `credited_base_amount` are
+            // handled separately below because they are keyed on
+            // `base_currency`, not `currency`, and `fx_rate` is a rate rather
+            // than an amount — scaling a pinned rate would rewrite history.
             'payment_transactions'  => array('cols' => array('amount', 'fee', 'bonus', 'credited_amount'), 'currency' => 'currency'),
             'referral_accounts'     => array('cols' => array('total_earned', 'total_paid')),
             'referral_commissions'  => array('cols' => array('amount'), 'currency' => 'currency'),
@@ -179,6 +183,9 @@ class BaseCurrencyService {
 
         // Drop every memo that could still be holding the old base.
         Currency_model::forget();
+        if (function_exists('marvy_forget_base_currency')) marvy_forget_base_currency();
+        // The pay currency is derived from the base one, so it is stale too.
+        if (function_exists('marvy_forget_display_currency')) marvy_forget_display_currency();
         if (class_exists('Setting_model') && method_exists('Setting_model', 'flush_cache')) {
             Setting_model::flush_cache();
         }
@@ -227,6 +234,31 @@ class BaseCurrencyService {
 
             $this->ci->db->query($sql, $params);
             $counts[$table] = (int)$this->ci->db->affected_rows();
+        }
+
+        // The settlement leg of a deposit (migration 042). It is keyed on its
+        // own `base_currency` column rather than `currency`, so it cannot ride
+        // along in the generic map: on a converted deposit `currency` is the
+        // charge currency (NGN) while the amounts being redenominated here are
+        // the base ones (USD).
+        //
+        // `fx_rate` moves the opposite way. It is "units of the charge
+        // currency per 1 unit of base", so re-expressing it against the new
+        // base DIVIDES by the rate — the same rebasing the currencies table
+        // gets, for the same reason. Scaling it like an amount would rewrite
+        // what each historical customer was actually quoted.
+        if ($this->ci->db->table_exists('payment_transactions')
+                && $this->ci->db->field_exists('base_currency', 'payment_transactions')) {
+            $this->ci->db->query(
+                "UPDATE `payment_transactions`
+                    SET `base_amount`          = ROUND(`base_amount` * ?, 8),
+                        `credited_base_amount` = ROUND(`credited_base_amount` * ?, 8),
+                        `fx_rate`              = ROUND(`fx_rate` / ?, 8),
+                        `base_currency`        = ?
+                  WHERE `base_currency` = ?",
+                array($rate, $rate, $rate, $to, $from)
+            );
+            $counts['payment_transactions_base_leg'] = (int)$this->ci->db->affected_rows();
         }
 
         // Fixed-amount coupons only: a percentage coupon's "value" is a

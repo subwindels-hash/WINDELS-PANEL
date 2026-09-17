@@ -8,6 +8,16 @@ $badge = function ($s) {
     return 'badge '.($map[$s] ?? 'badge-default');
 };
 $actionable = in_array($tx->status, array('CREATED','PENDING'), true);
+
+// The charge / settlement split (migration 042). `amount`, `fee`, `bonus` and
+// `credited_amount` are in the CHARGE currency the gateway was handed; the
+// wallet is credited with `credited_base_amount` in the accounting currency,
+// at the rate pinned when the deposit was opened. A pre-042 row has no base
+// leg because it was charged in the base currency to begin with.
+$pay_cur   = strtoupper((string)$tx->currency);
+$base_cur  = strtoupper((string)($tx->base_currency ?? $tx->currency));
+$credited  = $tx->credited_base_amount ?? ($tx->credited_amount ?? $tx->amount);
+$converted = $pay_cur !== $base_cur && !empty($tx->fx_rate);
 ?>
 <div class="row justify-between mb-4" style="align-items:flex-start;flex-wrap:wrap;gap:.75rem">
   <div>
@@ -51,12 +61,15 @@ $actionable = in_array($tx->status, array('CREATED','PENDING'), true);
             <span class="muted text-xs"><?=htmlspecialchars((string)$tx->email)?></span></td></tr>
         <tr><th>Method</th><td><?=htmlspecialchars((string)$tx->method_name)?>
             <span class="badge badge-default"><?=htmlspecialchars((string)$tx->method_type)?></span></td></tr>
-        <tr><th>Amount paid</th><td class="mono"><?=marvy_money($tx->amount)?> <?=htmlspecialchars($tx->currency)?></td></tr>
-        <tr><th>Fee</th><td class="mono"><?=marvy_money($tx->fee)?></td></tr>
+        <tr><th>Amount paid</th><td class="mono"><?=marvy_money($tx->amount, $pay_cur)?></td></tr>
+        <tr><th>Fee</th><td class="mono"><?=marvy_money($tx->fee, $pay_cur)?></td></tr>
         <?php if (bccomp((string)$tx->bonus, '0', 8) > 0): ?>
-        <tr><th>Bonus</th><td class="mono"><?=marvy_money($tx->bonus)?></td></tr>
+        <tr><th>Bonus</th><td class="mono"><?=marvy_money($tx->bonus, $pay_cur)?></td></tr>
         <?php endif; ?>
-        <tr><th>Credits to wallet</th><td class="mono font-bold"><?=marvy_money($tx->credited_amount ?? $tx->amount)?></td></tr>
+        <?php if ($converted): ?>
+        <tr><th>Rate (pinned)</th><td class="mono"><?=html_escape(marvy_rate_line($tx->fx_rate, $pay_cur, $base_cur))?></td></tr>
+        <?php endif; ?>
+        <tr><th>Credits to wallet</th><td class="mono font-bold"><?=marvy_money($credited, $base_cur)?></td></tr>
         <?php if ($tx->provider_tx_id): ?>
         <tr><th>Reference</th><td class="mono text-xs"><?=htmlspecialchars($tx->provider_tx_id)?></td></tr>
         <?php endif; ?>
@@ -73,19 +86,19 @@ $actionable = in_array($tx->status, array('CREATED','PENDING'), true);
       <p class="muted text-sm">You have read-only access to payments.</p>
     <?php elseif ($tx->status === 'SUCCESS'): ?>
       <div class="alert alert-success">
-        Credited <?=marvy_money($tx->credited_amount ?? $tx->amount)?> to this customer's wallet.
+        Credited <?=marvy_money($credited, $base_cur)?> to this customer's wallet.
         Reverse it with a wallet adjustment rather than re-approving.
       </div>
     <?php elseif (!$actionable): ?>
       <div class="alert alert-warning">This deposit is <?=htmlspecialchars($tx->status)?> and cannot be actioned.</div>
     <?php else: ?>
       <p class="text-sm muted mb-2">
-        Approving credits <strong><?=marvy_money($tx->credited_amount ?? $tx->amount)?></strong>
+        Approving credits <strong><?=marvy_money($credited, $base_cur)?></strong>
         to <?=htmlspecialchars((string)$tx->username)?>'s wallet through the ledger. Confirm the funds
         have actually arrived first — this cannot be undone from here.
       </p>
       <form method="post" action="<?=site_url('admin/payments/'.$tx->public_id.'/approve')?>" class="mb-4"
-            data-confirm="Credit <?=htmlspecialchars(marvy_money($tx->credited_amount ?? $tx->amount))?> to this wallet?" >
+            data-confirm="Credit <?=htmlspecialchars(marvy_money($credited, $base_cur))?> to this wallet?" >
         <?=$csrf()?>
         <input class="input mb-2" name="provider_tx_id" placeholder="Bank reference (optional)"
                value="<?=htmlspecialchars((string)$tx->provider_tx_id)?>">

@@ -2,6 +2,14 @@
 <?php if (!empty($active_deposit)):
   $d = $active_deposit;
   $method = $this->db->where('id',$d->payment_method_id)->get('payment_methods')->row();
+  // A deposit carries two legs: the charge (amount/currency, what the gateway
+  // takes) and the settlement (base_amount/base_currency, what the wallet
+  // gets), tied together by the rate pinned when it was opened. Rows created
+  // before that split have no base leg — their charge currency WAS the
+  // accounting currency, so the two collapse into one.
+  $d_base_cur  = strtoupper((string)($d->base_currency ?? $d->currency));
+  $d_credited  = $d->credited_base_amount ?? $d->credited_amount;
+  $d_converted = strtoupper((string)$d->currency) !== $d_base_cur && !empty($d->fx_rate);
 ?>
 <div class="card max-w-2xl mb-6">
   <div class="row justify-between">
@@ -9,11 +17,20 @@
     <span class="badge <?=$d->status==='SUCCESS'?'badge-success':($d->status==='FAILED'?'badge-danger':'badge-warning')?>"><?=htmlspecialchars($d->status)?></span>
   </div>
   <dl class="grid grid-4 mt-4" style="gap:1rem">
-    <div><dt class="muted text-xs">Amount</dt><dd class="font-semibold"><?=marvy_money($d->amount, $d->currency)?></dd></div>
-    <div><dt class="muted text-xs">Credited</dt><dd><?=$d->credited_amount!==null?marvy_money($d->credited_amount,$d->currency):'—'?></dd></div>
+    <div><dt class="muted text-xs">You pay</dt><dd class="font-semibold"><?=marvy_money($d->amount, $d->currency)?></dd></div>
+    <div>
+      <dt class="muted text-xs">Credited to wallet</dt>
+      <dd><?=$d_credited!==null?marvy_money($d_credited, $d_base_cur):'—'?></dd>
+    </div>
     <div><dt class="muted text-xs">Method</dt><dd><?=htmlspecialchars($method->name ?? '—')?></dd></div>
     <div><dt class="muted text-xs">Date</dt><dd class="text-sm"><?=date('M j, Y H:i', strtotime($d->created_at))?> UTC</dd></div>
   </dl>
+  <?php if ($d_converted): ?>
+    <p class="hint mt-2 mb-0">
+      Locked at <strong class="mono"><?=html_escape(marvy_rate_line($d->fx_rate, $d->currency, $d_base_cur))?></strong>
+      when this deposit was opened — a later rate change does not affect it.
+    </p>
+  <?php endif; ?>
   <?php if ($d->status === 'PENDING' && $method && strtolower((string)$method->code) === 'fundsvera'):
     // A Fundsvera checkout is one link with two payment routes: the hosted
     // secure-checkout page takes card payment, the account details are the
@@ -169,15 +186,23 @@
   <?php else: ?>
   <div class="overflow-x-auto mt-3">
     <table class="table">
-      <thead><tr><th>Reference</th><th>Amount</th><th>Fee</th><th>Bonus</th><th>Credited</th><th>Status</th><th>Date</th><th></th></tr></thead>
+      <thead><tr><th>Reference</th><th>Paid</th><th>Fee</th><th>Bonus</th><th>Credited</th><th>Status</th><th>Date</th><th></th></tr></thead>
       <tbody>
-      <?php foreach ($deposits as $d): ?>
+      <?php foreach ($deposits as $d):
+        $row_base = strtoupper((string)($d->base_currency ?? $d->currency));
+        $row_credited = $d->credited_base_amount ?? $d->credited_amount;
+      ?>
         <tr>
           <td class="mono text-xs"><?=htmlspecialchars(substr($d->public_id,0,12))?>…</td>
           <td class="mono"><?=marvy_money($d->amount, $d->currency)?></td>
           <td class="mono muted"><?=marvy_money($d->fee, $d->currency)?></td>
           <td class="mono" style="color:var(--success-700)">+<?=marvy_money($d->bonus, $d->currency)?></td>
-          <td class="mono"><?=$d->credited_amount!==null?marvy_money($d->credited_amount,$d->currency):'—'?></td>
+          <td class="mono">
+            <?=$row_credited!==null?marvy_money($row_credited, $row_base):'—'?>
+            <?php if (!empty($d->fx_rate) && strtoupper((string)$d->currency) !== $row_base): ?>
+              <div class="text-xs muted font-normal"><?=html_escape(marvy_rate_line($d->fx_rate, $d->currency, $row_base))?></div>
+            <?php endif; ?>
+          </td>
           <td><span class="badge <?=$d->status==='SUCCESS'?'badge-success':($d->status==='FAILED'?'badge-danger':'badge-warning')?>"><?=htmlspecialchars($d->status)?></span></td>
           <td class="text-xs muted"><?=date('M j, H:i', strtotime($d->created_at))?></td>
           <td><a class="btn btn-ghost btn-sm" href="<?=site_url('dashboard/wallet/deposits/'.$d->public_id)?>">View</a></td>
