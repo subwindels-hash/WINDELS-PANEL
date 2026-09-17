@@ -214,11 +214,15 @@ class Payments extends MY_Controller {
     }
 
     /**
-     * Return the settlement leg without reading migration-042 properties
-     * directly. Old rows never had those properties, so the charge columns
-     * are their exact settlement values and the pinned rate is one.
+     * Return the settlement leg without assuming migration-042 columns exist.
+     * Compatibility rows may carry the pinned base leg in metadata; genuinely
+     * old rows never had those properties, so their charge columns are their
+     * exact settlement values and the pinned rate is one.
      */
     private function settlement_fields($tx) {
+        $metadata_settlement = $this->settlement_from_metadata($tx);
+        if ($metadata_settlement !== null) return $metadata_settlement;
+
         $base_currency = isset($tx->base_currency) && $tx->base_currency
             ? (string)$tx->base_currency : (string)$tx->currency;
         $base_amount = isset($tx->base_amount) && $tx->base_amount !== null
@@ -235,6 +239,27 @@ class Payments extends MY_Controller {
             'base_amount'          => $base_amount,
             'credited_base_amount' => $credited,
             'fx_rate'              => $fx_rate,
+        );
+    }
+
+    /** Metadata-backed settlement fields for pre-migration-042 compatibility rows. */
+    private function settlement_from_metadata($tx) {
+        $meta = json_decode((string)($tx->metadata ?? ''), true);
+        if (!is_array($meta) || !isset($meta['settlement']) || !is_array($meta['settlement'])) return null;
+        $s = $meta['settlement'];
+        $currency = strtoupper(trim((string)($s['base_currency'] ?? '')));
+        $base = (string)($s['base_amount'] ?? '');
+        $credited = (string)($s['credited_base_amount'] ?? ($s['base_amount'] ?? ''));
+        $rate = (string)($s['fx_rate'] ?? '');
+        if (!preg_match('/^[A-Z]{3}$/', $currency)) return null;
+        if (!is_numeric($base) || !is_numeric($credited) || !is_numeric($rate)) return null;
+        if (function_exists('bccomp') && bccomp($rate, '0', 8) <= 0) return null;
+        if (!function_exists('bccomp') && (float)$rate <= 0) return null;
+        return array(
+            'base_currency'        => $currency,
+            'base_amount'          => $base,
+            'credited_base_amount' => $credited,
+            'fx_rate'              => $rate,
         );
     }
 

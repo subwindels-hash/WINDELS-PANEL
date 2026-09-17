@@ -114,13 +114,11 @@ class PaymentService {
         if (!(int)$method->is_active) return array('ok'=>false,'error'=>'That payment method is unavailable','code'=>'METHOD_INACTIVE');
 
         // Existing installations may still be on the pre-042 schema. Do not
-        // take payments offline while an administrator schedules the upgrade:
-        // use the original base-currency payment path until the four optional
-        // settlement columns are available. This preserves the old database's
-        // semantics (and its existing users) without attempting an INSERT into
-        // columns that do not exist. The helper fails closed to the legacy path
-        // when a driver cannot inspect column metadata; a temporary metadata
-        // problem must never turn into a write of unknown columns.
+        // take payments offline while an administrator schedules the SQL
+        // upgrade: charge the default payment currency exactly the same way,
+        // but mirror the settlement leg into metadata when the additive
+        // base_* columns are not available yet. The helper is still used to
+        // avoid INSERTs into columns that do not exist.
         $deposit_currency_schema_ready = $this->deposit_currency_schema_ready();
 
         $amount = $this->normalise_amount($input['amount'] ?? null);
@@ -130,12 +128,7 @@ class PaymentService {
         // here, inside the money service — not merely in the controller. That
         // makes the rule hold for dashboard forms, JSON API calls, retries and
         // any future caller, even if one posts the base currency explicitly.
-        $currency = $deposit_currency_schema_ready
-            ? $this->charge_currency_for($method, $input['currency'] ?? null)
-            // Pre-042 rows were always charged and settled in the accounting
-            // currency. Keep that contract on the legacy schema; otherwise a
-            // non-base display currency could not be represented safely.
-            : strtoupper((string)marvy_base_currency());
+        $currency = $this->charge_currency_for($method, $input['currency'] ?? null);
         if (!preg_match('/^[A-Z]{3}$/', $currency)) return array('ok'=>false,'error'=>'Bad currency','code'=>'BAD_CURRENCY');
 
         // What this method's rail actually collects for that charge currency.
@@ -145,25 +138,25 @@ class PaymentService {
         // the default currency stays what the customer sees and types, and
         // the rail is handed the one currency it can move. The stored payment
         // remains in the default currency; the NGN provider leg is recorded in
-        // metadata. Only possible on the 042 schema because the base settlement
-        // must remain independently representable.
+        // metadata, so it also works while an existing database is waiting for
+        // the additive migration-042 columns.
         $collection = null;
-        if ($deposit_currency_schema_ready) {
-            $rail = $this->rail_charge($method, $amount, $currency);
-            if (empty($rail['ok'])) return $rail;
-            if (!empty($rail['converted'])) {
-                // Keep amount/currency on the transaction in the panel's
-                // DEFAULT payment currency. The provider's NGN leg is a
-                // separate collection instruction, not a replacement for what
-                // the customer entered. This is what lets a USD-default panel
-                // use Fundsvera without treating the accounting/base currency
-                // as the payment currency.
-                $collection = array(
-                    'amount'   => $rail['amount'],
-                    'currency' => $rail['currency'],
-                    'rate'     => $rail['rail_rate'],
-                );
-            }
+        $rail = $this->rail_charge($method, $amount, $currency);
+        if (empty($rail['ok'])) return $rail;
+        if (!empty($rail['converted'])) {
+            // Keep amount/currency on the transaction in the panel's
+            // DEFAULT payment currency. The provider's NGN leg is a
+            // separate collection instruction, not a replacement for what
+            // the customer entered. This is what lets a USD-default panel
+            // use Fundsvera without treating the accounting/base currency
+            // as the payment currency. On pre-042 databases the same
+            // instruction is still persisted in metadata, because metadata
+            // existed before the additive settlement columns did.
+            $collection = array(
+                'amount'   => $rail['amount'],
+                'currency' => $rail['currency'],
+                'rate'     => $rail['rail_rate'],
+            );
         }
         if (!$this->method_supports_currency($method, $currency)) {
             return $this->unsupported_currency($method, $currency);
@@ -223,7 +216,14 @@ class PaymentService {
             'currency'           => $currency,
             'status'             => self::STATUS_CREATED,
             'idempotency_key'    => $idem,
-            'metadata'           => $this->initial_metadata($input, $collection),
+            'metadata'           => $this->initial_metadata($input, $collection,
+                $deposit_currency_schema_ready ? null : array(
+                    'base_currency'        => $quote['base_currency'],
+                    'base_amount'          => $quote['base_amount'],
+                    'credited_base_amount' => $credited_base,
+                    'fx_rate'              => $quote['fx_rate'],
+                )
+            ),
             'created_at'         => gmdate('Y-m-d H:i:s'),
         ));
 
@@ -450,12 +450,11 @@ class PaymentService {
         // An NGN-only rail still serves a panel whose default currency is
         // something else, provided the typed amount can be CONVERTED into the
         // rail currency at a real rate. Ask the adapter about the currency it
-        // will actually be handed, not the one the customer types in. Only on
-        // the 042 schema: a legacy row cannot hold a charge that differs from
-        // its settlement currency, so no conversion can be recorded there.
+        // will actually be handed, not the one the customer types in. The
+        // converted collection leg is stored in metadata even on pre-042
+        // databases, so the check is no longer tied to the additive columns.
         $rail = $this->rail_currency_for($method);
         if ($rail !== null && $currency !== $rail
-                && $this->deposit_currency_schema_ready()
                 && $this->rail_rate($currency, $rail) !== null) {
             $currency = $rail;
         }
@@ -482,10 +481,16 @@ class PaymentService {
      * amount, currency and conversion rate. The transaction itself remains the
      * authoritative figure the customer entered in the default currency.
      */
-    private function initial_metadata(array $input, $collection = null) {
+    private function initial_metadata(array $input, $collection = null, $settlement = null) {
         $meta = array();
         if (!empty($input['note'])) $meta['note'] = $input['note'];
         if (is_array($collection) && $collection) $meta['collection'] = $collection;
+        // Existing cPanel databases may not yet have migration 042's additive
+        // settlement columns. Metadata did exist there, so keep the base leg
+        // here too; confirm(), the API, and decorated model rows can still
+        // credit and display the correct accounting amount instead of falling
+        // back to the pre-042 base-currency charge.
+        if (is_array($settlement) && $settlement) $meta['settlement'] = $settlement;
         return $meta ? json_encode($meta, JSON_UNESCAPED_SLASHES) : null;
     }
 
@@ -499,10 +504,10 @@ class PaymentService {
             return array(
                 'ok'    => false,
                 'code'  => 'CURRENCY_UNSUPPORTED',
-                'error' => 'Fundsvera bank transfers collect NGN. Your '.$currency.' deposit could not '
-                    .'be converted because no usable NGN exchange rate is configured. Add an active '
-                    .'NGN currency with an exchange rate under Admin → Currencies, or use '
-                    .'Manual / Bank Transfer.',
+                'error' => 'Fundsvera uses NGN bank transfers, but the default payment currency '
+                    .$currency.' cannot be converted to NGN because no usable NGN exchange rate is '
+                    .'configured. Add/activate NGN with an exchange rate under Admin → Currencies, '
+                    .'or make NGN the default payment currency.',
             );
         }
 
@@ -577,14 +582,49 @@ class PaymentService {
     }
 
     /**
+     * Settlement leg stored in metadata for databases that predate migration 042.
+     *
+     * The live cPanel upgrade path can upload PHP files before importing the
+     * additive SQL. Those old rows cannot hold base_currency/base_amount columns,
+     * but they can still carry this JSON block. Reading it here keeps Manual /
+     * Bank Transfer and Fundsvera on the DEFAULT payment currency without
+     * crediting that charge amount as though it were already base money.
+     *
+     * @return array{base_currency:string,base_amount:string,credited_base_amount:string,fx_rate:string}|null
+     */
+    private function settlement_from_metadata($tx) {
+        $meta = json_decode((string)($tx->metadata ?? ''), true);
+        if (!is_array($meta) || !isset($meta['settlement']) || !is_array($meta['settlement'])) {
+            return null;
+        }
+        $s = $meta['settlement'];
+        $currency = strtoupper(trim((string)($s['base_currency'] ?? '')));
+        $base_amount = (string)($s['base_amount'] ?? '');
+        $credited = (string)($s['credited_base_amount'] ?? ($s['base_amount'] ?? ''));
+        $rate = (string)($s['fx_rate'] ?? '');
+        if (!preg_match('/^[A-Z]{3}$/', $currency)) return null;
+        if (!is_numeric($base_amount) || !is_numeric($credited) || !is_numeric($rate)) return null;
+        if (bccomp($rate, '0', 8) <= 0) return null;
+        return array(
+            'base_currency'        => $currency,
+            'base_amount'          => $base_amount,
+            'credited_base_amount' => $credited,
+            'fx_rate'              => $rate,
+        );
+    }
+
+    /**
      * What a deposit credits the wallet with, in the BASE currency.
      *
-     * Prefers the figure pinned when the deposit was opened. A row from before
-     * migration 042 has no pinned leg and was charged in the base currency by
-     * construction, so its charge-currency figure is already the base figure —
-     * which is exactly what the old code credited.
+     * Prefers the figure pinned when the deposit was opened. On a legacy
+     * database uploaded before migration 042, new default-currency deposits
+     * pin that same settlement leg in metadata; genuinely old rows have no such
+     * JSON block and were charged in the base currency by construction, so the
+     * old charge columns remain the safe final fallback.
      */
     private function settlement_amount($tx) {
+        $settlement = $this->settlement_from_metadata($tx);
+        if ($settlement !== null) return $settlement['credited_base_amount'];
         if (isset($tx->credited_base_amount) && $tx->credited_base_amount !== null
                 && $tx->credited_base_amount !== '') {
             return (string)$tx->credited_base_amount;
@@ -654,7 +694,9 @@ class PaymentService {
                 // $credited is a BASE-currency figure; label it as such rather
                 // than with the charge currency, or a ₦1,328 payment would be
                 // announced as "₦1.00 added to your wallet".
-                $credited_code = (string)(($tx->base_currency ?? '') ?: marvy_base_currency());
+                $settlement = $this->settlement_from_metadata($tx);
+                $credited_code = (string)(($settlement['base_currency'] ?? '')
+                    ?: (($tx->base_currency ?? '') ?: marvy_base_currency()));
                 // What they actually paid, when that is a different currency.
                 $paid = marvy_money($tx->amount, $tx->currency);
                 $line = marvy_money($credited, $credited_code).' has been added to your wallet';
@@ -1216,10 +1258,9 @@ class PaymentService {
         // priced: the reported figure is the charge, and the base leg is what
         // the wallet gets. No rate means no credit — a spontaneous transfer is
         // never worth guessing at.
-        $legacy_schema = !$this->deposit_currency_schema_ready();
-        $currency = $legacy_schema
-            ? strtoupper((string)marvy_base_currency())
-            : strtoupper((string)($event['currency'] ?? $this->pay_currency()));
+        $deposit_currency_schema_ready = $this->deposit_currency_schema_ready();
+        $currency = strtoupper(trim((string)($event['currency'] ?? '')));
+        if ($currency === '') $currency = self::FUNDSVERA_RAIL_CURRENCY;
         $quote = $this->quote($amount, $currency);
         if (empty($quote['ok'])) {
             log_message('error', 'virtual-account credit for user '.$user_id
@@ -1254,12 +1295,17 @@ class PaymentService {
             'fx_rate'              => $quote['fx_rate'],
             'status'             => self::STATUS_PENDING,
             'idempotency_key'    => $idem,
-            'metadata'           => json_encode(array(
+            'metadata'           => json_encode(array_merge(array(
                 'virtual_account_no' => $event['metadata']['virtual_account_no'] ?? null,
                 'customer_email'     => $event['metadata']['customer_email'] ?? null,
                 'trx_ref'            => $trx_ref !== '' ? $trx_ref : null,
                 'purpose'            => 'virtual_account',
-            ), JSON_UNESCAPED_SLASHES),
+            ), $deposit_currency_schema_ready ? array() : array('settlement' => array(
+                'base_currency'        => $quote['base_currency'],
+                'base_amount'          => $quote['base_amount'],
+                'credited_base_amount' => $credited_base,
+                'fx_rate'              => $quote['fx_rate'],
+            ))), JSON_UNESCAPED_SLASHES),
             'created_at'         => gmdate('Y-m-d H:i:s'),
         ));
         $this->transition($tx->id, null, self::STATUS_PENDING, 'WEBHOOK', 'Virtual account credit received');
@@ -1530,25 +1576,24 @@ class PaymentService {
         // Typed by the customer, so it is in the default currency shown on
         // Add Funds. Resolve it through the same method policy as an ordinary
         // Fundsvera checkout rather than maintaining a second currency rule.
-        $legacy_schema = !$this->deposit_currency_schema_ready();
-        $currency = $legacy_schema
-            ? strtoupper((string)marvy_base_currency())
-            : $this->charge_currency_for($method);
+        // This must not fall back to the accounting/base currency on an older
+        // database; the settlement leg is mirrored into metadata below until
+        // the additive migration-042 columns are imported.
+        $deposit_currency_schema_ready = $this->deposit_currency_schema_ready();
+        $currency = $this->charge_currency_for($method);
         // The bank credits this standing account in naira only. A non-NGN
         // default currency is converted at today's rate — the same rule the
         // checkout path applies — so the webhook's amount check compares
-        // naira with naira. Only representable on the 042 schema.
+        // naira with naira.
         $collection = null;
-        if (!$legacy_schema) {
-            $rail = $this->rail_charge($method, $amount, $currency);
-            if (empty($rail['ok'])) return $rail;
-            if (!empty($rail['converted'])) {
-                $collection = array(
-                    'amount'   => $rail['amount'],
-                    'currency' => $rail['currency'],
-                    'rate'     => $rail['rail_rate'],
-                );
-            }
+        $rail = $this->rail_charge($method, $amount, $currency);
+        if (empty($rail['ok'])) return $rail;
+        if (!empty($rail['converted'])) {
+            $collection = array(
+                'amount'   => $rail['amount'],
+                'currency' => $rail['currency'],
+                'rate'     => $rail['rail_rate'],
+            );
         }
         if (!$this->method_supports_currency($method, $currency)) {
             return $this->unsupported_currency($method, $currency);
@@ -1595,7 +1640,13 @@ class PaymentService {
             'metadata'           => json_encode(array_merge(array(
                 'virtual_account' => $account->account_number ?? null,
                 'purpose'         => 'virtual_account',
-            ), $collection ? array('collection' => $collection) : array()), JSON_UNESCAPED_SLASHES),
+            ), $collection ? array('collection' => $collection) : array(),
+               $deposit_currency_schema_ready ? array() : array('settlement' => array(
+                    'base_currency'        => $quote['base_currency'],
+                    'base_amount'          => $quote['base_amount'],
+                    'credited_base_amount' => $credited_base,
+                    'fx_rate'              => $quote['fx_rate'],
+               ))), JSON_UNESCAPED_SLASHES),
             'created_at'         => gmdate('Y-m-d H:i:s'),
         ));
         $this->transition($tx->id, null, self::STATUS_PENDING, 'SYSTEM', 'Virtual account deposit opened');

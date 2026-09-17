@@ -455,7 +455,9 @@ class CpanelDeploymentTest extends TestCase
             $this->assertStringContainsString("ADD COLUMN `{$column}`", $sql);
         }
         $this->assertStringContainsString('information_schema.COLUMNS', $sql);
-        $this->assertStringContainsString('COALESCE(`base_currency`, `currency`)', $sql);
+        $this->assertStringContainsString("JSON_EXTRACT(`metadata`, '$.settlement.base_currency')", $sql,
+            'the upgrade must preserve compatibility deposits opened before the SQL was imported');
+        $this->assertStringContainsString('COALESCE(', $sql);
         $this->assertStringContainsString('UPDATE `migrations` SET `version` = 42 WHERE `version` < 42', $sql);
         $this->assertStringNotContainsStringIgnoringCase('DROP TABLE', $sql);
         $this->assertStringNotContainsStringIgnoringCase('DELETE FROM', $sql);
