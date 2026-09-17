@@ -84,12 +84,25 @@ class Migration_Deposit_pay_currency extends CI_Migration {
 
         // Every deposit taken before this migration was charged in the base
         // currency, so the charge row and the settlement row are the same row.
+        // One deployment window is different: PHP files may have been uploaded
+        // before this SQL, and those new deposits carry their correct base leg
+        // in metadata.settlement. Prefer that JSON when present so importing
+        // the migration later does not relabel an NGN/default-currency payment
+        // as a USD/base-currency one.
         $this->db->query(
             "UPDATE payment_transactions
-                SET base_currency        = COALESCE(base_currency, currency),
-                    base_amount          = COALESCE(base_amount, amount),
-                    credited_base_amount = COALESCE(credited_base_amount, credited_amount, amount),
-                    fx_rate              = COALESCE(fx_rate, 1.00000000)"
+                SET base_currency        = COALESCE(
+                    NULLIF(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.settlement.base_currency')), 'null'), ''),
+                    base_currency, currency),
+                    base_amount          = COALESCE(
+                    CAST(NULLIF(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.settlement.base_amount')), 'null'), '') AS DECIMAL(20,8)),
+                    base_amount, amount),
+                    credited_base_amount = COALESCE(
+                    CAST(NULLIF(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.settlement.credited_base_amount')), 'null'), '') AS DECIMAL(20,8)),
+                    credited_base_amount, credited_amount, amount),
+                    fx_rate              = COALESCE(
+                    CAST(NULLIF(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.settlement.fx_rate')), 'null'), '') AS DECIMAL(20,8)),
+                    fx_rate, 1.00000000)"
         );
     }
 

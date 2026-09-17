@@ -8,16 +8,18 @@ class Payment_transaction_model extends MY_Model {
         // created_at has second granularity, so two deposits started within
         // the same second would order arbitrarily without the id tie-break —
         // and a customer skimming "Recent deposits" would open the older one.
-        return $this->db->where('user_id',$user_id)->order_by('created_at','DESC')->order_by('id','DESC')->limit($limit,$offset)->get($this->table)->result();
+        return $this->decorate_many($this->db->where('user_id',$user_id)
+            ->order_by('created_at','DESC')->order_by('id','DESC')
+            ->limit($limit,$offset)->get($this->table)->result());
     }
     public function find_by_provider_tx($provider_tx_id){
-        return $this->db->where('provider_tx_id',$provider_tx_id)->get($this->table)->row();
+        return $this->decorate($this->db->where('provider_tx_id',$provider_tx_id)->get($this->table)->row());
     }
     public function find_by_idempotency_key($key){
         if (!$key) return null;
-        return $this->db->where('idempotency_key',$key)->get($this->table)->row();
+        return $this->decorate($this->db->where('idempotency_key',$key)->get($this->table)->row());
     }
-    public function find_by_id($id){ return $this->db->where('id',$id)->get($this->table)->row(); }
+    public function find_by_id($id){ return $this->decorate($this->db->where('id',$id)->get($this->table)->row()); }
     /**
      * One payment belonging to this customer, by either reference form.
      *
@@ -27,16 +29,16 @@ class Payment_transaction_model extends MY_Model {
      * public_id (what older links carry).
      */
     public function for_user_reference($user_id, $reference){
-        return $this->db->where('user_id', (int)$user_id)
+        return $this->decorate($this->db->where('user_id', (int)$user_id)
                         ->group_start()
                             ->where('internal_reference', $reference)
                             ->or_where('public_id', $reference)
                         ->group_end()
-                        ->get($this->table)->row();
+                        ->get($this->table)->row());
     }
 
     public function find_public_for_user($public_id, $user_id){
-        return $this->db->where('public_id',$public_id)->where('user_id',$user_id)->get($this->table)->row();
+        return $this->decorate($this->db->where('public_id',$public_id)->where('user_id',$user_id)->get($this->table)->row());
     }
     public function update_status($id, array $data){ return $this->db->where('id',$id)->update($this->table,$data); }
     public function count_for_user($user_id, $status=null){
@@ -57,13 +59,13 @@ class Payment_transaction_model extends MY_Model {
         $this->admin_filters($filters);
         // users is already joined by admin_filters(); joining it twice is a
         // SQL error.
-        return $this->db
+        return $this->decorate_many($this->db
             ->select('payment_transactions.*, users.username, users.email,
                       payment_methods.name AS method_name, payment_methods.type AS method_type', false)
             ->join('payment_methods', 'payment_methods.id = payment_transactions.payment_method_id', 'left')
             ->order_by('payment_transactions.created_at', 'DESC')
             ->limit($limit, $offset)
-            ->get()->result();
+            ->get()->result());
     }
 
     public function admin_count(array $filters){
@@ -102,14 +104,14 @@ class Payment_transaction_model extends MY_Model {
 
     /** One transaction with its user and method, by public id. */
     public function admin_find($public_id){
-        return $this->db
+        return $this->decorate($this->db
             ->select('payment_transactions.*, users.username, users.email,
                       payment_methods.name AS method_name, payment_methods.type AS method_type', false)
             ->from($this->table)
             ->join('users', 'users.id = payment_transactions.user_id', 'left')
             ->join('payment_methods', 'payment_methods.id = payment_transactions.payment_method_id', 'left')
             ->where('payment_transactions.public_id', $public_id)
-            ->get()->row();
+            ->get()->row());
     }
 
     /** @var bool|null Cached for this request; a schema cannot change mid-page. */
@@ -183,5 +185,49 @@ class Payment_transaction_model extends MY_Model {
             'pending_amount' => (string)($row->pending_amount ?? '0.00000000'),
             'credited'       => (string)($row->credited ?? '0.00000000'),
         );
+    }
+
+    /** Decorate a list of rows with metadata-backed settlement fields. */
+    private function decorate_many($rows){
+        foreach ($rows as $row) $this->decorate($row);
+        return $rows;
+    }
+
+    /**
+     * Fill migration-042 settlement properties from metadata when the live
+     * database has not been upgraded yet.
+     *
+     * New code can then read `$tx->base_currency`, `$tx->base_amount`,
+     * `$tx->credited_base_amount` and `$tx->fx_rate` consistently whether the
+     * values came from real columns or the compatibility JSON block. Historical
+     * rows that predate the compatibility block are left untouched; those were
+     * genuinely charged in their stored currency.
+     */
+    private function decorate($row){
+        if (!$row || !is_object($row)) return $row;
+
+        $meta = json_decode((string)($row->metadata ?? ''), true);
+        if (!is_array($meta) || !isset($meta['settlement']) || !is_array($meta['settlement'])) {
+            return $row;
+        }
+        $s = $meta['settlement'];
+        $currency = strtoupper(trim((string)($s['base_currency'] ?? '')));
+        $base_amount = (string)($s['base_amount'] ?? '');
+        $credited = (string)($s['credited_base_amount'] ?? ($s['base_amount'] ?? ''));
+        $rate = (string)($s['fx_rate'] ?? '');
+        if (!preg_match('/^[A-Z]{3}$/', $currency)) return $row;
+        if (!is_numeric($base_amount) || !is_numeric($credited) || !is_numeric($rate)) return $row;
+        if (function_exists('bccomp') && bccomp($rate, '0', 8) <= 0) return $row;
+        if (!function_exists('bccomp') && (float)$rate <= 0) return $row;
+
+        // Metadata settlement exists only for compatibility rows created while
+        // the database lacked the columns, so it is the authoritative source.
+        // Prefer it even after the SQL upgrade has later filled the columns,
+        // in case an older upgrade script backfilled those rows as 1:1.
+        $row->base_currency = $currency;
+        $row->base_amount = $base_amount;
+        $row->credited_base_amount = $credited;
+        $row->fx_rate = $rate;
+        return $row;
     }
 }

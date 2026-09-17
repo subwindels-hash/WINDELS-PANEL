@@ -175,9 +175,10 @@ class FundsveraGateway implements GatewayInterface {
             // sending, for example, a USD figure the provider will interpret
             // as the same number of naira.
             return $this->fail('CURRENCY_UNSUPPORTED',
-                'Fundsvera bank transfers collect NGN only, but this deposit is in '
-                .($currency ?: 'an unknown currency').'. Add an active NGN exchange rate under '
-                .'Admin → Currencies so deposits can be converted, or set the panel default currency to NGN.');
+                'Fundsvera bank transfers collect NGN only, but this deposit reached the provider in '
+                .($currency ?: 'an unknown currency').'. Use the panel default payment currency flow so '
+                .'the amount is sent as NGN, or add an active NGN exchange rate under Admin → Currencies '
+                .'when the default currency must be converted.');
         }
 
         $amount = (float)$transaction->amount;

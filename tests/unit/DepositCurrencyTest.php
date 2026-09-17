@@ -263,6 +263,11 @@ class DepositCurrencyTest extends TestCase
 
         // The method stays offered: USD is collectable via the NGN rail.
         $this->assertTrue($app->paymentservice->method_supports_currency($method, 'USD'));
+        foreach (array('base_currency', 'base_amount', 'credited_base_amount', 'fx_rate') as $column) {
+            unset($app->db->schema['payment_transactions']['columns'][$column]);
+        }
+        $this->assertTrue($app->paymentservice->method_supports_currency($method, 'USD'),
+            'the Fundsvera option must not disappear just because the SQL migration is pending');
 
         $rail = $app->paymentservice->rail_charge($method, '10.00000000', 'USD');
         $this->assertTrue($rail['ok'], $rail['error'] ?? '');
@@ -603,20 +608,40 @@ class DepositCurrencyTest extends TestCase
         $this->assertSame(0, bccomp('500', $totals['pending_amount'], 8));
     }
 
-    /** The original schema remains usable while migration 042 is deferred. */
-    public function testNewDepositsUseTheLegacyPathUntilMigration042IsImported()
+    /**
+     * The original schema remains usable while migration 042 is deferred, but
+     * new deposits still follow the default payment currency rather than being
+     * forced back to the accounting/base currency. The settlement leg is
+     * carried in metadata until the additive columns are imported.
+     */
+    public function testNewDepositsOnTheLegacySchemaStillUseTheDefaultCurrency()
     {
-        $app = $this->app('NGN');
-        list($user) = $this->customer($app);
+        $app = $this->app('USD', array('NGN' => '1328.00000000'), 'NGN');
+        list($user, $wallet) = $this->customer($app);
         foreach (array('base_currency', 'base_amount', 'credited_base_amount', 'fx_rate') as $column) {
             unset($app->db->schema['payment_transactions']['columns'][$column]);
         }
 
-        $res = $this->deposit($app, $user, '500');
+        $res = $this->deposit($app, $user, '1328', array('currency' => 'USD'));
         $this->assertTrue($res['ok'], $res['error'] ?? '');
-        $this->assertSame('NGN', $res['transaction']->currency);
-        $this->assertSame('500.00000000', (string)$res['transaction']->amount);
-        $this->assertFalse(property_exists($res['transaction'], 'base_amount'));
+        $tx = $res['transaction'];
+        $this->assertSame('NGN', $tx->currency,
+            'even before migration 042, Manual / Bank Transfer must use the default currency, not base USD');
+        $this->assertSame(0, bccomp('1328', (string)$tx->amount, 8));
+
+        $meta = json_decode((string)$tx->metadata, true);
+        $this->assertSame('USD', $meta['settlement']['base_currency'] ?? null);
+        $this->assertSame(0, bccomp('1', (string)($meta['settlement']['base_amount'] ?? '0'), 8));
+        // Rows returned through the model are decorated from that metadata so
+        // the rest of the panel can keep reading the migration-042 fields.
+        $this->assertSame('USD', $tx->base_currency);
+        $this->assertSame(0, bccomp('1', (string)$tx->base_amount, 8));
+
+        $confirmed = $app->paymentservice->confirm($tx, 'SYSTEM');
+        $this->assertTrue($confirmed['ok'], $confirmed['error'] ?? '');
+        $wallet = $app->db->where('id', $wallet->id)->get('wallets')->row();
+        $this->assertSame(0, bccomp('1', (string)$wallet->balance, 8),
+            'confirmation must credit the metadata settlement leg, not the NGN charge amount');
     }
 
     /**

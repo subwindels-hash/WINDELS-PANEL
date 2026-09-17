@@ -96,7 +96,7 @@ $site_name = function_exists('marvy_site_name') ? marvy_site_name() : 'MarvySoci
     <table class="table">
       <thead><tr><th></th><th>Path</th><th>Description</th></tr></thead>
       <tbody>
-        <tr><td><span class="ws-method ws-post">POST</span></td><td><code>/payments/fundsvera/initialize</code></td><td>Start a bank-transfer deposit. Body: <code>{amount}</code>, denominated in the panel default currency (Fundsvera is available when that default is NGN). Returns the account details to pay into. Your wallet is credited by the provider's webhook, never by returning to the site.</td></tr>
+        <tr><td><span class="ws-method ws-post">POST</span></td><td><code>/payments/fundsvera/initialize</code></td><td>Start a bank-transfer deposit. Body: <code>{amount}</code>, denominated in the panel default currency (Fundsvera collects NGN directly, or uses the configured NGN rate to convert a non-NGN default). Returns the account details to pay into. Your wallet is credited by the provider's webhook, never by returning to the site.</td></tr>
         <tr><td><span class="ws-method ws-post">POST</span></td><td><code>/payments/fundsvera/virtual-account</code></td><td>Your standing bank account for NGN top-ups — created on first call, returned unchanged afterwards. Body: <code>{amount?}</code> in the panel default currency; with an amount a declared deposit is opened too. Any payment into the account is credited automatically when the bank confirms it.</td></tr>
         <tr><td><span class="ws-method ws-get">GET</span></td><td><code>/payments/history</code></td><td>Your deposits.</td></tr>
         <tr><td><span class="ws-method ws-get">GET</span></td><td><code>/payments/:reference</code></td><td>One deposit by its reference.</td></tr>

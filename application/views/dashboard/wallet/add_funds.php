@@ -166,8 +166,10 @@ if ($wallet_rate <= 0) $wallet_rate = 1.0;
         <h2 class="card-title mb-0">Recent deposits</h2>
         <a class="btn btn-ghost btn-sm" href="<?=site_url('dashboard/wallet/deposits')?>">View all →</a>
       </div>
-      <?php // id tie-break: created_at has second granularity (model's rule). ?>
-      <?php $recent = $this->db->where('user_id',$current_user->id)->order_by('created_at','DESC')->order_by('id','DESC')->limit(5)->get('payment_transactions')->result(); ?>
+      <?php // id tie-break and metadata-backed settlement decoration live in the model. ?>
+      <?php $recent = isset($this->Payment_transaction_model)
+          ? $this->Payment_transaction_model->for_user($current_user->id, 5)
+          : $this->db->where('user_id',$current_user->id)->order_by('created_at','DESC')->order_by('id','DESC')->limit(5)->get('payment_transactions')->result(); ?>
       <?php if (empty($recent)): ?>
         <p class="muted mt-3">No deposits yet.</p>
       <?php else: ?>
